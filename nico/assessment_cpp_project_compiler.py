@@ -64,8 +64,9 @@ def _extra_option(arg):
     if _project_option(arg) or arg in {
             '-ftrapv', '-fno-extended-identifiers', '-fcf-protection=full',
             '-fcf-protection=branch', '-fcf-protection=return', '-fcf-protection=none',
-            '-Wbidi-chars=any', '-Wbidi-chars=unpaired',
-            '-mavx', '-mavx2', '-msha', '-msse4', '-msse4.1'}:
+            '-Wbidi-chars=any', '-Wbidi-chars=unpaired', '-Wcast-align=strict',
+            '-mavx', '-mavx2', '-msha', '-msse4', '-msse4.1', '-msse4.2',
+            '-mpclmul', '-pedantic'}:
         return True
     # This option rewrites macro strings, not filesystem access. Only bounded
     # original-source prefixes and a canonical relative replacement are allowed.
@@ -172,7 +173,14 @@ def _dependency_populations(raw, request):
     text = raw.decode('utf-8').replace('\\\n', ' ').strip()
     if not text.startswith('nico_unit:'):
         raise ValueError('worker_project_compiler_dependencies_invalid')
-    paths = shlex.split(text[len('nico_unit:'):], comments=False, posix=True)
+    body = text[len('nico_unit:'):]
+    # Simple ASCII lists have no shell quoting or escape semantics. Keep the
+    # original lexer for every other input, including non-ASCII whitespace.
+    if (not any(c in body for c in ("'", '"', '\\'))
+            and re.fullmatch(r'[\t\r\n\x20-\x7e]*', body) is not None):
+        paths = body.split()
+    else:
+        paths = shlex.split(body, comments=False, posix=True)
     if not paths or len(paths) > 20000:
         raise ValueError('worker_project_compiler_dependencies_invalid')
     originals, generated, system = {}, {}, set()

@@ -55,6 +55,72 @@ def test_fallback_request_contains_only_primary_attempted_incomplete_contexts(tm
     assert isinstance(fallback['primary_analyzed_contexts'],list)
     assert fallback['cppcheck_evidence_sha256']==proof['native_evidence_sha256']
 
+
+@pytest.mark.parametrize('compiler', ['/usr/local/bin/gcc', '/usr/local/bin/g++'])
+@pytest.mark.parametrize('options', [
+    ['-fvisibility=hidden'], ['-pedantic'], ['-fvisibility=hidden', '-pedantic'],
+])
+def test_fallback_dispatch_retains_hidden_visibility_and_ordered_definitions(tmp_path, compiler, options):
+    req, proof = primary_with_one_failure(tmp_path)
+    row = req['contexts'][0]
+    row['invocation'] = [compiler, '-DVALUE=1', *options, '-UVALUE',
+                         '-DVALUE=2', '-c', row['analysis_file'], '-o',
+                         '/work/analysis/compiler-baseline/u0.o']
+    fallback = api().clang_fallback_request(req, proof)
+    actual = fallback['contexts'][0]
+    assert [c['context_id'] for c in fallback['contexts']] == [row['context_id']]
+    expected = ['-DVALUE=1', *options, '-UVALUE', '-DVALUE=2']
+    assert actual['invocation'][3:3 + len(expected)] == expected
+    assert actual['invocation'][0] == (api().CLANG if compiler.endswith('gcc') else api().CLANGXX)
+    assert actual['dropped_arguments'] == ['-c', '-o', '/work/analysis/compiler-baseline/u0.o']
+    assert fallback['primary_request_sha256'] == hashlib.sha256(_canonical(req)).hexdigest()
+    assert fallback['limits'] == api().LIMITS
+
+
+@pytest.mark.parametrize('arguments', [
+    ['-fvisibility=hidden', '/etc/passwd'],
+    ['-fvisibility', 'hidden'], ['-fvisibility=hidden,/etc/passwd'],
+    ['-fvisibility=hidden', '-fplugin=/etc/plugin.so'],
+    ['-fvisibility=hidden', '@/etc/response'],
+    ['-pedantic', '/etc/passwd'], ['-pedantic=/etc/passwd'],
+])
+def test_visibility_admission_does_not_authorize_operands_or_execution_helpers(tmp_path, arguments):
+    req = static_request(tmp_path)
+    row = deepcopy(req['contexts'][0])
+    row['invocation'] = [row['invocation'][0], *arguments, row['analysis_file']]
+    with pytest.raises(ValueError, match='worker_clang_fallback_option_unsupported'):
+        api()._fallback_plan(row)
+
+def test_current_diagnostics_use_multi_file_plist_without_relabeling_historical_requests(tmp_path):
+    req,proof=primary_with_one_failure(tmp_path)
+    old=api().clang_fallback_request(req,proof,extended_budget=True,contention_aware=True)
+    current=api().clang_fallback_request(req,proof,extended_budget=True,contention_aware=True,multi_file_diagnostics=True)
+    assert old['schema']=='nico.cpp-clang-fallback-request.v4'
+    assert '-analyzer-output=plist' in old['contexts'][0]['invocation']
+    assert current['schema']=='nico.cpp-clang-fallback-request.v6'
+    assert '-analyzer-output=plist-multi-file' in current['contexts'][0]['invocation']
+    assert current['limits']==old['limits']
+    proof_current=api().validate_clang_fallback(_canonical(fallback_native(current,finding=True)),current,req)
+    assert proof_current['complete'] and len(proof_current['findings'])==1
+    with pytest.raises(ValueError):api().validate_clang_fallback(_canonical(fallback_native(old)),current,req)
+
+def test_header_enabled_primary_request_preserves_fallback_population_and_does_not_gain_header_credit(tmp_path):
+    """Request admission control; synthetic evidence does not prove native execution."""
+    req,proof=primary_with_one_failure(tmp_path)
+    req['schema']='nico.cpp-project-static-request.v3'
+    proof['header_context_evidence_complete']=False
+    proof['header_population_complete']=False
+    fallback_req=api().clang_fallback_request(req,proof,extended_budget=True,contention_aware=True)
+    assert fallback_req['schema']=='nico.cpp-clang-fallback-request.v5'
+    assert fallback_req['limits']=={'wall_seconds':480,'case_seconds':120,'parallel':2}
+    assert fallback_req['primary_request_sha256']==hashlib.sha256(_canonical(req)).hexdigest()
+    assert [c['context_id'] for c in fallback_req['contexts']]==[req['contexts'][0]['context_id']]
+    assert fallback_req['header_source_targets']==req['targets']
+    assert fallback_req['header_generated_files']==req['generated_files']
+    # Legacy-shaped evidence cannot downgrade the current mandatory trace.
+    with pytest.raises(ValueError,match='worker_clang_fallback_evidence_invalid'):
+        api().validate_clang_fallback(_canonical(fallback_native(fallback_req)),fallback_req,req)
+
 def test_fallback_can_complete_primary_parser_failure_and_retains_both_tools_truth(tmp_path):
     req,proof=primary_with_one_failure(tmp_path); fallback_req=api().clang_fallback_request(req,proof)
     fallback=api().validate_clang_fallback(_canonical(fallback_native(fallback_req,finding=True)),fallback_req,req)
@@ -101,7 +167,8 @@ def test_real_static_stage_runs_fallback_only_after_primary_incomplete(tmp_path)
                 return {'exit_code':0,'timed_out':False,'output_truncated':False,'output':_canonical(value)}
             if api().PROGRAM in argv:
                 self.calls.append((argv,kwargs)); request=json.loads(kwargs['input_bytes'])
-                return {'exit_code':0,'timed_out':False,'output_truncated':False,'output':_canonical(fallback_native(request,finding=True))}
+                value=fallback_native(request,finding=True);value['wall_budget_ms']=int(argv[-1])
+                return {'exit_code':0,'timed_out':False,'output_truncated':False,'output':_canonical(value)}
             return super().__call__(argv,**kwargs)
     root,targets,database,snapshot,compiler=stage_inputs(tmp_path); docker=FallbackDocker(targets); artifacts={}
     def sink(key,raw):
@@ -135,6 +202,7 @@ def test_static_stage_retains_substantive_fallback_beyond_old_per_case_limit(tmp
             if api().PROGRAM in argv:
                 self.calls.append((argv,kwargs)); req=json.loads(kwargs['input_bytes'])
                 value=fallback_native(req,finding=True)
+                value['wall_budget_ms']=int(argv[-1])
                 value['records'][0]['execution']['duration_ms']=90000
                 value['duration_ms']=90010
                 return {'exit_code':0,'timed_out':False,'output_truncated':False,'output':_canonical(value)}
@@ -152,7 +220,8 @@ def test_static_stage_retains_substantive_fallback_beyond_old_per_case_limit(tmp
     assert call['timeout']>480 and call['timeout']<=490
     req=json.loads(call['input_bytes'])
     assert req['limits']=={'wall_seconds':480,'case_seconds':120,'parallel':2}
-    assert req['schema']=='nico.cpp-clang-fallback-request.v4'
+    assert req['schema']=='nico.cpp-clang-fallback-request.v6'
+    assert all('-analyzer-output=plist-multi-file' in c['invocation'] for c in req['contexts'])
     assert len(result['analysis']['analyzed_contexts'])==len(result['analysis']['required_contexts'])
     assert result['cleanup_verified'] is True
 

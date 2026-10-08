@@ -21,7 +21,10 @@ from nico.report_delivery_timing_v1 import report_delivery_phase
 
 
 _MAX_ENTRIES = 4
-_MAX_RETAINED_BYTES = 16 * 1024 * 1024
+# Reserve four MiB of the existing sixteen-MiB report cache allowance for
+# immutable retained PDFs. Together with one active text attempt, the cache
+# allowance is unchanged; additional text attempts have the smaller ceiling.
+_MAX_RETAINED_BYTES = 12 * 1024 * 1024
 
 
 @dataclass(frozen=True)

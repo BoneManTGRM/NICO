@@ -238,6 +238,7 @@ class ComprehensiveRunStore:
         self._connection_factory = connection_factory
         self._dialect = normalized
         self._browser_projection_builder: BrowserProjectionBuilder | None = None
+        self._retained_artifact_namespace = object()
 
     def bind_browser_projection_builder(
         self,
@@ -722,6 +723,17 @@ class ComprehensiveRunStore:
         return _copy_record_for_store(canonical)
 
     def load(self, run_id: str) -> dict[str, Any]:
+        return self._consume_read_snapshot(run_id, lambda _row, restore: restore())
+
+    def _consume_read_snapshot(self, run_id: str, consume: Callable[..., Any]) -> Any:
+        """Consume one joined SQL snapshot; restoration retains all existing checks.
+
+        A consumer may reuse completed immutable artifact computation for exactly
+        these bytes. The lazy restore closes over this row and connection, so a
+        miss cannot validate a later row and accidentally bind it to an older key.
+        Neither the row nor the restoration closure may escape the consumer.
+        """
+
         normalized = str(run_id or "").strip()
         if not normalized:
             raise ValueError("run_id_required")
@@ -730,7 +742,10 @@ class ComprehensiveRunStore:
             cursor = connection.cursor()
             cursor.execute(
                 f"""
-                SELECT runs.payload, commitments.event_count, commitments.chain_sha256
+                SELECT runs.payload, commitments.event_count, commitments.chain_sha256,
+                       runs.run_id, runs.customer_id, runs.project_id, runs.repository,
+                       runs.commit_sha, runs.evidence_ledger_id, runs.status, runs.revision,
+                       runs.terminal, runs.integrity_sha256, runs.updated_at
                 FROM nico_comprehensive_runs AS runs
                 LEFT JOIN nico_comprehensive_review_history_commitments AS commitments
                     ON commitments.run_id = runs.run_id
@@ -741,28 +756,31 @@ class ComprehensiveRunStore:
             row = cursor.fetchone()
             if row is None:
                 raise ComprehensiveRunNotFound(normalized)
-            payload = _decode_run_payload(row[0])
-            initialized = row[1] is None or row[2] is None
-            commitment = (
-                _initialize_missing_review_history_commitment(
-                    cursor,
-                    placeholder=p,
-                    run_id=normalized,
-                    payload=payload,
+            def restore() -> dict[str, Any]:
+                payload = _decode_run_payload(row[0])
+                initialized = row[1] is None or row[2] is None
+                commitment = (
+                    _initialize_missing_review_history_commitment(
+                        cursor,
+                        placeholder=p,
+                        run_id=normalized,
+                        payload=payload,
+                    )
+                    if initialized
+                    else (int(row[1]), str(row[2]))
                 )
-                if initialized
-                else (int(row[1]), str(row[2]))
-            )
-            _assert_review_history_commitment(
-                payload,
-                committed_count=commitment[0],
-                committed_sha256=commitment[1],
-                allow_append=False,
-            )
-            restored = restore_comprehensive_run_record(payload)
-            if initialized:
-                connection.commit()
-            return restored
+                _assert_review_history_commitment(
+                    payload,
+                    committed_count=commitment[0],
+                    committed_sha256=commitment[1],
+                    allow_append=False,
+                )
+                restored = restore_comprehensive_run_record(payload)
+                if initialized:
+                    connection.commit()
+                return restored
+
+            return consume(row, restore)
 
     def load_browser_projection(self, run_id: str) -> dict[str, Any] | None:
         """Load a small, transaction-bound browser response without the canonical tree.

@@ -6,8 +6,11 @@ It reconstructs native evidence; it never changes the original probe result.
 """
 from __future__ import annotations
 
+from nico.assessment_cpp_fileapi_membership import runtime_cmake_path
+
 import base64
 import hashlib
+import json
 import re
 
 from nico.assessment_worker_receipts import canonical_bytes
@@ -143,7 +146,9 @@ def validate_baseline_collection(probe, contract, artifact, *, allow_target_fail
 
 
 def validate_project_collection(receipt, read_artifact, *, manifest_raw, baseline_raw,
-                                scope_raw, producer_source_sha, image):
+                                scope_raw, producer_source_sha, image, enabled_targets_required=False,
+                                native_commands_required=False, generated_inputs_required=False,
+                                collect_completed_compiler_failures=False):
     """Accept only full source-bound collection; retain all original failures.
 
     ``read_artifact`` reads a bounded local file by its validated artifact reference.
@@ -174,6 +179,39 @@ def validate_project_collection(receipt, read_artifact, *, manifest_raw, baselin
     # qualification job. Freeze-at-config contracts require a separate binding.
     _require(baseline.get('schema') == 'nico.cpp-baseline-execution.v1')
     source, probe = receipt['source'], receipt['probe']
+    if generated_inputs_required and isinstance(probe.get('generated_input_materialization'),dict):
+        projected_generation=probe['generated_input_materialization']
+        if projected_generation.get('receipt_projection')=='hash-bound-summary-v1':
+            reference=projected_generation['artifact']
+            generation_raw=read_artifact(reference)
+            _require(isinstance(generation_raw,bytes) and 0<len(generation_raw)<=PROJECT_GENERATED_STREAM_LIMIT
+                and set(reference)=={'path','sha256','bytes'}
+                and reference['path']=='artifacts/project-generation-evidence-'+hashlib.sha256(generation_raw).hexdigest()+'.json'
+                and reference['sha256']==hashlib.sha256(generation_raw).hexdigest()==projected_generation['native_evidence_sha256']
+                and reference['bytes']==len(generation_raw))
+            full_generation=_json(generation_raw)
+            _require(projected_generation=={'schema':full_generation['schema'],'complete':full_generation['complete'],
+                'artifact':reference,'native_evidence_sha256':reference['sha256'],'receipt_projection':'hash-bound-summary-v1'})
+            probe={**probe,'generated_input_materialization':{**full_generation,'artifact':reference}}
+    _require(type(enabled_targets_required) is bool and type(native_commands_required) is bool
+        and type(generated_inputs_required) is bool
+        and type(collect_completed_compiler_failures) is bool
+        and (not native_commands_required or enabled_targets_required)
+        and (not generated_inputs_required or native_commands_required)
+        and (not collect_completed_compiler_failures or generated_inputs_required))
+    if enabled_targets_required:
+        _require(probe.get('schema') in {'nico.cpp-project-configuration-probe.v8','nico.cpp-project-configuration-probe.v9','nico.cpp-project-configuration-probe.v10','nico.cpp-project-configuration-probe.v11'}
+                 and isinstance(probe.get('enabled_target_membership'),dict))
+    if native_commands_required:
+        _require(probe.get('schema') in {'nico.cpp-project-configuration-probe.v9','nico.cpp-project-configuration-probe.v10','nico.cpp-project-configuration-probe.v11'}
+            and isinstance(probe.get('native_command_plan'),dict))
+    if generated_inputs_required:
+        _require(probe.get('schema')==('nico.cpp-project-configuration-probe.v11'
+            if collect_completed_compiler_failures else 'nico.cpp-project-configuration-probe.v10')
+            and isinstance(probe.get('generated_input_materialization'),dict))
+    if collect_completed_compiler_failures:
+        _require(probe.get('schema')=='nico.cpp-project-configuration-probe.v11'
+            and probe.get('independent_collection_error') is None)
     targets = source['targets']
     _require(source['inventory_complete'] is True
              and all(source[key] == manifest[key] for key in ('repository', 'commit_sha', 'tree_sha'))
@@ -186,7 +224,9 @@ def validate_project_collection(receipt, read_artifact, *, manifest_raw, baselin
              and boundary_valid(probe['boundary'], profile=baseline['profile']))
     _require((receipt['status'], receipt['stage'], probe['status'], probe.get('error')) in {
         ('BASELINE_EXECUTED', 'completed', 'BASELINE_EXECUTED', None),
-        ('UNPROVEN', 'execution_unproven', 'UNPROVEN', 'worker_configuration_probe_runtime_incomplete')})
+        ('UNPROVEN', 'execution_unproven', 'UNPROVEN', 'worker_configuration_probe_runtime_incomplete'),
+        *((('UNPROVEN','execution_unproven','UNPROVEN','worker_configuration_probe_compiler_incomplete'),)
+          if collect_completed_compiler_failures else ())})
 
     def artifact(ref):
         _require(isinstance(ref, dict) and set(ref) == {'path', 'sha256', 'bytes'}
@@ -202,39 +242,126 @@ def validate_project_collection(receipt, read_artifact, *, manifest_raw, baselin
     runtime_raw = artifact(receipt['runtime']['artifact'])
     runtime = validate_runtime_collection(runtime_raw, targets, manifest['project_options'], scope)
     retained_runtime = _json(runtime_raw)
-    validate_transport(probe, _operations(probe['operations'], artifact), targets,
+    ops=_operations(probe['operations'], artifact)
+    validate_transport(probe, ops, targets,
                        runtime_plan=retained_runtime['plan'])
     rawdb = base64.b64decode(probe['compilation_database'], validate=True)
+    membership=None
+    if 'enabled_target_membership' in probe:
+        from nico.assessment_cpp_fileapi_membership import configured_target_membership
+        from nico.assessment_cpp_configuration import COMPILER_VERSION
+        capture=artifact(probe['enabled_target_capture'])
+        membership=configured_target_membership(capture,rawdb,targets,
+            source_root='/work/source',build_root='/work/build',client=probe['fileapi_client'],
+            cache_sha256=probe['configuration_cache_sha256'],
+            compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
+                compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},
+                cmake_path=runtime_cmake_path('native_command_plan' in probe))
+        projected=probe['enabled_target_membership']
+        _require(projected['capture_sha256']==membership['capture_sha256']
+                 and projected['configured_context_count']==membership['configured_context_count'])
+        for key in ('contexts','missing_database_contexts','source_represented_contexts'):
+            if projected.get('receipt_projection')=='hash-bound-summary-v1':
+                _require(projected[key+'_count']==len(membership[key]) and projected[key+'_sha256']==_digest(membership[key]))
+            else:
+                _require(projected[key]==membership[key])
+        # A complete source-model capture still leaves authoritative argv mapping
+        # unproven. Never promote it by trusting a producer Boolean.
+        _require('native_command_plan' in probe)
     _require(hashlib.sha256(rawdb).hexdigest() == baseline['compilation_database_sha256']
              == probe['compilation_database_sha256'])
-    contexts = _database(rawdb, None, '/work/build', nested=True, source_targets=targets)
+    analysisdb=rawdb
+    if 'native_command_plan' in probe:
+        from nico.assessment_cpp_native_commands import configured_native_commands
+        plan=configured_native_commands(artifact(probe['native_command_capture']),capture,rawdb,targets,
+            source_root='/work/source',build_root='/work/build',client=probe['fileapi_client'],
+            cache_sha256=probe['configuration_cache_sha256'],
+            compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
+            compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},
+                cmake_path=runtime_cmake_path('native_command_plan' in probe))
+        projected=probe['native_command_plan']
+        if projected.get('receipt_projection')=='hash-bound-summary-v1':
+            _require(projected['contexts_count']==len(plan['contexts']) and projected['contexts_sha256']==_digest(plan['contexts']))
+        else:
+            _require(projected['contexts']==plan['contexts'])
+        _require(projected['analysis_database_sha256']==plan['analysis_database_sha256']
+            ==probe['analysis_compilation_database_sha256'] and probe['analysis_invocations']==plan['context_count'])
+        analysisdb=base64.b64decode(plan['analysis_database'],validate=True)
+    contexts = _database(analysisdb, None, '/work/build', nested=True, source_targets=targets)
+    generation=None
+    if generated_inputs_required:
+        from nico.assessment_cpp_generated_inputs import validate_generation_evidence
+        from nico.assessment_cpp_project_snapshot import project_snapshot_request
+        materialization=probe['generated_input_materialization']
+        generation_raw=artifact(materialization['artifact'])
+        _require(generation_raw==canonical_bytes({k:v for k,v in materialization.items() if k!='artifact'}))
+        generation=validate_generation_evidence(generation_raw,artifact(probe['native_command_capture']),
+            capture,membership,plan,project_snapshot_request(contexts),ops,image,baseline)
     snapshot = validate_project_snapshot(_json(artifact(probe['generated_context']['artifact'])), contexts)
-    creq = project_compiler_request(rawdb, targets, snapshot, extended_budget=True)
+    creq = project_compiler_request(analysisdb, targets, snapshot, extended_budget=True)
     craw = artifact(probe['project_compiler']['artifact'])
     compiler = validate_project_compiler(craw, creq)
-    _require(compiler['complete'] is True and compiler == {k: v for k, v in probe['project_compiler'].items() if k != 'artifact'})
+    _require(compiler == {k: v for k, v in probe['project_compiler'].items() if k != 'artifact'})
+    compiler_collection = None
+    if collect_completed_compiler_failures:
+        from nico.assessment_cpp_compiler_collection import validate_project_compiler_collection, collection_summary
+        compiler_collection = validate_project_compiler_collection(craw,creq,snapshot)
+        _require(probe.get('project_compiler_collection')==collection_summary(compiler_collection))
+    else:
+        _require(compiler['complete'] is True)
     stage = probe['project_static_stage']
-    _require(stage['image_config_digest'] == image and stage['complete'] is True
-             and stage['error'] is None and stage['source_population_sha256'] == _digest(targets)
+    _require(stage['image_config_digest'] == image and stage['source_population_sha256'] == _digest(targets)
              and stage['boundary_verified'] is True and stage['cleanup_verified'] is True
              and stage['production_qualified'] is False
              and boundary_valid(stage['boundary'], profile=baseline['profile'], executable=False))
+    if collect_completed_compiler_failures:
+        _require(stage.get('schema')=='nico.cpp-project-static-stage.v4'
+            and stage.get('collection_complete') is True
+            and stage.get('compiler_collection')==collection_summary(compiler_collection)
+            and stage['complete'] is (not bool(compiler_collection['failed_contexts']))
+            and stage['error']==('worker_project_static_stage_target_failure'
+                if compiler_collection['failed_contexts'] else None))
+    else:
+        _require(stage['complete'] is True and stage['error'] is None)
     static_ops = _operations(stage['operations'], artifact)
     _require(_json(static_ops['static-boundary'][1]) == stage['boundary']
              and _json(static_ops['static-image'][1])[0]['Id'] == image
              and _json(static_ops['static-source'][1]) == targets)
     validate_transport(stage, static_ops, targets, snapshot=snapshot)
-    ereq = environment_request(creq, craw, image)
+    ereq = environment_request(creq, craw, image,
+        collect_completed_compiler_failures=collect_completed_compiler_failures,snapshot=snapshot)
     env = validate_environment(artifact(stage['compiler_environment']['artifact']), ereq)
-    sreq = project_static_request(rawdb, targets, snapshot, craw, extended_compiler_budget=True, environment=env)
+    sreq = project_static_request(analysisdb, targets, snapshot, craw, extended_compiler_budget=True,
+        environment=env, header_provenance=native_commands_required,
+        collect_completed_compiler_failures=collect_completed_compiler_failures)
     static = probe['project_static']
     primary = validate_project_static(artifact(static['artifact']), sreq)
+    primary_raw = artifact(static['artifact'])
+    fallback_raw = None
     if static.get('fallback_artifact') is not None:
-        freq = clang_fallback_request(sreq, primary, extended_budget=True, contention_aware=True)
-        analysis = merge_static_analysis(primary, validate_clang_fallback(artifact(static['fallback_artifact']), freq, sreq))
+        fallback_raw=artifact(static['fallback_artifact'])
+        fallback_schema=json.loads(fallback_raw).get('schema')
+        freq = clang_fallback_request(sreq, primary, extended_budget=True, contention_aware=True,
+            multi_file_diagnostics=collect_completed_compiler_failures or fallback_schema in ('nico.cpp-clang-fallback-evidence.v5','nico.cpp-clang-fallback-evidence.v6'))
+        analysis = merge_static_analysis(primary, validate_clang_fallback(fallback_raw, freq, sreq))
     else:
         analysis = primary
-    _require(analysis['complete'] is True and static['complete'] is True and stage['analysis'] == static)
+    _require(analysis['complete'] is static['complete'] and stage['analysis'] == static)
+    static_collection = None
+    if collect_completed_compiler_failures:
+        from nico.assessment_cpp_static_collection import validate_project_static_collection
+        static_collection=validate_project_static_collection(primary_raw,sreq,compiler_collection,
+            fallback_raw=fallback_raw)
+        _require(static_collection['analysis']==analysis
+            and stage.get('static_collection')==collection_summary(static_collection))
+    else:
+        _require(analysis['complete'] is True and static['complete'] is True)
+    if native_commands_required:
+        from nico.assessment_cpp_header_evidence import header_summary
+        if not collect_completed_compiler_failures:
+            _require(analysis.get('header_context_evidence_complete') is True)
+        for key,value in header_summary(analysis).items():
+            _require(static.get(key)==value)
     for key in ('required_contexts', 'attempted_contexts', 'analyzed_contexts', 'findings', 'limitations', 'modeled_inputs'):
         _require(len(analysis[key]) == static[key + '_count'] and _digest(analysis[key]) == static[key + '_sha256'])
     native = retained_runtime['evidence']
@@ -246,8 +373,14 @@ def validate_project_collection(receipt, read_artifact, *, manifest_raw, baselin
              and runtime['runtime_plan_sha256'] == receipt['runtime_plan_sha256']
              and receipt['runtime']['complete'] is runtime['target_tests_passed']
              and receipt['runtime']['native_evidence_sha256'] == hashlib.sha256(runtime_raw).hexdigest())
-    _require((receipt['status'] == 'BASELINE_EXECUTED') is runtime['target_tests_passed'])
-    return {'schema': 'nico.cpp-assessment-collection.v1', 'collection_complete': True,
+    target_success = bool(runtime['target_tests_passed'] and compiler['complete'] and analysis['complete'])
+    _require((receipt['status'] == 'BASELINE_EXECUTED') is target_success)
+    if collect_completed_compiler_failures:
+        _require(probe.get('error')==('worker_configuration_probe_compiler_incomplete'
+            if compiler_collection['failed_contexts'] else
+            'worker_configuration_probe_runtime_incomplete' if not runtime['target_tests_passed'] else None))
+    return {'schema': ('nico.cpp-assessment-collection.v3' if collect_completed_compiler_failures else
+        'nico.cpp-assessment-collection.v2' if generated_inputs_required else 'nico.cpp-assessment-collection.v1'), 'collection_complete': True,
         'target_tests_passed': runtime['target_tests_passed'], 'producer_source_sha': producer_source_sha,
         'image_config_digest': image, 'qualification_receipt_sha256': _digest(receipt),
         'target_commit_sha': source['commit_sha'], 'target_tree_sha': source['tree_sha'],
@@ -255,4 +388,12 @@ def validate_project_collection(receipt, read_artifact, *, manifest_raw, baselin
         'baseline': baseline_result, 'compiler_contexts': len(compiler['checked_contexts']),
         'static_contexts': len(analysis['analyzed_contexts']), 'static_observations': len(analysis['findings']),
         'analyzer_header_coverage_verified': analysis['analyzer_header_coverage_verified'],
+        **({'compiler_collection':collection_summary(compiler_collection),
+            'static_collection':collection_summary(static_collection),
+            'target_compiler_complete':compiler['complete'],'target_static_complete':analysis['complete']}
+            if collect_completed_compiler_failures else {}),
+        **({'generated_input_materialization':{
+            'artifact_sha256':_digest(generation),'required_units_count':len(generation['plan']['required_units']),
+            'generated_target_count':len(generation['plan']['selected_targets']),'complete':True,
+            'compiler_execution_inferred':False,'header_coverage_inferred':False}} if generation else {}),
         'full_project_qualified': False, 'production_qualified': False}

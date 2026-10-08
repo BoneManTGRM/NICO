@@ -1,0 +1,78 @@
+{
+  "source": "Exact retained 37265883839 attempt1 owned native control on18c; no path rebasing or fresh execution",
+  "operation_id": "50de449f-e3fe-4aee-959b-4ec1e335d9f2",
+  "archive_sha256": "6685c3c48872cd6ae8bbc97df3863f5431b4a38acc97c10bff903d8326fa6c6f",
+  "archive_manifest_sha256": "ac25c1ac8174c6f880290e3dc4400ddf0622ac5e5dceaecba2f7d602f2912e1f",
+  "files": [
+    {
+      "path": "compile_commands.json",
+      "bytes": 505,
+      "sha256": "e651ec09bb94d59c6f33269f92c9b37cf603663c933e0c8e5d850b12907c8d2c"
+    },
+    {
+      "path": "native-result.json",
+      "bytes": 12929,
+      "sha256": "9fc91b286dfd8886801bf1316512d5b45b7538db302b7b1d14dc0a16c70e83c3"
+    },
+    {
+      "path": "archive-manifest.json",
+      "bytes": 19203,
+      "sha256": "ac25c1ac8174c6f880290e3dc4400ddf0622ac5e5dceaecba2f7d602f2912e1f"
+    },
+    {
+      "path": "reply/target-visible-Debug-2273dd468c2b97fea897.json",
+      "bytes": 1458,
+      "sha256": "11a5b44b864f37e51d672ea5e97ab5b57ed1161ce1e73271e92577d4ee46c454"
+    },
+    {
+      "path": "reply/index-2026-10-05T05-02-51-0893.json",
+      "bytes": 1162,
+      "sha256": "7354f048ca1dc7b56231a0ffe1caaa5f5d49b1800f11d9e6f3a8e9d92a251b5f"
+    },
+    {
+      "path": "reply/target-hidden-Debug-182cd0e271ac79672591.json",
+      "bytes": 1933,
+      "sha256": "3c1a288e777dd96c2a93305d2b29c369b81537257b108e559b81947ca942851c"
+    },
+    {
+      "path": "reply/codemodel-v2-8bd92428fe7a325cdc7b.json",
+      "bytes": 1289,
+      "sha256": "c0bd2ad5466bf19603dddc70f1d0ed83a554e7491a2301bc6bed3ce6f614eba7"
+    },
+    {
+      "path": "reply/toolchains-v1-1ecb8a96b9ca9ede68d5.json",
+      "bytes": 841,
+      "sha256": "56952267f26bc90f9eaf9f6a8382150fdf9172ac1bbe15f2c6792878daf5c75b"
+    },
+    {
+      "path": "reply/directory-.-Debug-f5ebdc15457944623624.json",
+      "bytes": 154,
+      "sha256": "86e7a30b8b63ba3392582621985aeef407bddffc28967e4e9f1ebcf80cb8b8a0"
+    },
+    {
+      "path": "source/main.c",
+      "bytes": 80,
+      "sha256": "7091567002ce7a66f59621651d398d1d9e47bfd018594f068312230b30783e78"
+    },
+    {
+      "path": "source/hidden.c",
+      "bytes": 308,
+      "sha256": "6763e8385724114002682a1aba35fa42174424604ee26d35d30c9cba8402f73e"
+    },
+    {
+      "path": "source/CMakeLists.txt",
+      "bytes": 730,
+      "sha256": "833f2ef9c9aacb357d1c1fc846b2c3441f4c28824b8db0cc2e738a51afc25761"
+    },
+    {
+      "path": "source/config.h.in",
+      "bytes": 42,
+      "sha256": "58e2516abedf3eb89a38b7650972f629a77e6fb446824175995441b5fa387dd3"
+    },
+    {
+      "path": "source/include/active.h",
+      "bytes": 90,
+      "sha256": "2ee290092717e13b516897337a6a14770bb44a441ef70f8ddf1d37584f082fcd"
+    }
+  ]
+}

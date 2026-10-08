@@ -6,6 +6,8 @@ baseline contract uses a separate measured-at-runtime qualification envelope.
 """
 from __future__ import annotations
 
+from nico.assessment_cpp_fileapi_membership import runtime_cmake_path
+
 import base64
 import hashlib
 import json
@@ -66,7 +68,9 @@ def probe_project_configuration(source, targets, image, *, project_options,
                                 unit_test_data=None, capture_generated_context=False,
                                 retain_artifact=None, project_compiler_evidence=False, project_static_analysis=False,
                                 extended_compiler_budget=False, compiler_environment=False, runtime_plan=None,
-                                external_checkpoint=None):
+                                external_checkpoint=None, capture_enabled_targets=False,
+                                capture_native_commands=False, materialize_generated_inputs=False,
+                                collect_completed_compiler_failures=False):
     """Capture a real CMake plan before freezing a large execution population.
 
     This is preparation evidence, NOT a worker completion receipt. It cannot
@@ -102,8 +106,20 @@ def probe_project_configuration(source, targets, image, *, project_options,
     if (type(capture_generated_context) is not bool
             or (capture_generated_context and (baseline_execution is None or not callable(retain_artifact)))):
         raise ValueError('worker_configuration_probe_capture_contract_invalid')
+    if (type(capture_enabled_targets) is not bool
+            or (capture_enabled_targets and not callable(retain_artifact))):
+        raise ValueError('worker_configuration_probe_capture_contract_invalid')
+    if (type(capture_native_commands) is not bool
+            or capture_native_commands and not (capture_enabled_targets and project_compiler_evidence)):
+        raise ValueError('worker_configuration_probe_native_plan_invalid')
+    if (type(materialize_generated_inputs) is not bool
+            or materialize_generated_inputs and not (capture_native_commands and capture_generated_context)):
+        raise ValueError('worker_configuration_probe_generation_contract_invalid')
     if type(project_compiler_evidence) is not bool or (project_compiler_evidence and not capture_generated_context):
         raise ValueError('worker_configuration_probe_compiler_contract_invalid')
+    if (type(collect_completed_compiler_failures) is not bool
+            or collect_completed_compiler_failures and not project_compiler_evidence):
+        raise ValueError('worker_configuration_probe_compiler_collection_invalid')
     if type(project_static_analysis) is not bool or (project_static_analysis and not project_compiler_evidence):
         raise ValueError('worker_configuration_probe_static_contract_invalid')
     if type(compiler_environment) is not bool or (compiler_environment and not project_static_analysis):
@@ -181,6 +197,20 @@ def probe_project_configuration(source, targets, image, *, project_options,
     if extended_compiler_budget:
         result.update(schema='nico.cpp-project-configuration-probe.v7',
                       project_compiler_budget_version='v2')
+    if capture_enabled_targets:
+        result.update(schema='nico.cpp-project-configuration-probe.v8',
+            fileapi_client='client-nico-membership-' + uuid4().hex,
+            enabled_target_capture=None, enabled_target_membership=None)
+    if capture_native_commands:
+        result.update(schema='nico.cpp-project-configuration-probe.v9',
+            native_command_capture=None, native_command_plan=None,
+            analysis_compilation_database=None, analysis_compilation_database_sha256=None,
+            analysis_invocations=0)
+    if materialize_generated_inputs:
+        result.update(schema='nico.cpp-project-configuration-probe.v10', generated_input_materialization=None)
+    if collect_completed_compiler_failures:
+        result.update(schema='nico.cpp-project-configuration-probe.v11',
+            project_compiler_collection=None, independent_collection_error=None)
 
     def save():
         result['duration_ms'] = int((time.monotonic() - start) * 1000)
@@ -207,6 +237,9 @@ def probe_project_configuration(source, targets, image, *, project_options,
             'output_sha256': hashlib.sha256(raw).hexdigest()}
         if external:
             entry['output_artifact'] = None
+        if key in {'project-native-commands','project-native-commands-post-build',
+                   'project-enabled-targets-post-build', 'generation-inputs-before', 'generation-inputs-after'}:
+            entry['input_sha256'] = hashlib.sha256(data).hexdigest()
         result['operations'].append(entry)
         save()  # Preserve the returned native outcome, even if artifact storage fails.
         if external:
@@ -280,6 +313,12 @@ def probe_project_configuration(source, targets, image, *, project_options,
             if invoke(compiler+'-version', [*prefix, compiler, '-dumpfullversion']).strip() != COMPILER_VERSION.encode():
                 raise ValueError('worker_configuration_probe_tool_mismatch')
         options = ['-D'+key+'='+value for key, value in sorted(project_options.items())]
+        if capture_enabled_targets:
+            from nico.assessment_cpp_fileapi_membership import QUERY_PROGRAM, EMPTY_SHA, QUERY_NAMES
+            query = _json(invoke('fileapi-query', [*prefix, 'python3', '-I', '-S', '-c', QUERY_PROGRAM,
+                '/work/build', result['fileapi_client']]))
+            if query != {'client': result['fileapi_client'], 'query': {q: EMPTY_SHA for q in QUERY_NAMES}}:
+                raise ValueError('worker_configuration_probe_fileapi_invalid')
         invoke('configure', [*prefix, 'cmake', '-S', '/work/source', '-B', '/work/build',
             '-G', 'Unix Makefiles', '-DCMAKE_BUILD_TYPE=Debug', '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
             '-DCMAKE_C_COMPILER=/usr/local/bin/gcc', '-DCMAKE_CXX_COMPILER=/usr/local/bin/g++',
@@ -324,6 +363,59 @@ def probe_project_configuration(source, targets, image, *, project_options,
         result.update(compilation_database=artifact['data'], compilation_database_sha256=contexts['database_sha256'],
             configured_translation_units=contexts['original_units'], configured_generated_units=contexts['generated_units'],
             configured_invocations=contexts['context_count'], compilation_contexts=contexts)
+        if capture_enabled_targets:
+            from nico.assessment_cpp_fileapi_membership import (
+                CAPTURE_PROGRAM, STREAM_LIMIT as FILEAPI_STREAM_LIMIT, configured_target_membership)
+            capture = observe('project-enabled-targets', ['docker', 'exec', '--interactive', name,
+                'python3', '-I', '-S', '-c', CAPTURE_PROGRAM],
+                data=canonical_bytes({'source_root': '/work/source', 'build_root': '/work/build',
+                    'client': result['fileapi_client'], 'source_targets': targets,
+                    'database_sha256': result['compilation_database_sha256'],
+                    'cache_sha256': result['configuration_cache_sha256']}),
+                limit=FILEAPI_STREAM_LIMIT, external=True)
+            result['enabled_target_capture'] = result['operations'][-1]['output_artifact']
+            save()
+            if capture['exit_code'] != 0 or capture['timed_out'] or capture['output_truncated']:
+                raise ValueError('worker_configuration_probe_fileapi_failed')
+            membership = configured_target_membership(capture['output'], raw, targets,
+                source_root='/work/source', build_root='/work/build', client=result['fileapi_client'],
+                cache_sha256=result['configuration_cache_sha256'],
+                compiler_versions={'C': COMPILER_VERSION, 'CXX': COMPILER_VERSION},
+                compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},
+                cmake_path=runtime_cmake_path(capture_native_commands))
+            result['enabled_target_membership'] = {**membership,
+                'artifact': result['enabled_target_capture']}
+            save()
+            if capture_native_commands:
+                from nico.assessment_cpp_native_commands import (
+                    CAPTURE_PROGRAM as NATIVE_CAPTURE_PROGRAM,
+                    configured_native_commands, native_capture_request, validate_native_plan_freeze)
+                native_request = canonical_bytes(native_capture_request(capture['output'], membership))
+                native_capture = observe('project-native-commands',
+                    ['docker', 'exec', '--interactive', name, 'python3', '-I', '-S', '-c', NATIVE_CAPTURE_PROGRAM],
+                    data=native_request, limit=FILEAPI_STREAM_LIMIT, external=True)
+                result['native_command_capture'] = result['operations'][-1]['output_artifact']
+                save()
+                if native_capture['exit_code'] != 0 or native_capture['timed_out'] or native_capture['output_truncated']:
+                    raise ValueError('worker_configuration_probe_native_plan_failed')
+                try:
+                    plan = configured_native_commands(native_capture['output'], capture['output'], raw, targets,
+                        source_root='/work/source', build_root='/work/build', client=result['fileapi_client'],
+                        cache_sha256=result['configuration_cache_sha256'],
+                        compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
+                        compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},
+                cmake_path=runtime_cmake_path(capture_native_commands))
+                except ValueError as exc:
+                    raise ValueError('worker_configuration_probe_native_plan_invalid') from exc
+                analysis_raw = base64.b64decode(plan['analysis_database'], validate=True)
+                # The original DB/freeze identity remains immutable. Complete
+                # native contexts have a distinct analysis database identity.
+                contexts = _database(analysis_raw, None, '/work/build', nested=True, source_targets=targets)
+                result.update(native_command_plan={**plan,'artifact':result['native_command_capture']},
+                    analysis_compilation_database=plan['analysis_database'],
+                    analysis_compilation_database_sha256=plan['analysis_database_sha256'],
+                    analysis_invocations=contexts['context_count'])
+                save()
         result['status'] = 'CONFIGURATION_CAPTURED'
         if baseline_execution is not None:
             if baseline_execution['schema'] == 'nico.cpp-baseline-execution.v1':
@@ -352,11 +444,58 @@ def probe_project_configuration(source, targets, image, *, project_options,
                 result['unit_test_data'] = expected
                 save()
                 del payload
+            build_started = time.monotonic()
             invoke('baseline-build', [*prefix, 'cmake', '--build', '/work/build', '--parallel',
                 str(baseline_execution['parallel'])], seconds=baseline_execution['build_seconds'],
                 limit=1024*1024)
             result['compiled'] = True
             save()
+            if materialize_generated_inputs:
+                from nico.assessment_cpp_generated_inputs import (
+                    OBSERVE_PROGRAM, generated_input_plan, validate_observation,
+                )
+                from nico.assessment_cpp_project_snapshot import project_snapshot_request
+                generation_request = project_snapshot_request(contexts)
+                generation_bytes = canonical_bytes(generation_request)
+                generation_argv = ['docker', 'exec', '--user='+ANALYSIS_USER, '--interactive',
+                    name, 'python3', '-I', '-S', '-c', OBSERVE_PROGRAM]
+                def remaining_build_seconds():
+                    remaining = baseline_execution['build_seconds'] - (time.monotonic()-build_started)
+                    if remaining <= 0:
+                        raise ValueError('worker_configuration_probe_generation_budget_exhausted')
+                    return remaining
+                before_inputs = _json(invoke('generation-inputs-before', generation_argv,
+                    data=generation_bytes, limit=4*1024*1024, seconds=min(15,remaining_build_seconds())))
+                try:
+                    generation_plan = generated_input_plan(native_capture['output'], capture['output'],
+                        membership, plan, generation_request, before_inputs)
+                except ValueError as exc:
+                    raise ValueError('worker_configuration_probe_generation_plan_invalid') from exc
+                for index, target in enumerate(generation_plan['selected_targets']):
+                    # All and utility targets consume ONE original build budget.
+                    # Metadata work also consumes this elapsed envelope.
+                    invoke('generation-target-'+str(index).zfill(3), [*prefix, 'cmake', '--build',
+                        '/work/build', '--target', target['target_name'], '--parallel',
+                        str(baseline_execution['parallel'])], seconds=remaining_build_seconds(), limit=1024*1024)
+                after_inputs = _json(invoke('generation-inputs-after', generation_argv,
+                    data=generation_bytes, limit=4*1024*1024, seconds=min(15,remaining_build_seconds())))
+                validate_observation(after_inputs, generation_request)
+                remaining_build_seconds()
+                materialization = {'schema':'nico.cpp-generated-input-evidence.v1',
+                    'image_config_digest':image, 'request':generation_request, 'plan':generation_plan,
+                    'before':before_inputs, 'after':after_inputs,
+                    'build_elapsed_ms':int((time.monotonic()-build_started)*1000),
+                    'complete':all(row['state']=='readable' for row in after_inputs['files'].values())}
+                generation_raw = canonical_bytes(materialization)
+                digest = hashlib.sha256(generation_raw).hexdigest()
+                reference = retain_artifact('project-generation-evidence', generation_raw)
+                if reference != {'path':'artifacts/project-generation-evidence-'+digest+'.json',
+                                 'sha256':digest, 'bytes':len(generation_raw)}:
+                    raise ValueError('worker_configuration_probe_artifact_reference_invalid')
+                result['generated_input_materialization'] = {**materialization, 'artifact':reference}
+                save()
+                if not materialization['complete']:
+                    raise ValueError('worker_configuration_probe_generation_incomplete')
             # CMake may regenerate as part of the build. It must not change the
             # frozen command population, including generated and repeated units.
             after = _json(invoke('post-build-database', [*prefix, 'python3', '-I', '-S', '-c',
@@ -365,6 +504,31 @@ def probe_project_configuration(source, targets, image, *, project_options,
                     or hashlib.sha256(base64.b64decode(after['data'], validate=True)).hexdigest()
                        != result['compilation_database_sha256']):
                 raise ValueError('worker_configuration_probe_frozen_database_mismatch')
+            if capture_native_commands:
+                current_fileapi = observe('project-enabled-targets-post-build',
+                    ['docker','exec','--interactive',name,'python3','-I','-S','-c',CAPTURE_PROGRAM],
+                    data=canonical_bytes({'source_root':'/work/source','build_root':'/work/build',
+                        'client':result['fileapi_client'],'source_targets':targets,
+                        'database_sha256':result['compilation_database_sha256'],
+                        'cache_sha256':result['configuration_cache_sha256']}), limit=FILEAPI_STREAM_LIMIT, external=True)
+                current_native = observe('project-native-commands-post-build',
+                    ['docker','exec','--interactive',name,'python3','-I','-S','-c',NATIVE_CAPTURE_PROGRAM],
+                    data=native_request, limit=FILEAPI_STREAM_LIMIT, external=True)
+                if (any(row['exit_code'] != 0 or row['timed_out'] or row['output_truncated']
+                        for row in (current_fileapi,current_native))
+                    or hashlib.sha256(current_fileapi['output']).hexdigest() != membership['capture_sha256']):
+                    raise ValueError('worker_configuration_probe_frozen_native_plan_mismatch')
+                try:
+                    result['native_command_freeze'] = validate_native_plan_freeze(
+                        native_capture['output'],current_native['output'],capture['output'],raw,targets,
+                        source_root='/work/source',build_root='/work/build',client=result['fileapi_client'],
+                        cache_sha256=result['configuration_cache_sha256'],
+                        compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
+                        compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},
+                cmake_path=runtime_cmake_path(capture_native_commands))
+                except ValueError as exc:
+                    raise ValueError('worker_configuration_probe_frozen_native_plan_mismatch') from exc
+                save()
             # Generated CTest includes (secp256k1 discover_tests) only expand
             # after the test binaries exist. Freeze that runnable population
             # before testing. A leftover DISCOVERY_FAILURE is not a test.
@@ -477,7 +641,8 @@ def probe_project_configuration(source, targets, image, *, project_options,
                 from nico.assessment_cpp_project_compiler import (PROGRAM, STREAM_LIMIT,
                     project_compiler_request, validate_project_compiler)
                 try:
-                    request = project_compiler_request(raw, targets, snapshot, extended_budget=extended_compiler_budget)
+                    request = project_compiler_request(analysis_raw if capture_native_commands else raw,
+                        targets, snapshot, extended_budget=extended_compiler_budget)
                 except (ValueError, TypeError, KeyError) as exc:
                     raise ValueError('worker_configuration_probe_compiler_plan_invalid') from exc
                 compiler_observed = observe('project-compiler-evidence',
@@ -495,8 +660,21 @@ def probe_project_configuration(source, targets, image, *, project_options,
                 result['project_compiler'] = {**proof, 'artifact': result['operations'][-1]['output_artifact']}
                 save()
                 checkpoint()  # Validation and proof retention belong to this phase.
+                if collect_completed_compiler_failures:
+                    from nico.assessment_cpp_compiler_collection import validate_project_compiler_collection
+                    try:
+                        result['project_compiler_collection'] = validate_project_compiler_collection(
+                            compiler_observed['output'], request, snapshot)
+                    except (ValueError, TypeError, KeyError) as exc:
+                        raise ValueError('worker_configuration_probe_compiler_collection_invalid') from exc
+                    save()
                 if not proof['complete']:
-                    raise ValueError('worker_configuration_probe_compiler_incomplete')
+                    if not (result.get('project_compiler_collection') or {}).get('collection_complete'):
+                        raise ValueError('worker_configuration_probe_compiler_incomplete')
+                    # Preserve failed compilation and its original first error.
+                    # Only a separately reconstructed, fully captured target
+                    # directive failure permits independently ready collection.
+                    result['error'] = 'worker_configuration_probe_compiler_incomplete'
             if runtime_plan is not None:
                 from nico.assessment_cpp_runtime_execution import execute_runtime_plan, validate_runtime_evidence
                 runtime=execute_runtime_plan(observe,name,runtime_plan,project_options)
@@ -508,9 +686,13 @@ def probe_project_configuration(source, targets, image, *, project_options,
     except (Exception, KeyboardInterrupt) as exc:
         # No arbitrary exception/tool text enters an unsanitized controller error.
         allowed = str(exc) if isinstance(exc, ValueError) else ''
-        result['error'] = (allowed if re.fullmatch(r'worker_configuration_probe_[a-z_]+', allowed)
+        captured_error = (allowed if re.fullmatch(r'worker_configuration_probe_[a-z_]+', allowed)
                            else 'worker_configuration_probe_interrupted' if isinstance(exc, KeyboardInterrupt)
                            else 'worker_configuration_probe_failed')
+        if collect_completed_compiler_failures and result.get('error'):
+            result['independent_collection_error'] = captured_error
+        else:
+            result['error'] = captured_error
     finally:
         if created:
             try:
@@ -531,7 +713,12 @@ def probe_project_configuration(source, targets, image, *, project_options,
         if not result['cleanup_verified'] or result['error']:
             result['status'] = 'UNPROVEN'
         save()
-    if project_static_analysis and result['status'] == 'BASELINE_EXECUTED':
+    completed_target_failure = bool(collect_completed_compiler_failures
+        and (result.get('project_compiler_collection') or {}).get('collection_complete') is True
+        and (result.get('project_compiler') or {}).get('complete') is False
+        and all(result.get(key) is True for key in
+            ('compiled', 'generated_context_verified', 'boundary_verified', 'cleanup_verified')))
+    if project_static_analysis and (result['status'] == 'BASELINE_EXECUTED' or completed_target_failure):
         # The build sandbox is already destroyed. Its original deadline and
         # duration remain unchanged; static analysis owns a separately bounded
         # noexec sandbox and a distinct receipt. No build code is replayed.
@@ -544,15 +731,26 @@ def probe_project_configuration(source, targets, image, *, project_options,
             retain(result)
         try:
             static = run_project_static_stage(source, targets, image,
-                base64.b64decode(result['compilation_database'], validate=True),
+                base64.b64decode(result['analysis_compilation_database'] if capture_native_commands
+                    else result['compilation_database'], validate=True),
                 snapshot, compiler_observed['output'], retain=retain_static,
                 extended_compiler_budget=extended_compiler_budget, compiler_environment=compiler_environment,
+                header_provenance=capture_native_commands,
+                collect_completed_compiler_failures=collect_completed_compiler_failures,
                 retain_artifact=retain_artifact, command=command, checkpoint=owner_checkpoint)
-            result['status'] = 'BASELINE_EXECUTED' if static['complete'] else 'UNPROVEN'
+            result['status'] = ('BASELINE_EXECUTED' if static['complete'] and not completed_target_failure
+                                else 'UNPROVEN')
             if not static['complete']:
-                result['error'] = 'worker_configuration_probe_static_incomplete'
+                if not completed_target_failure:
+                    result['error'] = 'worker_configuration_probe_static_incomplete'
+                elif not static.get('collection_complete'):
+                    result['independent_collection_error'] = 'worker_configuration_probe_static_incomplete'
         except (Exception, KeyboardInterrupt):
-            result.update(status='UNPROVEN', error='worker_configuration_probe_static_failed')
+            result['status'] = 'UNPROVEN'
+            if completed_target_failure:
+                result['independent_collection_error'] = 'worker_configuration_probe_static_failed'
+            else:
+                result['error'] = 'worker_configuration_probe_static_failed'
         result['aggregate_duration_ms'] = int((time.monotonic()-start)*1000)
         retain(result)
     if runtime_plan is not None and not (result.get('runtime_summary') or {}).get('complete'):

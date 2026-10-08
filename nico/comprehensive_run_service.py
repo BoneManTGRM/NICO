@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import UTC, datetime
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from nico.comprehensive_approved_delivery_v1 import (
     attach_approved_delivery_package,
@@ -406,6 +406,12 @@ class ComprehensiveRunService:
         """Load and integrity-validate a run without continuation or maintenance."""
 
         return self._store.load(run_id)
+
+    def _consume_read_only_snapshot(self, run_id: str, consume: Callable[..., Any]) -> Any:
+        snapshot_reader = getattr(self._store, "_consume_read_snapshot", None)
+        if callable(snapshot_reader):
+            return snapshot_reader(run_id, consume)
+        return consume(None, lambda: self.load_read_only(run_id))
 
     def bind_browser_projection_builder(
         self,

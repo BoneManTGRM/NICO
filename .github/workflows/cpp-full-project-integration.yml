@@ -60,7 +60,7 @@ jobs:
       - name: Test every existing contract and report boundary
         run: |
           python -m pip install --disable-pip-version-check -r requirements.txt
-          python -m pytest -q tests/test_cpp_fixture_tree.py tests/test_cpp_bounded_fuzz.py tests/test_cpp_fuzz_tool_provisioning.py tests/test_cpp_generated_context.py tests/test_cpp_combined_configuration.py tests/test_cpp_compiler_evidence.py tests/test_assessment_cpp_full_project.py tests/test_cpp_analysis_phase_boundary.py tests/test_cpp_native_test_binding.py tests/test_cpp_native_test_timing.py tests/test_cpp_nested_cmake.py tests/test_cpp_project_compiler_options.py tests/test_cpp_project_dependencies.py tests/test_cpp_dependency_retention.py tests/test_assessment_worker_archive.py tests/test_assessment_worker_capacity_v1.py tests/test_assessment_worker_jobs.py tests/test_assessment_worker_consumer.py tests/test_assessment_worker_http_boundary.py tests/test_cpp_cmake_policy.py tests/test_cpp_configure_first_contract.py tests/test_cpp_configure_first_execution.py tests/test_cpp_configure_first_projection.py tests/test_cpp_production_selection.py tests/test_cpp_runtime_scope.py tests/test_cpp_contention_scheduling.py tests/test_cpp_completed_sanitizer_failure_collection.py tests/test_cpp_runtime_collection.py tests/test_cpp_assessment_collection.py tests/test_cpp_runtime_execution.py tests/test_cpp_fuzz_abort_retention.py tests/test_cpp_fuzz_build_scheduling.py tests/test_cpp_sanitizer_ordering.py tests/test_cpp_fuzz_workspace.py tests/test_cpp_integration_workflow_schedule.py tests/test_cpp_full_project_capture_budget.py tests/test_cpp_mixed_language_activation.py tests/test_cpp_configuration_qualification.py tests/test_cpp_compilation_contexts.py tests/test_cpp_project_snapshot.py tests/test_cpp_project_compiler.py tests/test_cpp_project_compiler_budget.py tests/test_cpp_compiler_budget_v2.py tests/test_cpp_generated_capacity.py tests/test_cpp_project_static.py tests/test_cpp_native_preprocessing_truth.py tests/test_cpp_static_environment.py tests/test_cpp_static_environment_integration.py tests/test_cpp_clang_fallback.py tests/test_cpp_placement_tool_repair.py tests/test_cpp_project_static_stage.py tests/test_cpp_project_snapshot_diagnostics.py tests/test_cpp_capnp_provisioning.py tests/test_cpp_runtime_toolchain.py tests/test_cpp_runtime_dependency_provisioning.py tests/test_cpp_baseline_execution.py tests/test_cpp_baseline_evidence.py
+          python -m pytest -q tests/test_cpp_fixture_tree.py tests/test_cpp_bounded_fuzz.py tests/test_cpp_fuzz_tool_provisioning.py tests/test_cpp_generated_context.py tests/test_cpp_combined_configuration.py tests/test_cpp_compiler_evidence.py tests/test_assessment_cpp_full_project.py tests/test_cpp_analysis_phase_boundary.py tests/test_cpp_native_test_binding.py tests/test_cpp_native_test_timing.py tests/test_cpp_nested_cmake.py tests/test_cpp_project_compiler_options.py tests/test_cpp_project_dependencies.py tests/test_cpp_dependency_retention.py tests/test_assessment_worker_archive.py tests/test_assessment_worker_capacity_v1.py tests/test_assessment_worker_jobs.py tests/test_assessment_worker_consumer.py tests/test_assessment_worker_http_boundary.py tests/test_cpp_cmake_policy.py tests/test_cpp_configure_first_contract.py tests/test_cpp_configure_first_execution.py tests/test_cpp_configure_first_projection.py tests/test_cpp_production_selection.py tests/test_cpp_runtime_scope.py tests/test_cpp_contention_scheduling.py tests/test_cpp_completed_sanitizer_failure_collection.py tests/test_cpp_runtime_collection.py tests/test_cpp_assessment_collection.py tests/test_cpp_runtime_execution.py tests/test_cpp_fuzz_abort_retention.py tests/test_cpp_fuzz_build_scheduling.py tests/test_cpp_sanitizer_ordering.py tests/test_cpp_fuzz_workspace.py tests/test_cpp_integration_workflow_schedule.py tests/test_cpp_full_project_capture_budget.py tests/test_cpp_mixed_language_activation.py tests/test_cpp_configuration_qualification.py tests/test_cpp_compilation_contexts.py tests/test_cpp_project_snapshot.py tests/test_cpp_project_compiler.py tests/test_cpp_project_compiler_budget.py tests/test_cpp_compiler_budget_v2.py tests/test_cpp_generated_capacity.py tests/test_cpp_project_static.py tests/test_cpp_native_preprocessing_truth.py tests/test_cpp_static_environment.py tests/test_cpp_static_environment_integration.py tests/test_cpp_clang_fallback.py tests/test_cpp_placement_tool_repair.py tests/test_cpp_project_static_stage.py tests/test_cpp_project_snapshot_diagnostics.py tests/test_cpp_capnp_provisioning.py tests/test_cpp_runtime_toolchain.py tests/test_cpp_runtime_dependency_provisioning.py tests/test_cpp_baseline_execution.py tests/test_cpp_baseline_evidence.py tests/test_cpp_compiler_collection.py tests/test_cpp_completed_compiler_stage_continuation.py tests/test_cpp_completed_compiler_environment.py tests/test_cpp_completed_static_collection.py tests/test_cpp_collection_receipt_policy.py
 
   owned-project-integration:
     needs: [contract-regressions]
@@ -110,16 +110,24 @@ jobs:
             https://files.pythonhosted.org/packages/f0/a6/eeb28ab162eed10340921aca24efe062d6bf7d9b98acc7a55c3b6900bf7a/pycapnp-2.2.1-cp311-cp311-manylinux_2_28_x86_64.whl
           echo 'd682ae9f23a0c6568533ca2ebf6d70ac7e599dd222f671fa87dff278de343eec  toolchain/full-project/pycapnp.whl' | sha256sum -c -
           python -m scripts.provision_cpp_fuzz_tools --destination toolchain/full-project/llvm
+          python -m scripts.provision_cpp_fuzz_tools --header-observer-sdk --destination toolchain/full-project/clang-header-sdk
           python -m scripts.provision_cpp_fuzz_tools --project-dependencies --destination toolchain/full-project/project-dependencies
           python -m scripts.provision_cpp_fuzz_tools --capnp-source --destination toolchain/full-project/capnp-source
           python -m scripts.provision_cpp_runtime_dependencies --destination toolchain/full-project/runtime-dependencies
           cp scripts/repair_cppcheck_placement_ast.py toolchain/full-project/
+          cp scripts/patch_cppcheck_header_evidence.py toolchain/full-project/
+          cp -R scripts/cppcheck-header-evidence toolchain/full-project/
+          cp scripts/build_cpp_clang_header_observer.py toolchain/full-project/
+          cp -R scripts/clang-header-evidence toolchain/full-project/
           cp scripts/verify_cpp_runtime_toolchain.py toolchain/full-project/
           timeout 210s docker build --network=none --iidfile full-project-image-id.txt -f docker/assessment-full-project-fuzz.Dockerfile toolchain/full-project
           docker image inspect "$(cat full-project-image-id.txt)" > full-project-image.json
           toolchain_container="$(docker create --network=none --read-only --entrypoint=/bin/true "$(cat full-project-image-id.txt)")"
           trap 'docker rm --force "$toolchain_container" >/dev/null' EXIT
           docker cp "$toolchain_container:/opt/nico-cpp-runtime-toolchain.json" cpp-runtime-toolchain.json
+          docker cp "$toolchain_container:/opt/nico-cppcheck-header-observer.json" cppcheck-header-observer.json
+          docker cp "$toolchain_container:/opt/nico-clang-header-observer.json" clang-header-observer.json
+          docker cp "$toolchain_container:/opt/nico-clang-header-startup" clang-header-startup
       - name: Retain the exact analyzer for bounded owned diagnostic reproduction
         run: |
           set -euo pipefail
@@ -175,6 +183,12 @@ jobs:
             full-project-image-id.txt
             full-project-image.json
             cpp-runtime-toolchain.json
+            cppcheck-header-observer.json
+            clang-header-observer.json
+            clang-header-startup/
+            toolchain/full-project/clang-header-sdk/receipt.json
+            toolchain/full-project/clang-header-sdk/lock.json
+            toolchain/full-project/clang-header-sdk/SHA256SUMS
             toolchain/full-project/llvm/receipt.json
             toolchain/full-project/project-dependencies/receipt.json
             toolchain/full-project/project-dependencies/lock.json
@@ -219,16 +233,24 @@ jobs:
             https://files.pythonhosted.org/packages/f0/a6/eeb28ab162eed10340921aca24efe062d6bf7d9b98acc7a55c3b6900bf7a/pycapnp-2.2.1-cp311-cp311-manylinux_2_28_x86_64.whl
           echo 'd682ae9f23a0c6568533ca2ebf6d70ac7e599dd222f671fa87dff278de343eec  toolchain/full-project/pycapnp.whl' | sha256sum -c -
           python -m scripts.provision_cpp_fuzz_tools --destination toolchain/full-project/llvm
+          python -m scripts.provision_cpp_fuzz_tools --header-observer-sdk --destination toolchain/full-project/clang-header-sdk
           python -m scripts.provision_cpp_fuzz_tools --project-dependencies --destination toolchain/full-project/project-dependencies
           python -m scripts.provision_cpp_fuzz_tools --capnp-source --destination toolchain/full-project/capnp-source
           python -m scripts.provision_cpp_runtime_dependencies --destination toolchain/full-project/runtime-dependencies
           cp scripts/repair_cppcheck_placement_ast.py toolchain/full-project/
+          cp scripts/patch_cppcheck_header_evidence.py toolchain/full-project/
+          cp -R scripts/cppcheck-header-evidence toolchain/full-project/
+          cp scripts/build_cpp_clang_header_observer.py toolchain/full-project/
+          cp -R scripts/clang-header-evidence toolchain/full-project/
           cp scripts/verify_cpp_runtime_toolchain.py toolchain/full-project/
           timeout 210s docker build --network=none --iidfile full-project-image-id.txt -f docker/assessment-full-project-fuzz.Dockerfile toolchain/full-project
           docker image inspect "$(cat full-project-image-id.txt)" > full-project-image.json
           toolchain_container="$(docker create --network=none --read-only --entrypoint=/bin/true "$(cat full-project-image-id.txt)")"
           trap 'docker rm --force "$toolchain_container" >/dev/null' EXIT
           docker cp "$toolchain_container:/opt/nico-cpp-runtime-toolchain.json" cpp-runtime-toolchain.json
+          docker cp "$toolchain_container:/opt/nico-cppcheck-header-observer.json" cppcheck-header-observer.json
+          docker cp "$toolchain_container:/opt/nico-clang-header-observer.json" clang-header-observer.json
+          docker cp "$toolchain_container:/opt/nico-clang-header-startup" clang-header-startup
       - name: Acquire pinned public qualification source without execution
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -257,7 +279,7 @@ jobs:
           --runtime-scope-contract tests/fixtures/cpp/bitcoin-runtime-scope.json
           --unit-test-data qualification-unit-test-data
           --accept-completed-collection --producer-source-sha "$NICO_PRODUCER_SOURCE_SHA"
-          --capture-generated-context --project-compiler-evidence --project-static-analysis --extended-compiler-budget --compiler-environment
+          --capture-generated-context --project-compiler-evidence --project-static-analysis --extended-compiler-budget --compiler-environment --capture-enabled-targets --capture-native-commands --materialize-generated-inputs --collect-completed-compiler-failures
           --output cpp-baseline-qualification
           --image "$(cat full-project-image-id.txt)"
       - name: Retain native success and failure evidence
@@ -270,6 +292,12 @@ jobs:
             full-project-image-id.txt
             full-project-image.json
             cpp-runtime-toolchain.json
+            cppcheck-header-observer.json
+            clang-header-observer.json
+            clang-header-startup/
+            toolchain/full-project/clang-header-sdk/receipt.json
+            toolchain/full-project/clang-header-sdk/lock.json
+            toolchain/full-project/clang-header-sdk/SHA256SUMS
             toolchain/full-project/llvm/receipt.json
             toolchain/full-project/project-dependencies/receipt.json
             toolchain/full-project/project-dependencies/lock.json

@@ -19,12 +19,28 @@ RUN cd /opt/capnp-inputs && sha256sum -c SHA256SUMS \
     && mkdir /opt/nico-capnp-metadata \
     && cp lock.json receipt.json SHA256SUMS /opt/nico-capnp-metadata/
 
+# Build the trusted observer with SDK headers; retain only its small runtime artifact.
+FROM gcc:14.2.0-bookworm@sha256:82549aa8f90ada3236a8be70c74543132a76662ef33f0c3271ed802b81584a82 AS clang-header-builder
+COPY llvm /opt/llvm-inputs
+COPY clang-header-sdk /opt/clang-header-sdk
+COPY clang-header-evidence /opt/clang-header-evidence
+COPY build_cpp_clang_header_observer.py /opt/build_cpp_clang_header_observer.py
+RUN cd /opt/llvm-inputs && sha256sum -c SHA256SUMS \
+    && for package in *.deb; do dpkg-deb --extract "$package" /; done \
+    && cd /opt/clang-header-sdk && sha256sum -c SHA256SUMS \
+    && for package in *.deb; do dpkg-deb --extract "$package" /; done \
+    && timeout 180s python3 /opt/build_cpp_clang_header_observer.py \
+       --source /opt/clang-header-evidence --sdk /opt/clang-header-sdk \
+       --runtime /opt/llvm-inputs --output /opt/clang-header-built
+
 # Trusted pinned tools only. Assessed source enters the disposable runtime, never a layer.
 FROM gcc:14.2.0-bookworm@sha256:82549aa8f90ada3236a8be70c74543132a76662ef33f0c3271ed802b81584a82
 COPY project-dependencies /opt/project-dependency-inputs
 COPY llvm /opt/llvm-inputs
 COPY cppcheck /opt/tool-src
 COPY repair_cppcheck_placement_ast.py /opt/repair_cppcheck_placement_ast.py
+COPY patch_cppcheck_header_evidence.py /opt/patch_cppcheck_header_evidence.py
+COPY cppcheck-header-evidence /opt/cppcheck-header-evidence
 COPY verify_cpp_runtime_toolchain.py /opt/verify_cpp_runtime_toolchain.py
 COPY cmake.whl /opt/cmake.whl
 COPY pycapnp.whl /opt/pycapnp.whl
@@ -42,6 +58,7 @@ RUN cd /opt/project-dependency-inputs && sha256sum -c SHA256SUMS \
     && cd / && rm -rf /opt/llvm-inputs \
     && test "$(g++ -dumpfullversion)" = 14.2.0 \
     && python3 /opt/repair_cppcheck_placement_ast.py /opt/tool-src/lib/tokenlist.cpp > /opt/nico-cppcheck-repair.json \
+    && python3 /opt/patch_cppcheck_header_evidence.py /opt/tool-src /opt/cppcheck-header-evidence > /opt/nico-cppcheck-header-observer.json \
     && timeout 180s make -C /opt/tool-src -j2 MATCHCOMPILER=yes FILESDIR=/opt/cppcheck 'CXXFLAGS=-O2 -DNDEBUG' \
     && cp /opt/tool-src/cppcheck /usr/local/bin/cppcheck \
     && mkdir -p /opt/cppcheck \
@@ -56,6 +73,12 @@ RUN cd /opt/project-dependency-inputs && sha256sum -c SHA256SUMS \
     && rm -rf /opt/tool-src /opt/cmake.whl /opt/pycapnp.whl
 COPY --from=capnp-builder /opt/capnp-install/usr/local/ /usr/local/
 COPY --from=capnp-builder /opt/nico-capnp-metadata/ /opt/nico-capnp/
+COPY --from=clang-header-builder /opt/clang-header-built/observer.so /opt/nico-clang-header-observer.so
+COPY --from=clang-header-builder /opt/clang-header-built/receipt.json /opt/nico-clang-header-observer.json
+COPY --from=clang-header-builder /opt/clang-header-built/startup-control.json /opt/nico-clang-header-startup/control.json
+COPY --from=clang-header-builder /opt/clang-header-built/probe.cpp /opt/nico-clang-header-startup/probe.cpp
+COPY --from=clang-header-builder /opt/clang-header-built/probe.header.json /opt/nico-clang-header-startup/probe.header.json
+COPY --from=clang-header-builder /opt/clang-header-built/probe.plist /opt/nico-clang-header-startup/probe.plist
 ENV PATH=/opt/cmake-wheel/cmake/data/bin:/usr/local/bin:/usr/bin:/bin
 ENV PYTHONPATH=/opt/pycapnp
 ENV PREVIOUS_RELEASES_DIR=/opt/nico-runtime/previous-releases

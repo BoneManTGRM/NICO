@@ -71,6 +71,17 @@ def test_compiler_query_retains_semantics_but_never_reads_a_target_or_output(tmp
     assert all(value in args for value in ('-mavx2', '-pthread', '-DVALUE=7', '-UOLD'))
 
 
+@pytest.mark.parametrize('language,macro,standard',[('c++',b'__cplusplus 201703L','c++17'),
+    ('c++',b'__cplusplus 202002L','c++20'),('c',b'__STDC_VERSION__ 201710L','c17')])
+def test_observed_compiler_dialect_is_distinct_from_analyzer_default(language,macro,standard):
+    raw=b'#define __GNUC__ 14\n#define __GNUC_MINOR__ 2\n#define '+macro+b'\n'
+    argv=['/usr/local/bin/g++' if language=='c++' else '/usr/local/bin/gcc','-dM','-E','-x',language,'/dev/null']
+    assert api()._predefined_standard(raw,argv)==standard
+    definition=macro.split(b' ')[0].decode()
+    altered=[argv[0],'-D'+definition+'='+macro.split(b' ')[1].decode(),*argv[1:]]
+    assert api()._predefined_standard(raw,altered) is None
+
+
 @pytest.mark.parametrize('flag', ['-fplugin=/tmp/payload.so', '@/tmp/options', '-include', '-imacros'])
 def test_compiler_environment_never_accepts_helper_or_forced_input_commands(tmp_path, flag):
     *_, compiler, raw = fixture(tmp_path)
