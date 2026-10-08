@@ -148,6 +148,11 @@ def _typescript_summary(path: Path | None, exit_code: str) -> dict[str, Any]:
     }
 
 
+def static_capture_summary(exit_code: str, parse_warning: str | None) -> dict[str, Any]:
+    code = int(exit_code) if str(exit_code).strip().lstrip("-").isdigit() else None
+    return {"exit_code": code, "completed": code in {0, 1} and parse_warning is None}
+
+
 def _markdown(manifest: dict[str, Any]) -> str:
     summary = _dict(manifest.get("summary"))
     lines = [
@@ -165,6 +170,7 @@ def _markdown(manifest: dict[str, Any]) -> str:
         f"- Material secret-history findings: {summary.get('secret_history_material', 0)}",
         f"- Excluded test-only secret matches: {summary.get('secret_history_test_only', 0)}",
         f"- TypeScript validation completed: {summary.get('typescript_completed', False)}",
+        f"- Static capture complete: {summary.get('static_capture_complete', False)}",
         "",
         "## Corroborated dependency findings",
         "",
@@ -201,6 +207,8 @@ def _markdown(manifest: dict[str, Any]) -> str:
         lines.append(
             f"- `{item.get('tool')}:{item.get('rule_id')}` — `{item.get('path')}:{item.get('line')}`; verified={item.get('verified')}; disposition={item.get('disposition')}"
         )
+    lines.extend(["", "## Capture warnings", ""])
+    lines.extend(str(item) for item in _list(manifest.get("parse_warnings")))
     lines.append("")
     return "\n".join(lines)
 
@@ -212,6 +220,8 @@ def main() -> int:
     parser.add_argument("--npm-audit", type=Path)
     parser.add_argument("--bandit", type=Path)
     parser.add_argument("--semgrep", type=Path)
+    parser.add_argument("--bandit-exit", default="")
+    parser.add_argument("--semgrep-exit", default="")
     parser.add_argument("--gitleaks", type=Path)
     parser.add_argument("--trufflehog", type=Path)
     parser.add_argument("--typescript", type=Path)
@@ -224,6 +234,10 @@ def main() -> int:
     semgrep, semgrep_error = static_records("semgrep", _read(args.semgrep))
     secret_history, secret_errors = secret_records(_read(args.gitleaks), _read(args.trufflehog))
     typescript = _typescript_summary(args.typescript, args.typescript_exit)
+    static_capture = {
+        "bandit": static_capture_summary(args.bandit_exit, bandit_error),
+        "semgrep": static_capture_summary(args.semgrep_exit, semgrep_error),
+    }
     manifest = {
         "artifact_schema": "nico.remediation_manifest.v2",
         "summary": {
@@ -235,9 +249,11 @@ def main() -> int:
             "secret_history_material": sum(bool(item.get("material")) for item in secret_history),
             "secret_history_test_only": sum(bool(item.get("test_only")) and not bool(item.get("verified")) for item in secret_history),
             "typescript_completed": bool(typescript.get("completed")),
+            "static_capture_complete": all(item["completed"] for item in static_capture.values()),
         },
         "dependencies": dependencies,
         "static": [*bandit, *semgrep],
+        "static_capture": static_capture,
         "secret_history": secret_history,
         "typescript": typescript,
         "parse_warnings": [item for item in (bandit_error, semgrep_error, *secret_errors) if item],

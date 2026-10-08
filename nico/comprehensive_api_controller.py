@@ -1017,6 +1017,8 @@ class ComprehensiveApiController:
 
     def __init__(self, service: ComprehensiveRunService) -> None:
         self._service = service
+        # A fresh controller/app lifetime never inherits another runtime's proof.
+        self._retained_pdf_cache_namespace = object()
 
     def start(self, payload: dict[str, Any]) -> dict[str, Any]:
         body = self._object(payload)
@@ -1103,6 +1105,9 @@ class ComprehensiveApiController:
         """
 
         record = self._service.load_read_only(self._required(run_id, "run_id"))
+        return self._status_artifact_from_record(record)
+
+    def _status_artifact_from_record(self, record: dict[str, Any]) -> dict[str, Any]:
         response = self._response(
             record,
             operation="status",
@@ -1145,6 +1150,63 @@ class ComprehensiveApiController:
         projected = dict(response)
         projected["reports"] = candidate
         return projected
+
+    def retained_pdf_read_only(self, run_id: str, report_language: str, builder: Any) -> Any:
+        """Reuse a completed pending source-PDF computation for exact stored input.
+
+        Authentication is performed by the installed route middleware on every
+        call. The cache contains no authorization/session decision or run tree.
+        """
+
+        from nico.retained_pdf_exact_input_cache_v1 import prepare_retained_pdf, finish_retained_pdf
+
+        normalized = self._required(run_id, "run_id")
+
+        def consume(row: Any, restore: Any) -> Any:
+            store = getattr(self._service, "_store", None)
+            prepared = prepare_retained_pdf(
+                namespace=(self._retained_pdf_cache_namespace,
+                           getattr(store, "_retained_artifact_namespace", None)),
+                row=row,
+                run_id=normalized,
+                report_language=report_language,
+                builder=builder,
+            )
+            if prepared.cached is not None:
+                return prepared, None
+            record = restore()
+            # Check decoder-side mutation while the captured row is still here.
+            # The compressed payload and SQL connection do not escape this callback.
+            prepared = prepared.after_restore(row, record)
+            return prepared, record
+
+        snapshot_reader = getattr(self._service, "_consume_read_only_snapshot", None)
+        if callable(snapshot_reader):
+            prepared, record = snapshot_reader(normalized, consume)
+            # The store has closed its connection and released the compressed row
+            # before any controller projection or installed PDF builder runs.
+            def build() -> Any:
+                current = record if record is not None else self._service.load_read_only(normalized)
+                validated = self._status_artifact_from_record(current)
+                response = builder(validated, report_language)
+                try:
+                    from nico.current_retained_metadata_observer_v13 import observe_validated_retained_pdf
+                    observe_validated_retained_pdf(current, validated.get("reports"), report_language, response)
+                except Exception:
+                    # Optional diagnostics start only after the original builder
+                    # succeeds. They cannot change its response or its failures.
+                    try:
+                        import logging
+                        logging.getLogger("uvicorn.error").info(
+                            'NICO_CURRENT_RETAINED_METADATA={"schema":"nico.current-retained-metadata.v13",'
+                            '"outcome":"observation_unavailable","reason_code":"optional_observer_unavailable"}'
+                        )
+                    except Exception:
+                        pass
+                return response
+
+            return finish_retained_pdf(prepared, build)
+        return builder(self.status_artifact_read_only(normalized), report_language)
 
     def continue_run(
         self,
