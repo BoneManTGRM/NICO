@@ -113,9 +113,28 @@ def _tool_complete(record: Mapping[str, Any] | None) -> bool:
     )
 
 
+def _not_applicable_tools(scan: Mapping[str, Any], tools: tuple[str, ...]) -> list[str]:
+    from nico.scanner_applicability_v1 import normalize_scanner_applicability_canonical
+
+    results = _tool_results(scan)
+    # Revalidate source-bound absence rather than trusting asserted applicability
+    # flags. An inventory observation earns no scanner execution credit.
+    context = dict(scan)
+    context['requested_scanner_records'] = list(results.values())
+    normalized = normalize_scanner_applicability_canonical(context)
+    target = scan.get('actual_commit_sha')
+    target_bound = (isinstance(target, str) and re.fullmatch(r'[0-9a-f]{40}', target) is not None
+                    and scan.get('_scoring_target_commit_sha', target) == target)
+    absent = {record['scanner_name'] for record in normalized['requested_scanner_records']
+              if target_bound and record.get('commit_sha', record.get('target_commit_sha')) == target
+              and record.get('applicable') is False and record.get('evidence_required') is False}
+    return [tool for tool in tools if tool in absent]
+
+
 def _incomplete_tools(scan: Mapping[str, Any], tools: tuple[str, ...]) -> list[str]:
     results = _tool_results(scan)
-    return [tool for tool in tools if not _tool_complete(results.get(tool))]
+    absent = set(_not_applicable_tools(scan, tools))
+    return [tool for tool in tools if tool not in absent and not _tool_complete(results.get(tool))]
 
 
 def _scanner_section(
@@ -143,8 +162,10 @@ def _scanner_section(
         )
     if incomplete:
         assurance.append(f"Incomplete applicable analyzers: {', '.join(incomplete)}.")
+    not_applicable = _not_applicable_tools(scan, tools)
+    applicable = [tool for tool in tools if tool not in not_applicable]
     evidence = [
-        f"Applicable analyzers: {', '.join(tools)}.",
+        f"Applicable analyzers: {', '.join(applicable) or 'none'}.",
         f"Raw candidates: {counts['raw']}.",
         f"Verified material: {counts['material']}.",
         f"Review required: {counts['review_required']}.",
@@ -152,6 +173,8 @@ def _scanner_section(
         f"Excluded non-production/test-only: {counts['excluded_test_only']}.",
         "Technical-score impact is limited to verified material findings and incomplete applicable analyzer execution.",
     ]
+    if not_applicable:
+        evidence.append(f"Proven not-applicable analyzers: {', '.join(not_applicable)}; no execution credit.")
     section = legacy._section(section_id, label, score, summary, evidence, findings, assurance)
     section["score_contract"] = {
         "version": VERSION,
@@ -182,7 +205,8 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
     assessment = deepcopy(dict(baseline.get("assessment") or {}))
     sections = _section_map(assessment)
     repo = legacy._repo(context)
-    scan = legacy._scan(context)
+    scan = dict(legacy._scan(context))
+    scan['_scoring_target_commit_sha'] = context.get('commit_sha')
     dependency_evidence = (
         repo.get("dependency_evidence")
         if isinstance(repo.get("dependency_evidence"), dict)
@@ -265,7 +289,10 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
         for category, counts in category_counts.items()
         if counts["review_required"] > 0
     ]
-    analyzer_coverage = round(100 * (len(_ALL_TOOLS) - len(incomplete)) / len(_ALL_TOOLS))
+    not_applicable = _not_applicable_tools(scan, _ALL_TOOLS)
+    required = [tool for tool in _ALL_TOOLS if tool not in not_applicable]
+    completed = [tool for tool in required if _tool_complete(_tool_results(scan).get(tool))]
+    analyzer_coverage = round(100 * len(completed) / len(required)) if required else 0
     assurance_penalty = min(14, len(review_categories) + len(incomplete) * 4)
     evidence_adjusted = max(0, min(technical_score, technical_score - assurance_penalty))
     level = "Senior" if technical_score >= 82 else "Mid" if technical_score >= 58 else "Junior"
@@ -277,6 +304,10 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
             "percent": analyzer_coverage,
             "label": "Exact-SHA analyzer execution coverage",
             "incomplete_analyzers": incomplete,
+            "completed_analyzers": completed,
+            "required_analyzers": required,
+            "not_applicable_analyzers": not_applicable,
+            "not_applicable_receives_completion_credit": False,
             "review_candidate_categories": review_categories,
             "review_candidate_category_count": len(review_categories),
             "review_candidate_score_effect": "assurance_only",
