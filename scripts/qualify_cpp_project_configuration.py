@@ -440,4 +440,15 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except (Exception, KeyboardInterrupt) as exc:
+        # The wrapper emitted bounded diagnostics. Suppress Python's raw
+        # exception/traceback text only for the CLI; let the interpreter retain
+        # its original failure exit status (including KeyboardInterrupt).
+        import sys
+        def diagnostic_excepthook(kind, value, traceback, failure=exc, previous=sys.excepthook):
+            if value is not failure:
+                previous(kind, value, traceback)
+        sys.excepthook = diagnostic_excepthook
+        raise

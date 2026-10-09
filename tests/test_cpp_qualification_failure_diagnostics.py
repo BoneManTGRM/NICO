@@ -91,6 +91,54 @@ def test_original_exception_and_exit_status_survive_diagnostic_failure(monkeypat
     assert json.loads(result.stdout)['qualification_error'] == 'qualification_collection_invalid'
 
 
+@pytest.mark.parametrize('exception', [
+    'ValueError("https://example.invalid/?token=PRIVATE_SOURCE")',
+    'RuntimeError("PRIVATE_SOURCE")', 'KeyboardInterrupt("PRIVATE_SOURCE")',
+])
+def test_executable_cli_suppresses_raw_tracebacks_without_changing_exit_status(exception):
+    baseline = subprocess.run([sys.executable, '-c', 'raise '+exception], capture_output=True)
+    # Fail during owned output preparation, before any source or tool runs.
+    harness = '''
+import argparse, runpy, types
+class Output:
+    def mkdir(self, **kwargs):
+        raise EXCEPTION
+argparse.ArgumentParser.parse_args = lambda self: types.SimpleNamespace(output=Output())
+runpy.run_module('scripts.qualify_cpp_project_configuration', run_name='__main__')
+'''.replace('EXCEPTION', exception)
+    result = subprocess.run([sys.executable, '-c', harness], capture_output=True, text=True)
+    assert result.returncode == baseline.returncode != 0
+    assert result.stderr == ''
+    assert 'PRIVATE_SOURCE' not in result.stdout and 'https://' not in result.stdout
+    summary = json.loads(result.stdout)
+    assert summary['qualification_error'] == (
+        'qualification_interrupted' if exception.startswith('KeyboardInterrupt') else 'unrecognized_error')
+    assert all(value is None for group in summary['retained_counts'].values() for value in group.values())
+
+
+def test_embedded_cli_hook_delegates_unrelated_exceptions():
+    harness = '''
+import argparse, runpy, sys, types
+seen = []
+sys.excepthook = lambda kind, value, trace: seen.append(value)
+class Output:
+    def mkdir(self, **kwargs):
+        raise ValueError('PRIVATE_SOURCE')
+argparse.ArgumentParser.parse_args = lambda self: types.SimpleNamespace(output=Output())
+try:
+    runpy.run_module('scripts.qualify_cpp_project_configuration', run_name='__main__')
+except ValueError as failure:
+    sys.excepthook(type(failure), failure, failure.__traceback__)
+    assert not seen
+unrelated = RuntimeError('unrelated')
+sys.excepthook(type(unrelated), unrelated, None)
+assert seen == [unrelated]
+'''
+    result = subprocess.run([sys.executable, '-c', harness], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == '' and 'PRIVATE_SOURCE' not in result.stdout
+
+
 @pytest.mark.parametrize('rejected', [False, True])
 def test_real_cli_collection_gate_retains_failure_and_reports_safe_counts(tmp_path, monkeypatch, capsys, rejected):
     from nico import assessment_cpp_configuration_probe as probe_module
