@@ -15,6 +15,7 @@ import tempfile
 import time
 
 from nico.assessment_worker_receipts import canonical_bytes
+from scripts.cpp_qualification_diagnostics import failure_diagnostic
 
 def freeze_configuration_checkout(checkout, destination, manifest):
     """Verify every pinned Git entry; materialize original regular blobs only.
@@ -249,13 +250,24 @@ def qualification_probe_receipt(value):
 
 def qualify_configuration_checkout(args):
     """Prepare the next frozen execution contract using real isolated configure."""
-    from nico.assessment_cpp_full_project import _json
-    from nico.assessment_cpp_configuration_probe import probe_project_configuration
-    args.output.mkdir(parents=True, exist_ok=True)
     evidence={'schema':'nico.cpp-configuration-qualification.v1','status':'UNPROVEN',
         'stage':'source_inventory','source':None,'probe':None,
         'production_dispatch_exercised':False,'production_qualified':False,
         'compiled':False,'tests_executed':False}
+    try:
+        return _qualify_configuration_checkout(args, evidence)
+    except (Exception, KeyboardInterrupt) as exc:
+        try:
+            print(json.dumps(failure_diagnostic(evidence, exc), separators=(',', ':')))
+        except (Exception, KeyboardInterrupt):
+            pass  # Diagnostic output must never replace the original failure.
+        raise
+
+
+def _qualify_configuration_checkout(args, evidence):
+    from nico.assessment_cpp_full_project import _json
+    from nico.assessment_cpp_configuration_probe import probe_project_configuration
+    args.output.mkdir(parents=True, exist_ok=True)
     collection_policy = getattr(args, 'accept_completed_collection', False)
     compiler_collection_policy = getattr(args,'collect_completed_compiler_failures',False)
     if (type(compiler_collection_policy) is not bool or compiler_collection_policy and (
