@@ -136,6 +136,41 @@ def test_current_verified_backup_and_restore_are_ready() -> None:
     assert result["client_delivery_allowed"] is False
 
 
+@pytest.mark.parametrize("kind", ["backup", "restore"])
+@pytest.mark.parametrize("flattened", [False, True])
+@pytest.mark.parametrize("offset_seconds", [-1, 0, 1, 86400])
+def test_completion_after_observation_cannot_certify_freshness(
+    kind: str, flattened: bool, offset_seconds: int,
+) -> None:
+    # Synthetic persisted evidence: valid at write time, then observed against
+    # a fixed earlier clock (for example after a clock rollback or during replay).
+    current = datetime(2026, 1, 3, 12, tzinfo=timezone.utc)
+    store = FakeStore()
+    completion = current + timedelta(seconds=offset_seconds)
+    record_backup_evidence(
+        _backup_request(completion if kind == "backup" else current), store=store,
+    )
+    record_restore_drill(
+        _restore_request(completion if kind == "restore" else current), store=store,
+    )
+    if flattened:
+        store.records = [
+            {**item["payload"], "action": item["action"]} for item in store.records
+        ]
+
+    result = backup_restore_status(store=store, now=current)
+
+    assert result["backup_restore_ready"] is (offset_seconds <= 0)
+    if offset_seconds > 0:
+        blocker = "backup_evidence_stale" if kind == "backup" else "restore_drill_stale"
+        assert result["status"] == "blocked"
+        assert blocker in result["blockers"]
+    else:
+        assert result["status"] == "ready"
+    assert result["destructive_action_allowed"] is False
+    assert result["client_delivery_allowed"] is False
+
+
 def test_missing_evidence_and_memory_fallback_never_appear_ready() -> None:
     result = backup_restore_status(store=FakeStore(durable=False), now=_now())
 
