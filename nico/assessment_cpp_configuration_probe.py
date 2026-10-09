@@ -744,11 +744,15 @@ def probe_project_configuration(source, targets, image, *, project_options,
                 if not completed_target_failure:
                     result['error'] = 'worker_configuration_probe_static_incomplete'
                 elif not static.get('collection_complete'):
-                    result['independent_collection_error'] = 'worker_configuration_probe_static_incomplete'
+                    # Keep the earlier independent failure, as for the original
+                    # compiler error; a later stage cannot replace its cause.
+                    result['independent_collection_error'] = (result['independent_collection_error']
+                        or 'worker_configuration_probe_static_incomplete')
         except (Exception, KeyboardInterrupt):
             result['status'] = 'UNPROVEN'
             if completed_target_failure:
-                result['independent_collection_error'] = 'worker_configuration_probe_static_failed'
+                result['independent_collection_error'] = (result['independent_collection_error']
+                    or 'worker_configuration_probe_static_failed')
             else:
                 result['error'] = 'worker_configuration_probe_static_failed'
         result['aggregate_duration_ms'] = int((time.monotonic()-start)*1000)

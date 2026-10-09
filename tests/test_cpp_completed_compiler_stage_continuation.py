@@ -22,7 +22,7 @@ def sha(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
-def owned_probe(tmp_path, monkeypatch, stage, fault=None, policy=True):
+def owned_probe(tmp_path, monkeypatch, stage, fault=None, policy=True, *, static_raises=False):
     root, targets = source(tmp_path)
     database = [*deepcopy(DB), {'directory': '/work/build',
         'file': '/work/build/owned_failure.cpp', 'arguments': ['/usr/local/bin/g++',
@@ -83,6 +83,8 @@ def owned_probe(tmp_path, monkeypatch, stage, fault=None, policy=True):
 
     def static(*args, **kwargs):
         calls.append('static')
+        if static_raises:
+            raise ValueError('worker_project_static_stage_owned_control_stop')
         return {'complete': False, 'error': 'worker_project_static_stage_owned_control_stop', 'analysis': None}
 
     from nico import assessment_cpp_runtime_execution as runtime_module
@@ -92,8 +94,8 @@ def owned_probe(tmp_path, monkeypatch, stage, fault=None, policy=True):
     options = {'project_options': {'BUILD_TESTS': 'ON'}, 'baseline_execution': spec,
         'capture_generated_context': True, 'project_compiler_evidence': True,
         'retain_artifact': sink, 'command': command,
-        'runtime_plan': plan() if stage == 'runtime' else None,
-        'project_static_analysis': stage == 'static'}
+        'runtime_plan': plan() if stage in {'runtime', 'both'} else None,
+        'project_static_analysis': stage in {'static', 'both'}}
     # Original behavior fails at the intended skipped-stage assertion, not import
     # or an unsupported keyword. The opt-in never changes legacy callers.
     if 'collect_completed_compiler_failures' in inspect.signature(probe.probe_project_configuration).parameters:
@@ -128,3 +130,34 @@ def test_legacy_policy_preserves_original_fail_closed_behavior(tmp_path, monkeyp
     result, calls, _ = owned_probe(tmp_path, monkeypatch, 'runtime', policy=False)
     assert calls == [] and result['project_compiler']['complete'] is False
     assert result['status'] == 'UNPROVEN'
+
+
+@pytest.mark.parametrize('static_raises', [False, True])
+def test_later_static_failure_preserves_first_independent_error(tmp_path, monkeypatch, static_raises):
+    runtime_root = tmp_path / 'runtime'; runtime_root.mkdir()
+    earlier, earlier_calls, _ = owned_probe(runtime_root, monkeypatch, 'runtime')
+    assert earlier_calls == ['runtime']
+    assert earlier['independent_collection_error'] == 'worker_configuration_probe_failed'
+
+    combined_root = tmp_path / 'combined'; combined_root.mkdir()
+    combined, calls, retained = owned_probe(combined_root, monkeypatch, 'both', static_raises=static_raises)
+    assert calls == ['runtime', 'static']
+    # No runtime receipt exists for this exception. The singular independent
+    # error is the only retained explanation of that earlier failed phase.
+    assert combined['runtime_evidence'] is None
+    assert combined['independent_collection_error'] == earlier['independent_collection_error']
+    assert combined['error'] == earlier['error'] == 'worker_configuration_probe_compiler_incomplete'
+    assert combined['status'] == 'UNPROVEN' and combined['full_project_qualified'] is False
+    assert combined['project_compiler_collection'] == earlier['project_compiler_collection']
+    assert combined['project_compiler']['complete'] is False
+    assert 'project-compiler-evidence' in retained
+
+
+@pytest.mark.parametrize('static_raises', [False, True])
+def test_static_failure_without_prior_error_still_records_its_reason(tmp_path, monkeypatch, static_raises):
+    result, calls, _ = owned_probe(tmp_path, monkeypatch, 'static', static_raises=static_raises)
+    assert calls == ['static']
+    expected = 'worker_configuration_probe_static_' + ('failed' if static_raises else 'incomplete')
+    assert result['independent_collection_error'] == expected
+    assert result['error'] == 'worker_configuration_probe_compiler_incomplete'
+    assert result['status'] == 'UNPROVEN' and result['full_project_qualified'] is False
