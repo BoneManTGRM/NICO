@@ -314,8 +314,12 @@ def collect_project_static(request):
                 descriptor=os.open(trace_path,os.O_CREAT|os.O_EXCL|os.O_WRONLY|os.O_NOFOLLOW,0o600)
                 os.close(descriptor)
                 native_environment['CPPCHECK_NICO_NATIVE_PROVENANCE']=str(trace_path)
+            # Input verification and output preparation share the phase deadline.
+            dispatch_start = time.monotonic()
+            if dispatch_start >= deadline:
+                raise ValueError('worker_project_static_deadline')
             record['execution'] = _run(context['analyzer_invocation'], stem,
-                min(deadline, time.monotonic() + limits['case_seconds']), native_environment)
+                min(deadline, dispatch_start + limits['case_seconds']), native_environment)
             # Retain even failing native XML; the controller decides completeness.
             xml = _regular_bytes(stem + '.xml', XML_LIMIT)
             encoded, digest, encoding = _encode_xml(xml, compact=environment_model is not None)
