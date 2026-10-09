@@ -384,9 +384,11 @@ def record_restore_drill(
 
 def _age_seconds(completed_at: Any, *, now: datetime) -> float | None:
     completed = _parse_datetime(completed_at)
-    if completed is None:
+    # Validate again when reading persisted evidence: write-time validation
+    # cannot guarantee the timestamp is valid against this observation clock.
+    if completed is None or completed > now:
         return None
-    return max(0.0, (now - completed).total_seconds())
+    return (now - completed).total_seconds()
 
 
 def backup_restore_status(
