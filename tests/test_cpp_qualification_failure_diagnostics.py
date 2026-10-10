@@ -200,3 +200,40 @@ def test_real_cli_collection_gate_retains_failure_and_reports_safe_counts(tmp_pa
         assert len(json.dumps(diagnostic)) < 4096
     else:
         assert not summaries
+
+
+def test_primary_diagnostics_and_sanitizer_operation_are_bounded_observations():
+    from scripts.cpp_qualification_diagnostics import failure_diagnostic
+    probe = {'project_static': {'primary_diagnostics': {
+        'wall_duration_ms': 540001, 'execution_duration_ms': 1079999,
+        'max_execution_duration_ms': 90001, 'executions': 13, 'analyzed': 1,
+        'missing_execution': 564, 'timed_out': 2, 'nonzero_exit': 3,
+        'output_truncated': 0, 'record_error': 564, 'syntax_error': 1,
+        'internal_ast_error': 2, 'path': '/private/secret'}},
+        'runtime_summary': {'first_failure_operation': 'runtime-address-tests',
+                            'failure_operation': 'runtime-undefined-build'}}
+    result = failure_diagnostic({'probe': probe}, ValueError('qualification_collection_invalid'))
+    assert result['primary_diagnostics'] == {k: v for k, v in probe['project_static']['primary_diagnostics'].items() if k != 'path'}
+    assert result['sanitizer_failure'] == {
+        'first_failure_operation': {'kind': 'address', 'phase': 'tests'},
+        'failure_operation': {'kind': 'undefined', 'phase': 'build'}}
+    assert '/private' not in json.dumps(result)
+    assert len(json.dumps(result)) < 4096
+
+
+@pytest.mark.parametrize('bad', [True, -1, 'secret', [], {}, 100000001, float('nan'), float('inf')])
+def test_primary_timings_and_runtime_operations_reject_invalid_scalars(bad):
+    from scripts.cpp_qualification_diagnostics import failure_diagnostic
+    result = failure_diagnostic({'probe': {
+        'project_static': {'primary_diagnostics': {'wall_duration_ms': bad}},
+        'runtime_summary': {'first_failure_operation': bad, 'failure_operation': bad}}},
+        ValueError('qualification_collection_invalid'))
+    assert result['primary_diagnostics']['wall_duration_ms'] is None
+    assert set(result['sanitizer_failure'].values()) == {None}
+
+
+def test_generic_sanitizer_failure_does_not_invent_kind_or_phase():
+    from scripts.cpp_qualification_diagnostics import failure_diagnostic
+    result = failure_diagnostic({'probe': {'runtime_evidence': {
+        'error': 'worker_runtime_sanitizer_failed'}}}, ValueError('qualification_collection_invalid'))
+    assert set(result['sanitizer_failure'].values()) == {None}

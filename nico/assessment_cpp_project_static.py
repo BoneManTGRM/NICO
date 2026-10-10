@@ -534,7 +534,24 @@ def validate_project_static(raw, request):
         context_complete=(len(header_contexts)==len(required) and all(
             p['normal_pass_completed'] and p['physical_token_origin_verified'] for p in header_contexts))
         population_complete=context_complete and all(row['analyzed_contexts'] for row in headers.values())
+    # Aggregate only validated primary records. Fallback merging must not turn
+    # these observations into primary analyzed credit. Counts may overlap.
+    executions = [row['execution'] for row in evidence['records'] if row['execution'] is not None]
+    primary_diagnostics = {
+        'wall_duration_ms': evidence['duration_ms'],
+        'execution_duration_ms': sum(row['duration_ms'] for row in executions),
+        'max_execution_duration_ms': max((row['duration_ms'] for row in executions), default=None),
+        'executions': len(executions), 'analyzed': len(analyzed),
+        'missing_execution': len(evidence['records']) - len(executions),
+        'timed_out': sum(row['timed_out'] for row in executions),
+        'nonzero_exit': sum(row['exit_code'] != 0 for row in executions),
+        'output_truncated': sum(row['output_truncated'] for row in executions),
+        'record_error': sum(row['error'] is not None for row in evidence['records']),
+        'syntax_error': sum(row['rule_id'] == 'syntaxError' for row in limitations),
+        'internal_ast_error': sum(row['rule_id'] == 'internalAstError' for row in limitations),
+    }
     return {'required_contexts': required, 'attempted_contexts': attempted, 'analyzed_contexts': analyzed,
+        'primary_diagnostics': primary_diagnostics,
         'complete': analyzed == required, 'findings': findings, 'limitations': limitations,
         **({'modeled_inputs': modeled_inputs, 'compiler_environment_sha256': environment_model['native_evidence_sha256']}
            if environment_model is not None else {}),

@@ -290,3 +290,15 @@ def test_shared_static_budget_reports_selected_fallback_limit_without_expanding_
     assert policy['controller_seconds'] == 300
     assert policy['limits_share_execution_envelope'] is True
     assert static.STAGE_WALL_SECONDS == 1030
+
+
+def test_fallback_completion_preserves_primary_observations(tmp_path):
+    req, primary = primary_with_one_failure(tmp_path)
+    fr = api().clang_fallback_request(req, primary)
+    fallback = api().validate_clang_fallback(_canonical(fallback_native(fr)), fr, req)
+    before = deepcopy(primary['primary_diagnostics'])
+    merged = api().merge_static_analysis(primary, fallback)
+    assert len(merged['analyzed_contexts']) == 3
+    assert merged['primary_diagnostics'] == before
+    assert merged['primary_diagnostics']['analyzed'] == 2
+    assert merged['primary_diagnostics']['syntax_error'] == 1

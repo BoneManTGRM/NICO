@@ -39,6 +39,18 @@ def _count(value):
     return value if type(value) is int and 0 <= value <= 1000000 else None
 
 
+def _milliseconds(value):
+    return value if type(value) is int and 0 <= value <= 100000000 else None
+
+
+def _sanitizer_operation(value):
+    # Never infer a sanitizer kind from a generic sanitizer_failed code.
+    operations = {f'runtime-{kind}-{phase}': {'kind': kind, 'phase': phase}
+                  for kind in ('address', 'undefined')
+                  for phase in ('configure', 'build', 'discover', 'tests', 'junit')}
+    return operations.get(value) if type(value) is str else None
+
+
 def failure_diagnostic(evidence, error):
     """Copy only fixed codes/counts from already retained data, without I/O.
 
@@ -51,6 +63,8 @@ def failure_diagnostic(evidence, error):
     static = _mapping(probe.get('project_static'))
     fallback = _mapping(static.get('clang_fallback'))
     compiler = _mapping(probe.get('project_compiler_collection'))
+    primary = _mapping(static.get('primary_diagnostics'))
+    runtime = _mapping(probe.get('runtime_summary'))
     code = (error.args[0] if isinstance(error, ValueError) and len(error.args) == 1
             else 'qualification_interrupted' if isinstance(error, KeyboardInterrupt)
             else 'unrecognized_error')
@@ -61,6 +75,16 @@ def failure_diagnostic(evidence, error):
         'independent_collection_error': _code(probe.get('independent_collection_error')),
         'static_stage_error': _code(_mapping(probe.get('project_static_stage')).get('error')),
         'runtime_error': _code(_mapping(probe.get('runtime_evidence')).get('error')),
+        'sanitizer_failure': {
+            key: _sanitizer_operation(runtime.get(key))
+            for key in ('first_failure_operation', 'failure_operation')},
+        'primary_diagnostics': {
+            **{key: _milliseconds(primary.get(key)) for key in
+               ('wall_duration_ms', 'execution_duration_ms', 'max_execution_duration_ms')},
+            **{key: _count(primary.get(key)) for key in
+               ('executions', 'analyzed', 'missing_execution', 'timed_out',
+                'nonzero_exit', 'output_truncated', 'record_error', 'syntax_error', 'internal_ast_error')},
+        },
         'retained_counts': {
             'static': {key: _count(static.get(key + '_contexts_count'))
                        for key in ('required', 'attempted', 'analyzed')},

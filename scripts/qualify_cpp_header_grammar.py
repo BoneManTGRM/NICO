@@ -15,7 +15,8 @@ from nico.assessment_cpp_header_evidence import validate_header_trace
 CASES = ('attribute', 'capnp', 'noexcept-instantiated', 'bitfield',
          'qualified-comparison', 'attribute-semantics', 'alias-shadow', 'alias-global',
          'alias-self-global', 'alias-chains', 'alias-before', 'alias-nested', 'alias-rhs',
-         'alias-nonlexical', 'alias-absolute', 'malformed', 'missing', 'depth-limit')
+         'alias-nonlexical', 'alias-absolute', 'alias-heavy', 'alias-malformed',
+         'malformed', 'missing', 'depth-limit')
 FAILURES = {'attribute': 'syntaxError', 'capnp': 'syntaxError',
             'noexcept-instantiated': 'internalAstError', 'bitfield': 'syntaxError',
             'attribute-semantics': 'syntaxError', 'alias-shadow': 'syntaxError',
@@ -73,7 +74,7 @@ def qualify(output, *, binary=None, image=None, before=False):
         errors = ET.fromstring(xml.read_bytes()).findall('errors/error'); rules = [e.get('id') for e in errors]
         if before and case in FAILURES:
             assert FAILURES[case] in rules and not proof['normal_pass_completed'], (case,rules,proof)
-        elif case == 'malformed':
+        elif case in {'malformed', 'alias-malformed'}:
             assert 'syntaxError' in rules and not proof['normal_pass_completed']
         elif case == 'missing':
             assert 'missingInclude' in rules and proof['unavailable_inputs'] and not proof['normal_pass_completed']
@@ -90,7 +91,7 @@ def qualify(output, *, binary=None, image=None, before=False):
                 assert len(operators) == 2
                 assert [f.get('isAttributeNoreturn') for f in operators] == ['true',None]
                 assert 'missingReturn' in rules  # The unannotated function remains a finding.
-            expected_findings = {'alias-global': 2, 'alias-self-global': 2, 'alias-chains': 4, 'alias-before': 2, 'alias-nested': 2, 'alias-rhs': 2}
+            expected_findings = {'alias-global': 2, 'alias-self-global': 2, 'alias-chains': 4, 'alias-before': 2, 'alias-nested': 2, 'alias-rhs': 2, 'alias-heavy': 1}
             if before and case == 'alias-chains':
                 expected_findings[case] = 2
             if case in expected_findings:
