@@ -66,10 +66,23 @@ def normalize_scanner_executions(scan: dict[str, Any]) -> dict[str, Any]:
     by_tool: dict[str, dict[str, Any]] = {}
     order: list[str] = []
 
+    # Preserve contradictory source claims before duplicate tool rows are folded.
+    identity_fields = ("repository", "commit_sha", "actual_commit_sha", "snapshot_commit_sha", "target_commit_sha")
+    prior_claims = scan.get("scanner_execution_source_identity")
+    identity_claims = {key: prior_claims[key] for key in identity_fields if key in prior_claims} if isinstance(prior_claims, dict) else {}
+    for evidence in (scan, *(item for item in existing if isinstance(item, dict))):
+        for key in identity_fields:
+            if key in evidence:
+                if key in identity_claims and identity_claims[key] != evidence[key]:
+                    output["scanner_execution_identity_conflict"] = True
+                identity_claims[key] = evidence[key]
+
+    output["scanner_execution_source_identity"] = identity_claims
+
     for raw in existing:
         if not isinstance(raw, dict):
             continue
-        tool = _tool(raw.get("tool") or raw.get("scanner"))
+        tool = _tool(raw.get("tool") or raw.get("scanner") or raw.get("scanner_name"))
         if not tool:
             continue
         item = dict(raw)
