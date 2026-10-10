@@ -15,14 +15,14 @@ from nico.assessment_cpp_header_evidence import validate_header_trace
 CASES = ('attribute', 'capnp', 'noexcept-instantiated', 'bitfield',
          'qualified-comparison', 'attribute-semantics', 'alias-shadow', 'alias-global',
          'alias-self-global', 'alias-chains', 'alias-before', 'alias-nested', 'alias-rhs',
-         'alias-nonlexical', 'alias-absolute', 'alias-heavy', 'alias-index-scopes', 'alias-malformed',
+         'alias-nonlexical', 'alias-absolute', 'alias-heavy', 'alias-index-scopes', 'alias-record-cache', 'alias-malformed',
          'malformed', 'missing', 'depth-limit')
 FAILURES = {'attribute': 'syntaxError', 'capnp': 'syntaxError',
             'noexcept-instantiated': 'internalAstError', 'bitfield': 'syntaxError',
             'attribute-semantics': 'syntaxError', 'alias-shadow': 'syntaxError',
             'alias-global': 'syntaxError', 'alias-before': 'syntaxError',
             'alias-nested': 'syntaxError', 'alias-nonlexical': 'syntaxError',
-            'alias-index-scopes': 'syntaxError'}
+            'alias-index-scopes': 'syntaxError', 'alias-record-cache': 'syntaxError'}
 
 
 def image_argv(image, source, output, trace_name, flags):
@@ -92,12 +92,12 @@ def qualify(output, *, binary=None, image=None, before=False):
                 assert len(operators) == 2
                 assert [f.get('isAttributeNoreturn') for f in operators] == ['true',None]
                 assert 'missingReturn' in rules  # The unannotated function remains a finding.
-            expected_findings = {'alias-global': 2, 'alias-self-global': 2, 'alias-chains': 4, 'alias-before': 2, 'alias-nested': 2, 'alias-rhs': 2, 'alias-heavy': 1, 'alias-index-scopes': 3}
+            expected_findings = {'alias-global': 2, 'alias-self-global': 2, 'alias-chains': 4, 'alias-before': 2, 'alias-nested': 2, 'alias-rhs': 2, 'alias-heavy': 1, 'alias-index-scopes': 3, 'alias-record-cache': 3}
             if before and case == 'alias-chains':
                 expected_findings[case] = 2
             if case in expected_findings:
                 assert rules.count('nullPointer') == expected_findings[case], (case, rules)
-            if case in {'alias-before', 'alias-nested', 'alias-nonlexical', 'alias-index-scopes'}:
+            if case in {'alias-before', 'alias-nested', 'alias-nonlexical', 'alias-index-scopes', 'alias-record-cache'}:
                 tokens = ET.fromstring(Path(str(unit)+'.dump').read_bytes()).findall('.//tokenlist/token')
                 calls = [i for i,t in enumerate(tokens) if t.get('str') == 'now' and i > 0 and tokens[i-1].get('str') == '::']
                 assert calls

@@ -1,3 +1,50 @@
+# Bounded record visibility cache — October 10, 2026
+
+This follow-up starts at `d40c07ec1c83e240e5baacfe96564f07dde26344`.
+Within one immutable alias-shadow lookup, consecutive uses in the same scope
+reuse record visibility results. The cache clears on every use-scope change and
+is discarded before any typedef mutation. Own-RHS exclusions remain before
+lookup. Memory is bounded by distinct record-alias scopes; the use-by-alias
+candidate loop remains. No target source, finding, resource limit or gate changes.
+
+Fresh verification:
+
+- Exact workflow contract selection: **1,969 passed, 5 skipped**. Skips earn no
+  native execution credit.
+
+- All **22 owned controls** pass on both published and candidate binaries;
+  pre-grammar controls retain their expected failures, including malformed input.
+- All **12 valid alias dumps** retain identical token, type and scope structure
+  after normalizing pointer identifiers and owned output roots. All 22 diagnostic
+  XML outputs match under the same root normalization.
+- The new control exercises inherited inline aliases, direct out-of-class member
+  aliases, nested shadowing and return, unrelated scopes and own-RHS behavior.
+- Interleaved baseline/candidate/candidate/baseline comparisons on an owned
+  128-record input (two inheritance levels, 24 alias uses per function) measured
+  wall seconds **4.753 / 2.236 / 2.181 / 4.500** and typedef CPU seconds
+  **2.829 / 0.126 / 0.134 / 2.616**, with byte-identical diagnostics. Both binaries
+  use pinned Cppcheck 2.17.1, GCC 14.2, `-O2 -DNDEBUG`, exhaustive checks,
+  `--max-configs=1 -j1 --platform=unix64 --std=c++20`, 90-second cases and 12 GiB.
+  These are owned measurements, not full-project coverage evidence.
+- Independent read-only review found no blockers; 8 focused repair tests passed.
+
+The preceding hosted qualification remains **failed**: run
+[38044897996, attempt 2](https://github.com/BoneManTGRM/NICO/actions/runs/38044897996/attempts/2)
+completed collection on the exact d40 test merge. Primary static analysis retained
+15 executions, only 2 analyzed contexts, 12 timeouts and 1 internal AST error;
+merged coverage was 15/577 and 603/769 headers remained unvisited. Compiler
+collection retained one failure at context index 289 without a parsed public
+location. UBSan tests failed with an observed `src/streams.cpp:99:24` location and
+an opaque failed-test digest matching `net_tests`; the log does not prove the
+underlying subtype or bind that location to the suite. No success credit is
+assigned to these failures. The required full qualification is still outstanding.
+
+A new exploratory control also exposed an inherited-alias/out-of-class-member
+limitation in both the published and candidate analyzers. It remains unresolved;
+the cache does not claim to repair it. No second rerun of the unchanged hosted
+qualification was requested. No merge or production deployment is authorized by
+these results.
+
 # Scoped alias indexing and actionable failure details — October 10, 2026
 
 This follow-up is based on PR #1712 head
