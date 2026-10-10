@@ -1,9 +1,12 @@
 """Subprocess fixture: production bindings, in-memory retained inputs, no network."""
 from copy import deepcopy
+import base64
 import hashlib
 import importlib
+import io
 import json
 from pathlib import Path
+import re
 import socket
 import sys
 import tempfile
@@ -12,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 bootstrap = importlib.import_module(sys.argv[1])
 language = sys.argv[2]
+artifact_case = sys.argv[3] if len(sys.argv) > 3 else "clean"
 
 from nico import comprehensive_native_providers as legacy
 from nico import comprehensive_native_providers_v5 as scoring
@@ -99,6 +103,8 @@ def scores(result):
 
 
 observations = {}
+case_results = {}
+case_scans = {}
 for case in ("clean", "incomplete", "material", "review_1", "review_25"):
     scan = deepcopy(base)
     semgrep = next(r for r in scan["scanner_results"] if r.get("scanner_name") == "semgrep")
@@ -143,6 +149,8 @@ for case in ("clean", "incomplete", "material", "review_1", "review_25"):
     observations[case] = scores(first)
     if case == "clean":
         retained = first
+    case_results[case] = deepcopy(first)
+    case_scans[case] = deepcopy(scan)
 
 assert observations["clean"] == observations["review_1"] == observations["review_25"]
 print(json.dumps({"bootstrap": sys.argv[1], "language": language, "scores": observations,
@@ -249,10 +257,14 @@ if language == "python":
         "source_sha": SHA, "scoring_version": scoring.VERSION,
         "before": observations["clean"], "after": expected,
     }}), flush=True)
+canonical["assessment"] = deepcopy(case_results[artifact_case]["assessment"])
+canonical["assessment"]["report_language"] = "en"
+canonical["scanner_execution_records"] = deepcopy(case_scans[artifact_case]["scanner_results"])
+expected_scores = observations[artifact_case]
 source = rebuild_client_artifacts(package)
 truth = source["json"]
-assert scores({"assessment": truth["assessment"]}) == observations["clean"], {
-    "stage": "artifact_rebuild", "expected": observations["clean"],
+assert scores({"assessment": truth["assessment"]}) == expected_scores, {
+    "stage": "artifact_rebuild", "expected": expected_scores,
     "actual": scores({"assessment": truth["assessment"]}),
     "contract": truth["assessment"].get("score_contract"),
     "coverage": truth["assessment"].get("evidence_coverage"),
@@ -266,7 +278,7 @@ localized = locale.build_same_run_locale_report(status, "es-MX")
 assert status == before
 assert localized["report"]["json"] == truth
 spanish = localized["report"]["localized_artifact_json"]
-assert scores({"assessment": spanish["assessment"]}) == observations["clean"]
+assert scores({"assessment": spanish["assessment"]}) == expected_scores
 assert spanish["assessment"]["score_contract"]["version"] == scoring.VERSION
 assert spanish["identity"]["commit_sha"] == SHA
 assert spanish["identity"]["evidence_ledger_id"] == context["evidence_ledger_id"]
@@ -279,12 +291,26 @@ for _ in range(2):
     response = client.get(f"/assessment/comprehensive-run/{RUN_ID}/report/json")
     assert response.status_code == 200, response.text[:1000]
     returned = response.json()
-    assert scores({"assessment": returned["assessment"]}) == observations["clean"]
+    assert scores({"assessment": returned["assessment"]}) == expected_scores
     assert returned["identity"]["commit_sha"] == SHA
     assert returned["identity"]["repository"] == context["repository"]
     assert returned["assessment"]["score_contract"]["version"] == scoring.VERSION
 assert record == record_before
-print(json.dumps({"real_artifacts_and_api": "passed", "scores": observations["clean"],
+print(json.dumps({"real_artifacts_and_api": "passed", "case": artifact_case, "scores": expected_scores,
                   "canonical_truth_sha256": source["canonical_truth_sha256"],
                   "english_pdf_sha256": source["pdf_sha256"],
                   "spanish_pdf_sha256": localized["report"]["pdf_sha256"]}), flush=True)
+
+# Check visible PDF score labels as well as canonical/localized JSON values.
+from pypdf import PdfReader
+for report_language, rendered in (("en", source), ("es-MX", localized["report"])):
+    pdf = base64.b64decode(rendered["pdf_base64"])
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages)
+    labels = (("TECHNICAL MATURITY", "EVIDENCE-ADJUSTED") if report_language == "en"
+              else ("MADUREZ TÉCNICA", "AJUSTE POR EVIDENCIA"))
+    matches = [re.search(re.escape(label) + r"\s+(\d+)/100", text) for label in labels]
+    assert all(matches), (report_language, labels)
+    visible = tuple(int(match.group(1)) for match in matches)
+    assert visible == expected_scores, (artifact_case, report_language, visible, expected_scores)
+    print(json.dumps({"visible_pdf_scores": visible, "language": report_language,
+                      "case": artifact_case}), flush=True)
