@@ -19,6 +19,10 @@ Fresh verification:
   XML outputs match under the same root normalization.
 - The new control exercises inherited inline aliases, direct out-of-class member
   aliases, nested shadowing and return, unrelated scopes and own-RHS behavior.
+  A follow-up GCC 14.2 syntax check rejected the initial record-level self-alias;
+  moving that declaration into its function block makes the control valid C++20.
+  GCC syntax validation and all native/differential controls pass after correction.
+  The analyzer binary is unchanged by this fixture-only correction.
 - Interleaved baseline/candidate/candidate/baseline comparisons on an owned
   128-record input (two inheritance levels, 24 alias uses per function) measured
   wall seconds **4.753 / 2.236 / 2.181 / 4.500** and typedef CPU seconds

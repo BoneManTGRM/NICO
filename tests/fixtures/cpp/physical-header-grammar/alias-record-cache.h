@@ -23,7 +23,10 @@ struct UnrelatedRecord {
     static int bug() { Alias p = nullptr; return *p; }
 };
 struct RecordOwnRhs {
-    using Alias = Alias*;
-    static bool clean() { Alias p = nullptr; Alias q = nullptr; return p == q; }
+    static bool clean() {
+        using Alias = Alias*;
+        Alias p = nullptr; Alias q = nullptr;
+        return p == q;
+    }
 };
 int record_cache_global_bug() { Alias p = nullptr; return *p; }
