@@ -95,7 +95,7 @@ def publish_image(directory, expected_sha256, recipe, output, *, registry_token,
     if not _sha(expected_sha256) or hashlib.sha256(raw).hexdigest() != expected_sha256:
         raise ValueError('image_promotion_handoff_mismatch')
     manifest = json.loads(raw)
-    if (not isinstance(manifest, dict) or manifest.get('schema') not in {'nico.qualified-image-handoff.v1','nico.qualified-image-handoff.v2','nico.qualified-image-handoff.v3'}
+    if (not isinstance(manifest, dict) or manifest.get('schema') not in {'nico.qualified-image-handoff.v1','nico.qualified-image-handoff.v2','nico.qualified-image-handoff.v3','nico.qualified-image-handoff.v4','nico.qualified-image-handoff.v5'}
             or manifest.get('platform') != 'linux/amd64'
             or manifest.get('registry_published') is not False
             or manifest.get('production_qualified') is not False):
@@ -108,7 +108,7 @@ def publish_image(directory, expected_sha256, recipe, output, *, registry_token,
     proof_hash, profiles = validate_control_proof(proof, source_sha=source_sha, image=image)
     if proof_hash != manifest.get('qualification_sha256') or profiles != manifest.get('owned_control_profiles'):
         raise ValueError('image_promotion_qualification_mismatch')
-    if manifest['schema']=='nico.qualified-image-handoff.v3':
+    if manifest['schema'] in {'nico.qualified-image-handoff.v3','nico.qualified-image-handoff.v4','nico.qualified-image-handoff.v5'}:
         from scripts.cpp_full_project_handoff import validate_collection
         collection_hash = validate_collection(directory / 'collection', source_sha=source_sha, image=image)
         if (collection_hash != manifest.get('full_project_collection_sha256')
@@ -133,7 +133,7 @@ def publish_image(directory, expected_sha256, recipe, output, *, registry_token,
     receipt_path = output / 'publication.json'
     result = {'schema': 'nico.image-publication.v1', 'handoff_sha256': expected_sha256,
         'source_sha': source_sha, 'image_config_id': image, 'image_manifest': None,
-        **({'full_project_collection_sha256': collection_hash} if manifest['schema'] == 'nico.qualified-image-handoff.v3' else {}),
+        **({'full_project_collection_sha256': collection_hash} if manifest['schema'] in {'nico.qualified-image-handoff.v3','nico.qualified-image-handoff.v4','nico.qualified-image-handoff.v5'} else {}),
         'destination_tag': DESTINATION + ':handoff-' + expected_sha256,
         'state': 'failed_before_push', 'registry_published': False,
         'anonymous_pull_verified': False, 'production_qualified': False}

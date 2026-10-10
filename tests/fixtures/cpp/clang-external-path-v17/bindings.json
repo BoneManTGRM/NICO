@@ -1,0 +1,21 @@
+{
+  "schema": "nico.v17.retained-clang-external-path-regression.v1",
+  "run": 37458835855,
+  "attempt": 1,
+  "artifact": 11418237485,
+  "archive_sha256": "0f0bfe66e1b5ec288bad2476a3d1b060ead9b48bd22405be2c66626b75cae008",
+  "fallback_native_sha256": "5bbc5739dfd0351b5333d49a7bf00a4b5e825d8f2de80e392d459ebb3960cda7",
+  "trace_sha256": "8708ab27b0f0f661e03ecff3b2384739e65f7c7c07e08a6218e69577fb35e1ae",
+  "source": "/work/source/src/crypto/sha256_sse4.cpp",
+  "context_id": "8117318764b1554fd586fb098716d5c8a5f8be22b810e1d2bbc198d9baa2dc06",
+  "standard": "c++20",
+  "locations": {
+    "/work/source/src/crypto/sha256_sse4.cpp": [
+      "original",
+      "src/crypto/sha256_sse4.cpp",
+      "d936fbf07335f123a0ecb0b2da75a98a7c6413f74fc7e7e01630a1da85351576"
+    ]
+  },
+  "expected_native_normal_pass_completed": true,
+  "expected_external_coverage_credit": false
+}

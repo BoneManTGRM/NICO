@@ -683,7 +683,7 @@ jobs:
             --run-id "$DIAGNOSTIC_RUN_ID" \
             --expected-commit "$DIAGNOSTIC_SOURCE_COMMIT" \
             --output audit-results/blocked-run-diagnostic.json
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
           name: blocked-run-diagnostic-${{ github.run_id }}

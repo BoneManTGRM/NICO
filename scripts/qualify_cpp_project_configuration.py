@@ -15,6 +15,8 @@ import tempfile
 import time
 
 from nico.assessment_worker_receipts import canonical_bytes
+from scripts.cpp_qualification_diagnostics import failure_diagnostic
+from scripts.cpp_qualification_diagnostic_details import add_failure_details, public_paths_after_freeze
 
 def freeze_configuration_checkout(checkout, destination, manifest):
     """Verify every pinned Git entry; materialize original regular blobs only.
@@ -132,7 +134,7 @@ def persist_project_artifact(output, key, raw):
     symlinks and arbitrary names cannot replace an earlier artifact.
     """
     from nico.assessment_cpp_project_snapshot import PROJECT_GENERATED_STREAM_LIMIT, _stable_bytes
-    if (key not in {'project-generated-context', 'project-compiler-evidence', 'project-static-evidence', 'project-static-environment', 'project-static-clang-fallback', 'project-runtime-evidence'} or not isinstance(raw, bytes)
+    if (key not in {'project-generated-context', 'project-compiler-evidence', 'project-static-evidence', 'project-static-environment', 'project-static-clang-fallback', 'project-runtime-evidence', 'project-enabled-targets', 'project-native-commands', 'project-native-commands-post-build', 'project-generation-evidence', 'project-enabled-targets-post-build'} or not isinstance(raw, bytes)
             or len(raw) > PROJECT_GENERATED_STREAM_LIMIT):
         raise ValueError('qualification_artifact_invalid')
     output = Path(output).absolute()
@@ -174,6 +176,40 @@ def qualification_probe_receipt(value):
     if not isinstance(value, dict):
         raise ValueError('qualification_probe_invalid')
     projected = dict(value)
+    from nico.assessment_cpp_compiler_collection import collection_summary
+    if isinstance(value.get('project_compiler_collection'),dict):
+        projected['project_compiler_collection']=collection_summary(value['project_compiler_collection'])
+    if isinstance(value.get('project_static_stage'),dict):
+        stage=dict(value['project_static_stage'])
+        for key in ('compiler_collection','static_collection'):
+            if isinstance(stage.get(key),dict):stage[key]=collection_summary(stage[key])
+        projected['project_static_stage']=stage
+    generation=value.get('generated_input_materialization')
+    if isinstance(generation,dict):
+        projected['generated_input_materialization']={
+            'schema':generation['schema'],'complete':generation['complete'],
+            'artifact':generation['artifact'],
+            'native_evidence_sha256':hashlib.sha256(canonical_bytes({k:v for k,v in generation.items() if k!='artifact'})).hexdigest(),
+            'receipt_projection':'hash-bound-summary-v1'}
+    membership=value.get('enabled_target_membership')
+    if isinstance(membership,dict):
+        summary=dict(membership)
+        for key in ('contexts','missing_database_contexts','source_represented_contexts'):
+            population=summary.pop(key)
+            summary[key+'_count']=len(population)
+            summary[key+'_sha256']=hashlib.sha256(canonical_bytes(population)).hexdigest()
+        summary['receipt_projection']='hash-bound-summary-v1'
+        projected['enabled_target_membership']=summary
+    plan=value.get('native_command_plan')
+    if isinstance(plan,dict):
+        summary=dict(plan)
+        population=summary.pop('contexts')
+        summary['contexts_count']=len(population)
+        summary['contexts_sha256']=hashlib.sha256(canonical_bytes(population)).hexdigest()
+        summary.pop('analysis_database')
+        summary['receipt_projection']='hash-bound-summary-v1'
+        projected['native_command_plan']=summary
+        projected.pop('analysis_compilation_database',None)
     runtime = value.get('runtime_evidence')
     if isinstance(runtime, dict):
         projected['runtime_evidence']={
@@ -197,8 +233,14 @@ def qualification_probe_receipt(value):
         summary[key + '_count'] = len(population)
         summary[key + '_sha256'] = hashlib.sha256(canonical_bytes(population)).hexdigest()
     summary['receipt_projection'] = 'hash-bound-summary-v1'
+    if 'header_context_evidence' in summary:
+        from nico.assessment_cpp_header_evidence import header_summary
+        compact=header_summary(summary)
+        for key in ('header_context_evidence','header_population','header_unvisited_files'):
+            summary.pop(key)
+        summary.update(compact)
     projected['project_static'] = summary
-    stage = value.get('project_static_stage')
+    stage = projected.get('project_static_stage')
     if isinstance(stage, dict):
         stage = dict(stage)
         if isinstance(stage.get('analysis'), dict):
@@ -209,14 +251,41 @@ def qualification_probe_receipt(value):
 
 def qualify_configuration_checkout(args):
     """Prepare the next frozen execution contract using real isolated configure."""
-    from nico.assessment_cpp_full_project import _json
-    from nico.assessment_cpp_configuration_probe import probe_project_configuration
-    args.output.mkdir(parents=True, exist_ok=True)
     evidence={'schema':'nico.cpp-configuration-qualification.v1','status':'UNPROVEN',
         'stage':'source_inventory','source':None,'probe':None,
         'production_dispatch_exercised':False,'production_qualified':False,
         'compiled':False,'tests_executed':False}
+    diagnostic_context = {}
+    try:
+        return _qualify_configuration_checkout(args, evidence, diagnostic_context)
+    except (Exception, KeyboardInterrupt) as exc:
+        try:
+            summary = failure_diagnostic(evidence, exc)
+            if diagnostic_context:
+                try:
+                    from nico.assessment_cpp_project_snapshot import _stable_bytes
+                    summary = add_failure_details(summary, diagnostic_context,
+                        lambda path, limit: _stable_bytes(args.output.absolute(), path, limit))
+                except (Exception, KeyboardInterrupt):
+                    summary['details'] = {'state': 'unavailable'}
+            print(json.dumps(summary, separators=(',', ':')))
+        except (Exception, KeyboardInterrupt):
+            pass  # Diagnostic output must never replace the original failure.
+        raise
+
+
+def _qualify_configuration_checkout(args, evidence, diagnostic_context):
+    from nico.assessment_cpp_full_project import _json
+    from nico.assessment_cpp_configuration_probe import probe_project_configuration
+    args.output.mkdir(parents=True, exist_ok=True)
     collection_policy = getattr(args, 'accept_completed_collection', False)
+    compiler_collection_policy = getattr(args,'collect_completed_compiler_failures',False)
+    if (type(compiler_collection_policy) is not bool or compiler_collection_policy and (
+            not collection_policy or not all(getattr(args,key,False) is True for key in
+                ('capture_generated_context','project_compiler_evidence','project_static_analysis',
+                 'extended_compiler_budget','compiler_environment','capture_enabled_targets',
+                 'capture_native_commands','materialize_generated_inputs')))):
+        raise ValueError('qualification_compiler_collection_contract_invalid')
     if collection_policy:
         import re
         producer = getattr(args, 'producer_source_sha', None)
@@ -253,6 +322,13 @@ def qualify_configuration_checkout(args):
         with tempfile.TemporaryDirectory(prefix='nico-project-qualification-') as temporary:
             root=Path(temporary)/'source'
             evidence['source']=freeze_configuration_checkout(args.qualification_source,root,manifest)
+            # Live source-verification authority, never reconstructed from a
+            # retained receipt's claimed identity at the failure boundary.
+            try:
+                diagnostic_context['public_paths'] = public_paths_after_freeze(
+                    evidence['benchmark_sha256'], evidence['source'])
+            except (Exception, KeyboardInterrupt):
+                diagnostic_context['public_paths'] = frozenset()
             evidence['stage']='source_frozen'; retain()
             runtime_plan = None
             runtime_interfaces = None
@@ -282,6 +358,8 @@ def qualify_configuration_checkout(args):
                             or hashlib.sha256(unit_test_data[asset['name']]).hexdigest()!=asset['sha256']):
                         raise ValueError('qualification_unit_test_data_invalid')
             def save_probe(value):
+                if value.get('project_compiler') is not None:
+                    diagnostic_context['compiler'] = value['project_compiler']
                 evidence.update(stage='isolated_baseline' if execution_contract is not None else 'isolated_configuration',
                     probe=qualification_probe_receipt(value), compiled=value['compiled'], tests_executed=value['tests_executed']); retain()
             result=probe_project_configuration(root,evidence['source']['targets'],args.image,
@@ -292,6 +370,10 @@ def qualify_configuration_checkout(args):
                 project_static_analysis=getattr(args, 'project_static_analysis', False),
                 extended_compiler_budget=getattr(args, 'extended_compiler_budget', False),
                 compiler_environment=getattr(args, 'compiler_environment', False),
+                capture_enabled_targets=getattr(args,'capture_enabled_targets',False),
+                capture_native_commands=getattr(args,'capture_native_commands',False),
+                materialize_generated_inputs=getattr(args,'materialize_generated_inputs',False),
+                collect_completed_compiler_failures=compiler_collection_policy,
                 retain_artifact=lambda key, raw: persist_project_artifact(args.output, key, raw))
             evidence['status']=result['status']
             evidence.update(compiled=result['compiled'], tests_executed=result['tests_executed'])
@@ -299,8 +381,19 @@ def qualify_configuration_checkout(args):
                 from nico.assessment_cpp_runtime_scope import retained_runtime_bytes, validate_retained_runtime
                 runtime_raw=retained_runtime_bytes(runtime_interfaces,runtime_plan,result.get('runtime_evidence'))
                 reference=persist_project_artifact(args.output,'project-runtime-evidence',runtime_raw)
+                if result.get('runtime_evidence') is None:
+                    # Missing evidence does not prove no operations ran. Preserve
+                    # the earlier probe failure without inferring runtime success.
+                    evidence['runtime']={'complete':False, 'state':'unavailable',
+                        'artifact':reference, 'native_evidence_sha256':hashlib.sha256(runtime_raw).hexdigest(),
+                        'duration_ms':None}
+                    evidence['stage']='execution_unproven'
+                    if result['status']=='UNPROVEN' and result.get('error') is not None:
+                        raise ValueError('qualification_probe_unproven_without_runtime_evidence')
+                    raise ValueError('qualification_runtime_evidence_missing')
                 reconstructed=validate_retained_runtime(runtime_raw,evidence['source']['targets'],
                     manifest['project_options'],runtime_scope)
+                diagnostic_context['runtime'] = result['runtime_evidence']
                 evidence['runtime']={'complete':reconstructed['summary']['complete'],
                     'artifact':reference,'native_evidence_sha256':reconstructed['native_evidence_sha256'],
                     'duration_ms':reconstructed['duration_ms']}
@@ -324,7 +417,11 @@ def qualify_configuration_checkout(args):
         decision = validate_project_collection(evidence,
             lambda ref: _stable_bytes(artifact_root, ref['path'], PROJECT_GENERATED_STREAM_LIMIT),
             manifest_raw=raw, baseline_raw=raw_execution, scope_raw=raw_runtime,
-            producer_source_sha=producer, image=args.image)
+            producer_source_sha=producer, image=args.image,
+            enabled_targets_required=getattr(args,'capture_enabled_targets',False),
+            native_commands_required=getattr(args,'capture_native_commands',False),
+            generated_inputs_required=getattr(args,'materialize_generated_inputs',False),
+            collect_completed_compiler_failures=compiler_collection_policy)
         # The original receipt/status and failed native results remain untouched.
         # This additive decision is not an image-promotion or production credential.
         path = args.output / 'collection-acceptance.json'
@@ -350,6 +447,11 @@ def main():
     parser.add_argument('--project-static-analysis', action='store_true')
     parser.add_argument('--extended-compiler-budget', action='store_true')
     parser.add_argument('--compiler-environment', action='store_true')
+    parser.add_argument('--capture-enabled-targets', action='store_true')
+    parser.add_argument('--capture-native-commands', action='store_true')
+    parser.add_argument('--materialize-generated-inputs', action='store_true')
+    parser.add_argument('--collect-completed-compiler-failures',action='store_true',
+        help='Collect source-bound generated directive failures without granting compiler/header success.')
     parser.add_argument('--accept-completed-collection', action='store_true',
         help='Use the explicit collection policy while retaining failed target qualification.')
     parser.add_argument('--producer-source-sha', help='NICO revision producing this collection receipt.')
@@ -358,4 +460,15 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except (Exception, KeyboardInterrupt) as exc:
+        # The wrapper emitted bounded diagnostics. Suppress Python's raw
+        # exception/traceback text only for the CLI; let the interpreter retain
+        # its original failure exit status (including KeyboardInterrupt).
+        import sys
+        def diagnostic_excepthook(kind, value, traceback, failure=exc, previous=sys.excepthook):
+            if value is not failure:
+                previous(kind, value, traceback)
+        sys.excepthook = diagnostic_excepthook
+        raise

@@ -197,6 +197,7 @@ def _section_map(assessment: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
     }
 
 
+@legacy._source_bound_scoring
 def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
     baseline = v3.canonical_scoring_provider(context)
     if baseline.get("status") != "complete":

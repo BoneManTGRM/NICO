@@ -1,3 +1,149 @@
+# Bounded record visibility cache — October 10, 2026
+
+This follow-up starts at `d40c07ec1c83e240e5baacfe96564f07dde26344`.
+Within one immutable alias-shadow lookup, consecutive uses in the same scope
+reuse record visibility results. The cache clears on every use-scope change and
+is discarded before any typedef mutation. Own-RHS exclusions remain before
+lookup. Memory is bounded by distinct record-alias scopes; the use-by-alias
+candidate loop remains. No target source, finding, resource limit or gate changes.
+
+Fresh verification:
+
+- Exact workflow contract selection: **1,969 passed, 5 skipped**. Skips earn no
+  native execution credit.
+
+- All **22 owned controls** pass on both published and candidate binaries;
+  pre-grammar controls retain their expected failures, including malformed input.
+- All **12 valid alias dumps** retain identical token, type and scope structure
+  after normalizing pointer identifiers and owned output roots. All 22 diagnostic
+  XML outputs match under the same root normalization.
+- The new control exercises inherited inline aliases, direct out-of-class member
+  aliases, nested shadowing and return, unrelated scopes and own-RHS behavior.
+  A follow-up GCC 14.2 syntax check rejected the initial record-level self-alias;
+  moving that declaration into its function block makes the control valid C++20.
+  GCC syntax validation and all native/differential controls pass after correction.
+  The analyzer binary is unchanged by this fixture-only correction.
+- Interleaved baseline/candidate/candidate/baseline comparisons on an owned
+  128-record input (two inheritance levels, 24 alias uses per function) measured
+  wall seconds **4.753 / 2.236 / 2.181 / 4.500** and typedef CPU seconds
+  **2.829 / 0.126 / 0.134 / 2.616**, with byte-identical diagnostics. Both binaries
+  use pinned Cppcheck 2.17.1, GCC 14.2, `-O2 -DNDEBUG`, exhaustive checks,
+  `--max-configs=1 -j1 --platform=unix64 --std=c++20`, 90-second cases and 12 GiB.
+  These are owned measurements, not full-project coverage evidence.
+- Independent read-only review found no blockers; 8 focused repair tests passed.
+
+The preceding hosted qualification remains **failed**: run
+[38044897996, attempt 2](https://github.com/BoneManTGRM/NICO/actions/runs/38044897996/attempts/2)
+completed collection on the exact d40 test merge. Primary static analysis retained
+15 executions, only 2 analyzed contexts, 12 timeouts and 1 internal AST error;
+merged coverage was 15/577 and 603/769 headers remained unvisited. Compiler
+collection retained one failure at context index 289 without a parsed public
+location. UBSan tests failed with an observed `src/streams.cpp:99:24` location and
+an opaque failed-test digest matching `net_tests`; the log does not prove the
+underlying subtype or bind that location to the suite. No success credit is
+assigned to these failures. The required full qualification is still outstanding.
+
+A new exploratory control also exposed an inherited-alias/out-of-class-member
+limitation in both the published and candidate analyzers. It remains unresolved;
+the cache does not claim to repair it. No second rerun of the unchanged hosted
+qualification was requested. No merge or production deployment is authorized by
+these results.
+
+# Scoped alias indexing and actionable failure details — October 10, 2026
+
+This follow-up is based on PR #1712 head
+`3ec7278fafe7271504a34f2a9eae4bcb3df5e598`. Non-record aliases are indexed by
+exact scope identity or namespace full name; record/inheritance matching keeps
+its original logic. Indexes exist only within the immutable helper invocation.
+Reopened namespaces, declaration order and own-RHS exclusions are preserved.
+The new owned control exercises reopened namespaces, identical short namespace
+names under different parents, sibling blocks and member-function local aliases.
+
+Failure details use live validated compiler/runtime evidence. The exact pinned
+Bitcoin manifest plus successful checkout verification permits inventory-matched
+public source paths and bounded line/column numbers. Other inputs disclose no
+paths. Sanitizer tests use validated population indexes and computed name digests,
+never arbitrary test names. Native messages, commands, absolute/private paths and
+source excerpts are excluded. Details are capped at 16 compiler records, 16 tests
+across sanitizers and 8 locations per selected record/phase, within a 60 KiB
+complete diagnostic record. Missing results stay unknown; unavailable logs do not
+erase test identifiers. Diagnostic failures cannot change the original exception
+or qualification decision. No required population, resource limit, finding or
+gate is changed. Location categories are observations, not source-defect proof.
+
+Fresh verification:
+
+- Workflow contract selection: **1,968 passed, 5 skipped**. An earlier run had
+  one unchanged transport child-start deadline failure, with 1,967 passes; that
+  test passed in isolation and the full rerun passed. Skips earn no execution credit.
+- Final diagnostic module: **67 passed**, including the final warning-filter and
+  manifest-pin control added after the full run began. Independent review passed
+  74 focused controls and then the final amended control; no remaining blockers.
+- Actual pinned native builds preserve all **21 owned controls** and all **11
+  valid alias token/type/scope comparisons**. The pre-grammar negative controls
+  retain their expected failures. Full Bitcoin qualification was not run locally.
+- An interleaved four-run owned 2,048-scope comparison retained identical XML;
+  published/candidate median wall times were 15.323/13.354 seconds (two each).
+  Larger owned inputs still time out at the unchanged 90-second limit. Further
+  local instrumentation identifies substantial remaining upstream `simplifyUsing`
+  work; no unproven shortcut was added. These measurements do not establish full
+  project performance or repair the hosted qualification failure.
+
+Published base run 38018300632 remains failed: 12 observed primary timeouts,
+13/577 merged static completion, incomplete compiler collection and a failed
+undefined-sanitizer test phase of unknown cause. The next automatic run must be
+judged independently. No manual retry, merge or production deployment is claimed.
+
+# C++ repair progress — October 10, 2026
+
+Candidate based on PR #1712 head `f039f473c3609b664b7350b036b946a8dd324a33`.
+The alias-shadow helper now resolves each alias declaration endpoint once per
+invocation. Token order and scope matching are unchanged; nothing is cached across
+typedef mutations. Owned controls add 64 separate alias scopes with long pointer
+type-ids and malformed-alias rejection. All execution and qualification limits,
+required populations, findings and acceptance gates remain unchanged.
+
+Primary diagnostics now retain validated execution timings and overlapping counts
+for missing execution, timeouts, nonzero exits, truncation, record errors, syntax
+errors and AST errors. Fallback completion cannot increase primary analyzed counts.
+Failure summaries emit bounded numbers and exact sanitizer kind/phase enums only
+when a retained runtime summary names the operation; generic failures remain unknown.
+These observations are not acceptance or scoring evidence.
+
+Fresh local validation:
+
+- Exact `contract-regressions` pytest selection from
+  `.github/workflows/cpp-full-project-integration.yml`: **1,902 passed, 5 skipped**
+  in 76.33 seconds on the final code. Skipped checks receive no execution credit.
+
+- 126 focused tests pass: `python -m pytest -q tests/test_cpp_clang_fallback.py
+  tests/test_cpp_project_static.py tests/test_cpp_qualification_failure_diagnostics.py
+  tests/test_cpp_header_grammar_repair.py`.
+- 318 broader static/runtime/collection regression tests passed before the final
+  two diagnostic counters and coverage additions; this is an overlapping set.
+- Actual pinned Cppcheck `ac9db3069b9f90e81e126a090b99ad456e122cf8` built with
+  GCC 14.2.0, existing placement/grammar/observer repairs and `make -j2
+  MATCHCOMPILER=yes CXXFLAGS='-O2 -DNDEBUG'`, both before and after this hoist.
+  `python -m scripts.qualify_cpp_header_grammar --binary <binary> --output <new-dir>`
+  passed all 20 owned controls on each binary. Diagnostic rule sequences and
+  normal-pass outcomes matched; all 10 valid alias token/type sequences matched.
+- Nine alternating local runs of alias-heavy, using `--xml --enable=all
+  --check-level=exhaustive --max-configs=1 -j1 --platform=unix64 --std=c++20`,
+  retained byte-identical diagnostic XML. Median elapsed time was 214.838 ms before
+  and 211.094 ms after. This small, noisy difference is not a performance or
+  full-project qualification claim.
+- Independent read-only review found no blocking defect. Both suggested coverage
+  additions were implemented: exact alias-heavy finding count and primary/fallback
+  diagnostic separation. `git diff --check` passed.
+
+Full native project qualification was not run locally. Historical run
+`37972322294`, attempt 2, job `113967265684` remains failed. Its sanitizer root cause
+is unknown; no historical UBSan cause or timeout population is inferred. Automatic
+checks on the published candidate remain required. No merge, production deployment,
+manual qualification retry, source-obligation removal or scoring credit is included.
+
+Earlier histories follow unchanged.
+
 # Latest native repair — September 26, 2026
 
 Full run 36272142582 on PR merge checkout a65f40441f597fce702bdbce37332651780fa3c7

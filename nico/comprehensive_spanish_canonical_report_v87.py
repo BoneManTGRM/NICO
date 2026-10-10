@@ -22,6 +22,20 @@ VERSION = "nico.comprehensive-spanish-canonical-report.v87"
 # Downstream compaction identifies those semantic sections by their localized
 # titles; alternate synonyms would leave duplicate stage blocks/pages in Spanish.
 _CANONICAL_PARITY_EXACT = {
+    "This is a scanner candidate, not a confirmed production defect, until the exact source context and applicability are reviewed.": (
+        "Este es un candidato del analizador, no un defecto confirmado en producción, "
+        "hasta que se revisen el contexto exacto del código fuente y su aplicabilidad."
+    ),
+    "A confirmed instance could affect security, correctness, maintainability, or delivery reliability; an unconfirmed candidate affects evidence assurance only.": (
+        "Una instancia confirmada podría afectar la seguridad, la corrección, la "
+        "mantenibilidad o la fiabilidad de la entrega; un candidato no confirmado "
+        "solo afecta la garantía de la evidencia."
+    ),
+    "Review the exact source anchor, apply the smallest bounded correction, run targeted and full regression tests, and rerun NICO against the remediation commit.": (
+        "Revise la ubicación exacta del código fuente, aplique la corrección acotada "
+        "más pequeña, ejecute pruebas de regresión específicas y completas, y vuelva "
+        "a ejecutar NICO sobre el commit de remediación."
+    ),
     "Documented not-applicable dispositions do not establish analyzer execution.": "Las determinaciones documentadas de no aplicabilidad no demuestran la ejecución del analizador.",
     "Retain the required exact-SHA applicability dispositions.": "Conserve las determinaciones de aplicabilidad requeridas para el SHA exacto.",
     "Configure-first execution is incomplete; retained native evidence requires repair.": "La ejecución con configuración inicial está incompleta; la evidencia nativa conservada requiere reparación.",
@@ -2157,6 +2171,42 @@ def _repository_unavailable_note_es(match: re.Match[str]) -> str:
 
 
 def _structured_presentation_es(value: str) -> str | None:
+    scanner_anchor = re.fullmatch(
+        r"(?P<tool>[A-Za-z0-9_-]+) retained a candidate at the exact source anchor\.", value,
+    )
+    if scanner_anchor:
+        return f"{scanner_anchor['tool']} conservó un candidato en la ubicación exacta del código fuente."
+    # The scanner register supplies this impact; the premium renderer supplies
+    # the labels and fallback recommendation. Only machine-shaped rule IDs and
+    # source anchors are opaque. Arbitrary finding prose must still fail closed.
+    scanner_finding = re.fullmatch(
+        r"(?P<priority>P[0-3]) · "
+        r"(?P<rule>[A-Za-z0-9_]+(?:[./:-][A-Za-z0-9_+]+)+) · "
+        r"(?P<identifier>NICO-(?:CODE|FINDING)-[A-F0-9]{12}) · "
+        r"(?P<location>[A-Za-z0-9_@./+\-]+(?::\d+(?:-\d+)?(?::\d+)?)?) · "
+        r"Impact: A confirmed instance could affect security, correctness, "
+        r"maintainability, or delivery reliability; an unconfirmed candidate "
+        r"affects evidence assurance only\. · Recommendation: "
+        r"(?P<recommendation>requires review|Review the exact source anchor, apply the "
+        r"smallest bounded correction, run targeted and full regression tests, and "
+        r"rerun NICO against the remediation commit\.)",
+        value,
+    )
+    if scanner_finding:
+        recommendation = (
+            "requiere revisión"
+            if scanner_finding["recommendation"] == "requires review"
+            else "Revise la ubicación exacta del código fuente, aplique la corrección "
+            "acotada más pequeña, ejecute pruebas de regresión específicas y completas, "
+            "y vuelva a ejecutar NICO sobre el commit de remediación."
+        )
+        return (
+            f"{scanner_finding['priority']} · {scanner_finding['rule']} · "
+            f"{scanner_finding['identifier']} · {scanner_finding['location']} · "
+            "Impacto: Una instancia confirmada podría afectar la seguridad, la corrección, "
+            "la mantenibilidad o la fiabilidad de la entrega; un candidato no confirmado "
+            f"solo afecta la garantía de la evidencia. · Recomendación: {recommendation}"
+        )
     source_sample = re.fullmatch(
         r"(?P<anchor>repository_evidence\.code_signal_evidence\.risk_pattern_samples\[\d+\]: "
         r"[A-Za-z0-9_@./+\-]+:\d+(?::\d+)?: [A-Za-z0-9_.\-]+ — )"
