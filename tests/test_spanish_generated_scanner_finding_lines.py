@@ -71,3 +71,26 @@ def test_unknown_generated_finding_prose_still_fails_closed(old, new):
     source, _ = generated_line()
     with pytest.raises(ValueError, match="Spanish presentation"):
         canonical._translate_presentation_field(source.replace(old, new), "findings")
+
+
+def test_long_hyphenated_rule_with_unknown_suffix_is_rejected_promptly():
+    # Run the negative case in a bounded subprocess: an ambiguous nested rule-ID
+    # regex must not turn a malformed finding into unbounded backtracking.
+    import subprocess
+    import sys
+
+    source, _ = generated_line()
+    source = source.replace("owned.rule.0", "owned-" * 40 + "rule") + "!"
+    probe = (
+        "import sys\n"
+        "from nico.comprehensive_spanish_canonical_report_v87 import _translate_presentation_field\n"
+        "try:\n"
+        "    _translate_presentation_field(sys.argv[1], 'findings')\n"
+        "except ValueError:\n"
+        "    pass\n"
+        "else:\n"
+        "    raise AssertionError('Unknown suffix accepted')\n"
+    )
+    result = subprocess.run([sys.executable, "-c", probe, source], capture_output=True,
+                            text=True, timeout=10, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr

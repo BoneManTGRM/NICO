@@ -2181,7 +2181,7 @@ def _structured_presentation_es(value: str) -> str | None:
     # source anchors are opaque. Arbitrary finding prose must still fail closed.
     scanner_finding = re.fullmatch(
         r"(?P<priority>P[0-3]) · "
-        r"(?P<rule>[A-Za-z0-9_]+(?:[./:-][A-Za-z0-9_+\-]+)+) · "
+        r"(?P<rule>[A-Za-z0-9_]+(?:[./:-][A-Za-z0-9_+]+)+) · "
         r"(?P<identifier>NICO-(?:CODE|FINDING)-[A-F0-9]{12}) · "
         r"(?P<location>[A-Za-z0-9_@./+\-]+(?::\d+(?:-\d+)?(?::\d+)?)?) · "
         r"Impact: A confirmed instance could affect security, correctness, "
