@@ -1,3 +1,48 @@
+# Scoped alias indexing and actionable failure details — October 10, 2026
+
+This follow-up is based on PR #1712 head
+`3ec7278fafe7271504a34f2a9eae4bcb3df5e598`. Non-record aliases are indexed by
+exact scope identity or namespace full name; record/inheritance matching keeps
+its original logic. Indexes exist only within the immutable helper invocation.
+Reopened namespaces, declaration order and own-RHS exclusions are preserved.
+The new owned control exercises reopened namespaces, identical short namespace
+names under different parents, sibling blocks and member-function local aliases.
+
+Failure details use live validated compiler/runtime evidence. The exact pinned
+Bitcoin manifest plus successful checkout verification permits inventory-matched
+public source paths and bounded line/column numbers. Other inputs disclose no
+paths. Sanitizer tests use validated population indexes and computed name digests,
+never arbitrary test names. Native messages, commands, absolute/private paths and
+source excerpts are excluded. Details are capped at 16 compiler records, 16 tests
+across sanitizers and 8 locations per selected record/phase, within a 60 KiB
+complete diagnostic record. Missing results stay unknown; unavailable logs do not
+erase test identifiers. Diagnostic failures cannot change the original exception
+or qualification decision. No required population, resource limit, finding or
+gate is changed. Location categories are observations, not source-defect proof.
+
+Fresh verification:
+
+- Workflow contract selection: **1,968 passed, 5 skipped**. An earlier run had
+  one unchanged transport child-start deadline failure, with 1,967 passes; that
+  test passed in isolation and the full rerun passed. Skips earn no execution credit.
+- Final diagnostic module: **67 passed**, including the final warning-filter and
+  manifest-pin control added after the full run began. Independent review passed
+  74 focused controls and then the final amended control; no remaining blockers.
+- Actual pinned native builds preserve all **21 owned controls** and all **11
+  valid alias token/type/scope comparisons**. The pre-grammar negative controls
+  retain their expected failures. Full Bitcoin qualification was not run locally.
+- An interleaved four-run owned 2,048-scope comparison retained identical XML;
+  published/candidate median wall times were 15.323/13.354 seconds (two each).
+  Larger owned inputs still time out at the unchanged 90-second limit. Further
+  local instrumentation identifies substantial remaining upstream `simplifyUsing`
+  work; no unproven shortcut was added. These measurements do not establish full
+  project performance or repair the hosted qualification failure.
+
+Published base run 38018300632 remains failed: 12 observed primary timeouts,
+13/577 merged static completion, incomplete compiler collection and a failed
+undefined-sanitizer test phase of unknown cause. The next automatic run must be
+judged independently. No manual retry, merge or production deployment is claimed.
+
 # C++ repair progress — October 10, 2026
 
 Candidate based on PR #1712 head `f039f473c3609b664b7350b036b946a8dd324a33`.

@@ -140,13 +140,17 @@ assert seen == [unrelated]
 
 
 @pytest.mark.parametrize('rejected', [False, True])
-def test_real_cli_collection_gate_retains_failure_and_reports_safe_counts(tmp_path, monkeypatch, capsys, rejected):
+@pytest.mark.parametrize('diagnostic_fault', [False, True])
+def test_real_cli_collection_gate_retains_failure_and_reports_safe_counts(tmp_path, monkeypatch, capsys, rejected, diagnostic_fault):
     from nico import assessment_cpp_configuration_probe as probe_module
     from nico import assessment_cpp_runtime_scope as runtime_module
     from nico.assessment_cpp_collection import validate_project_collection
     from tests.test_cpp_completed_collection_projection import qualification_bundle
 
     receipt, read, kwargs, artifacts = qualification_bundle(tmp_path)
+    if diagnostic_fault:
+        monkeypatch.setattr(cli, 'public_paths_after_freeze',
+                            lambda *a: (_ for _ in ()).throw(RuntimeError('SECRET')))
     assert validate_project_collection(receipt, read, **kwargs)['collection_complete'] is True
     runtime = json.loads(read(receipt['runtime']['artifact']))
     probe = deepcopy(receipt['probe'])
@@ -237,3 +241,220 @@ def test_generic_sanitizer_failure_does_not_invent_kind_or_phase():
     result = failure_diagnostic({'probe': {'runtime_evidence': {
         'error': 'worker_runtime_sanitizer_failed'}}}, ValueError('qualification_collection_invalid'))
     assert set(result['sanitizer_failure'].values()) == {None}
+
+
+def _diagnostic_execution(raw, **changes):
+    import base64
+    import hashlib
+    return {'exit_code': 1, 'timed_out': False, 'output_truncated': False,
+            'duration_ms': 1, 'output': base64.b64encode(raw).decode(),
+            'output_sha256': hashlib.sha256(raw).hexdigest(), **changes}
+
+
+def _diagnostic_compiler(records):
+    import hashlib
+    raw = json.dumps({'schema': 'nico.cpp-project-compiler-evidence.v2', 'records': records}).encode()
+    sha = hashlib.sha256(raw).hexdigest()
+    proof = {'native_evidence_sha256': sha, 'required_contexts': [r['context_id'] for r in records],
+             'artifact': {'path': 'artifacts/project-compiler-evidence-' + sha + '.json',
+                          'sha256': sha, 'bytes': len(raw)}}
+    return proof, lambda path, limit: raw
+
+
+def test_public_authority_requires_exact_manifest_and_live_freeze_identity():
+    from scripts import cpp_qualification_diagnostic_details as d
+    source = {'repository': 'bitcoin/bitcoin', 'commit_sha': d.PUBLIC_COMMIT,
+              'tree_sha': d.PUBLIC_TREE, 'inventory_complete': True,
+              'targets': {'src/test/a.cpp': 'digest', 'src/../SECRET.cpp': 'digest',
+                          '/src/private.cpp': 'digest'}}
+    assert d.public_paths_after_freeze(d.PUBLIC_MANIFEST_SHA256, source) == {'src/test/a.cpp'}
+    assert not d.public_paths_after_freeze('0' * 64, source)
+    for key, wrong in [('repository', 'private/SECRET'), ('commit_sha', '0' * 40),
+                       ('tree_sha', '0' * 40), ('inventory_complete', False)]:
+        assert not d.public_paths_after_freeze(d.PUBLIC_MANIFEST_SHA256, {**source, key: wrong})
+    # A retained receipt-shaped object cannot populate the live context.
+    summary = d.add_failure_details({'source': 'fixed aggregate placeholder'}, {}, lambda *a: b'')
+    assert summary['details']['compiler']['state'] == 'unavailable'
+
+
+@pytest.mark.parametrize('line', [
+    '/private/src/test/a.cpp:1:2: error: SECRET',
+    '/work/source/src/../test/a.cpp:1:2: error: SECRET',
+    '/work/source/src/test/SECRET.cpp:1:2: error: SECRET',
+    'message /work/source/src/test/a.cpp:1:2: error: SECRET',
+    '/work/source/src/test/a.cpp:123456789:2: error: SECRET',
+    '/work/source/src/test/a.cpp:1:2: error: \x1b[31mSECRET',
+    '/work/source/src/test/a.cpp:1:2: error: ' + 'SECRET' * 1000,
+    'src/test/a.cpp:1:2: unexpected: SECRET',
+])
+def test_detail_locations_reject_hostile_or_unbound_lines(line):
+    from scripts.cpp_qualification_diagnostic_details import locations
+    assert locations(line.encode(), {'src/test/a.cpp'}) == {'locations': [], 'locations_omitted': 0}
+
+
+def test_detail_locations_strip_messages_and_bound_selection():
+    from scripts.cpp_qualification_diagnostic_details import locations
+    raw = b'/work/source/src/test/a.cpp:12:7: runtime error: signed integer overflow: SECRET\n' * 20
+    result = locations(raw, {'src/test/a.cpp'})
+    assert len(result['locations']) == 8 and result['locations_omitted'] == 12
+    assert result['locations'][0] == {'path': 'src/test/a.cpp', 'line': 12, 'column': 7,
+                                      'observed_category': 'signed_integer_overflow'}
+    assert 'SECRET' not in json.dumps(result)
+    assert locations(raw, frozenset())['locations'] == []
+
+
+def test_compiler_details_keep_failed_record_indexes_and_omissions():
+    from scripts.cpp_qualification_diagnostic_details import compiler_details
+    records = [{'context_id': str(i), 'error': 'SECRET',
+                'execution': _diagnostic_execution(b'src/test/a.cpp:2:3: error: SECRET')}
+               for i in range(20)]
+    records.insert(0, {'context_id': 'ok', 'error': None,
+                      'execution': _diagnostic_execution(b'', exit_code=0)})
+    proof, read = _diagnostic_compiler(records)
+    result = compiler_details(proof, read, {'src/test/a.cpp'})
+    assert result['failed_records'] == 20 and result['omitted'] == 4
+    assert result['records'][0]['context_index'] == 1
+    assert 'SECRET' not in json.dumps(result)
+    assert result['records'][0]['locations'][0]['path'] == 'src/test/a.cpp'
+
+
+@pytest.mark.parametrize('fault', ['hash', 'size', 'path', 'population', 'duplicate_json',
+                                 'oversize', 'base64', 'output_hash', 'non_utf8'])
+def test_compiler_corrupt_details_fail_closed(fault):
+    from scripts.cpp_qualification_diagnostic_details import add_failure_details, MAX_ARTIFACT_BYTES
+    row = {'context_id': 'a', 'error': 'SECRET', 'execution': _diagnostic_execution(b'SECRET')}
+    if fault == 'base64': row['execution']['output'] = 'SECRET%'
+    if fault == 'output_hash': row['execution']['output_sha256'] = '0' * 64
+    if fault == 'non_utf8': row['execution'] = _diagnostic_execution(b'\xffSECRET')
+    proof, read = _diagnostic_compiler([row])
+    if fault == 'hash': proof['native_evidence_sha256'] = '0' * 64
+    if fault == 'size': proof['artifact']['bytes'] += 1
+    if fault == 'path': proof['artifact']['path'] = '../SECRET'
+    if fault == 'population': proof['required_contexts'] = ['wrong']
+    if fault == 'oversize': proof['artifact']['bytes'] = MAX_ARTIFACT_BYTES + 1
+    if fault == 'duplicate_json':
+        import hashlib
+        raw = b'{"records":[],"records":[],"SECRET":true}'
+        sha = hashlib.sha256(raw).hexdigest()
+        proof.update(native_evidence_sha256=sha, artifact={
+            'path': 'artifacts/project-compiler-evidence-' + sha + '.json', 'bytes': len(raw), 'sha256': sha})
+        read = lambda *a: raw
+    result = add_failure_details({'qualification_error': 'qualification_collection_invalid'},
+                                 {'compiler': proof}, read)
+    assert result['details']['compiler']['state'] == 'unavailable'
+    assert result['qualification_error'] == 'qualification_collection_invalid'
+    assert 'SECRET' not in json.dumps(result)
+
+
+def test_validated_runtime_details_keep_opaque_failed_test_identity(tmp_path):
+    import hashlib
+    from scripts.cpp_qualification_diagnostic_details import runtime_details
+    from tests.test_cpp_runtime_collection import fixture
+    from nico.assessment_cpp_runtime_scope import validate_retained_runtime
+    retained, targets, options, scope = fixture(tmp_path)
+    runtime = retained['evidence']
+    log = next(row for row in runtime['failure_diagnostics'] if row['kind'] == 'undefined')
+    from tests.test_cpp_completed_sanitizer_failure_collection import envelope
+    execution = _diagnostic_execution(envelope(b'src/test/a.cpp:3:4: runtime error: load of null pointer SECRET'), exit_code=0)
+    log['log_read'].update(execution)
+    # All plan, discovery, JUnit, log and operation bindings remain real validators.
+    validated = validate_retained_runtime(json.dumps(retained).encode(), targets, options, scope)
+    assert validated['summary']['complete'] is False
+    result = runtime_details(runtime, {'src/test/a.cpp'})
+    row = result['sanitizers'][0]
+    assert row['kind'] == 'undefined' and row['phase'] == 'tests'
+    assert row['tests'] == [{'population_index': 0, 'name_sha256': hashlib.sha256(b'unit_a').hexdigest()}]
+    assert row['locations'][0]['observed_category'] == 'null_pointer'
+    assert 'unit_a' not in json.dumps(result) and 'SECRET' not in json.dumps(result)
+    assert runtime_details(runtime, frozenset())['sanitizers'][0]['locations'] == []
+
+
+def test_complete_diagnostic_record_budget_and_original_failure(monkeypatch, capsys):
+    from scripts import cpp_qualification_diagnostic_details as d
+    # Final cap applies to aggregates plus details, including future additions.
+    result = d.add_failure_details({'fixed': 'x' * (d.MAX_RECORD_BYTES - 100)}, {}, lambda *a: b'')
+    assert result['details']['state'] == 'output_budget_exceeded'
+    assert len(json.dumps(result, separators=(',', ':')).encode()) <= d.MAX_RECORD_BYTES
+    original = ValueError('qualification_collection_invalid')
+    def fail(args, evidence, context):
+        context['public_paths'] = frozenset()
+        raise original
+    monkeypatch.setattr(cli, '_qualify_configuration_checkout', fail)
+    monkeypatch.setattr(cli, 'add_failure_details', lambda *a: (_ for _ in ()).throw(RuntimeError('SECRET')))
+    with pytest.raises(ValueError) as caught:
+        cli.qualify_configuration_checkout(None)
+    assert caught.value is original
+    result = json.loads(capsys.readouterr().out)
+    assert result['qualification_error'] == str(original)
+    assert result['details'] == {'state': 'unavailable'}
+    assert 'SECRET' not in json.dumps(result)
+
+
+def test_forged_receipt_public_identity_does_not_enable_details(monkeypatch, capsys):
+    from scripts import cpp_qualification_diagnostic_details as d
+    def fail(args, evidence, context):
+        evidence.update(benchmark_sha256=d.PUBLIC_MANIFEST_SHA256, source={
+            'repository': 'bitcoin/bitcoin', 'commit_sha': d.PUBLIC_COMMIT,
+            'tree_sha': d.PUBLIC_TREE, 'inventory_complete': True,
+            'targets': {'src/SECRET.cpp': '0' * 64}})
+        raise ValueError('qualification_collection_invalid')
+    monkeypatch.setattr(cli, '_qualify_configuration_checkout', fail)
+    with pytest.raises(ValueError): cli.qualify_configuration_checkout(None)
+    result = json.loads(capsys.readouterr().out)
+    assert 'details' not in result and 'SECRET' not in json.dumps(result)
+
+
+def test_runtime_private_names_are_digest_only_and_selection_is_bounded():
+    import hashlib
+    from scripts.cpp_qualification_diagnostic_details import runtime_details
+    names = ['SECRET\n::error::injected' + str(i) for i in range(20)]
+    runtime = {'sanitizers': [{'kind': 'undefined', 'tests': _diagnostic_execution(b''),
+                              'results': {'required': names, 'executed': names, 'passed': []}}]}
+    result = runtime_details(runtime, frozenset())['sanitizers'][0]
+    assert result['failed_tests'] == 20 and result['omitted'] == 4
+    assert result['tests'][0] == {'population_index': 0,
+                                 'name_sha256': hashlib.sha256(names[0].encode()).hexdigest()}
+    assert 'SECRET' not in json.dumps(result) and '::error::' not in json.dumps(result)
+
+
+@pytest.mark.parametrize('raw', [b'\xff', b'x' * (1024 * 1024 + 1)])
+def test_unparseable_logs_do_not_emit_partial_locations(raw):
+    from scripts.cpp_qualification_diagnostic_details import locations
+    with pytest.raises((ValueError, UnicodeError)):
+        locations(raw, {'src/test/a.cpp'})
+
+
+@pytest.mark.parametrize('fault', ['missing', 'failed', 'truncated', 'inner_truncated', 'corrupt'])
+def test_runtime_missing_log_preserves_test_identity_and_unknown_results(fault):
+    import base64
+    from scripts.cpp_qualification_diagnostic_details import runtime_details
+    read = _diagnostic_execution(b'', exit_code=0)
+    if fault == 'failed': read['exit_code'] = 1
+    if fault == 'truncated': read['output_truncated'] = True
+    if fault == 'inner_truncated':
+        read = _diagnostic_execution(json.dumps({'data': '', 'truncated': True}).encode(), exit_code=0)
+    if fault == 'corrupt': read['output'] = base64.b64encode(b'SECRET').decode()
+    runtime = {'sanitizers': [{'kind': 'undefined', 'tests': _diagnostic_execution(b'', timed_out=True),
+                'results': None}], 'failure_diagnostics': [{'kind': 'undefined',
+                'log_read': None if fault == 'missing' else read}]}
+    row = runtime_details(runtime, frozenset())['sanitizers'][0]
+    assert row['outcome'] == 'timed_out' and row['results_state'] == 'unavailable'
+    assert row['failed_tests'] is None and row['omitted'] is None
+    assert row['locations_state'] == ('truncated' if 'truncated' in fault else 'unavailable')
+    runtime['sanitizers'][0]['results'] = {'required': ['SECRET'], 'executed': ['SECRET'], 'passed': []}
+    row = runtime_details(runtime, frozenset())['sanitizers'][0]
+    assert row['failed_tests'] == 1 and len(row['tests']) == 1
+    assert 'SECRET' not in json.dumps(row)
+
+
+def test_public_manifest_pin_matches_owned_fixture_and_warnings_do_not_hide_errors():
+    import hashlib
+    from pathlib import Path
+    from scripts import cpp_qualification_diagnostic_details as d
+    raw = (Path(__file__).parent/'fixtures/cpp/bitcoin-configuration-benchmark.json').read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == d.PUBLIC_MANIFEST_SHA256
+    raw = b'src/test/a.cpp:1:1: warning: SECRET\n' * 20 + b'src/test/a.cpp:9:2: fatal error: SECRET\n'
+    result = d.locations(raw, {'src/test/a.cpp'})
+    assert result['locations'] == [{'path': 'src/test/a.cpp', 'line': 9, 'column': 2,
+                                    'observed_category': 'compiler_fatal_error'}]
+    assert result['locations_omitted'] == 0

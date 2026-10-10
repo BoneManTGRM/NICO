@@ -16,6 +16,7 @@ import time
 
 from nico.assessment_worker_receipts import canonical_bytes
 from scripts.cpp_qualification_diagnostics import failure_diagnostic
+from scripts.cpp_qualification_diagnostic_details import add_failure_details, public_paths_after_freeze
 
 def freeze_configuration_checkout(checkout, destination, manifest):
     """Verify every pinned Git entry; materialize original regular blobs only.
@@ -254,17 +255,26 @@ def qualify_configuration_checkout(args):
         'stage':'source_inventory','source':None,'probe':None,
         'production_dispatch_exercised':False,'production_qualified':False,
         'compiled':False,'tests_executed':False}
+    diagnostic_context = {}
     try:
-        return _qualify_configuration_checkout(args, evidence)
+        return _qualify_configuration_checkout(args, evidence, diagnostic_context)
     except (Exception, KeyboardInterrupt) as exc:
         try:
-            print(json.dumps(failure_diagnostic(evidence, exc), separators=(',', ':')))
+            summary = failure_diagnostic(evidence, exc)
+            if diagnostic_context:
+                try:
+                    from nico.assessment_cpp_project_snapshot import _stable_bytes
+                    summary = add_failure_details(summary, diagnostic_context,
+                        lambda path, limit: _stable_bytes(args.output.absolute(), path, limit))
+                except (Exception, KeyboardInterrupt):
+                    summary['details'] = {'state': 'unavailable'}
+            print(json.dumps(summary, separators=(',', ':')))
         except (Exception, KeyboardInterrupt):
             pass  # Diagnostic output must never replace the original failure.
         raise
 
 
-def _qualify_configuration_checkout(args, evidence):
+def _qualify_configuration_checkout(args, evidence, diagnostic_context):
     from nico.assessment_cpp_full_project import _json
     from nico.assessment_cpp_configuration_probe import probe_project_configuration
     args.output.mkdir(parents=True, exist_ok=True)
@@ -312,6 +322,13 @@ def _qualify_configuration_checkout(args, evidence):
         with tempfile.TemporaryDirectory(prefix='nico-project-qualification-') as temporary:
             root=Path(temporary)/'source'
             evidence['source']=freeze_configuration_checkout(args.qualification_source,root,manifest)
+            # Live source-verification authority, never reconstructed from a
+            # retained receipt's claimed identity at the failure boundary.
+            try:
+                diagnostic_context['public_paths'] = public_paths_after_freeze(
+                    evidence['benchmark_sha256'], evidence['source'])
+            except (Exception, KeyboardInterrupt):
+                diagnostic_context['public_paths'] = frozenset()
             evidence['stage']='source_frozen'; retain()
             runtime_plan = None
             runtime_interfaces = None
@@ -341,6 +358,8 @@ def _qualify_configuration_checkout(args, evidence):
                             or hashlib.sha256(unit_test_data[asset['name']]).hexdigest()!=asset['sha256']):
                         raise ValueError('qualification_unit_test_data_invalid')
             def save_probe(value):
+                if value.get('project_compiler') is not None:
+                    diagnostic_context['compiler'] = value['project_compiler']
                 evidence.update(stage='isolated_baseline' if execution_contract is not None else 'isolated_configuration',
                     probe=qualification_probe_receipt(value), compiled=value['compiled'], tests_executed=value['tests_executed']); retain()
             result=probe_project_configuration(root,evidence['source']['targets'],args.image,
@@ -374,6 +393,7 @@ def _qualify_configuration_checkout(args, evidence):
                     raise ValueError('qualification_runtime_evidence_missing')
                 reconstructed=validate_retained_runtime(runtime_raw,evidence['source']['targets'],
                     manifest['project_options'],runtime_scope)
+                diagnostic_context['runtime'] = result['runtime_evidence']
                 evidence['runtime']={'complete':reconstructed['summary']['complete'],
                     'artifact':reference,'native_evidence_sha256':reconstructed['native_evidence_sha256'],
                     'duration_ms':reconstructed['duration_ms']}
