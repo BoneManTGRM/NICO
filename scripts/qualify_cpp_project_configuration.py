@@ -360,6 +360,11 @@ def _qualify_configuration_checkout(args, evidence, diagnostic_context):
             def save_probe(value):
                 if value.get('project_compiler') is not None:
                     diagnostic_context['compiler'] = value['project_compiler']
+                primary = value.get('project_static')
+                if isinstance(primary, dict) and 'clang_fallback' not in primary:
+                    # The stage retains validated primary analysis before
+                    # replacing it with merged coverage. Keep that live proof.
+                    diagnostic_context.setdefault('primary_static', primary)
                 evidence.update(stage='isolated_baseline' if execution_contract is not None else 'isolated_configuration',
                     probe=qualification_probe_receipt(value), compiled=value['compiled'], tests_executed=value['tests_executed']); retain()
             result=probe_project_configuration(root,evidence['source']['targets'],args.image,

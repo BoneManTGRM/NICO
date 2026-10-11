@@ -9,6 +9,7 @@ import json
 import re
 
 from nico.assessment_cpp_full_project import _json
+from nico.assessment_cpp_project_compiler import _canonical
 
 PUBLIC_MANIFEST_SHA256 = '66c3d940128ce3625fad9411448e71c06000a1b045adadde59246ea8ba2637b9'
 PUBLIC_COMMIT = 'bb5296576e8f1a9fc11c19d9a25ba02ed4547e24'
@@ -133,6 +134,61 @@ def compiler_details(proof, read, public_paths):
     return {'state': 'available', 'failed_records': total, 'omitted': total - len(rows), 'records': rows}
 
 
+def primary_static_details(proof, read):
+    """Correlate primary executions with retained bytes, never merged coverage.
+
+    Proof is the live validate_project_static result before fallback merging.
+    Digests identify an artifact, its record and invocation for later replay;
+    they do not replace the source/database/toolchain replay packet. The context
+    identifier is hashed again rather than echoing a hash-shaped input field.
+    """
+    ref = proof['artifact']
+    sha = proof['native_evidence_sha256']
+    if ('clang_fallback' in proof or type(sha) is not str or not _HASH.fullmatch(sha)
+            or ref != {'path': 'artifacts/project-static-evidence-' + sha + '.json',
+                       'sha256': sha, 'bytes': ref.get('bytes')}
+            or type(ref['bytes']) is not int or not 0 < ref['bytes'] <= MAX_ARTIFACT_BYTES):
+        raise ValueError('diagnostic_artifact_invalid')
+    raw = read(ref['path'], MAX_ARTIFACT_BYTES)
+    if len(raw) != ref['bytes'] or hashlib.sha256(raw).hexdigest() != sha:
+        raise ValueError('diagnostic_artifact_invalid')
+    value = _json(raw)
+    records = value['records']
+    if (value['schema'] not in ('nico.cpp-project-static-evidence.v1', 'nico.cpp-project-static-evidence.v2',
+                                'nico.cpp-project-static-evidence.v3', 'nico.cpp-project-static-evidence.v4')
+            or len(records) > 10000
+            or [row['context_id'] for row in records] != proof['required_contexts']):
+        raise ValueError('diagnostic_population_invalid')
+    analyzed = set(proof['analyzed_contexts'])
+    limitations = {}
+    for limit in proof['limitations']:
+        limitations.setdefault(limit['context_id'], set()).add(limit['rule_id'])
+    rows, total = [], 0
+    for index, record in enumerate(records):
+        execution = record['execution']
+        if execution is None:
+            continue
+        duration = execution['duration_ms']
+        if type(duration) is not int or not 0 <= duration <= 93000:
+            raise ValueError('diagnostic_duration_invalid')
+        total += 1
+        if len(rows) == 16:
+            continue
+        outcome = _outcome(execution)
+        if outcome == 'record_error' and record['error'] is None:
+            rules = limitations.get(record['context_id'], set())
+            outcome = ('analyzed' if record['context_id'] in analyzed else
+                       'internal_ast_error' if 'internalAstError' in rules else
+                       'syntax_error' if 'syntaxError' in rules else 'incomplete')
+        rows.append({'context_index': index, 'duration_ms': duration, 'outcome': outcome,
+            'record_sha256': hashlib.sha256(_canonical(record)).hexdigest(),
+            'invocation_sha256': hashlib.sha256(_canonical(record['invocation'])).hexdigest(),
+            'context_id_sha256': hashlib.sha256(record['context_id'].encode()).hexdigest()})
+    return {'state': 'available', 'artifact_sha256': hashlib.sha256(raw).hexdigest(),
+            'executions': total, 'missing_execution': len(records) - total,
+            'omitted': total - len(rows), 'records': rows}
+
+
 def runtime_details(runtime, public_paths):
     """Runtime must have passed validate_retained_runtime in this invocation.
 
@@ -193,6 +249,7 @@ def add_failure_details(summary, context, read):
     details = {'schema': 'nico.cpp-qualification-failure-details.v1'}
     public_paths = context.get('public_paths', frozenset())
     for key, project in (('compiler', lambda value: compiler_details(value, read, public_paths)),
+                         ('primary_static', lambda value: primary_static_details(value, read)),
                          ('runtime', lambda value: runtime_details(value, public_paths))):
         details[key] = {'state': 'unavailable'}
         if context.get(key) is not None:

@@ -1,3 +1,34 @@
+# Defer alias reconstruction until needed — October 11, 2026
+
+Continuation from verified PR #1712 head `2a2960dcaa7c83a4c98a202ab7b12cf54783d667`.
+Alias snapshots are now constructed once per declarator, before either possible
+token-mutation path. Unused/read-only replacement sweeps skip the full helper
+scan and scope reconstruction. Existing inheritance memoization is preserved;
+endpoint orders are counted in the existing semicolon walk without a map.
+No cache is reused across declarators or token mutations.
+
+Fresh final configured contract selection: **2,004 passed, five skipped**, exit
+zero in 134.87 seconds. Focused snapshot/order/inheritance/repair checks: 22 passed.
+Independent review found no production blocker and separately passed 10 focused
+checks. The initial contract run had one unchanged transport timing-test failure
+(child marker absent); its isolated rerun passed, and the final combined run
+passed. No transport fix or native credit is inferred from those reruns/skips.
+
+The previously preserved primary-diagnostic patch is integrated with its three
+code/test blobs unchanged, and its test is appended to the current workflow.
+No required check, acceptance rule, finding, deadline or coverage population is
+removed. The physical-header fixture now includes qualification edits followed
+by local alias lookup and an out-of-class conversion; GCC syntax checking passes,
+but full native execution of the changed fixture remains pending.
+
+No new local Cppcheck build or Bitcoin replay was launched. Aggregate old profiles
+do not measure the eliminated fraction of actual helper calls; timeout repair is
+not proven. Prior run 38138733322 failed with primary 2/15 and combined 15/577.
+Publication triggers final-head qualification automatically. Merge and deployment
+remain blocked on genuine qualification and all applicable release gates.
+See [repair evidence](docs/evidence/pr1712-alias-inheritance-repair-20261011.md).
+Historical checkpoints below retain their original scope and identities.
+
 # Helper-local inheritance memoization — October 11, 2026
 
 Continuation of PR #1712 from verified remote head `daa34c39b24adc0cd7fcc13067409bcc92679a81`.
