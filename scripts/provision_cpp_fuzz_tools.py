@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 LOCK = Path(__file__).resolve().parents[1] / 'docker/assessment-llvm17.lock.json'
 PROJECT_LOCK = LOCK.with_name('assessment-project-dependencies.lock.json')
 CAPNP_LOCK = LOCK.with_name('assessment-capnp-source.lock.json')
+HEADER_SDK_LOCK = LOCK.with_name('assessment-clang-header-sdk.lock.json')
 PACKAGES = {'clang-17', 'libclang-cpp17', 'libllvm17', 'libclang-common-17-dev',
             'libclang1-17', 'libclang-rt-17-dev', 'llvm-17-linker-tools', 'libz3-4', 'libedit2'}
 
@@ -80,6 +81,21 @@ def validate_capnp_source_lock(value):
 
 
 def validate_lock(value):
+    if isinstance(value, dict) and value.get('schema') == 'nico.clang17-header-sdk-lock.v1':
+        rows=value.get('packages')
+        expected={'libclang-17-dev':(25496248,'b9d10509e4016557c0af3ec4d71afe006c9bc876c08cb38272a91732630aaf5e'),
+                  'llvm-17-dev':(39951132,'428dcf91132d968a4224aa2be60db8b340066ae54be568f9da56aeeeb0178234')}
+        version='1:17.0.6~++20231208085813+6009708b4367-1~exp1~20231208085906.81'
+        if (not isinstance(rows,list) or len(rows)!=2 or any(not isinstance(row,dict) for row in rows)
+                or {row.get('package') for row in rows}!=set(expected)):
+            raise ValueError('clang_header_sdk_population_invalid')
+        for row in rows:
+            name=row['package'];size,digest=expected[name]
+            url='https://apt.llvm.org/bookworm/pool/main/l/llvm-toolchain-17/'+name+'_'+version[2:]+'_amd64.deb'
+            if (row.get('url')!=url or row.get('version')!=version or row.get('architecture')!='amd64'
+                    or type(row.get('bytes')) is not int or row['bytes']!=size or row.get('sha256')!=digest):
+                raise ValueError('clang_header_sdk_lock_invalid')
+        return rows
     if isinstance(value, dict) and value.get('schema') == 'nico.cpp-capnp-source-lock.v1':
         return validate_capnp_source_lock(value)
     if isinstance(value, dict) and value.get('schema') in ('nico.cpp-project-dependencies.v1', 'nico.cpp-project-dependencies.v2'):
@@ -110,13 +126,17 @@ def validate_lock(value):
     return rows
 
 
-def provision(destination, *, run=subprocess.run, project_dependencies=False, capnp_source=False):
-    if (type(project_dependencies) is not bool or type(capnp_source) is not bool
-            or (project_dependencies and capnp_source)):
+def provision(destination, *, run=subprocess.run, project_dependencies=False, capnp_source=False, header_observer_sdk=False):
+    if (any(type(flag) is not bool for flag in (project_dependencies,capnp_source,header_observer_sdk))
+            or sum((project_dependencies,capnp_source,header_observer_sdk))>1):
         raise ValueError('cpp_dependency_selection_invalid')
-    lock = CAPNP_LOCK if capnp_source else PROJECT_LOCK if project_dependencies else LOCK
+    lock = HEADER_SDK_LOCK if header_observer_sdk else CAPNP_LOCK if capnp_source else PROJECT_LOCK if project_dependencies else LOCK
     lock_bytes = lock.read_bytes()
     value = json.loads(lock_bytes); rows = validate_lock(value)
+    if header_observer_sdk:
+        runtime=validate_lock(json.loads(LOCK.read_bytes()))
+        if sum(row['bytes'] for row in [*rows,*runtime])>200*1024*1024:
+            raise ValueError('fuzz_tool_budget_invalid')
     project = value['schema'] in ('nico.cpp-project-dependencies.v1', 'nico.cpp-project-dependencies.v2')
     source = value['schema'] == 'nico.cpp-capnp-source-lock.v1'
     if source:
@@ -174,5 +194,6 @@ if __name__ == '__main__':
     selection=p.add_mutually_exclusive_group()
     selection.add_argument('--project-dependencies',action='store_true')
     selection.add_argument('--capnp-source',action='store_true')
+    selection.add_argument('--header-observer-sdk',action='store_true')
     args=p.parse_args()
-    print(json.dumps({'status':provision(args.destination,project_dependencies=args.project_dependencies,capnp_source=args.capnp_source)['status']}))
+    print(json.dumps({'status':provision(args.destination,project_dependencies=args.project_dependencies,capnp_source=args.capnp_source,header_observer_sdk=args.header_observer_sdk)['status']}))

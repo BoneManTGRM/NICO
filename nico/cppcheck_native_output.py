@@ -4,6 +4,8 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 
+from nico.native_xml import parse_native_xml
+
 
 class NativeOutputRedactionRequired(ValueError):
     """Decoded native content is unsafe to retain as a redacted artifact."""
@@ -15,7 +17,7 @@ def parse_native(native_xml: str, progress: str, targets: list[str], *, version:
     if "<!DOCTYPE" in native_xml or "<!ENTITY" in native_xml:
         raise ValueError("cppcheck_xml_external_content_rejected")
     if document is None:
-        document = ET.fromstring(native_xml)
+        document = parse_native_xml(native_xml, declaration_error='cppcheck_xml_external_content_rejected')
     elif not isinstance(document, ET.Element):
         raise ValueError("cppcheck_output_schema_invalid")
     from nico.scanner_tool_runners import contains_sensitive_text

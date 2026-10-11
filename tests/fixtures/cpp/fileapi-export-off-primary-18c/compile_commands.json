@@ -1,0 +1,8 @@
+[
+{
+  "directory": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build",
+  "command": "/usr/bin/x86_64-linux-gnu-gcc-13   -g -std=gnu11 -o CMakeFiles/visible.dir/main.c.o -c /tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/trusted-input/source/main.c",
+  "file": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/trusted-input/source/main.c",
+  "output": "CMakeFiles/visible.dir/main.c.o"
+}
+]

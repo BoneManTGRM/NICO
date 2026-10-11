@@ -1,0 +1,4 @@
+#ifndef NICO_OWNED_ACTIVE_H
+#define NICO_OWNED_ACTIVE_H
+#define ACTIVE_SENTINEL 29
+#endif

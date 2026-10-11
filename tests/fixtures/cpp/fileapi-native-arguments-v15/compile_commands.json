@@ -1,0 +1,8 @@
+[
+{
+  "directory": "/workspace/shared/nico-closeout-v14/v15-owned-native-arguments-01/build",
+  "command": "/usr/bin/x86_64-linux-gnu-gcc-14   -g -std=gnu11 -o CMakeFiles/visible.dir/main.c.o -c /workspace/nico-v15/tests/fixtures/cpp/fileapi-export-off-owned-control/source/main.c",
+  "file": "/workspace/nico-v15/tests/fixtures/cpp/fileapi-export-off-owned-control/source/main.c",
+  "output": "CMakeFiles/visible.dir/main.c.o"
+}
+]

@@ -1,0 +1,69 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"jsonFile" : "directory-.-Debug-f5ebdc15457944623624.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.20"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						1
+					]
+				}
+			],
+			"name" : "Debug",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "NicoOwnedExportOff",
+					"targetIndexes" : 
+					[
+						0,
+						1
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "hidden::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-hidden-Debug-182cd0e271ac79672591.json",
+					"name" : "hidden",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "visible::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-visible-Debug-2273dd468c2b97fea897.json",
+					"name" : "visible",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build",
+		"source" : "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/trusted-input/source"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 7
+	}
+}

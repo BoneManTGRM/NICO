@@ -71,19 +71,30 @@ jobs:
             https://files.pythonhosted.org/packages/f0/a6/eeb28ab162eed10340921aca24efe062d6bf7d9b98acc7a55c3b6900bf7a/pycapnp-2.2.1-cp311-cp311-manylinux_2_28_x86_64.whl
           echo 'd682ae9f23a0c6568533ca2ebf6d70ac7e599dd222f671fa87dff278de343eec  toolchain/full-project/pycapnp.whl' | sha256sum -c -
           python -m scripts.provision_cpp_fuzz_tools --destination toolchain/full-project/llvm
+          python -m scripts.provision_cpp_fuzz_tools --header-observer-sdk --destination toolchain/full-project/clang-header-sdk
           python -m scripts.provision_cpp_fuzz_tools --project-dependencies --destination toolchain/full-project/project-dependencies
           python -m scripts.provision_cpp_fuzz_tools --capnp-source --destination toolchain/full-project/capnp-source
           python -m scripts.provision_cpp_runtime_dependencies --destination toolchain/full-project/runtime-dependencies
           cp scripts/repair_cppcheck_placement_ast.py toolchain/full-project/
+          cp scripts/repair_cppcheck_header_grammar.py toolchain/full-project/
+          cp scripts/patch_cppcheck_header_evidence.py toolchain/full-project/
+          cp -R scripts/cppcheck-header-evidence toolchain/full-project/
+          cp scripts/build_cpp_clang_header_observer.py toolchain/full-project/
+          cp -R scripts/clang-header-evidence toolchain/full-project/
           cp scripts/verify_cpp_runtime_toolchain.py toolchain/full-project/
           timeout 210s docker build --network=none --iidfile full-project-image-id.txt -f docker/assessment-full-project-fuzz.Dockerfile toolchain/full-project
           docker image inspect "$(cat full-project-image-id.txt)" > full-project-image.json
           toolchain_container="$(docker create --network=none --read-only --entrypoint=/bin/true "$(cat full-project-image-id.txt)")"
           trap 'docker rm --force "$toolchain_container" >/dev/null' EXIT
           docker cp "$toolchain_container:/opt/nico-cpp-runtime-toolchain.json" cpp-runtime-toolchain.json
+          docker cp "$toolchain_container:/opt/nico-cppcheck-header-observer.json" cppcheck-header-observer.json
+          docker cp "$toolchain_container:/opt/nico-cppcheck-header-grammar.json" cppcheck-header-grammar.json
+          docker cp "$toolchain_container:/opt/nico-clang-header-observer.json" clang-header-observer.json
+          docker cp "$toolchain_container:/opt/nico-clang-header-startup" clang-header-startup
       - name: Verify container boundary and same-image owned runtime controls
         run: |
           python scripts/qualify_cpp_worker_container.py
+          python -m scripts.qualify_cpp_header_grammar --image "$(cat full-project-image-id.txt)" --output cpp-header-grammar-control
           python -m scripts.qualify_cppcheck_worker_control --image "$(cat full-project-image-id.txt)"
           python -m scripts.qualify_cpp_full_project_integration --generated-headers --bounded-fuzz --project-dependencies --project-compiler-options --image "$(cat full-project-image-id.txt)"
           python -m scripts.qualify_cpp_project_generated_context --project-static-analysis --extended-compiler-budget --compiler-environment --image "$(cat full-project-image-id.txt)"
@@ -115,7 +126,7 @@ jobs:
           --runtime-scope-contract tests/fixtures/cpp/bitcoin-runtime-scope.json
           --unit-test-data qualification-unit-test-data
           --accept-completed-collection --producer-source-sha "$NICO_PRODUCER_SOURCE_SHA"
-          --capture-generated-context --project-compiler-evidence --project-static-analysis --extended-compiler-budget --compiler-environment
+          --capture-generated-context --project-compiler-evidence --project-static-analysis --extended-compiler-budget --compiler-environment --capture-enabled-targets --capture-native-commands --materialize-generated-inputs --collect-completed-compiler-failures
           --output cpp-baseline-qualification
           --image "$(cat full-project-image-id.txt)"
       - name: Retain native success and failure evidence
@@ -132,6 +143,14 @@ jobs:
             full-project-image-id.txt
             full-project-image.json
             cpp-runtime-toolchain.json
+            cppcheck-header-observer.json
+            cppcheck-header-grammar.json
+            cpp-header-grammar-control/
+            clang-header-observer.json
+            clang-header-startup/
+            toolchain/full-project/clang-header-sdk/receipt.json
+            toolchain/full-project/clang-header-sdk/lock.json
+            toolchain/full-project/clang-header-sdk/SHA256SUMS
             toolchain/full-project/llvm/receipt.json
             toolchain/full-project/project-dependencies/receipt.json
             toolchain/full-project/project-dependencies/lock.json

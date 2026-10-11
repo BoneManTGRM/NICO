@@ -12,6 +12,35 @@ PROFILE = "cpp-configure-first-v2"
 SCHEMA = "nico.cpp-configure-first-contract.v1"
 SCHEMA_V2 = "nico.cpp-configure-first-contract.v2"
 SCHEMA_V3 = "nico.cpp-configure-first-contract.v3"
+SCHEMA_V4 = "nico.cpp-configure-first-contract.v4"
+SCHEMA_V5 = "nico.cpp-configure-first-contract.v5"
+SCHEMA_V6 = "nico.cpp-configure-first-contract.v6"
+SCHEMA_V7 = "nico.cpp-configure-first-contract.v7"
+SCHEMA_V8 = "nico.cpp-configure-first-contract.v8"
+SCHEMA_V9 = "nico.cpp-configure-first-contract.v9"
+SCHEMA_V10 = "nico.cpp-configure-first-contract.v10"  # Compiler collection + runtime.
+SCHEMA_V11 = "nico.cpp-configure-first-contract.v11"  # Compiler collection, no runtime.
+COMPILER_COLLECTION_SCHEMAS = frozenset({SCHEMA_V10, SCHEMA_V11})
+GENERATION_SCHEMAS = frozenset({SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11})
+RUNTIME_SCHEMAS = frozenset({SCHEMA_V3, SCHEMA_V5, SCHEMA_V7, SCHEMA_V9, SCHEMA_V10})
+MEMBERSHIP_SCHEMAS = frozenset({SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11})
+NATIVE_COMMAND_SCHEMAS = frozenset({SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11})
+
+def compiler_collection_required(value):
+    """Selected only by the current validated contract, never by native output."""
+    return isinstance(value, dict) and value.get('schema') in COMPILER_COLLECTION_SCHEMAS
+
+def generation_required(value):
+    return isinstance(value, dict) and value.get('schema') in GENERATION_SCHEMAS
+
+def runtime_required(value):
+    return isinstance(value, dict) and value.get('schema') in RUNTIME_SCHEMAS
+
+def membership_required(value):
+    return isinstance(value, dict) and value.get('schema') in MEMBERSHIP_SCHEMAS
+
+def native_commands_required(value):
+    return isinstance(value, dict) and value.get('schema') in NATIVE_COMMAND_SCHEMAS
 MAX_SOURCE_BYTES = 64 * 1024 * 1024
 
 def validate_configuration(value):
@@ -19,9 +48,9 @@ def validate_configuration(value):
     fields = {"schema", "platform", "expected_tree_sha",
               "source_byte_limit", "baseline_execution", "capabilities"}
     fields |= ({"project_options"} if schema == SCHEMA else {"project_option_policy"})
-    if schema == SCHEMA_V3:
+    if schema in RUNTIME_SCHEMAS:
         fields.add("runtime_scope")
-    if (not isinstance(value, dict) or set(value) != fields or schema not in {SCHEMA, SCHEMA_V2, SCHEMA_V3}
+    if (not isinstance(value, dict) or set(value) != fields or schema not in {SCHEMA, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10, SCHEMA_V11}
             or value.get("platform") != "linux/amd64"
             or not isinstance(value.get("expected_tree_sha"), str)
             or re.fullmatch(r"[0-9a-f]{40}", value["expected_tree_sha"]) is None
@@ -48,7 +77,7 @@ def validate_configuration(value):
             or any(type(baseline.get(k)) is not int or not 1 <= baseline[k] <= maximum
                    for k,maximum in (("build_seconds",1200),("test_seconds",900),("test_case_seconds",300),("parallel",4)))):
         raise ValueError("worker_configure_first_execution_invalid")
-    if schema == SCHEMA_V3:
+    if schema in RUNTIME_SCHEMAS:
         runtime=value["runtime_scope"]
         runtime_fields={"schema","total_seconds","functional_policy","functional_seconds","sanitizers",
             "sanitizer_build_seconds","sanitizer_test_seconds","sanitizer_test_case_seconds",
@@ -72,6 +101,16 @@ def validate_configuration(value):
     expected_caps={"capture_generated_context":True,"project_compiler_evidence":True,
                    "project_static_analysis":True,"extended_compiler_budget":True,
                    "compiler_environment":True}
-    if capabilities != expected_caps:
+    if schema in MEMBERSHIP_SCHEMAS:
+        expected_caps['capture_enabled_targets'] = True
+    if schema in NATIVE_COMMAND_SCHEMAS:
+        expected_caps['capture_native_commands'] = True
+    if schema in GENERATION_SCHEMAS:
+        expected_caps['materialize_generated_inputs'] = True
+    if schema in COMPILER_COLLECTION_SCHEMAS:
+        expected_caps['collect_completed_compiler_failures'] = True
+    if (capabilities != expected_caps or schema in COMPILER_COLLECTION_SCHEMAS
+            and (not isinstance(capabilities, dict)
+                 or any(value is not True for value in capabilities.values()))):
         raise ValueError("worker_configure_first_capabilities_invalid")
     return deepcopy(value)

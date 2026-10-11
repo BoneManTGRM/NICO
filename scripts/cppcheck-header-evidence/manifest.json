@@ -1,0 +1,37 @@
+{
+  "schema": "nico.cppcheck-header-tool-manifest.v1",
+  "upstream_commit": "ac9db3069b9f90e81e126a090b99ad456e122cf8",
+  "base_tool_version": "2.17.1",
+  "patch": "header-token-pass-v2.patch",
+  "patch_sha256": "d817eae3b4de2bf08046005218b6d225647a0f6c393dbb93e1de1a426b2d114e",
+  "sources": {
+    "externals/simplecpp/simplecpp.cpp": {
+      "before_sha256": "044d31111933ea3fd1e007fdd44c3368fd58ec5f85fb60b2986747ce85cdf6bd",
+      "after_sha256": "7f92c920b66ad9a0ba82fa460f25be2721e28ded51e0d66992976e3c11a9e8a5"
+    },
+    "externals/simplecpp/simplecpp.h": {
+      "before_sha256": "faa67c5ae3f4390d72d024301416ad09f2580a92c71750193f023e1aa9b99f72",
+      "after_sha256": "900f3608d157b4553566abc4f43cc6249005e9cc489707661984a52b32292633"
+    },
+    "lib/cppcheck.cpp": {
+      "before_sha256": "91cd23157b688e189487ca5225808ac0949bbecbad5fb9980ad9af50100252fc",
+      "after_sha256": "377cde381b0f6b3b4ea55ec8beeea4691992628f18589e8238f344e49ba078bd"
+    },
+    "lib/cppcheck.h": {
+      "before_sha256": "aa054301036d90fc8b4caabbebca3929de7afae75ab4f8bc7ee28a7c185e1dc5",
+      "after_sha256": "c298b694faf230b2b66233d02b1a1a3351c03e10ceeb46a5ba1f53f616b801c0"
+    },
+    "lib/preprocessor.cpp": {
+      "before_sha256": "803156d4ab3601b9aaf05b1fb7639c8e7aa91917f64fe4b7202d970d95a466b3",
+      "after_sha256": "acf71bb200123151ae978f7d9611d010ade2e2ec5b21508505638d522e214852"
+    },
+    "lib/preprocessor.h": {
+      "before_sha256": "1d413d35661f8d0429c1fbbb8ac3ea5c90da1ec411ebe8e2121e06c72e9a1c57",
+      "after_sha256": "c255dbb80348c3699dbf3d5c46e771b28adeb50b93ce20778388b173a269633c"
+    }
+  },
+  "trace_schema": "nico.cppcheck-header-token-pass.v2",
+  "serialized_trace_limit_bytes": 1048576,
+  "per_configuration_observation_limit": 4096,
+  "line_or_branch_coverage_inferred": false
+}

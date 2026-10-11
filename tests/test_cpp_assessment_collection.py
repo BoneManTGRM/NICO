@@ -419,3 +419,48 @@ def test_historical_frozenset_tolerance_rejects_other_program_changes(fault):
     assert len(changed) == len(PROGRAM)
     assert changed != PROGRAM
     assert _fallback_program_equal(changed, PROGRAM) is False
+
+
+@pytest.mark.parametrize('status,expected_error', (
+    ('UNPROVEN', 'qualification_probe_unproven_without_runtime_evidence'),
+    ('BASELINE_EXECUTED', 'qualification_runtime_evidence_missing'),
+))
+def test_installed_qualification_missing_runtime_preserves_earlier_failure(
+    tmp_path, monkeypatch, status, expected_error,
+):
+    # Same installed argparse/retention path as the actual failed baseline.
+    # Source/native outcomes are owned substitutions; no execution credit.
+    from scripts import qualify_cpp_project_configuration as script
+    from nico import assessment_cpp_configuration_probe as probe_module
+    from nico import assessment_cpp_runtime_scope as runtime_module
+    receipt, read, kwargs = bundle(tmp_path)
+    runtime = json.loads(read(receipt['runtime']['artifact']))
+    probe = deepcopy(receipt['probe'])
+    probe.update(status=status, runtime_evidence=None, runtime_summary=None,
+                 error='worker_configuration_probe_fileapi_invalid' if status == 'UNPROVEN' else None)
+    if status == 'UNPROVEN': probe.update(compiled=False, tests_executed=False)
+    def replay_probe(*args, **options):
+        options['retain'](deepcopy(probe))
+        return deepcopy(probe)
+    monkeypatch.setattr(script, 'freeze_configuration_checkout', lambda *args: deepcopy(receipt['source']))
+    monkeypatch.setattr(runtime_module, 'capture_runtime_interfaces', lambda *args: deepcopy(runtime['interfaces']))
+    monkeypatch.setattr(probe_module, 'probe_project_configuration', replay_probe)
+    output = tmp_path/'retained'
+    argv = ['qualify_cpp_project_configuration', '--image', kwargs['image'],
+            '--qualification-source', 'unused-owned-source', '--output', str(output),
+            '--accept-completed-collection', '--producer-source-sha', kwargs['producer_source_sha']]
+    for option, key in [('qualification-manifest', 'manifest_raw'),
+                        ('baseline-execution-contract', 'baseline_raw'),
+                        ('runtime-scope-contract', 'scope_raw')]:
+        path = tmp_path/(option+'.json'); path.write_bytes(kwargs[key]); argv += ['--'+option, str(path)]
+    monkeypatch.setattr(sys, 'argv', argv)
+    with pytest.raises(ValueError, match=expected_error): script.main()
+    saved = json.loads((output/'receipt.json').read_bytes())
+    assert saved['probe']['error'] == probe['error']
+    assert saved['error'] == expected_error
+    assert saved['runtime']['complete'] is False and saved['runtime']['state'] == 'unavailable'
+    assert saved['runtime']['duration_ms'] is None
+    assert saved['production_qualified'] is False
+    retained = json.loads((output/saved['runtime']['artifact']['path']).read_bytes())
+    assert retained['evidence'] is None
+    assert not (output/'collection-acceptance.json').exists()

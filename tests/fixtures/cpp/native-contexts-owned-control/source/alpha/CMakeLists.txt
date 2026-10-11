@@ -1,0 +1,5 @@
+add_library(alpha STATIC ../common.cpp local.cpp)
+target_compile_definitions(alpha PRIVATE EXPECTED_MODE=2 EXPECTED_SOURCE=31)
+target_compile_options(alpha PRIVATE -DMODE=1 -UMODE -DMODE=2)
+set_source_files_properties(../common.cpp PROPERTIES COMPILE_DEFINITIONS SOURCE_SENTINEL=31 COMPILE_OPTIONS "-Wextra")
+target_include_directories(alpha PRIVATE "${PROJECT_SOURCE_DIR}" "${PROJECT_BINARY_DIR}/generated")

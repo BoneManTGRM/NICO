@@ -1,0 +1,486 @@
+diff --git a/externals/simplecpp/simplecpp.cpp b/externals/simplecpp/simplecpp.cpp
+index 2316c42..abd8978 100755
+--- a/externals/simplecpp/simplecpp.cpp
++++ b/externals/simplecpp/simplecpp.cpp
+@@ -3314,7 +3314,7 @@ static std::string getTimeDefine(const struct tm *timep)
+     return std::string("\"").append(buf).append("\"");
+ }
+ 
+-void simplecpp::preprocess(simplecpp::TokenList &output, const simplecpp::TokenList &rawtokens, std::vector<std::string> &files, std::map<std::string, simplecpp::TokenList *> &filedata, const simplecpp::DUI &dui, simplecpp::OutputList *outputList, std::list<simplecpp::MacroUsage> *macroUsage, std::list<simplecpp::IfCond> *ifCond)
++void simplecpp::preprocess(simplecpp::TokenList &output, const simplecpp::TokenList &rawtokens, std::vector<std::string> &files, std::map<std::string, simplecpp::TokenList *> &filedata, const simplecpp::DUI &dui, simplecpp::OutputList *outputList, std::list<simplecpp::MacroUsage> *macroUsage, std::list<simplecpp::IfCond> *ifCond, simplecpp::IncludeObserver *includeObserver)
+ {
+ #ifdef SIMPLECPP_WINDOWS
+     if (dui.clearIncludeCache)
+@@ -3401,14 +3401,22 @@ void simplecpp::preprocess(simplecpp::TokenList &output, const simplecpp::TokenL
+     ifstates.push(True);
+ 
+     std::stack<const Token *> includetokenstack;
++    struct ReceiptFrame { std::string physical; std::string kind; };
++    std::stack<ReceiptFrame> receiptFrames;
++    std::string physical = files.empty() ? std::string() : files[0];
+ 
+     std::set<std::string> pragmaOnce;
+ 
+     includetokenstack.push(rawtokens.cfront());
++    if (includeObserver) receiptFrames.push({physical, "translation_unit"});
+     for (std::list<std::string>::const_iterator it = dui.includes.begin(); it != dui.includes.end(); ++it) {
+         const std::map<std::string, TokenList*>::const_iterator f = filedata.find(*it);
+-        if (f != filedata.end())
++        if (f != filedata.end()) {
+             includetokenstack.push(f->second->cfront());
++            if (includeObserver) receiptFrames.push({f->first, "forced"});
++        } else if (includeObserver) {
++            includeObserver->add(*it, "", "forced_not_loaded", false);
++        }
+     }
+ 
+     std::map<std::string, std::list<Location> > maybeUsedMacros;
+@@ -3417,9 +3425,20 @@ void simplecpp::preprocess(simplecpp::TokenList &output, const simplecpp::TokenL
+         if (rawtok == nullptr) {
+             rawtok = includetokenstack.top();
+             includetokenstack.pop();
++            if (includeObserver) {
++                const ReceiptFrame frame = receiptFrames.top();
++                receiptFrames.pop();
++                physical = frame.physical;
++                if (frame.kind == "forced") includeObserver->add(physical, "", "forced", true);
++            }
+             continue;
+         }
+ 
++        // Location labels can be rewritten by #line/#file. Preserve physical
++        // include events, but prevent those labels proving physical token origin.
++        if (includeObserver && ifstates.top() == True && rawtok->location.file() != physical)
++            includeObserver->logicalLocationRemapped = true;
++
+         if (rawtok->op == '#' && !sameline(rawtok->previousSkipComments(), rawtok)) {
+             if (!sameline(rawtok, rawtok->next)) {
+                 rawtok = rawtok->next;
+@@ -3544,6 +3563,7 @@ void simplecpp::preprocess(simplecpp::TokenList &output, const simplecpp::TokenL
+                     }
+                 }
+                 if (header2.empty()) {
++                    if (includeObserver) includeObserver->add(header, physical, "missing", false);
+                     if (outputList) {
+                         simplecpp::Output out(files);
+                         out.type = Output::MISSING_HEADER;
+@@ -3552,6 +3572,7 @@ void simplecpp::preprocess(simplecpp::TokenList &output, const simplecpp::TokenL
+                         outputList->push_back(out);
+                     }
+                 } else if (includetokenstack.size() >= 400) {
++                    if (includeObserver) includeObserver->add(header2, physical, "depth_skipped", false);
+                     if (outputList) {
+                         simplecpp::Output out(files);
+                         out.type = Output::INCLUDE_NESTED_TOO_DEEPLY;
+@@ -3560,10 +3581,17 @@ void simplecpp::preprocess(simplecpp::TokenList &output, const simplecpp::TokenL
+                         outputList->push_back(out);
+                     }
+                 } else if (pragmaOnce.find(header2) == pragmaOnce.end()) {
++                    if (includeObserver) {
++                        includeObserver->add(header2, physical, "include", true);
++                        receiptFrames.push({physical, "resume"});
++                        physical = header2;
++                    }
+                     includetokenstack.push(gotoNextLine(rawtok));
+                     const TokenList * const includetokens = filedata.find(header2)->second;
+                     rawtok = includetokens ? includetokens->cfront() : nullptr;
+                     continue;
++                } else if (includeObserver) {
++                    includeObserver->add(header2, physical, "pragma_once_skipped", false);
+                 }
+             } else if (rawtok->str() == IF || rawtok->str() == IFDEF || rawtok->str() == IFNDEF || rawtok->str() == ELIF) {
+                 if (!sameline(rawtok,rawtok->next)) {
+diff --git a/externals/simplecpp/simplecpp.h b/externals/simplecpp/simplecpp.h
+index f5c6959..e42c7a5 100755
+--- a/externals/simplecpp/simplecpp.h
++++ b/externals/simplecpp/simplecpp.h
+@@ -332,6 +332,26 @@ namespace simplecpp {
+         long long result; // condition result
+     };
+ 
++    // Optional bounded observation; it never selects or alters preprocessing.
++    struct SIMPLECPP_LIB IncludeUsage {
++        std::string file, parent, kind;
++        bool entered;
++    };
++    struct SIMPLECPP_LIB IncludeObserver {
++        std::vector<IncludeUsage> usage;
++        std::size_t bytes = 0;
++        bool overflow = false;
++        bool logicalLocationRemapped = false;
++        void reset() { usage.clear(); bytes = 0; overflow = false; logicalLocationRemapped = false; }
++        void add(const std::string &file, const std::string &parent,
++                 const std::string &kind, bool entered) {
++            const std::size_t cost = file.size() + parent.size() + kind.size() + 128;
++            if (usage.size() >= 4096 || cost > 1048576 - bytes) { overflow = true; return; }
++            bytes += cost;
++            usage.push_back({file, parent, kind, entered});
++        }
++    };
++
+     /**
+      * Command line preprocessor settings.
+      * On the command line these are configured by -D, -U, -I, --include, -std
+@@ -363,7 +383,7 @@ namespace simplecpp {
+      * @param macroUsage output: macro usage
+      * @param ifCond output: #if/#elif expressions
+      */
+-    SIMPLECPP_LIB void preprocess(TokenList &output, const TokenList &rawtokens, std::vector<std::string> &files, std::map<std::string, TokenList*> &filedata, const DUI &dui, OutputList *outputList = nullptr, std::list<MacroUsage> *macroUsage = nullptr, std::list<IfCond> *ifCond = nullptr);
++    SIMPLECPP_LIB void preprocess(TokenList &output, const TokenList &rawtokens, std::vector<std::string> &files, std::map<std::string, TokenList*> &filedata, const DUI &dui, OutputList *outputList = nullptr, std::list<MacroUsage> *macroUsage = nullptr, std::list<IfCond> *ifCond = nullptr, IncludeObserver *includeObserver = nullptr);
+ 
+     /**
+      * Deallocate data
+diff --git a/lib/cppcheck.cpp b/lib/cppcheck.cpp
+index d1311a1..5265452 100644
+--- a/lib/cppcheck.cpp
++++ b/lib/cppcheck.cpp
+@@ -848,8 +848,158 @@ static std::size_t calculateHash(const Preprocessor& preprocessor, const simplec
+     return preprocessor.calculateHash(tokens, toolinfo.str());
+ }
+ 
++
++// File membership only: no line/branch or individual checker coverage is inferred.
++class NicoNativeTokenFiles {
++public:
++    void capture(const Tokenizer &tokenizer, std::size_t &bytes, std::size_t &entries) {
++        for (const Token *tok = tokenizer.tokens(); tok; tok = tok->next()) {
++            if (static_cast<std::size_t>(tok->fileIndex()) >= tokenizer.list.getFiles().size()) {
++                invalid = true;
++                return;
++            }
++            std::string name;
++            try { name = tokenizer.list.getOrigFile(tok); }
++            catch (const std::out_of_range &) { invalid = true; return; }
++            if (name.empty()) { invalid = true; return; }
++            if (files.find(name) != files.end()) continue;
++            const std::size_t cost = name.size() + 128;
++            if (entries >= 4096 || cost > 1048576 - bytes) { overflow = true; return; }
++            bytes += cost;
++            ++entries;
++            files.insert(std::move(name));
++        }
++        captured = true;
++    }
++    void write(std::ostream &out, const char *stage) const {
++        out << "<token_membership stage=\"" << stage << "\" captured=\""
++            << (captured ? "true" : "false") << "\" invalid=\""
++            << (invalid ? "true" : "false") << "\" overflow=\""
++            << (overflow ? "true" : "false") << "\">\n";
++        for (const auto &name : files)
++            out << "<token_file file=\"" << ErrorLogger::toxml(name) << "\"/>\n";
++        out << "</token_membership>\n";
++    }
++    std::set<std::string> files;
++    bool captured = false, invalid = false, overflow = false;
++};
++
++// Bound actual serialized output, including escaped values and all configurations.
++// A limit hit leaves an incomplete document, which the consumer must reject.
++class NicoNativeTraceBuffer : public std::streambuf {
++public:
++    void open(const char *path) {
++        file.open(path, std::ios::app | std::ios::binary);
++        const auto position = file.tellp();
++        if (!file || position < 0 || position > 1048576) { file.close(); return; }
++        bytes = static_cast<std::size_t>(position);
++    }
++    bool isOpen() const { return file.is_open(); }
++protected:
++    std::streamsize xsputn(const char *s, std::streamsize n) override {
++        if (n < 0 || static_cast<std::size_t>(n) > 1048576 - bytes) return 0;
++        file.write(s, n);
++        if (!file) return 0;
++        bytes += static_cast<std::size_t>(n);
++        return n;
++    }
++    int_type overflow(int_type ch) override {
++        if (traits_type::eq_int_type(ch, traits_type::eof())) return traits_type::not_eof(ch);
++        const char value = traits_type::to_char_type(ch);
++        return xsputn(&value, 1) == 1 ? ch : traits_type::eof();
++    }
++    int sync() override { file.flush(); return file ? 0 : -1; }
++private:
++    std::ofstream file;
++    std::size_t bytes = 0;
++};
++class NicoNativeTraceStream : public std::ostream {
++public:
++    NicoNativeTraceStream() : std::ostream(nullptr) { rdbuf(&buffer); }
++    void open(const char *path) { buffer.open(path); if (!buffer.isOpen()) setstate(std::ios::badbit); }
++    bool is_open() const { return buffer.isOpen(); }
++private:
++    NicoNativeTraceBuffer buffer;
++};
++
++// Trusted opt-in observer; it never selects or alters analysis.
++class NicoNativeFileTrace {
++public:
++    explicit NicoNativeFileTrace(const std::string &file) {
++        const char *path = std::getenv("CPPCHECK_NICO_NATIVE_PROVENANCE");
++        if (!path || !*path) return;
++        stream.open(path);
++        if (stream) stream << "<nico_native schema=\"nico.cppcheck-header-token-pass.v2\" file=\""
++                           << ErrorLogger::toxml(file) << "\">\n";
++    }
++    ~NicoNativeFileTrace() {
++        if (stream) stream << "<file_end normal_return=\"" << (normalReturn ? "true" : "false")
++                           << "\"/></nico_native>\n";
++    }
++    bool enabled() const { return stream.is_open(); }
++    void endedNormally() { normalReturn = true; }
++    void configuration(const std::string &cfg, const Preprocessor &preprocessor,
++                       const char *disposition, bool checksComplete,
++                       const NicoNativeTokenFiles &tokenized, const NicoNativeTokenFiles &parsed,
++                       bool normalPassStarted) {
++        if (!stream) return;
++        const auto &observer = preprocessor.nicoObserver();
++        bool unsupported = false;
++        for (const auto &entry : observer.usage) if (entry.kind == "forced_not_loaded") unsupported = true;
++        const bool complete = checksComplete && preprocessor.nicoPreprocessReturned()
++            && !preprocessor.nicoPreprocessHadOutput() && !observer.overflow
++            && tokenized.captured && parsed.captured && !tokenized.invalid && !parsed.invalid
++            && !tokenized.overflow && !parsed.overflow && normalPassStarted
++            && !unsupported && !Settings::terminated();
++        stream << "<configuration cfg=\"" << ErrorLogger::toxml(cfg)
++               << "\" disposition=\"" << disposition << "\" checks_completed=\""
++               << (checksComplete ? "true" : "false") << "\" completed=\""
++               << (complete ? "true" : "false") << "\" preprocessing_returned=\""
++               << (preprocessor.nicoPreprocessReturned() ? "true" : "false")
++               << "\" preprocessing_had_output=\"" << (preprocessor.nicoPreprocessHadOutput() ? "true" : "false")
++               << "\" observation_overflow=\"" << (observer.overflow ? "true" : "false")
++               << "\" token_logical_remap_observed=\"" << (observer.logicalLocationRemapped ? "true" : "false")
++               << "\" normal_pass_started=\"" << (normalPassStarted ? "true" : "false") << "\">\n";
++        const auto &dui = preprocessor.nicoDui();
++        stream << "<effective std=\"" << ErrorLogger::toxml(dui.std) << "\">\n";
++        for (const auto &x : dui.defines) stream << "<define value=\"" << ErrorLogger::toxml(x) << "\"/>\n";
++        for (const auto &x : dui.undefined) stream << "<undef value=\"" << ErrorLogger::toxml(x) << "\"/>\n";
++        for (const auto &x : dui.includePaths) stream << "<include_path value=\"" << ErrorLogger::toxml(x) << "\"/>\n";
++        for (const auto &x : dui.includes) stream << "<forced_input value=\"" << ErrorLogger::toxml(x) << "\"/>\n";
++        stream << "</effective>\n";
++        for (const auto &entry : observer.usage)
++            stream << "<include file=\"" << ErrorLogger::toxml(entry.file) << "\" parent=\""
++                   << ErrorLogger::toxml(entry.parent) << "\" kind=\"" << entry.kind
++                   << "\" entered=\"" << (entry.entered ? "true" : "false") << "\"/>\n";
++        tokenized.write(stream, "pre_simplification");
++        parsed.write(stream, "normal_form_ast_validated");
++        stream << "</configuration>\n";
++        stream.flush();
++    }
++private:
++    NicoNativeTraceStream stream;
++    bool normalReturn = false;
++};
++class NicoNativeConfigurationTrace {
++public:
++    NicoNativeConfigurationTrace(NicoNativeFileTrace &file, Preprocessor &preprocessor,
++                                 const std::string &cfg) : file(file), preprocessor(preprocessor), cfg(cfg) {
++        if (file.enabled()) preprocessor.nicoReset();
++    }
++    ~NicoNativeConfigurationTrace() { file.configuration(cfg, preprocessor, disposition, checksComplete, tokenized, parsed, normalPassStarted); }
++    const char *disposition = "started_or_error";
++    bool checksComplete = false, normalPassStarted = false;
++    NicoNativeTokenFiles tokenized, parsed;
++    std::size_t tokenMembershipBytes = 0, tokenMembershipEntries = 0;
++private:
++    NicoNativeFileTrace &file;
++    Preprocessor &preprocessor;
++    const std::string &cfg;
++};
++
+ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string &cfgname, std::istream* fileStream)
+ {
++    NicoNativeFileTrace nicoFileTrace(file.spath());
+     // TODO: move to constructor when CppCheck no longer owns the settings
+     if (mSettings.checks.isEnabled(Checks::unusedFunction) && !mUnusedFunctionsCheck)
+         mUnusedFunctionsCheck.reset(new CheckUnusedFunctions());
+@@ -960,6 +1110,7 @@ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string
+         }
+ 
+         Preprocessor preprocessor(mSettings, mErrorLogger);
++        preprocessor.nicoEnableIncludeObserver(nicoFileTrace.enabled());
+ 
+         if (!preprocessor.loadFiles(tokens1, files))
+             return mLogger->exitcode();
+@@ -1096,7 +1247,9 @@ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string
+                 mCurrentConfig = currCfg;
+             }
+ 
++            NicoNativeConfigurationTrace nicoConfig(nicoFileTrace, preprocessor, mCurrentConfig);
+             if (mSettings.preprocessOnly) {
++                nicoConfig.disposition = "preprocess_only";
+                 std::string codeWithoutCfg;
+                 Timer::run("Preprocessor::getcode", mSettings.showtime, &s_timerResults, [&]() {
+                     codeWithoutCfg = preprocessor.getcode(tokens1, mCurrentConfig, files, true);
+@@ -1129,6 +1282,11 @@ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string
+                     tokenizer.list.createTokens(std::move(tokensP));
+                 });
+                 hasValidConfig = true;
++                if (nicoFileTrace.enabled()) {
++                    nicoConfig.tokenMembershipBytes = preprocessor.nicoObserver().bytes;
++                    nicoConfig.tokenMembershipEntries = preprocessor.nicoObserver().usage.size();
++                    nicoConfig.tokenized.capture(tokenizer, nicoConfig.tokenMembershipBytes, nicoConfig.tokenMembershipEntries);
++                }
+ 
+                 // locations macros
+                 mLogger->setLocationMacros(tokenizer.tokens(), files);
+@@ -1139,12 +1297,16 @@ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string
+                     mErrorLogger.reportOut("Checking " + fixedpath + ": " + mCurrentConfig + "...", Color::FgGreen);
+                 }
+ 
+-                if (!tokenizer.tokens())
++                if (!tokenizer.tokens()) {
++                    nicoConfig.disposition = "empty_tokens_no_checks";
+                     continue;
++                }
+ 
+                 // skip rest of iteration if just checking configuration
+-                if (mSettings.checkConfiguration)
++                if (mSettings.checkConfiguration) {
++                    nicoConfig.disposition = "configuration_only";
+                     continue;
++                }
+ 
+ #ifdef HAVE_RULES
+                 // Execute rules for "raw" code
+@@ -1152,8 +1314,13 @@ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string
+ #endif
+ 
+                 // Simplify tokens into normal form, skip rest of iteration if failed
+-                if (!tokenizer.simplifyTokens1(mCurrentConfig))
++                if (!tokenizer.simplifyTokens1(mCurrentConfig)) {
++                    nicoConfig.disposition = "simplification_failed";
+                     continue;
++                }
++
++                if (nicoFileTrace.enabled())
++                    nicoConfig.parsed.capture(tokenizer, nicoConfig.tokenMembershipBytes, nicoConfig.tokenMembershipEntries);
+ 
+                 // dump xml if --dump
+                 if ((mSettings.dump || !mSettings.addons.empty()) && fdump.is_open()) {
+@@ -1177,14 +1344,18 @@ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string
+                     if (hashes.find(hash) != hashes.end()) {
+                         if (mSettings.debugwarnings)
+                             purgedConfigurationMessage(file.spath(), mCurrentConfig);
++                        nicoConfig.disposition = "duplicate_purged";
+                         continue;
+                     }
+                     hashes.insert(hash);
+                 }
+ 
+                 // Check normal tokens
+-                checkNormalTokens(tokenizer, analyzerInformation.get());
++                if (nicoFileTrace.enabled()) nicoConfig.normalPassStarted = true;
++                checkNormalTokens(tokenizer, analyzerInformation.get(), nicoFileTrace.enabled() ? &nicoConfig.checksComplete : nullptr);
++                nicoConfig.disposition = nicoConfig.checksComplete ? "checks_completed" : "checks_incomplete";
+             } catch (const simplecpp::Output &o) {
++                nicoConfig.disposition = "preprocess_error";
+                 // #error etc during preprocessing
+                 configurationError.push_back((mCurrentConfig.empty() ? "\'\'" : mCurrentConfig) + " : [" + o.location.file() + ':' + std::to_string(o.location.line) + "] " + o.msg);
+                 --checkCount; // don't count invalid configurations
+@@ -1208,11 +1379,13 @@ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string
+                 continue;
+ 
+             } catch (const TerminateException &) {
++                nicoConfig.disposition = "terminated";
+                 // Analysis is terminated
+                 if (analyzerInformation)
+                     mLogger->setAnalyzerInfo(nullptr);
+                 return mLogger->exitcode();
+             } catch (const InternalError &e) {
++                nicoConfig.disposition = "internal_error";
+                 ErrorMessage errmsg = ErrorMessage::fromInternalError(e, &tokenizer.list, file.spath());
+                 mErrorLogger.reportErr(errmsg);
+             }
+@@ -1275,6 +1448,7 @@ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string
+     if (mSettings.showtime == SHOWTIME_MODES::SHOWTIME_FILE || mSettings.showtime == SHOWTIME_MODES::SHOWTIME_TOP5_FILE)
+         printTimerResults(mSettings.showtime);
+ 
++    nicoFileTrace.endedNormally();
+     return mLogger->exitcode();
+ }
+ 
+@@ -1299,8 +1473,9 @@ void CppCheck::internalError(const std::string &filename, const std::string &msg
+ // CppCheck - A function that checks a normal token list
+ //---------------------------------------------------------------------------
+ 
+-void CppCheck::checkNormalTokens(const Tokenizer &tokenizer, AnalyzerInformation* analyzerInformation)
++void CppCheck::checkNormalTokens(const Tokenizer &tokenizer, AnalyzerInformation* analyzerInformation, bool *nicoComplete)
+ {
++    if (nicoComplete) *nicoComplete = false;
+     CheckUnusedFunctions unusedFunctionsChecker;
+ 
+     // TODO: this should actually be the behavior if only "--enable=unusedFunction" is specified - see #10648
+@@ -1383,6 +1558,7 @@ void CppCheck::checkNormalTokens(const Tokenizer &tokenizer, AnalyzerInformation
+ #ifdef HAVE_RULES
+     executeRules("normal", tokenizer.list);
+ #endif
++    if (nicoComplete) *nicoComplete = !doUnusedFunctionOnly && !mSettings.clang && !Settings::terminated();
+ }
+ 
+ //---------------------------------------------------------------------------
+diff --git a/lib/cppcheck.h b/lib/cppcheck.h
+index ea7feee..8b60c1f 100644
+--- a/lib/cppcheck.h
++++ b/lib/cppcheck.h
+@@ -181,7 +181,7 @@ private:
+      * @param tokenizer tokenizer instance
+      * @param analyzerInformation the analyzer infomation
+      */
+-    void checkNormalTokens(const Tokenizer &tokenizer, AnalyzerInformation* analyzerInformation);
++    void checkNormalTokens(const Tokenizer &tokenizer, AnalyzerInformation* analyzerInformation, bool *nicoComplete = nullptr);
+ 
+     /**
+      * Execute addons
+diff --git a/lib/preprocessor.cpp b/lib/preprocessor.cpp
+index d41db99..e662f46 100644
+--- a/lib/preprocessor.cpp
++++ b/lib/preprocessor.cpp
+@@ -809,16 +809,20 @@ void Preprocessor::setPlatformInfo(simplecpp::TokenList &tokens, const Settings&
+ simplecpp::TokenList Preprocessor::preprocess(const simplecpp::TokenList &tokens1, const std::string &cfg, std::vector<std::string> &files, bool throwError)
+ {
+     const simplecpp::DUI dui = createDUI(mSettings, cfg, files[0]);
++    if (mNicoEnabled) { nicoReset(); mNicoDui = dui; }
+ 
+     simplecpp::OutputList outputList;
+     std::list<simplecpp::MacroUsage> macroUsage;
+     std::list<simplecpp::IfCond> ifCond;
+     simplecpp::TokenList tokens2(files);
+-    simplecpp::preprocess(tokens2, tokens1, files, mTokenLists, dui, &outputList, &macroUsage, &ifCond);
++    simplecpp::preprocess(tokens2, tokens1, files, mTokenLists, dui, &outputList, &macroUsage, &ifCond,
++                          mNicoEnabled ? &mNicoObserver : nullptr);
++    if (mNicoEnabled) mNicoHadOutput = !outputList.empty();
+     mMacroUsage = std::move(macroUsage);
+     mIfCond = std::move(ifCond);
+ 
+     handleErrors(outputList, throwError);
++    if (mNicoEnabled) mNicoReturned = true;
+ 
+     tokens2.removeComments();
+ 
+diff --git a/lib/preprocessor.h b/lib/preprocessor.h
+index 3086ca4..d4c4df9 100644
+--- a/lib/preprocessor.h
++++ b/lib/preprocessor.h
+@@ -146,6 +146,12 @@ public:
+      * dump all directives present in source file
+      */
+     void dump(std::ostream &out) const;
++    void nicoEnableIncludeObserver(bool enabled) { mNicoEnabled = enabled; }
++    void nicoReset() { mNicoObserver.reset(); mNicoReturned = false; mNicoHadOutput = false; }
++    const simplecpp::IncludeObserver &nicoObserver() const { return mNicoObserver; }
++    const simplecpp::DUI &nicoDui() const { return mNicoDui; }
++    bool nicoPreprocessReturned() const { return mNicoReturned; }
++    bool nicoPreprocessHadOutput() const { return mNicoHadOutput; }
+ 
+     static bool hasErrors(const simplecpp::Output &output);
+ 
+@@ -184,6 +190,9 @@ private:
+     /** simplecpp tracking info */
+     std::list<simplecpp::MacroUsage> mMacroUsage;
+     std::list<simplecpp::IfCond> mIfCond;
++    bool mNicoEnabled = false, mNicoReturned = false, mNicoHadOutput = false;
++    simplecpp::IncludeObserver mNicoObserver;
++    simplecpp::DUI mNicoDui;
+ };
+ 
+ /// @}

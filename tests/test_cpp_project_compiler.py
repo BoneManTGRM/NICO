@@ -74,6 +74,32 @@ def test_observed_scalar_flags_are_preserved_without_broadening_legacy_parser(tm
     assert all(flag in r['invocation'] for r in request['contexts'])
 
 
+@pytest.mark.parametrize('flag', ['-msse4.2', '-pedantic', '-mpclmul', '-Wcast-align=strict'])
+def test_native_scalar_flags_retain_order_and_distinct_project_contexts(tmp_path, flag):
+    extra = ['-DORDER=1', flag, '-UORDER', '-DORDER=2']
+    raw, targets, captured, original = inputs(tmp_path, extra)
+    request = capability('project_compiler_request')(raw, targets, captured)
+    assert [r['context_id'] for r in request['contexts']] == [
+        r['context_id'] for r in original['contexts']]
+    for context in request['contexts']:
+        at = context['invocation'].index('-DORDER=1')
+        assert context['invocation'][at:at + len(extra)] == extra
+    # This project-only correction does not alter historical compiler contracts.
+    from nico.assessment_cpp_compiler_evidence import safe_compile_argv
+    argv = ['/usr/local/bin/g++', flag, '-c', '/work/source/main.cpp', '-o', 'main.o']
+    with pytest.raises(ValueError, match='worker_compiler_option_unsupported'):
+        safe_compile_argv(argv, '/work/source/main.cpp', '/work/analysis/compiler-baseline/u0')
+
+
+@pytest.mark.parametrize('flag', ['-msse4.2=/work/source/helper',
+    '-pedantic=/work/source/helper', '-mpclmul=/work/source/helper',
+    '-Wcast-align=strict=/work/source/helper'])
+def test_native_scalar_flag_support_does_not_authorize_operands(tmp_path, flag):
+    raw, targets, captured, _ = inputs(tmp_path, [flag])
+    with pytest.raises(ValueError, match='worker_compiler_option_unsupported'):
+        capability('project_compiler_request')(raw, targets, captured)
+
+
 @pytest.mark.parametrize('flag', ['-fplugin=/work/source/helper.so','@/work/source/options',
     '-B/work/source','-specs=/work/source/specs','-wrapper','-save-temps',
     '-fmacro-prefix-map=/etc=.', '-fmacro-prefix-map=/work/source=../../escape'])
@@ -226,14 +252,15 @@ def test_workflow_and_owned_control_require_actual_project_compiler_evidence():
     assert "['checked_contexts']" in control
 
 
-def test_actual_local_gcc_checks_captured_generated_source_and_retains_dependencies(tmp_path):
+@pytest.mark.parametrize('extra', [(), ('-msse4.2', '-pedantic', '-mpclmul', '-Wcast-align=strict')])
+def test_actual_local_gcc_checks_captured_generated_source_and_retains_dependencies(tmp_path, extra):
     """Owned compiler smoke test only; Docker/UID/cgroup proof is hosted."""
     import shutil
     import subprocess
     compiler=shutil.which('g++')
     if compiler is None:
         pytest.skip('native GCC is unavailable in this unit-test environment')
-    raw,targets,captured,_=inputs(tmp_path)
+    raw,targets,captured,_=inputs(tmp_path, extra)
     request=capability('project_compiler_request')(raw,targets,captured)
     original=tmp_path/'source'; original.mkdir()
     (original/'main.cpp').write_bytes(b'#include "config.h"\nint main(){return VALUE;}\n')
