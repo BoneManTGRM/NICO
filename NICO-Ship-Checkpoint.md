@@ -1,3 +1,36 @@
+# Helper-local inheritance memoization — October 11, 2026
+
+Continuation of PR #1712 from verified remote head `daa34c39b24adc0cd7fcc13067409bcc92679a81`.
+Record aliases are grouped by declaring scope. Completed inheritance queries and
+base resolutions are reused inside the immutable helper invocation, with
+visibility results scoped to one target at a time. Token indexes are not retained
+across typedef mutations. Repeated whole-list scope reconstruction remains open.
+
+The 16 focused checks pass, with bounded independent read-only automated review.
+The exact configured contract selection passes locally: 1,977 passed, five
+skipped; skips earn no native credit. A broader selection has one File API trial
+failure (`NOT_RUN`, missing `cmake`), 2,568 passes and five skips.
+An owned diamond reduces base-resolution searches from 524,286 to 70 while
+preserving results. These kernel checks do not prove full tokenization, Bitcoin
+performance, complete coverage or qualification. The retained private native
+reconstruction/profile/image/capture receipts are absent from this attached
+workspace; no replacement recovery project or native Bitcoin attempt was started.
+The earlier runner-reported 22 controls whose detailed artifacts were lost receive
+no independently evidenced success credit in this continuation.
+
+Run [38129767934](https://github.com/BoneManTGRM/NICO/actions/runs/38129767934)
+remains failed: primary 15 executions, 2 analyzed, 12 timeouts and one internal AST
+error; combined 15/577 contexts; 603/769 headers unvisited; compiler context 289
+unparsed; UBSan tests failed at an observed `src/streams.cpp:99:24`. The downloaded
+new artifact passes published digest and ZIP CRC verification. The one-context
+historical difference is not attributed to the preceding patch.
+
+See [repair evidence and limitations](docs/evidence/pr1712-alias-inheritance-repair-20261011.md).
+The changed candidate requires the configured final-head qualification and all
+applicable release gates before merge/deployment. No target finding, coverage
+requirement, assessment score, runtime limit or acceptance rule is relaxed.
+Historical checkpoints below are preserved as historical evidence.
+
 # Bounded record visibility cache — October 10, 2026
 
 This follow-up starts at `d40c07ec1c83e240e5baacfe96564f07dde26344`.
