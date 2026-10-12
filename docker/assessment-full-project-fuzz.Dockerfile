@@ -99,4 +99,4 @@ USER 1000:1000
 RUN python -I -S -c "import os, sys; assert sys.version_info.major == 3; assert sys.flags.isolated and sys.flags.no_site; assert (os.getuid(), os.getgid()) == (1000, 1000)"
 ENTRYPOINT ["sleep"]
 
-LABEL org.nico.cppcheck.header-grammar="physical-header-grammar-v1"
+LABEL org.nico.cppcheck.header-grammar="physical-header-grammar-v3"

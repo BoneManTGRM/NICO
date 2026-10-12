@@ -25,6 +25,8 @@ private:
         TEST_CASE(noexceptConstructor);
         TEST_CASE(trailingDecltype);
         TEST_CASE(variableTracking);
+        TEST_CASE(functionDeclarator);
+        TEST_CASE(pointerConversionArguments);
     }
 
     void initializer(const std::string& ending, unsigned expectedUses) {
@@ -115,6 +117,52 @@ private:
             ++uses;
         }
         ASSERT_EQUALS(2U, uses);
+    }
+    void functionDeclarator() {
+        for (const char* code : {
+                 "int* g(void* (f)(void*), void* u);",
+                 "int* g(int* (f)(int*, int), int* u);"}) {
+            Settings settings;
+            Tokenizer tokenizer(settings, *this);
+            std::istringstream input(code);
+            ASSERT(tokenizer.list.createTokens(input, "owned.cpp"));
+            tokenizer.combineOperators();
+            tokenizer.createLinks();
+            tokenizer.createLinks2();
+            tokenizer.list.front()->assignIndexes();
+            tokenizer.prepareTernaryOpForAST();
+            tokenizer.list.createAst();
+            tokenizer.list.validateAst(false);
+            const Token* name = Token::findsimplematch(tokenizer.list.front(), "f ) (");
+            ASSERT(name);
+            ASSERT(!name->astParent());
+            ASSERT(!name->astOperand1());
+            ASSERT(!name->astOperand2());
+        }
+    }
+    void pointerConversionArguments() {
+        // These are post-template-substitution parser forms, not C++ syntax
+        // acceptance tests. Their argument expressions must retain an AST.
+        for (const char* code : {
+                 "use(int * (seed));",
+                 "use(int * (seed + 1));",
+                 "use(int * (*seed));"}) {
+            Settings settings;
+            Tokenizer tokenizer(settings, *this);
+            std::istringstream input(code);
+            ASSERT(tokenizer.list.createTokens(input, "owned.cpp"));
+            tokenizer.combineOperators();
+            tokenizer.createLinks();
+            tokenizer.createLinks2();
+            tokenizer.list.front()->assignIndexes();
+            tokenizer.prepareTernaryOpForAST();
+            tokenizer.list.createAst();
+            tokenizer.list.validateAst(false);
+            const Token* seed = Token::findsimplematch(tokenizer.list.front(), "seed");
+            ASSERT(seed);
+            ASSERT(seed->astParent());
+            ASSERT(seed->astParent()->astOperand1() == seed || seed->astParent()->astOperand2() == seed);
+        }
     }
 };
 
