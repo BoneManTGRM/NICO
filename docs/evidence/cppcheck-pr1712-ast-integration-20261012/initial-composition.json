@@ -1,0 +1,6 @@
+{
+  "ast_output_blob": "39f33db14a8d4cd359c1f1c8ae5a4eacb534acfa",
+  "grammar_expected_blob": "f6e28dfb9bb4358d93fa6ab5ac227346164880a3",
+  "composition": "FAIL",
+  "error": "upstream_source_mismatch"
+}

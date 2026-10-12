@@ -1,0 +1,8 @@
+{
+  "scripts/repair_cppcheck_placement_ast.py": "412309dff85ee7a7722218ba30e6a17b22740400c634c9d766e8855eac0a8693",
+  "scripts/repair_cppcheck_header_grammar.py": "7ce43a067e955ad19bc0f7085077fd3544898eaabfdc3dad8f4234f4df8ac679",
+  "scripts/patch_cppcheck_header_evidence.py": "9f3261e77b3c75154f67ed23eac5001d988ff46363ffd0cecd763e77e6d34fdc",
+  "tests/test_cpp_tool_patch_composition.py": "84661026b3d78f07106faf18c7aaaacb67444da4a236b5a863d5c45e7dad8557",
+  ".github/workflows/cpp-full-project-integration.yml": "197e587af405ee6fc2b5dafb3f1edef54ab1105b85535f3b65d93a5a52068589",
+  "docker/assessment-full-project-fuzz.Dockerfile": "66d8b37338105f0ab90b34319c5218b0afa73c4da30f5e883c03b7708c834d18"
+}

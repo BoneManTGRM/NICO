@@ -1,0 +1,9 @@
+{
+  "scripts/repair_cppcheck_placement_ast.py": "412309dff85ee7a7722218ba30e6a17b22740400c634c9d766e8855eac0a8693",
+  "docker/assessment-full-project-fuzz.Dockerfile": "1ab5b9f022291abce1264b75709898793b1112e63c36bdd2e51c27fe2bfe815c",
+  ".github/workflows/cpp-full-project-integration.yml": "ed652cbbc860a000ca59ef5d207214e7e6a56974ca97803766119286979d0986",
+  "tests/test_cpp_placement_tool_repair.py": "9ceb17987d12916c78fd0e55e76a7eedc1fae96a998e0c0dbb6deaf57a113910",
+  "tests/test_cpp_constructor_ast_boundary.py": "d162d20eb94170f0ca4f20c3d797e965769328df2105eb6ae52ebfcdfe708425",
+  "tests/native/cppcheck_constructor_ast.cpp": "bad9ef81347afd54bafc29a62b060aa000f7cb51e5f7d1e4e54c6d2b272b0de9",
+  "tests/native/README.md": "8f2e3054151fca493eed2ddefc9f474f229d6ee7753019de1a5169638802f686"
+}

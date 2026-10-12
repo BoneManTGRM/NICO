@@ -38,9 +38,9 @@ PATCHES = {
         b'                                        closing->findClosingBracket() &&\n'
         b'                                        Token::simpleMatch(closing->findClosingBracket()->next(), "("))) : true))\n',
     ),
-    # Exact output of the existing pinned placement-new repair.
+    # Exact output of the pinned placement-new and constructor-boundary repair.
     'lib/tokenlist.cpp': (
-        'f6e28dfb9bb4358d93fa6ab5ac227346164880a3',
+        '39f33db14a8d4cd359c1f1c8ae5a4eacb534acfa',
         b'            tok = findCppTypeInitPar(tok);\n'
         b'            state.op.push(tok);\n'
         b'            tok = tok->tokAt(2);\n',
