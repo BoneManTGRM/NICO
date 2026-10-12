@@ -264,6 +264,39 @@ def _known_public_cppcheck_source_blob(finding: dict[str, Any]) -> bool:
             and finding.get('Verified', False) is False)
 
 
+def _known_public_cppcheck_source_digest(finding: dict[str, Any]) -> bool:
+    """Retain six reviewed source digests, bound to immutable observations.
+
+    Audit run 38305087110 reported these two maps. Fresh Python-only derivation
+    from pinned upstream source reproduced all six SHA256 values and both
+    grammar receipts. See docs/evidence/security-audit-cpp-source-digests-20261012.md.
+    Redacted values are accepted only at the exact reviewed commit/path/position;
+    new commits, changed values, other rules and verified credentials still block.
+    """
+    locations = {
+        '6eff8889db11a3ab31c3b04f5af053edb542d6e8':
+            'docs/evidence/cppcheck-composed-runtime-20261012/fixed-final-source-sha256.json',
+        'fc9a0a75ac2cdd614304d7483eb8cbaf3b161b01':
+            'docs/evidence/cppcheck-pr1712-ast-integration-20261012/composed-source-sha256.json',
+    }
+    commit = finding.get('Commit')
+    if not isinstance(commit, str) or commit not in locations:
+        return False
+    path = locations[commit]
+    for name, line, end in (('token.cpp', 8, 86), ('tokenize.cpp', 9, 89), ('tokenlist.cpp', 10, 90)):
+        expected = {
+            'File': path, 'RuleID': 'generic-api-key', 'Secret': 'REDACTED',
+            'Match': name + '\": \"REDACTED\"',
+            'Fingerprint': f'{commit}:{path}:generic-api-key:{line}',
+            'StartLine': line, 'EndLine': line, 'StartColumn': 9, 'EndColumn': end,
+        }
+        if (all(type(finding.get(key)) is type(value) and finding[key] == value
+                for key, value in expected.items())
+                and finding.get('Verified', False) is False):
+            return True
+    return False
+
+
 def _gitleaks(root: Path) -> dict[str, Any]:
     data, error = _read_json(root, "gitleaks.json")
     summary, summary_error = _read_json(root, "gitleaks-summary.json")
@@ -318,7 +351,8 @@ def _gitleaks(root: Path) -> dict[str, Any]:
         elif _known_public_signing_fingerprint(finding):
             approved_public_signing_fingerprints += 1
             disposition = "approved_public_signing_fingerprint"
-        elif _known_public_cppcheck_source_blob(finding):
+        elif (_known_public_cppcheck_source_blob(finding)
+              or _known_public_cppcheck_source_digest(finding)):
             approved_public_source_hashes += 1
             disposition = "approved_public_source_hash"
         else:
