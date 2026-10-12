@@ -251,6 +251,7 @@ def build_scanner_execution_stage(
     incomplete = [item for item in records if item.get("completed") is not True]
     totals = _candidate_totals(canonical)
     evidence: list[str] = [
+        "Status record retention does not establish raw execution evidence.",
         f"Raw candidate count: {totals['raw']}.",
         f"Confirmed material finding count: {totals['confirmed_material']}.",
         f"Review-required candidate count: {totals['review_required']}.",
@@ -269,7 +270,7 @@ def build_scanner_execution_stage(
         evidence.append(
             f"{name}: {state}; "
             f"exact commit={'yes' if item.get('exact_commit_match') else 'no'}; "
-            f"artifact={'retained' if item.get('artifact_hash') else 'missing'}; "
+            f"status record={'retained' if item.get('artifact_hash') else 'missing'}; "
             f"confirmed material finding count={_scanner_material_count(item)}; "
             f"raw finding payload embedded={'yes' if item.get('findings') else 'no'}."
         )

@@ -22,6 +22,9 @@ VERSION = "nico.comprehensive-spanish-canonical-report.v87"
 # Downstream compaction identifies those semantic sections by their localized
 # titles; alternate synonyms would leave duplicate stage blocks/pages in Spanish.
 _CANONICAL_PARITY_EXACT = {
+    "Status record retention does not establish raw execution evidence.": (
+        "La conservación del registro de estado no acredita evidencia sin procesar de la ejecución."
+    ),
     "Documented not-applicable dispositions do not establish analyzer execution.": "Las determinaciones documentadas de no aplicabilidad no demuestran la ejecución del analizador.",
     "Retain the required exact-SHA applicability dispositions.": "Conserve las determinaciones de aplicabilidad requeridas para el SHA exacto.",
     "Configure-first execution is incomplete; retained native evidence requires repair.": "La ejecución con configuración inicial está incompleta; la evidencia nativa conservada requiere reparación.",
@@ -3370,6 +3373,8 @@ def _translate_presentation(value: Any) -> str:
     text = text.replace("exact commit=no", "commit exacto=no")
     text = text.replace("artifact=retained", "artefacto=conservado")
     text = text.replace("artifact=missing", "artefacto=faltante")
+    text = text.replace("status record=retained", "registro de estado=conservado")
+    text = text.replace("status record=missing", "registro de estado=faltante")
     text = text.replace("retained finding count=", "conteo de hallazgos conservados=")
     text = text.replace(
         "operations page has concentrated branching and elevated change risk",
