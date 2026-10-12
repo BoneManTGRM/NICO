@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.security_audit_gate import build_manifest
+from scripts.security_audit_gate import _gitleaks, build_manifest
 
 
 def _write(root: Path, name: str, value: object) -> None:
@@ -548,3 +548,96 @@ def test_gitleaks_clang_sdk_fingerprint_disposition_rejects_lookalikes(
     assert manifest["security_gate"]["status"] == "blocked"
     assert manifest["tools"]["gitleaks"]["finding_count"] == 1
     assert manifest["tools"]["gitleaks"]["blocking"] == 1
+
+
+# Redacted Gitleaks 8.30.1 observations, independently reproduced from exact commits.
+CPP_SOURCE_DIGEST_LOCATIONS = (
+    ('6eff8889db11a3ab31c3b04f5af053edb542d6e8',
+     'docs/evidence/cppcheck-composed-runtime-20261012/fixed-final-source-sha256.json'),
+    ('fc9a0a75ac2cdd614304d7483eb8cbaf3b161b01',
+     'docs/evidence/cppcheck-pr1712-ast-integration-20261012/composed-source-sha256.json'),
+)
+CPP_SOURCE_DIGEST_OBSERVATIONS = [
+    {'Commit': commit, 'File': path, 'RuleID': 'generic-api-key',
+     'Secret': 'REDACTED', 'Match': name + '\": \"REDACTED\"',
+     'Fingerprint': f'{commit}:{path}:generic-api-key:{line}',
+     'StartLine': line, 'EndLine': line, 'StartColumn': 9, 'EndColumn': end}
+    for commit, path in CPP_SOURCE_DIGEST_LOCATIONS
+    for name, line, end in (('token.cpp', 8, 86), ('tokenize.cpp', 9, 89), ('tokenlist.cpp', 10, 90))
+]
+
+
+def _cpp_source_digest_evidence(root, findings):
+    raw = json.dumps(findings).encode()
+    (root / 'gitleaks.json').write_bytes(raw)
+    (root / 'gitleaks-summary.json').write_text(json.dumps(
+        {'status': 'completed', 'finding_count': len(findings)}))
+    result = _gitleaks(root)
+    assert (root / 'gitleaks.json').read_bytes() == raw
+    return result
+
+
+def test_six_source_digests_are_retained_with_exact_dispositions(tmp_path):
+    _clean_evidence(tmp_path)
+    result = _cpp_source_digest_evidence(tmp_path, CPP_SOURCE_DIGEST_OBSERVATIONS)
+    manifest = build_manifest(tmp_path)
+    assert manifest['security_gate']['status'] == 'passed'
+    assert manifest['human_review_required'] is True
+    assert manifest['client_delivery_allowed'] is False
+    assert manifest['tools']['gitleaks']['triage'] == result['triage']
+    assert result['finding_count'] == 6
+    assert result['blocking'] == 0
+    assert result['approved_public_source_hashes'] == 6
+    assert len(result['triage']) == 6
+    assert {x['disposition'] for x in result['triage']} == {'approved_public_source_hash'}
+    assert {x['fingerprint'] for x in result['triage']} == {x['Fingerprint'] for x in CPP_SOURCE_DIGEST_OBSERVATIONS}
+
+
+@pytest.mark.parametrize('finding', CPP_SOURCE_DIGEST_OBSERVATIONS)
+@pytest.mark.parametrize('field,value', (
+    ('Commit', '0' * 40), ('Commit', None),
+    ('File', 'docs/evidence/other/source-sha256.json'),
+    ('RuleID', 'aws-access-token'),
+    ('Secret', 'synthetic-unreviewed-credential'), ('Secret', 'a' * 64),
+    ('Secret', None), ('Match', 'token.cpp\": \"synthetic-unreviewed-credential\"'),
+    ('Match', 'other.cpp\": \"REDACTED\"'),
+    ('Fingerprint', 'different-observation'),
+    ('StartLine', 11), ('EndLine', 11), ('StartColumn', 8), ('EndColumn', 91),
+    ('StartLine', '8'), ('StartColumn', 9.0), ('EndColumn', None),
+    ('Verified', True), ('Verified', 'false'), ('Verified', 0),
+))
+def test_changed_or_unmatched_observations_still_block(tmp_path, finding, field, value):
+    changed = {**finding, field: value}
+    result = _cpp_source_digest_evidence(tmp_path, [changed])
+    assert result['finding_count'] == result['blocking'] == 1
+    assert result['triage'][0]['disposition'] == 'blocking'
+
+
+@pytest.mark.parametrize('finding', CPP_SOURCE_DIGEST_OBSERVATIONS)
+@pytest.mark.parametrize('field', tuple(CPP_SOURCE_DIGEST_OBSERVATIONS[0]))
+def test_incomplete_observations_still_block(tmp_path, finding, field):
+    changed = dict(finding)
+    del changed[field]
+    assert _cpp_source_digest_evidence(tmp_path, [changed])['blocking'] == 1
+
+
+@pytest.mark.parametrize('finding', CPP_SOURCE_DIGEST_OBSERVATIONS)
+def test_another_commit_even_with_consistent_fingerprint_blocks(tmp_path, finding):
+    changed = dict(finding, Commit='3dcdb6203068510917b033117ec8226e91ac532d')
+    changed['Fingerprint'] = f"{changed['Commit']}:{changed['File']}:generic-api-key:{changed['StartLine']}"
+    assert _cpp_source_digest_evidence(tmp_path, [changed])['blocking'] == 1
+
+
+def test_crossed_commit_path_pair_and_real_credential_remain_blocking(tmp_path):
+    _clean_evidence(tmp_path)
+    swapped = dict(CPP_SOURCE_DIGEST_OBSERVATIONS[0])
+    swapped['File'] = CPP_SOURCE_DIGEST_LOCATIONS[1][1]
+    swapped['Fingerprint'] = f"{swapped['Commit']}:{swapped['File']}:generic-api-key:8"
+    credential = dict(CPP_SOURCE_DIGEST_OBSERVATIONS[0], RuleID='aws-access-token', Verified=True,
+                      Secret='synthetic-unreviewed-credential')
+    result = _cpp_source_digest_evidence(tmp_path, [*CPP_SOURCE_DIGEST_OBSERVATIONS, swapped, credential])
+    assert build_manifest(tmp_path)['security_gate']['status'] == 'blocked'
+    assert result['finding_count'] == 8
+    assert result['blocking'] == 2
+    assert result['approved_public_source_hashes'] == 6
+    assert [x['disposition'] for x in result['triage'][-2:]] == ['blocking', 'blocking']
