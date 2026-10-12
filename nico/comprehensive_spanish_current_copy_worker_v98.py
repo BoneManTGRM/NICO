@@ -118,7 +118,7 @@ _SCANNER_EXECUTION_SUMMARY_RE = re.compile(
     r"(?P<prefix>(?:^|\n)[^\n:]{1,100}: )"
     r"(?P<state>[^;\r\n]{1,80}); "
     r"exact commit=(?P<commit>yes|no); "
-    r"artifact=(?P<artifact>retained|missing); "
+    r"(?P<artifact_label>artifact|status record)=(?P<artifact>retained|missing); "
     r"confirmed material finding count=(?P<count>\d+); "
     r"raw finding payload embedded=(?P<raw>yes|no)\.",
     re.IGNORECASE,
@@ -150,6 +150,9 @@ _CANDIDATE_DISPOSITION_ES = {
 }
 
 _STATIC_GENERATOR_COPY = {
+    "Status record retention does not establish raw execution evidence.": (
+        "La conservación del registro de estado no acredita evidencia sin procesar de la ejecución."
+    ),
     "The repository's complete required-check suite passes on the remediation commit": (
         "El conjunto completo de comprobaciones requeridas del repositorio se aprueba en el commit de remediación"
     ),
@@ -366,6 +369,7 @@ def _translate_structured_current_report_copy(text: str) -> str:
     def scanner_execution_summary(match: re.Match[str]) -> str:
         boolean = {"yes": "sí", "no": "no"}
         artifact = {"retained": "conservado", "missing": "faltante"}
+        artifact_label = "registro de estado" if match.group("artifact_label").casefold() == "status record" else "artefacto"
         raw_state = match.group("state")
         # The stage producer may have localized an ordinary label already.
         # Translate the complete sentence before layout, preserving any raw
@@ -395,7 +399,7 @@ def _translate_structured_current_report_copy(text: str) -> str:
         return (
             f"{match.group('prefix')}{state}; "
             f"commit exacto={boolean[match.group('commit').casefold()]}; "
-            f"artefacto={artifact[match.group('artifact').casefold()]}; "
+            f"{artifact_label}={artifact[match.group('artifact').casefold()]}; "
             "conteo de hallazgos materiales confirmados="
             f"{match.group('count')}; carga de hallazgos sin procesar incluida="
             f"{boolean[match.group('raw').casefold()]}.",
