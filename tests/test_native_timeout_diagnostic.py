@@ -309,10 +309,11 @@ def _primary_adapter_namespace():
     program=ast.parse(d.primary_program())
     compile(program,'current-primary-program','exec')
     nodes=[n for n in program.body if (
-        isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='original_run' for t in n.targets))
+        isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id in {'original_run','stage_counters_enabled','stage_allowed_commands'} for t in n.targets))
         or isinstance(n,ast.ClassDef) and n.name=='ThreadPoolExecutor']
     # Only the final diagnostic _run adapter, not the production collector runner.
-    nodes.insert(1,[n for n in program.body if isinstance(n,ast.FunctionDef) and n.name=='_run'][-1])
+    nodes.insert(0,[n for n in program.body if isinstance(n,ast.FunctionDef) and n.name=='analyzer_environment'][0])
+    nodes.append([n for n in program.body if isinstance(n,ast.FunctionDef) and n.name=='_run'][-1])
     calls=[]
     def fake_run(argv,stem,deadline,environment):
         calls.append((argv,stem,deadline,environment));return {'owned':True}

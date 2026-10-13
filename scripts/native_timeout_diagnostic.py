@@ -728,25 +728,33 @@ def select_primary_cases(retained):
     return selected
 
 
-def primary_program():
+def primary_program(*, stage_counters=False, allowed_commands=None):
     """Reuse production validation/collection with a diagnostic-only scheduler.
 
     Full request indexing and input validation are preserved. The scheduler
     dispatches ONLY the three reviewed contexts, serially; no production receipt
     validator is applied to this intentionally partial, instrumented result.
     """
+    import inspect
+    from scripts.native_stage_counters.binding import analyzer_environment
+    if type(stage_counters) is not bool or (stage_counters and not allowed_commands):
+        raise ValueError('diagnostic_stage_flag_invalid')
     from nico.assessment_cpp_project_static import PROGRAM
     suffix = '\nrun_project_static()\n'
     if not PROGRAM.endswith(suffix):
         raise ValueError('diagnostic_collector_entrypoint_changed')
-    return PROGRAM[:-len(suffix)] + '\n' + textwrap.dedent(r'''
+    policy = ('\n' + inspect.getsource(analyzer_environment) + '\n'
+              + 'stage_counters_enabled = ' + repr(stage_counters) + '\n'
+              + 'stage_allowed_commands = ' + repr(allowed_commands or []) + '\n')
+    return PROGRAM[:-len(suffix)] + policy + textwrap.dedent(r'''
         import sys
         original_run = _run
         def _run(argv, stem, deadline, environment):
             actual = list(argv)
             if actual[0] == '/usr/local/bin/cppcheck' and '--version' not in actual:
                 actual += ['--showtime=file', '--report-progress=1']
-            result = original_run(actual, stem, min(deadline, time.monotonic()+90), environment)
+            native_environment = analyzer_environment(actual, environment, stage_counters_enabled, stage_allowed_commands)
+            result = original_run(actual, stem, min(deadline, time.monotonic()+90), native_environment)
             return result
         class ThreadPoolExecutor:
             def __init__(self, max_workers):
@@ -779,11 +787,23 @@ def primary_program():
     ''')
 
 
-def run_primary(source, targets, image, output, retained):
+def verify_primary_runtime(observed, stage_binding=None):
+    expected = {'/usr/local/bin/cppcheck': CURRENT_TOOLS['cppcheck'],
+                '/opt/nico-clang-header-observer.so': CURRENT_TOOLS['nico-clang-header-observer.so']}
+    if stage_binding is not None:
+        expected['/usr/local/bin/cppcheck'] = stage_binding['instrumented_binary_sha256']
+    if observed != expected:
+        raise ValueError('diagnostic_rebuilt_tool_identity')
+
+
+def run_primary(source, targets, image, output, retained, *, stage_binding=None, stage_binding_sha256=None, original_image=None):
     from nico.assessment_cpp_project_snapshot import PROJECT_RESTORE_PROGRAM
     from nico.assessment_cpp_static_environment import environment_request, validate_environment, ENV_PROGRAM, ENV_STREAM_LIMIT
     from nico.assessment_cpp_project_static import STREAM_LIMIT
     selected = select_primary_cases(retained)
+    if stage_binding is not None:
+        from scripts.native_stage_counters.binding import validate_binding
+        validate_binding(stage_binding, image, stage_binding_sha256, original_image)
     snapshot = retained['snapshot']
     result = {'scope':'three_current_primary_contexts','complete':False,
         'selected':selected,'retained_population':577,'unselected_contexts':574,
@@ -792,14 +812,15 @@ def run_primary(source, targets, image, output, retained):
         'retained_image':CURRENT_IMAGE,'diagnostic_image':image,
         'original_image_replay':False,
         'timing_limits':'Completed CPU phases can overlap and add overhead; killed phases do not identify a precise hotspot.'}
+    if stage_binding is not None:
+        result['stage_runtime_binding'] = stage_binding
+        result['stage_runtime_binding_sha256'] = stage_binding_sha256
     box = Sandbox(source,targets,image,output,executable=False,seconds=540)
     try:
         with box:
             identity = "import hashlib,json,pathlib; paths=['/usr/local/bin/cppcheck','/opt/nico-clang-header-observer.so']; assert all(pathlib.Path(p).is_file() and pathlib.Path(p).stat().st_size <= 32*1024*1024 for p in paths); print(json.dumps({p:hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() for p in paths}))"
             observed=json.loads(box.exec('tool-identity',['python3','-I','-S','-c',identity],user='1001:1001')['output'])
-            if observed != {'/usr/local/bin/cppcheck':CURRENT_TOOLS['cppcheck'],
-                            '/opt/nico-clang-header-observer.so':CURRENT_TOOLS['nico-clang-header-observer.so']}:
-                raise ValueError('diagnostic_rebuilt_tool_identity')
+            verify_primary_runtime(observed, stage_binding)
             restore={'schema':'nico.cpp-project-restore.v1','files':snapshot['files'],
                      'file_population_sha256':snapshot['file_population_sha256']}
             restored=json.loads(box.exec('generated-restore',['python3','-I','-S','-c',PROJECT_RESTORE_PROGRAM],
@@ -816,10 +837,16 @@ def run_primary(source, targets, image, output, retained):
             if {k:v for k,v in model.items() if k not in ignored} != {k:v for k,v in retained['environment'].items() if k not in ignored}:
                 raise ValueError('diagnostic_environment_bytes_changed')
             before=box.resources('resources-before')
-            native=box.exec('current-primary',['python3','-I','-S','-c',primary_program()],user='1001:1001',
+            commands = [retained['primary_request']['contexts'][i]['analyzer_invocation'] + DIAGNOSTIC_FLAGS for i in CURRENT_CASES]
+            program = primary_program(stage_counters=stage_binding is not None, allowed_commands=commands)
+            native=box.exec('current-primary',['python3','-I','-S','-c',program],user='1001:1001',
                 data=canonical_bytes(retained['primary_request']),seconds=540,limit=STREAM_LIMIT,require=False)
             result.update(exit_code=native['exit_code'],
                           timed_out=native['timed_out'],output_truncated=native['output_truncated'])
+            if stage_binding is not None:
+                from scripts.native_stage_counters.evidence import collect_case_snapshots
+                result['stage_counters'] = collect_case_snapshots(native['output'], stage_binding,
+                    [row['context_id'] for row in selected])
             box.receipt['result']=result;box.save()
             try:
                 after=box.resources('resources-after')
@@ -840,14 +867,20 @@ def run_primary(source, targets, image, output, retained):
     return result
 
 
-def owned_primary_control(image, output):
+def owned_primary_control(image, output, *, stage_binding=None, stage_binding_sha256=None, original_image=None):
     """Owned static-only isolation control; never compile or run a project binary."""
     import tempfile
     with tempfile.TemporaryDirectory(prefix='nico-owned-primary-') as temporary:
-        source=Path(temporary); raw=b'int main() { return 0; }\n'
+        source=Path(temporary); raw=b'using Owned = int; Owned main() { return 0; }\n'
         (source/'owned.cpp').write_bytes(raw)
         box=Sandbox(source,{'owned.cpp':sha(raw)},image,output,executable=False,seconds=60)
         with box:
+            if stage_binding is not None:
+                from scripts.native_stage_counters.control import owned_program
+                from scripts.native_stage_counters.binding import validate_binding
+                validate_binding(stage_binding,image,stage_binding_sha256,original_image)
+                box.exec('owned-stage-boundary',['python3','-I','-S','-c',owned_program(stage_binding)],
+                         user='1001:1001',seconds=50)
             box.exec('owned-primary',['/usr/local/bin/cppcheck','--xml','--enable=warning,style,performance,portability,information,missingInclude',
                 '--check-level=exhaustive','--max-configs=1','--platform=unix64','-j1',
                 '--showtime=file','--report-progress=1','/work/source/owned.cpp'],user='1001:1001',seconds=30)
@@ -864,9 +897,18 @@ def main():
     parser.add_argument('--mode',choices=['current-primary'],required=True)
     parser.add_argument('--image',required=True)
     parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--stage-runtime-binding',type=Path)
+    parser.add_argument('--stage-runtime-binding-sha256')
+    parser.add_argument('--original-image')
     args = parser.parse_args()
     if args.archive_sha256 != CURRENT_ARCHIVE_SHA:
         raise ValueError('diagnostic_current_archive_required')
+    stage_binding = None
+    if args.stage_runtime_binding is not None:
+        from scripts.native_stage_counters.binding import load_binding
+        stage_binding = load_binding(args.stage_runtime_binding, args.image, args.stage_runtime_binding_sha256, args.original_image)
+    elif args.stage_runtime_binding_sha256 is not None or args.original_image is not None:
+        raise ValueError('diagnostic_stage_binding_required')
     args.output.mkdir(mode=0o700)
     outcome={'schema':'nico.current-primary-diagnostic-controller.v1',
              **diagnostic_status(False,False,False,False)}
@@ -880,7 +922,7 @@ def main():
             source=freeze_configuration_checkout(args.qualification_source,root,retained['manifest'])
             if source['targets'] != retained['receipt']['source']['targets']:
                 raise ValueError('diagnostic_frozen_population_mismatch')
-            outcome['static']=run_primary(root,source['targets'],args.image,args.output/'static',retained)
+            outcome['static']=run_primary(root,source['targets'],args.image,args.output/'static',retained,stage_binding=stage_binding,stage_binding_sha256=args.stage_runtime_binding_sha256,original_image=args.original_image)
             result=outcome['static']
             outcome.update(diagnostic_status(True,result['complete'],result['boundary_verified'],result['cleanup_verified']))
     except Exception as exc:

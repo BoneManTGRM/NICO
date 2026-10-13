@@ -54,7 +54,7 @@ jobs:
         if: steps.need.outputs.required == 'true'
         run: |
           python -m pip install --disable-pip-version-check -r requirements.txt
-          python -m pytest -q tests/test_native_timeout_diagnostic.py tests/test_cpp_project_static_stage.py
+          python -m pytest -q tests/test_native_timeout_diagnostic.py tests/test_native_stage_counters.py tests/test_cpp_project_static_stage.py
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         if: steps.need.outputs.required == 'true'
         with:
@@ -81,6 +81,27 @@ jobs:
           from scripts.native_timeout_diagnostic import owned_primary_control
           owned_primary_control(Path('full-project-image-id.txt').read_text().strip(), Path('native-diagnostic-evidence/owned'))
           PY
+      - name: Build and bind the separate instrumented diagnostic image
+        if: steps.need.outputs.required == 'true'
+        run: |
+          set -euo pipefail
+          python -m scripts.native_stage_counters.build prepare --context toolchain/full-project --recipe docker/assessment-full-project-fuzz.Dockerfile --output native-diagnostic-evidence/stage.Dockerfile
+          timeout --kill-after=5s 205s docker build --network=none --iidfile native-diagnostic-evidence/stage-image-id.txt -f native-diagnostic-evidence/stage.Dockerfile toolchain/full-project
+          docker image inspect "$(cat native-diagnostic-evidence/stage-image-id.txt)" > native-diagnostic-evidence/stage-image.json
+          python -m scripts.native_stage_counters.build capture --original-image "$(cat full-project-image-id.txt)" --image "$(cat native-diagnostic-evidence/stage-image-id.txt)" --output native-diagnostic-evidence/stage-binding --recipe native-diagnostic-evidence/stage.Dockerfile
+      - name: Prove analyzer opt-in and absence on owned source before acquisition
+        if: steps.need.outputs.required == 'true'
+        run: |
+          python - <<'PYCODE'
+          from pathlib import Path
+          from scripts.native_timeout_diagnostic import owned_primary_control
+          from scripts.native_stage_counters.binding import load_binding
+          image=Path('native-diagnostic-evidence/stage-image-id.txt').read_text().strip()
+          binding_sha=Path('native-diagnostic-evidence/stage-binding/binding.sha256').read_text().strip()
+          original_image=Path('full-project-image-id.txt').read_text().strip()
+          binding=load_binding(Path('native-diagnostic-evidence/stage-binding/binding.json'),image,binding_sha,original_image)
+          owned_primary_control(image,Path('native-diagnostic-evidence/owned-stage'),stage_binding=binding,stage_binding_sha256=binding_sha,original_image=original_image)
+          PYCODE
       - name: Retrieve the immutable failed evidence
         if: steps.need.outputs.required == 'true'
         env:
@@ -108,7 +129,10 @@ jobs:
           --archive-sha256 dbf890120e44a7d0f99133d69f316c9e8d7dce0210f3ae627e248ffa1c4e7e92
           --qualification-source qualification-input
           --qualification-manifest tests/fixtures/cpp/bitcoin-configuration-benchmark.json
-          --image "$(cat full-project-image-id.txt)"
+          --image "$(cat native-diagnostic-evidence/stage-image-id.txt)"
+          --stage-runtime-binding native-diagnostic-evidence/stage-binding/binding.json
+          --stage-runtime-binding-sha256 "$(cat native-diagnostic-evidence/stage-binding/binding.sha256)"
+          --original-image "$(cat full-project-image-id.txt)"
           --output native-diagnostic-evidence/isolated
       - name: Preserve evidence including actual failures
         if: always()
