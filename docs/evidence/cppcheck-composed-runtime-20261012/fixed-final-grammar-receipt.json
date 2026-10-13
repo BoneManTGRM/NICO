@@ -1,0 +1,31 @@
+{
+  "schema": "nico.cppcheck-header-grammar-repair.v1",
+  "repair_id": "physical-header-grammar-v3",
+  "upstream_commit": "ac9db3069b9f90e81e126a090b99ad456e122cf8",
+  "members": [
+    {
+      "source_path": "lib/tokenize.cpp",
+      "source_before_git_blob": "f1fd9b0b1616e6ee3bfd2351f11ecede9353ed59",
+      "source_after_git_blob": "edfc413dde65b964a8d7d84e76e2fe101b0a8cef",
+      "source_before_sha256": "74dfe0b90ea7915e95a32ff2721a8a69be258a7293fcd273deb1afe6be5429ce",
+      "source_after_sha256": "76beaa920046dbe057c5b20b09c043802351692657e2b3f269cf4612984eac88"
+    },
+    {
+      "source_path": "lib/token.cpp",
+      "source_before_git_blob": "c28d664faabb8994b876e14da40fee71b7da4f01",
+      "source_after_git_blob": "61aa837095491c9be0a641ce91bd8e254a4f7a3d",
+      "source_before_sha256": "62dbcb64718ee7759c55c4ac5a7e8be56f2c38e45ea63ed7fb7100ee86d8762b",
+      "source_after_sha256": "f4e7b9234f1af3cd37dfd1b0dee6d17732c36abd830ae1c5200b118220795e1a"
+    },
+    {
+      "source_path": "lib/tokenlist.cpp",
+      "source_before_git_blob": "39f33db14a8d4cd359c1f1c8ae5a4eacb534acfa",
+      "source_after_git_blob": "7de267cbdd1aef164c6396d621ee453f252d0a07",
+      "source_before_sha256": "357fa22ad927318f39488aeaa7f61577f3b1eeb41cea4ca5dbbe31b5305db0cb",
+      "source_after_sha256": "46c45075c864aa1e6783bc64ced1a95d03c3fddf37180c944cfb3087d47c919f"
+    }
+  ],
+  "repair_script_sha256": "48dfcea5ff52076bd007408caf296f38085350e4ce1226199d930e680627dd2d",
+  "base_tool_version": "2.17.1",
+  "native_qualification_completed": false
+}

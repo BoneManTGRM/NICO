@@ -1,0 +1,17 @@
+TestNicoConstructorAst::parenthesized
+TestNicoConstructorAst::braced
+TestNicoConstructorAst::base
+TestNicoConstructorAst::delegating
+TestNicoConstructorAst::multiple
+TestNicoConstructorAst::nestedConstraints
+TestNicoConstructorAst::noexceptConstructor
+TestNicoConstructorAst::trailingDecltype
+TestNicoConstructorAst::variableTracking
+TestNicoConstructorAst::functionDeclarator
+TestNicoConstructorAst::pointerConversionArguments
+
+
+Testing Complete
+Number of tests: 11
+Number of todos: 0
+Tests failed: 0

@@ -92,11 +92,11 @@ RUN printf '%s\n' '--gcc-toolchain=/usr/local' > /usr/lib/llvm-17/bin/clang.cfg 
     && timeout 30s python3 /opt/verify_cpp_runtime_toolchain.py > /opt/nico-cpp-runtime-toolchain.json \
        || { cat /opt/nico-cpp-runtime-toolchain.json; exit 1; }
 RUN python3 -c "import capnp; assert capnp.__version__ == '2.2.1'"
-LABEL org.nico.cppcheck.repair="placement-new-initializer-ast-v1"
+LABEL org.nico.cppcheck.repair="placement-new-and-constructor-boundary-ast-v2"
 USER 1000:1000
 # Standalone worker controls override ENTRYPOINT with python -I -S. Validate
 # that exact interpreter contract as the runtime user before publishing a layer.
 RUN python -I -S -c "import os, sys; assert sys.version_info.major == 3; assert sys.flags.isolated and sys.flags.no_site; assert (os.getuid(), os.getgid()) == (1000, 1000)"
 ENTRYPOINT ["sleep"]
 
-LABEL org.nico.cppcheck.header-grammar="physical-header-grammar-v1"
+LABEL org.nico.cppcheck.header-grammar="physical-header-grammar-v3"

@@ -33,13 +33,13 @@ def test_both_toolchain_builds_apply_the_same_pinned_source_repair():
     docker = Path('docker/assessment-full-project-fuzz.Dockerfile').read_text()
     assert 'COPY repair_cppcheck_placement_ast.py /opt/repair_cppcheck_placement_ast.py' in docker
     assert docker.index('python3 /opt/repair_cppcheck_placement_ast.py') < docker.index('make -C /opt/tool-src')
-    assert 'org.nico.cppcheck.repair="placement-new-initializer-ast-v1"' in docker
+    assert f'org.nico.cppcheck.repair="{repair().REPAIR_ID}"' in docker
     assert 'COPYING' in docker
 
 
 def pinned_fixture(module, monkeypatch):
     # Synthetic bytes exercise the file-integrity boundary, not native parsing.
-    raw = b'// owned source-boundary fixture\n' + module.ANCHOR + b'// end\n'
+    raw = b'// owned source-boundary fixture\n' + module.ANCHOR + module.METHOD_ANCHOR + b'// end\n'
     monkeypatch.setattr(module, 'UPSTREAM_BLOB', module.git_blob(raw))
     return raw
 
@@ -58,20 +58,23 @@ def test_owned_file_repair_records_exact_before_after_and_script_hashes(tmp_path
     source = tmp_path / 'tokenlist.cpp'; source.write_bytes(raw)
     receipt = m.apply_repair(source)
     patched = source.read_bytes()
-    assert patched == raw.replace(m.ANCHOR, m.REPLACEMENT)
+    assert patched == raw.replace(m.ANCHOR, m.REPLACEMENT).replace(m.METHOD_ANCHOR, m.METHOD_REPLACEMENT)
     assert receipt['source_before_sha256'] == hashlib.sha256(raw).hexdigest()
     assert receipt['source_after_sha256'] == hashlib.sha256(patched).hexdigest()
     assert receipt['source_after_git_blob'] == m.git_blob(patched)
     assert receipt['repair_script_sha256'] == hashlib.sha256(Path(m.__file__).read_bytes()).hexdigest()
-    assert receipt['repair_id'] == 'placement-new-initializer-ast-v1'
+    assert receipt['repair_id'] == 'placement-new-and-constructor-boundary-ast-v2'
     with pytest.raises(ValueError, match='upstream_source_mismatch'):
         m.apply_repair(source)
     assert source.read_bytes() == patched
 
 
 @pytest.mark.parametrize('count', [0, 2])
-def test_changed_or_ambiguous_native_anchor_is_never_patched(monkeypatch, count):
-    m = repair(); raw = b'// owned\n' + m.ANCHOR * count
+@pytest.mark.parametrize('anchor', ['ANCHOR', 'METHOD_ANCHOR'])
+def test_changed_or_ambiguous_native_anchor_is_never_patched(monkeypatch, count, anchor):
+    m = repair()
+    other = m.METHOD_ANCHOR if anchor == 'ANCHOR' else m.ANCHOR
+    raw = b'// owned\n' + getattr(m, anchor) * count + other
     monkeypatch.setattr(m, 'UPSTREAM_BLOB', m.git_blob(raw))
     with pytest.raises(ValueError, match='upstream_anchor_mismatch'):
         m.patched_bytes(raw)
@@ -86,7 +89,7 @@ def test_symlink_tool_source_cannot_be_followed(tmp_path, monkeypatch):
     assert source.read_bytes() == raw
 
 
-def test_repair_only_changes_placement_initializer_dispatch(monkeypatch):
+def test_repair_preserves_placement_initializer_dispatch(monkeypatch):
     m = repair(); raw = pinned_fixture(m, monkeypatch)
     patched = m.patched_bytes(raw)
     assert b'Token::simpleMatch(tok, ")")' in patched

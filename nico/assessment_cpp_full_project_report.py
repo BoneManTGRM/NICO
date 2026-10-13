@@ -193,8 +193,12 @@ def enrich_scanner_stage(canonical, stage):
         runtime = build.get('runtime_scope')
         if isinstance(runtime, Mapping):
             if runtime.get('complete') is False:
-                gaps.append('El alcance de ejecución declarado está incompleto.' if es
-                            else 'Declared runtime scope is incomplete.')
+                if build.get('collection_complete') is True:
+                    gaps.append('La evidencia de ejecución declarada se recopiló por completo; las comprobaciones de ejecución del proyecto fallaron.' if es
+                                else 'Declared runtime evidence was fully collected; target runtime checks failed.')
+                else:
+                    gaps.append('El alcance de ejecución declarado está incompleto.' if es
+                                else 'Declared runtime scope is incomplete.')
             functional = runtime.get('functional') if isinstance(runtime.get('functional'), Mapping) else {}
             required = functional.get('required') or []
             passed = functional.get('passed')

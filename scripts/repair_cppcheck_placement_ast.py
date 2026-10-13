@@ -1,4 +1,4 @@
-"""Source-pinned repair for scoped placement-new braced initializer parsing.
+"""Source-pinned placement-new and constrained-constructor AST repairs.
 
 Applied only to the trusted tool dependency while building its image. Assessed
 source is never rewritten. Upstream license notices remain in the source/tool.
@@ -15,7 +15,7 @@ import tempfile
 
 UPSTREAM_COMMIT = 'ac9db3069b9f90e81e126a090b99ad456e122cf8'
 UPSTREAM_BLOB = 'b9c3ab07f0436ada75da5f45c7f8c3f3e06a8608'
-REPAIR_ID = 'placement-new-initializer-ast-v1'
+REPAIR_ID = 'placement-new-and-constructor-boundary-ast-v2'
 SOURCE_LIMIT = 2 * 1024 * 1024
 ANCHOR = b'            return !Token::Match(tok, "new ::| %type%");\n'
 REPLACEMENT = (
@@ -25,6 +25,28 @@ REPLACEMENT = (
     b'            if (Token::simpleMatch(tok, ")") && tok->link() &&\n'
     b'                Token::simpleMatch(tok->link()->previous(), "new ("))\n'
     b'                return false;\n' + ANCHOR
+)
+METHOD_ANCHOR = (
+    b'    Token *const tok2 = const_cast<Token*>(TokenList::isFunctionHead(tok, ";{"));\n'
+    b'    if (tok2 && tok->next() != tok2)\n'
+    b'        return tok2;\n'
+)
+METHOD_REPLACEMENT = (
+    b'    Token *const tok2 = const_cast<Token*>(TokenList::isFunctionHead(tok, ";{"));\n'
+    b'    if (tok2 && tok->next() != tok2) {\n'
+    b'        // A requires-clause scan can reach a constructor body past its\n'
+    b'        // initializer list. Let ordinary AST construction handle that list.\n'
+    b'        for (Token *scan = tok->next(); precedes(scan, tok2); scan = scan->next()) {\n'
+    b'            if (scan->str() == ":")\n'
+    b'                return nullptr;\n'
+    b'            if (Token::Match(scan, "<|[|(|{")) {\n'
+    b'                if (!scan->link())\n'
+    b'                    return tok2;\n'
+    b'                scan = scan->link();\n'
+    b'            }\n'
+    b'        }\n'
+    b'        return tok2;\n'
+    b'    }\n'
 )
 
 
@@ -36,9 +58,9 @@ def git_blob(raw: bytes) -> str:
 def patched_bytes(raw: bytes) -> bytes:
     if not isinstance(raw, bytes) or len(raw) > SOURCE_LIMIT or git_blob(raw) != UPSTREAM_BLOB:
         raise ValueError('upstream_source_mismatch')
-    if raw.count(ANCHOR) != 1:
+    if raw.count(ANCHOR) != 1 or raw.count(METHOD_ANCHOR) != 1:
         raise ValueError('upstream_anchor_mismatch')
-    return raw.replace(ANCHOR, REPLACEMENT, 1)
+    return raw.replace(ANCHOR, REPLACEMENT, 1).replace(METHOD_ANCHOR, METHOD_REPLACEMENT, 1)
 
 
 def _read(path: Path) -> tuple[bytes, int]:
