@@ -2,19 +2,59 @@
 import os
 from pathlib import Path
 import subprocess
+import shutil
+import json
 import pytest
 from scripts.native_stage_counters import evidence as e, binding as b, instrument as i
 
 ROOT=Path(__file__).resolve().parents[1]
 
-@pytest.fixture(scope='module')
-def binary(tmp_path_factory):
-    path=tmp_path_factory.mktemp('template-scopes')/'owned'
-    result=subprocess.run(['/usr/bin/g++-14','-std=c++11','-O2','-Wno-deprecated-declarations',
-        '-I'+str(i.HEADER.parent),str(ROOT/'tests/native_stage_owned/template_scopes.cc'),'-o',str(path)],
-        capture_output=True,timeout=20)
-    assert result.returncode==0,result.stderr.decode()
+def compile_owned(path, record):
+    # Only this small C++11 fixture uses the runner compiler. Analyzer pins stay fixed.
+    compiler = shutil.which('g++')
+    if compiler is None:
+        pytest.fail('owned_native_compiler_unavailable: g++ is required on PATH')
+    record('owned_native_compiler_path', compiler)
+    version = subprocess.run([compiler, '--version'], capture_output=True, text=True, timeout=5)
+    record('owned_native_compiler_version', version.stdout)
+    assert version.returncode == 0, ('owned_native_compiler_version_failed', version.stderr)
+    argv = [compiler, '-std=c++11', '-O2', '-Wno-deprecated-declarations',
+            '-I'+str(i.HEADER.parent), str(ROOT/'tests/native_stage_owned/template_scopes.cc'),
+            '-o', str(path)]
+    record('owned_native_compiler_argv', json.dumps(argv))
+    result = subprocess.run(argv, capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, ('owned_native_compile_failed', result.stderr)
     return path
+
+
+@pytest.fixture(scope='module')
+def binary(tmp_path_factory, record_testsuite_property):
+    def record(name, value):
+        record_testsuite_property(name, value)
+        print(f'{name}={value}')
+    return compile_owned(tmp_path_factory.mktemp('template-scopes')/'owned', record)
+
+
+def test_missing_owned_compiler_fails_without_skip(monkeypatch, tmp_path):
+    monkeypatch.setattr(shutil, 'which', lambda name: None)
+    monkeypatch.setattr(subprocess, 'run', lambda *a, **k: pytest.fail('must not execute'))
+    with pytest.raises(pytest.fail.Exception, match='owned_native_compiler_unavailable'):
+        compile_owned(tmp_path/'owned', lambda *a: None)
+
+
+@pytest.mark.parametrize('failure', ['version', 'compile'])
+def test_owned_compiler_failure_is_fatal(monkeypatch, tmp_path, failure):
+    monkeypatch.setattr(shutil, 'which', lambda name: '/owned/g++')
+    calls = []
+    def run(argv, **kwargs):
+        calls.append(argv)
+        failed = failure == 'version' or '--version' not in argv
+        return subprocess.CompletedProcess(argv, 1 if failed else 0, 'owned compiler', 'retained failure')
+    monkeypatch.setattr(subprocess, 'run', run)
+    with pytest.raises(AssertionError, match='retained failure'):
+        compile_owned(tmp_path/'owned', lambda *a: None)
+    assert len(calls) == (1 if failure == 'version' else 2)
+
 
 @pytest.mark.parametrize('mode',['scopes','snapshot','clock','unavailable','caps','mutation','rate','visit-clock','backward','post-failure','saturation','cross-checkpoint'])
 def test_owned_accounting(binary,mode):
@@ -164,3 +204,11 @@ def test_held_exact_timer_binding_rejected():
     from test_native_stage_counters import runtime_binding
     value=runtime_binding();value['schema']='nico.stage-runtime-binding.v3';value['record_version']=2
     with pytest.raises(ValueError):b.validate_binding(value,value['image'],b.binding_digest(value),value['original_image'])
+
+
+def test_native_contract_gate_precedes_tool_acquisition():
+    workflow = (ROOT/'.github/workflows/native-timeout-diagnostic.yml').read_text()
+    gate = workflow.split('- name: Verify diagnostic contracts', 1)[1].split('- uses: actions/checkout@', 1)[0]
+    assert 'tests/test_native_template_subphases.py' in gate
+    assert '--junitxml=native-diagnostic-evidence/contracts.xml' in gate
+    assert workflow.index('- name: Verify diagnostic contracts') < workflow.index('repository: cppcheck-opensource/cppcheck')
