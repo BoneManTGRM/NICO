@@ -336,6 +336,9 @@ jobs:
         id: ios_proof
         continue-on-error: true
         run: |
+          # Separate runner mask commands from retained proof output.
+          exec 9>&1
+          export NICO_PROOF_MASK_FD=9
           set -euo pipefail
           PROOF_TOOL_SHA="$(git rev-parse HEAD)"
           python scripts/ios_webkit_authenticated_live_acceptance_v1.py \
