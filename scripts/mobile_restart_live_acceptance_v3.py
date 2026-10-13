@@ -292,8 +292,8 @@ def run_proof(browser: Any, args: Any) -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     args = recovery.parse_args(argv)
-    recovery._require_existing_source_args(args)
     try:
+        recovery._require_existing_source_args(args)
         with sync_playwright() as playwright:
             browser: Browser = recovery._launch_chromium(playwright)
             try:
@@ -308,15 +308,14 @@ def main(argv: list[str] | None = None) -> int:
             "frontend_url": args.frontend_url.rstrip("/"),
             "repository": args.repository,
             "expected_sha": args.expected_sha,
-            "error": f"{type(exc).__name__}: {recovery._bounded(exc, 1_500)}",
+            "error": recovery._safe_exception(exc),
             "diagnostic": getattr(exc, "nico_diagnostic", {}),
             "finished_at_epoch": time.time(),
         }
-        recovery._write(args.output, failure)
-        raise
+        recovery._finish_failure(args.output, failure, exc)
 
     recovery._write(args.output, result)
-    print(json.dumps(result, sort_keys=True))
+    print(recovery._safe_json(result))
     return 0
 
 

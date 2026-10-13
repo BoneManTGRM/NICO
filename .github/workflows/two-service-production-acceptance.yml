@@ -398,6 +398,9 @@ jobs:
         id: acceptance
         continue-on-error: true
         run: |
+          # Separate runner mask commands from retained proof output.
+          exec 9>&1
+          export NICO_PROOF_MASK_FD=9
           set -euo pipefail
           PROOF_TOOL_SHA="$(git rev-parse HEAD)"
           python scripts/completed_run_authenticated_two_pass_acceptance_v1.py \

@@ -13,6 +13,7 @@ def test_retained_pdf_download_progress_integrity_and_recovery():
     result = subprocess.run(
         ["node", "--test", "--test-reporter=tap", "tests/js/review-pdf-download.test.cjs",
          "tests/js/artifact-timeout-diagnostics.test.cjs",
+         "tests/js/pdf-proxy-stream-diagnostics.test.cjs",
          "tests/js/workspace-review-pdf-fallback.test.cjs"],
         cwd=Path(__file__).resolve().parents[1],
         capture_output=True,

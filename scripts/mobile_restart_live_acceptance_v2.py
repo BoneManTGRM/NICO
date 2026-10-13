@@ -275,15 +275,14 @@ def main(argv: list[str] | None = None) -> int:
             "browser_engine": "webkit",
             "browser_evidence_class": "Playwright WebKit iPhone-sized mobile emulation",
             "real_device_tested": False,
-            "error": f"{type(exc).__name__}: {recovery._bounded(exc, 2_000)}",
+            "error": recovery._safe_exception(exc),
             "diagnostic": getattr(exc, "nico_diagnostic", {}),
             "finished_at_epoch": time.time(),
         }
-        recovery._write(args.output, failure)
-        raise
+        recovery._finish_failure(args.output, failure, exc)
 
     recovery._write(args.output, result)
-    print(json.dumps(result, sort_keys=True))
+    print(recovery._safe_json(result))
     return 0
 
 
