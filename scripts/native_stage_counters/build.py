@@ -11,9 +11,10 @@ from pathlib import Path
 import shutil
 import subprocess
 from uuid import uuid4
-from . import instrument
+from . import instrument, specialization_groups as groups
 from .binding import (ARCHIVE_SHA256, BUILD_FLAGS, FLAGS, HEADER_SHA256,
-                      OBSERVER_SHA256, ORIGINAL_BINARY_SHA256, validate_overlay, validate_binding)
+                      OBSERVER_SHA256, ORIGINAL_BINARY_SHA256, validate_overlay, validate_binding,
+                      validate_grouping, CANDIDATE_PATCH_SHA256, GROUP_SCRIPT_SHA256, AFTER_SHA256)
 
 
 def digest(raw): return hashlib.sha256(raw).hexdigest()
@@ -27,14 +28,20 @@ def recipe_identity(recipe):
         raise ValueError('diagnostic_stage_recipe_anchor')
     if digest(instrument.HEADER.read_bytes()) != HEADER_SHA256:
         raise ValueError('diagnostic_stage_header_identity')
-    additions = ('COPY native-stage/instrument.py /opt/nico-stage-instrument.py\n'
+    if digest(Path(groups.__file__).read_bytes()) != GROUP_SCRIPT_SHA256:
+        raise ValueError('diagnostic_grouping_script_identity')
+    additions = ('COPY native-stage/specialization_groups.py /opt/nico-specialization-groups.py\n'
+                 'COPY native-stage/instrument.py /opt/nico-stage-instrument.py\n'
                  'COPY native-stage/nico_stage_counters.h /opt/nico_stage_counters.h\n')
     commands = ("    && test \"$(g++ -dumpfullversion)\" = 14.2.0 \\\n"
+                '    && python3 /opt/nico-specialization-groups.py --source /opt/tool-src --output /opt/nico-grouping-overlay \\\n'
+                '    && cp /opt/nico-grouping-overlay/lib/templatesimplifier.cpp /opt/tool-src/lib/templatesimplifier.cpp \\\n'
                 '    && python3 /opt/nico-stage-instrument.py --source /opt/tool-src --output /opt/nico-stage-overlay \\\n'
                 '    && cp /opt/nico-stage-overlay/lib/* /opt/tool-src/lib/ \\\n')
     updated = raw.replace(copy_anchor, copy_anchor+additions).replace(build_anchor, commands+build_anchor)
     receipt={'production_recipe_sha256':digest(raw.encode()),'diagnostic_recipe_sha256':digest(updated.encode()),
-             'instrument_script_sha256':digest(Path(instrument.__file__).read_bytes()),'header_sha256':HEADER_SHA256}
+             'instrument_script_sha256':digest(Path(instrument.__file__).read_bytes()),'header_sha256':HEADER_SHA256,
+             'grouping_script_sha256':GROUP_SCRIPT_SHA256,'candidate_patch_sha256':CANDIDATE_PATCH_SHA256}
     return updated, receipt
 
 
@@ -43,6 +50,7 @@ def prepare(context, recipe, destination):
     target=context/'native-stage'; target.mkdir()
     shutil.copyfile(Path(instrument.__file__),target/'instrument.py')
     shutil.copyfile(instrument.HEADER,target/'nico_stage_counters.h')
+    shutil.copyfile(Path(groups.__file__),target/'specialization_groups.py')
     with destination.open('x') as f: f.write(updated)
     destination.with_suffix('.receipt.json').write_text(json.dumps(receipt,sort_keys=True)+'\n')
     return receipt
@@ -74,7 +82,7 @@ def cleanup_capture_container(name, owner):
 def capture(original_image, image, output, recipe):
     """Read tool bytes from stopped containers, never execute their entrypoints."""
     output.mkdir()
-    hashes={}; overlay=None
+    hashes={}; overlay=None; grouping=None; candidate_sources={}
     for kind,identity in [('original',original_image),('instrumented',image)]:
         if not __import__('re').fullmatch(r'sha256:[a-f0-9]{64}',identity):
             raise ValueError('diagnostic_stage_image_invalid')
@@ -93,6 +101,17 @@ def capture(original_image, image, output, recipe):
                 target=output/'overlay.json'
                 subprocess.run(['docker','cp',name+':/opt/nico-stage-overlay/stage-counter-receipt.json',str(target)],check=True,capture_output=True,timeout=15)
                 overlay=validate_overlay(json.loads(target.read_text()))
+                target=output/'grouping.json'
+                subprocess.run(['docker','cp',name+':/opt/nico-grouping-overlay/receipt.json',str(target)],
+                               check=True,capture_output=True,timeout=15)
+                grouping=validate_grouping(json.loads(target.read_text()))
+                for relative, expected_hash in AFTER_SHA256.items():
+                    target=output/Path(relative).name
+                    subprocess.run(['docker','cp',name+':/opt/nico-stage-overlay/'+relative,str(target)],
+                                   check=True,capture_output=True,timeout=15)
+                    candidate_sources[relative]=digest(target.read_bytes())
+                    if candidate_sources[relative]!=expected_hash:
+                        raise ValueError('diagnostic_candidate_source_binding')
         except BaseException as exc:
             failure=exc
             raise
@@ -112,12 +131,13 @@ def capture(original_image, image, output, recipe):
         expected=prepare(Path(temp),Path('docker/assessment-full-project-fuzz.Dockerfile'),Path(temp)/'Dockerfile')
     if digest(recipe.read_bytes())!=expected['diagnostic_recipe_sha256']:
         raise ValueError('diagnostic_stage_recipe_identity')
-    binding={'schema':'nico.stage-runtime-binding.v1','original_image':original_image,'image':image,
+    binding={'schema':'nico.stage-runtime-binding.v2','original_image':original_image,'image':image,
              'original_binary_sha256':ORIGINAL_BINARY_SHA256,'instrumented_binary_sha256':hashes['instrumented-binary'],
              'observer_sha256':OBSERVER_SHA256,'original_archive_sha256':ARCHIVE_SHA256,
              'flags':FLAGS,'build_flags':BUILD_FLAGS,'compiler_version':'14.2.0',
              'activation':{'environment':'NICO_CPP_STAGE_COUNTERS','exact_value':'1'},
-             'build_verified':True,'overlay':overlay,'recipe':expected}
+             'build_verified':True,'overlay':overlay,'recipe':expected,'grouping':grouping,
+             'candidate_patch_sha256':CANDIDATE_PATCH_SHA256,'candidate_source_sha256':candidate_sources}
     from .binding import binding_digest
     bound_sha = binding_digest(binding)
     validate_binding(binding,image,bound_sha,original_image)

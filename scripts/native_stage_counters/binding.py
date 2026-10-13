@@ -3,17 +3,39 @@ from __future__ import annotations
 import json
 import re
 from .instrument import SOURCE_SHA256, ORIGINAL_BINARY_SHA256
+from . import specialization_groups as groups
 
 OBSERVER_SHA256 = '45474684723784ea89d5531bf52730adedddc312814c083e990e8a2df1bf43f9'
 ARCHIVE_SHA256 = 'dbf890120e44a7d0f99133d69f316c9e8d7dce0210f3ae627e248ffa1c4e7e92'
-OVERLAY_SHA256 = '4c82ebc973709634ad378c98ce0fd0c7fdfe4a73726b48503967de3c60319607'
+OVERLAY_SHA256 = 'cb505b6b0bb207d30529627c19dff93146baa404658325d2625c371ca3cd1721'
 HEADER_SHA256 = '924d2ad1ffd460fb894df6b493be029db2c1dd8b5b335f58bcdcbf69377f693f'
 AFTER_SHA256 = {
     'lib/tokenize.cpp': '0ad11c73e55a130a3e9eb660b807353527f065d6eae58564546f00852d594c5e',
-    'lib/templatesimplifier.cpp': 'ecbcb62e14104ad396d7b41bfcddb006556c3da850a0e8e9240ec6e5235d45c2',
+    'lib/templatesimplifier.cpp': '80715d5d7e76777f19779648afa82b78cd290f08786220f23360cb39157425c7',
 }
 FLAGS = ['--showtime=file', '--report-progress=1']
 BUILD_FLAGS = ['MATCHCOMPILER=yes', 'FILESDIR=/opt/cppcheck', 'CXXFLAGS=-O2 -DNDEBUG', '-j2']
+
+
+CANDIDATE_PATCH_SHA256 = 'f8d5989c168ef48f065fc262e7de42bf1611f71b740914608ca0ed6f7e98c14f'
+GROUP_SCRIPT_SHA256 = '09cd155550eddb1518520bd875e314dd6cd08283c52c643ce303d523fa0011c8'
+LOCAL_PRE_GROUPING_BINARY_SHA256 = 'ed79c96b90b246110b696290e580b555ffdc7438c6f6b878adc0bee48e9911c7'
+LOCAL_UNINSTRUMENTED_BINARY_SHA256 = '3f1a95d83f380932d371e02430c1b36a0531be5a3c05eeee32bc0110b3451eaa'
+PRE_GROUPING_BINARY_SHA256 = 'ce96e72d89e6801c1b2b3a27ec30a77434e943d1783112de93b3881f27d8ab68'
+
+
+def expected_grouping():
+    return {'schema': 'nico.cppcheck-specialization-groups.v1', 'upstream': groups.UPSTREAM,
+            'input_sha256': dict(groups.SOURCE_HASHES),
+            'output_sha256': SOURCE_SHA256['lib/templatesimplifier.cpp'],
+            'build_performed': False, 'analyzer_execution': False,
+            'bitcoin_performance_claimed': False}
+
+
+def validate_grouping(value):
+    if value != expected_grouping():
+        raise ValueError('diagnostic_grouping_receipt_identity')
+    return value
 
 
 def validate_overlay(value):
@@ -50,11 +72,12 @@ def validate_binding(value, image, expected_sha256, original_image):
             or value.get('original_image')!=original_image):
         raise ValueError('diagnostic_stage_provenance_binding')
     binary = value.get('instrumented_binary_sha256', '')
-    if (value.get('schema') != 'nico.stage-runtime-binding.v1'
+    if (value.get('schema') != 'nico.stage-runtime-binding.v2'
             or not re.fullmatch(r'sha256:[a-f0-9]{64}', image)
             or value.get('image') != image or value.get('original_image') == image
             or not re.fullmatch(r'sha256:[a-f0-9]{64}', value.get('original_image', ''))
-            or not re.fullmatch(r'[a-f0-9]{64}', binary) or binary == ORIGINAL_BINARY_SHA256
+            or not re.fullmatch(r'[a-f0-9]{64}', binary)
+            or binary in (ORIGINAL_BINARY_SHA256, PRE_GROUPING_BINARY_SHA256, LOCAL_UNINSTRUMENTED_BINARY_SHA256, LOCAL_PRE_GROUPING_BINARY_SHA256)
             or value.get('original_binary_sha256') != ORIGINAL_BINARY_SHA256
             or value.get('observer_sha256') != OBSERVER_SHA256
             or value.get('original_archive_sha256') != ARCHIVE_SHA256
@@ -63,6 +86,10 @@ def validate_binding(value, image, expected_sha256, original_image):
             or value.get('activation') != {'environment': 'NICO_CPP_STAGE_COUNTERS', 'exact_value': '1'}
             or value.get('build_verified') is not True):
         raise ValueError('diagnostic_stage_runtime_binding')
+    validate_grouping(value.get('grouping'))
+    if (value.get('candidate_patch_sha256') != CANDIDATE_PATCH_SHA256
+            or value.get('candidate_source_sha256') != AFTER_SHA256):
+        raise ValueError('diagnostic_candidate_source_binding')
     validate_overlay(value.get('overlay'))
     return value
 
