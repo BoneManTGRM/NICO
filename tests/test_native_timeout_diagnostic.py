@@ -494,13 +494,18 @@ def test_outer_deadline_preserves_real_command_output_before_error(tmp_path, clo
     assert cleaned['exit_code'] == 0 and cleaned['output'] == b'cleanup\n'
 
 
-def test_retained_native_database_reconstructs_snapshot_population_without_replacing_original(tmp_path):
+@pytest.mark.parametrize('projected_receipt', [False, True])
+def test_retained_native_database_reconstructs_snapshot_population_without_replacing_original(tmp_path, projected_receipt):
     import base64
     from copy import deepcopy
     from scripts import native_timeout_diagnostic as d
     from tests.test_cpp_native_command_transport import run_case
     from nico.assessment_cpp_project_compiler import project_compiler_request
+    from scripts.qualify_cpp_project_configuration import qualification_probe_receipt
     probe,targets,docker,out,_ = run_case(tmp_path)
+    if projected_receipt:
+        probe = qualification_probe_receipt(probe)
+        assert 'analysis_compilation_database' not in probe
     original = base64.b64decode(probe['compilation_database'], validate=True)
     artifacts = {row['id']:(out/row['output_artifact']['path']).read_bytes()
                  for row in probe['operations'] if row.get('output_artifact')}
@@ -517,7 +522,7 @@ def test_retained_native_database_reconstructs_snapshot_population_without_repla
     # identity/input/command field with the extended-budget reconstruction.
     assert {k:v for k,v in request.items() if k not in {'schema','limits'}} == {
         k:v for k,v in docker.compiler_request.items() if k not in {'schema','limits'}}
-    for fault in ('database','analysis_digest','plan','freeze','cache','membership','native_post'):
+    for fault in ('database','analysis_digest','plan','freeze','cache','membership','membership_summary','native_post'):
         changed=deepcopy(probe); retained=dict(artifacts); raw=original
         if fault=='database': raw += b' '
         if fault=='analysis_digest': changed['analysis_compilation_database_sha256']='0'*64
@@ -525,6 +530,144 @@ def test_retained_native_database_reconstructs_snapshot_population_without_repla
         if fault=='freeze': changed['native_command_freeze']={}
         if fault=='cache': changed['configuration_cache_sha256']='0'*64
         if fault=='membership': retained['project-enabled-targets-post-build'] += b' '
+        if fault=='membership_summary': changed['enabled_target_membership']['configured_context_count']=1
         if fault=='native_post': retained['project-native-commands-post-build']=b'{}'
         with pytest.raises(ValueError):
             d.reconstruct_current_database(changed,targets,raw,retained)
+
+
+def test_exact_receipt_artifact_lookup_separates_pre_and_post_build(tmp_path):
+    import zipfile
+    from scripts import native_timeout_diagnostic as d
+    keys = ['project-native-commands','project-native-commands-post-build']
+    rows = []
+    path = tmp_path/'owned.zip'
+    with zipfile.ZipFile(path, 'w') as archive:
+        for key in keys:
+            raw = key.encode()
+            ref = {'path':'artifacts/'+key+'-'+d.sha(raw)+'.json','bytes':len(raw),'sha256':d.sha(raw)}
+            rows.append({'id':key,'output_artifact':ref})
+            archive.writestr('cpp-baseline-qualification/'+ref['path'],raw)
+        # An unrelated same-prefix member must not win selection.
+        archive.writestr('cpp-baseline-qualification/artifacts/project-native-commands-unbound.json',b'{}')
+    receipt = {'probe':{'operations':rows,'native_command_capture':rows[0]['output_artifact'],
+                       'native_command_plan':{'artifact':rows[0]['output_artifact']}}}
+    with zipfile.ZipFile(path) as archive:
+        for key in keys:
+            assert d.retained_operation_artifact(archive,receipt,key) == key.encode()
+        rows[0]['output_artifact'] = rows[1]['output_artifact']
+        with pytest.raises(ValueError,match='diagnostic_artifact_operation_binding'):
+            d.retained_operation_artifact(archive,receipt,keys[0])
+        rows.append(rows[1])
+        with pytest.raises(ValueError,match='diagnostic_artifact_operation_binding'):
+            d.retained_operation_artifact(archive,receipt,keys[1])
+
+
+def test_475_original_contexts_reconstruct_577_for_compiler_and_primary(tmp_path, monkeypatch):
+    import base64
+    from scripts import native_timeout_diagnostic as d
+    from nico import assessment_cpp_native_commands as native
+    from nico import assessment_cpp_fileapi_membership as fileapi
+    from nico import assessment_cpp_project_snapshot as snapshot
+    from nico.assessment_cpp_full_project import compilation_contexts
+    from nico.assessment_cpp_project_compiler import project_compiler_request
+    from nico.assessment_cpp_project_static import project_static_request
+    from scripts.qualify_cpp_project_configuration import qualification_probe_receipt
+    from tests.test_cpp_project_compiler import inputs, result_for
+    _, targets, _, _ = inputs(tmp_path)
+    rows = [{'directory':'/work/build','file':'/work/source/main.cpp',
+             'arguments':['/usr/local/bin/g++','-DVALUE='+str(i),'-I/work/source',
+                          '-std=c++20','-c','/work/source/main.cpp','-o',str(i)+'.o']}
+            for i in range(577)]
+    original=d.canonical_bytes(rows[:475]); analysis=d.canonical_bytes(rows)
+    contexts=compilation_contexts(analysis,targets,'/work/build')
+    captured=snapshot.capture_project_snapshot(tmp_path/'build',tmp_path/'private'/'synthetic-577',
+        snapshot.project_snapshot_request(contexts))
+    plan={'contexts':rows,'context_count':577,'analysis_database':base64.b64encode(analysis).decode(),
+          'analysis_database_sha256':d.sha(analysis)}
+    # Synthetic population expansion only; the separate owned native-capture
+    # regression exercises the actual reconstruction and freeze validators.
+    def configured(native_raw,membership,raw,observed_targets,**kwargs):
+        assert raw==original and observed_targets==targets
+        return plan
+    monkeypatch.setattr(native,'configured_native_commands',configured)
+    monkeypatch.setattr(native,'validate_native_plan_freeze',lambda *a,**k:{'owned_freeze':True})
+    membership={'contexts':rows,'missing_database_contexts':rows[475:],
+                'source_represented_contexts':rows[:475],'configured_context_count':577}
+    monkeypatch.setattr(fileapi,'configured_target_membership',lambda *a,**k:membership)
+    probe=qualification_probe_receipt({'native_command_plan':plan,'native_command_freeze':{'owned_freeze':True},
+        'enabled_target_membership':membership,
+        'analysis_invocations':577,'analysis_compilation_database_sha256':d.sha(analysis),
+        'compilation_database_sha256':d.sha(original),'configuration_cache':base64.b64encode(b'owned').decode(),
+        'configuration_cache_sha256':d.sha(b'owned'),'fileapi_client':'owned'})
+    artifacts={'project-enabled-targets':b'owned','project-enabled-targets-post-build':b'owned',
+               'project-native-commands':b'owned','project-native-commands-post-build':b'owned'}
+    with pytest.raises(ValueError,match='worker_generated_project_snapshot_invalid'):
+        project_compiler_request(original,targets,captured,extended_budget=True)
+    restored=d.reconstruct_current_database(probe,targets,original,artifacts)
+    compiler=project_compiler_request(restored,targets,captured,extended_budget=True)
+    evidence=result_for(compiler)
+    evidence['schema']='nico.cpp-project-compiler-evidence.v2'
+    primary=project_static_request(restored,targets,captured,d.canonical_bytes(evidence),
+                                   extended_compiler_budget=True)
+    assert len(json.loads(original))==475
+    assert len(compiler['contexts'])==len(primary['contexts'])==577
+    assert compiler['database_sha256']==primary['database_sha256']==d.sha(analysis)
+    assert compiler['context_membership_sha256']==primary['context_membership_sha256']==contexts['context_membership_sha256']
+
+
+def test_current_loader_reads_projected_receipt_owners_and_analysis_database(tmp_path, monkeypatch):
+    import base64
+    import zipfile
+    from scripts import native_timeout_diagnostic as d
+    from scripts.qualify_cpp_project_configuration import qualification_probe_receipt
+    from tests.test_cpp_native_command_transport import run_case
+    from nico import assessment_cpp_static_environment as environment
+    from nico import assessment_cpp_project_static as primary
+    probe,targets,docker,out,_=run_case(tmp_path)
+    expected=base64.b64decode(probe['analysis_compilation_database'])
+    probe=qualification_probe_receipt(probe)
+    members={}
+    for row in probe['operations']:
+        if row.get('output_artifact'):
+            ref=row['output_artifact'];members['cpp-baseline-qualification/'+ref['path']]=(out/ref['path']).read_bytes()
+    def artifact(key):
+        raw=b'{}';ref={'path':'artifacts/'+key+'-'+d.sha(raw)+'.json','bytes':len(raw),'sha256':d.sha(raw)}
+        members['cpp-baseline-qualification/'+ref['path']]=raw
+        return ref
+    # These artifacts are not probe.operations entries in production receipts.
+    probe['project_static_stage']={'operations':[
+        {'id':key,'output_artifact':artifact(key)} for key in ('project-static-environment','project-static-evidence')]}
+    manifest={'repository':'owned','commit_sha':'a'*40,'tree_sha':'b'*40}
+    manifest_raw=d.canonical_bytes(manifest)
+    receipt={'probe':probe,'runtime':{'artifact':artifact('project-runtime-evidence')},
+             'source':dict(manifest,targets=targets,inventory_complete=True),
+             'benchmark_sha256':d.sha(manifest_raw)}
+    members['cpp-baseline-qualification/receipt.json']=d.canonical_bytes(receipt)
+    while len(members)<107:members['owned-padding-'+str(len(members))]=b''
+    members['owned-size-padding']=b''
+    path=tmp_path/'owned-current.zip'
+    def write():
+        with zipfile.ZipFile(path,'w',compression=zipfile.ZIP_STORED) as archive:
+            for name,raw in members.items():archive.writestr(name,raw)
+    write()
+    members['owned-size-padding']=b'\0'*(22698583-path.stat().st_size)
+    write()
+    assert path.stat().st_size==22698583
+    monkeypatch.setattr(d,'CURRENT_ARCHIVE_SHA',d.sha(path.read_bytes()))
+    # Separate export tests cover all tool bytes; this owned ZIP targets loader
+    # receipt ownership/reconstruction without claiming native tool equivalence.
+    monkeypatch.setattr(d,'verify_current_export',lambda *a:None)
+    monkeypatch.setattr(environment,'environment_request',lambda *a,**k:{})
+    monkeypatch.setattr(environment,'validate_environment',lambda *a:{})
+    seen=[]
+    def static_request(database,*args,**kwargs):
+        seen.append(database);assert database==expected
+        return {'owned':True}
+    monkeypatch.setattr(primary,'project_static_request',static_request)
+    monkeypatch.setattr(primary,'validate_project_static',lambda *a:{})
+    retained=d.load_retained(path,d.CURRENT_ARCHIVE_SHA,manifest_raw,current_primary=True)
+    assert seen==[expected]
+    assert retained['compiler_request']['database_sha256']==d.sha(expected)
+    assert len(retained['compiler_request']['contexts'])==2
+    assert retained['receipt']['probe']['compilation_database_sha256']==d.sha(docker.database)

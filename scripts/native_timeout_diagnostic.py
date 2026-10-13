@@ -134,6 +134,8 @@ def load_retained(path, expected_sha, manifest_raw, *, current_primary=False):
                 or source['inventory_complete'] is not True):
             raise ValueError('diagnostic_source_identity_mismatch')
         def artifact(key):
+            if current_primary:
+                return retained_operation_artifact(archive, receipt, key)
             candidates = [i for i in infos if i.filename.startswith('cpp-baseline-qualification/artifacts/' + key + '-')]
             if len(candidates) != 1:
                 raise ValueError('diagnostic_artifact_missing_or_ambiguous')
@@ -601,11 +603,40 @@ CURRENT_CASES = {2:'src/init/basic.cpp', 4:'src/init/bitcoin-node.cpp', 10:'src/
 DIAGNOSTIC_FLAGS = ['--showtime=file', '--report-progress=1']
 
 
+def retained_operation_artifact(archive, receipt, key):
+    """Resolve one exact receipt-bound artifact, never a pre/post name prefix."""
+    if key == 'project-runtime-evidence':
+        ref = receipt['runtime']['artifact']
+    else:
+        owner = (receipt['probe']['project_static_stage']
+                 if key in {'project-static-environment','project-static-evidence'} else receipt['probe'])
+        operations = [row for row in owner['operations'] if row.get('id') == key]
+        if len(operations) != 1:
+            raise ValueError('diagnostic_artifact_operation_binding')
+        ref = operations[0].get('output_artifact')
+    if key == 'project-native-commands' and (
+            ref != receipt['probe']['native_command_capture']
+            or ref != receipt['probe']['native_command_plan']['artifact']):
+        raise ValueError('diagnostic_artifact_operation_binding')
+    if key == 'project-enabled-targets' and ref != receipt['probe']['enabled_target_capture']:
+        raise ValueError('diagnostic_artifact_operation_binding')
+    if (not isinstance(ref, dict) or set(ref) != {'path','sha256','bytes'}
+            or type(ref['bytes']) is not int or not 0 < ref['bytes'] <= 48*1024*1024
+            or not isinstance(ref['sha256'], str) or re.fullmatch('[a-f0-9]{64}',ref['sha256']) is None
+            or ref['path'] != 'artifacts/'+key+'-'+ref['sha256']+'.json'):
+        raise ValueError('diagnostic_artifact_reference_binding')
+    raw = archive.read('cpp-baseline-qualification/'+ref['path'])
+    if len(raw) != ref['bytes'] or sha(raw) != ref['sha256']:
+        raise ValueError('diagnostic_artifact_digest_mismatch')
+    return raw
+
+
 def reconstruct_current_database(probe, targets, original_database, artifacts):
     """Rebuild the retained native analysis plan without replacing the original DB."""
     from nico.assessment_cpp_configuration import COMPILER_VERSION
-    from nico.assessment_cpp_fileapi_membership import runtime_cmake_path
+    from nico.assessment_cpp_fileapi_membership import runtime_cmake_path, configured_target_membership
     from nico.assessment_cpp_native_commands import configured_native_commands, validate_native_plan_freeze
+    from scripts.qualify_cpp_project_configuration import qualification_probe_receipt
     membership = artifacts['project-enabled-targets']
     if membership != artifacts['project-enabled-targets-post-build']:
         raise ValueError('diagnostic_native_membership_changed')
@@ -617,13 +648,23 @@ def reconstruct_current_database(probe, targets, original_database, artifacts):
     kwargs = dict(source_root='/work/source',build_root='/work/build',client=probe['fileapi_client'],
         cache_sha256=sha(cache),compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
         compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},cmake_path=runtime_cmake_path(True))
+    configured = configured_target_membership(membership,original_database,targets,**kwargs)
+    projected_membership = probe['enabled_target_membership']
+    expected_membership = (qualification_probe_receipt({'enabled_target_membership':configured})['enabled_target_membership']
+        if projected_membership.get('receipt_projection') == 'hash-bound-summary-v1' else configured)
+    if expected_membership != {k:v for k,v in projected_membership.items() if k != 'artifact'}:
+        raise ValueError('diagnostic_native_membership_binding')
     native = artifacts['project-native-commands']
     plan = configured_native_commands(native,membership,original_database,targets,**kwargs)
     freeze = validate_native_plan_freeze(native,artifacts['project-native-commands-post-build'],
         membership,original_database,targets,**kwargs)
-    if (plan != {k:v for k,v in probe['native_command_plan'].items() if k != 'artifact'}
+    projected = probe['native_command_plan']
+    expected = (qualification_probe_receipt({'native_command_plan':plan})['native_command_plan']
+        if projected.get('receipt_projection') == 'hash-bound-summary-v1' else plan)
+    if (expected != {k:v for k,v in projected.items() if k != 'artifact'}
             or freeze != probe['native_command_freeze']
-            or plan['analysis_database'] != probe['analysis_compilation_database']
+            or ('analysis_compilation_database' in probe
+                and plan['analysis_database'] != probe['analysis_compilation_database'])
             or plan['analysis_database_sha256'] != probe['analysis_compilation_database_sha256']
             or plan['context_count'] != probe['analysis_invocations']):
         raise ValueError('diagnostic_native_plan_binding')
