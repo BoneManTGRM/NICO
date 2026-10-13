@@ -184,6 +184,7 @@ jobs:
           set -euo pipefail
           command -v xvfb-run
           xvfb-run -a python -m pytest -q \
+            tests/test_proof_runner_mask_channel.py \
             tests/test_mobile_visibility_lifecycle_proof_v1.py \
             tests/test_github_actions_production_proof_auth_v1.py \
             tests/test_production_frontend_specialist_gate_v2.py \
@@ -222,8 +223,8 @@ jobs:
         timeout-minutes: 100
         run: |
           # Separate runner mask commands from retained proof output.
-          exec 3>&1
-          export NICO_PROOF_MASK_FD=3
+          exec 9>&1
+          export NICO_PROOF_MASK_FD=9
           set -uo pipefail
           mkdir -p audit-results
           SOURCE_PROOF_LOG="audit-results/spanish-comprehensive-source-proof.log"
@@ -260,8 +261,8 @@ jobs:
         timeout-minutes: 100
         run: |
           # Separate runner mask commands from retained proof output.
-          exec 3>&1
-          export NICO_PROOF_MASK_FD=3
+          exec 9>&1
+          export NICO_PROOF_MASK_FD=9
           set -euo pipefail
           FAILED_SOURCE_PROOF="audit-results/spanish-comprehensive-failed-source-proof.json"
           RECOVERED_PROOF="audit-results/spanish-comprehensive-existing-run-recovery-proof.json"
@@ -298,8 +299,8 @@ jobs:
           NICO_SPANISH_PROOF_ENGAGEMENT_FIXTURE: excluded
         run: |
           # Separate runner mask commands from retained proof output.
-          exec 3>&1
-          export NICO_PROOF_MASK_FD=3
+          exec 9>&1
+          export NICO_PROOF_MASK_FD=9
           set -uo pipefail
           mkdir -p audit-results
           EXCLUSION_PROOF_LOG="audit-results/spanish-comprehensive-exclusion-source-proof.log"
@@ -337,8 +338,8 @@ jobs:
         timeout-minutes: 65
         run: |
           # Separate runner mask commands from retained proof output.
-          exec 3>&1
-          export NICO_PROOF_MASK_FD=3
+          exec 9>&1
+          export NICO_PROOF_MASK_FD=9
           set -euo pipefail
           python scripts/comprehensive_fresh_browser_matrix_v1.py \
             --expected-sha "${RELEASE_SHA}" \
@@ -692,8 +693,8 @@ jobs:
       - name: Read existing failure with the unchanged production-proof authentication
         run: |
           # Separate runner mask commands from retained proof output.
-          exec 3>&1
-          export NICO_PROOF_MASK_FD=3
+          exec 9>&1
+          export NICO_PROOF_MASK_FD=9
           python scripts/production_blocked_run_diagnostic_v1.py \
             --run-id "$DIAGNOSTIC_RUN_ID" \
             --expected-commit "$DIAGNOSTIC_SOURCE_COMMIT" \

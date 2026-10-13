@@ -1,9 +1,14 @@
 """Synthetic-only runner pipe versus retained-output topology regressions."""
 import json
+import hashlib
 import os
 from pathlib import Path
+import select
+import shutil
+import signal
 import subprocess
 import sys
+import time
 
 import pytest
 import yaml
@@ -11,7 +16,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 SECRET = 'synthetic-mask-channel-secret'
 CHANNEL_SETUP = ('# Separate runner mask commands from retained proof output.\n'
-                 'exec 3>&1\nexport NICO_PROOF_MASK_FD=3\n')
+                 'exec 9>&1\nexport NICO_PROOF_MASK_FD=9\n')
 
 
 def run_shell(tmp_path, script, **extra):
@@ -21,19 +26,46 @@ def run_shell(tmp_path, script, **extra):
            'PROOF_PYTHON': sys.executable, **extra}
     env.pop('NICO_PROOF_MASK_FD', None)
     try:
-        result = subprocess.run(['bash', '-c', script], cwd=tmp_path, env=env,
-                                stdout=write_fd, stderr=subprocess.PIPE, timeout=20)
+        process = subprocess.Popen(['bash', '-c', script], cwd=tmp_path, env=env,
+                                   stdout=write_fd, stderr=subprocess.PIPE, start_new_session=True)
+        try:
+            _, stderr = process.communicate(timeout=20)
+            result = subprocess.CompletedProcess(process.args, process.returncode, stderr=stderr)
+        finally:
+            # Bound the whole synthetic process group, including a stalled X server.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait(timeout=5)
     finally:
         os.close(write_fd)
     with os.fdopen(read_fd, 'rb') as pipe:
-        commands = pipe.read()
+        os.set_blocking(read_fd, False)
+        deadline = time.monotonic() + 5
+        chunks = []
+        while True:
+            remaining = deadline - time.monotonic()
+            assert remaining > 0 and select.select([pipe], [], [], remaining)[0], 'runner command pipe did not close'
+            chunk = os.read(read_fd, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        commands = b''.join(chunks)
     return result, commands
 
 
 @pytest.mark.parametrize('step_id,prefix', [('spanish_proof', 'spanish-comprehensive'),
                                           ('exclusion_proof', 'spanish-comprehensive-exclusion')])
 @pytest.mark.parametrize('proof_exit,tee_exit', [(0, 0), (1, 0), (0, 9)])
-def test_actual_spanish_tee_blocks_keep_mask_commands_out_of_artifacts(tmp_path, step_id, prefix, proof_exit, tee_exit):
+@pytest.mark.parametrize('wrapper', ['modeled_fd3_close', 'installed_xvfb_run'])
+def test_actual_spanish_tee_blocks_keep_mask_commands_out_of_artifacts(tmp_path, step_id, prefix, proof_exit, tee_exit, wrapper, record_property):
+    xvfb = shutil.which('xvfb-run')
+    if wrapper == 'installed_xvfb_run':
+        if not xvfb:
+            pytest.skip('xvfb-run is not installed; real wrapper boundary unverified')
+        record_property('xvfb_run_path', xvfb)
+        record_property('xvfb_run_sha256', hashlib.sha256(Path(xvfb).read_bytes()).hexdigest())
     workflow = yaml.safe_load((ROOT/'.github/workflows/spanish-comprehensive-production-proof.yml').read_text())
     step = next(s for job in workflow['jobs'].values() for s in job.get('steps', []) if s.get('id') == step_id)
     body = step['run']
@@ -46,13 +78,17 @@ def test_actual_spanish_tee_blocks_keep_mask_commands_out_of_artifacts(tmp_path,
                     'Path("failure.json").write_text(value)\nprint(value)\n'
                     f'raise SystemExit({proof_exit})\n')
     # Keep the workflow's real tee blocks, PIPESTATUS handling and recovery markers.
-    # Replace only the network/browser command with a synthetic proof producer.
+    # The real-wrapper variant invokes the installed executable unchanged with a
+    # synthetic client, not authentication or a browser. The modeled variant is
+    # explicitly weaker evidence, but exercises the known FD3-close regression.
+    client = ('"$PROOF_XVFB_RUN" -a "$PROOF_PYTHON" "$PROOF_STUB"'
+              if wrapper == 'installed_xvfb_run' else '"$PROOF_PYTHON" "$PROOF_STUB" 3>&-')
     plumbing = ('exec > ordinary.stdout 2> ordinary.stderr\n'
-                'xvfb-run() { "$PROOF_PYTHON" "$PROOF_STUB"; }\n')
+                'xvfb-run() { '+client+'; }\n')
     if tee_exit:
         plumbing += f'tee() {{ /usr/bin/tee "$@"; return {tee_exit}; }}\n'
     script = CHANNEL_SETUP + plumbing + body[len(CHANNEL_SETUP):]
-    result, commands = run_shell(tmp_path, script, PROOF_STUB=str(stub), RELEASE_SHA='a'*40,
+    result, commands = run_shell(tmp_path, script, PROOF_XVFB_RUN=xvfb or '', PROOF_STUB=str(stub), RELEASE_SHA='a'*40,
         SOURCE_RUN_ID='123', SOURCE_RUN_ATTEMPT='1', NICO_PRODUCTION_FRONTEND_URL='https://synthetic.invalid',
         NICO_PRODUCTION_SMOKE_REPOSITORY='synthetic/fixture')
     assert result.returncode == (tee_exit or proof_exit)
@@ -74,8 +110,8 @@ def test_unavailable_channel_fails_without_stdout_stderr_or_file_secrets(tmp_pat
     code = ('from scripts.github_actions_nico_proof_auth_v1 import _register_proof_secret\n'
             'import os\n_register_proof_secret(os.environ["SYNTHETIC_SECRET"])\n')
     (tmp_path/'probe.py').write_text(code)
-    setup = {'absent': '', 'closed': 'export NICO_PROOF_MASK_FD=3; exec 3>&-\n',
-             'file': 'export NICO_PROOF_MASK_FD=3; exec 3>unsafe-channel.log\n'}[mode]
+    setup = {'absent': '', 'closed': 'export NICO_PROOF_MASK_FD=9; exec 9>&-\n',
+             'file': 'export NICO_PROOF_MASK_FD=9; exec 9>unsafe-channel.log\n'}[mode]
     result, commands = run_shell(tmp_path, setup+'"$PROOF_PYTHON" probe.py >ordinary.stdout 2>ordinary.stderr\n', SYNTHETIC_SECRET=SECRET)
     assert result.returncode != 0
     assert commands == b''
@@ -92,7 +128,7 @@ def test_unavailable_channel_fails_without_stdout_stderr_or_file_secrets(tmp_pat
 def test_subprocess_capture_requires_explicit_runner_descriptor_inheritance(tmp_path, preserve_fd):
     child = 'from scripts.github_actions_nico_proof_auth_v1 import _register_proof_secret; import os; _register_proof_secret(os.environ["SYNTHETIC_SECRET"])'
     wrapper = ('import subprocess,sys,json\n'
-               f'r=subprocess.run([sys.executable,"-c",{child!r}],capture_output=True,pass_fds={((3,) if preserve_fd else ())!r})\n'
+               f'r=subprocess.run([sys.executable,"-c",{child!r}],capture_output=True,pass_fds={((9,) if preserve_fd else ())!r})\n'
                'sys.stdout.buffer.write(r.stdout);sys.stderr.buffer.write(r.stderr);raise SystemExit(r.returncode)\n')
     (tmp_path/'wrapper.py').write_text(wrapper)
     result, commands = run_shell(tmp_path, CHANNEL_SETUP+'"$PROOF_PYTHON" wrapper.py >ordinary.stdout 2>ordinary.stderr\n', SYNTHETIC_SECRET=SECRET)

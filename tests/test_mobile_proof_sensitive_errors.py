@@ -143,13 +143,13 @@ def test_actions_mask_registration_escapes_command_data(monkeypatch, capsys):
     from scripts import github_actions_nico_proof_auth_v1 as auth
     monkeypatch.setattr(auth, '_PROOF_SECRETS', set())
     monkeypatch.setenv('GITHUB_ACTIONS', 'true')
-    monkeypatch.setenv('NICO_PROOF_MASK_FD', '3')
+    monkeypatch.setenv('NICO_PROOF_MASK_FD', '9')
     import stat
     writes = []
     monkeypatch.setattr(auth.os, 'fstat', lambda fd: SimpleNamespace(st_mode=stat.S_IFIFO))
     monkeypatch.setattr(auth.os, 'write', lambda fd, data: writes.append((fd, data)) or len(data))
     auth._register_proof_secret('synthetic%value\r\n::warning::synthetic')
-    assert writes == [(3, b'::add-mask::synthetic%25value%0D%0A::warning::synthetic\n')]
+    assert writes == [(9, b'::add-mask::synthetic%25value%0D%0A::warning::synthetic\n')]
     captured = capsys.readouterr()
     assert captured.out == captured.err == ''
 
