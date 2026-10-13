@@ -277,6 +277,9 @@ jobs:
         id: restart_proof
         continue-on-error: true
         run: |
+          # Separate runner mask commands from retained proof output.
+          exec 3>&1
+          export NICO_PROOF_MASK_FD=3
           set -euo pipefail
           command -v xvfb-run
           PROOF_TOOL_SHA="$(git rev-parse HEAD)"

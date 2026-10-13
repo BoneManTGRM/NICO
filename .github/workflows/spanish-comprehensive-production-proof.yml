@@ -221,6 +221,9 @@ jobs:
         continue-on-error: true
         timeout-minutes: 100
         run: |
+          # Separate runner mask commands from retained proof output.
+          exec 3>&1
+          export NICO_PROOF_MASK_FD=3
           set -uo pipefail
           mkdir -p audit-results
           SOURCE_PROOF_LOG="audit-results/spanish-comprehensive-source-proof.log"
@@ -256,6 +259,9 @@ jobs:
         continue-on-error: true
         timeout-minutes: 100
         run: |
+          # Separate runner mask commands from retained proof output.
+          exec 3>&1
+          export NICO_PROOF_MASK_FD=3
           set -euo pipefail
           FAILED_SOURCE_PROOF="audit-results/spanish-comprehensive-failed-source-proof.json"
           RECOVERED_PROOF="audit-results/spanish-comprehensive-existing-run-recovery-proof.json"
@@ -291,6 +297,9 @@ jobs:
         env:
           NICO_SPANISH_PROOF_ENGAGEMENT_FIXTURE: excluded
         run: |
+          # Separate runner mask commands from retained proof output.
+          exec 3>&1
+          export NICO_PROOF_MASK_FD=3
           set -uo pipefail
           mkdir -p audit-results
           EXCLUSION_PROOF_LOG="audit-results/spanish-comprehensive-exclusion-source-proof.log"
@@ -327,6 +336,9 @@ jobs:
         continue-on-error: true
         timeout-minutes: 65
         run: |
+          # Separate runner mask commands from retained proof output.
+          exec 3>&1
+          export NICO_PROOF_MASK_FD=3
           set -euo pipefail
           python scripts/comprehensive_fresh_browser_matrix_v1.py \
             --expected-sha "${RELEASE_SHA}" \
@@ -679,6 +691,9 @@ jobs:
       - run: python -m pip install --disable-pip-version-check 'httpx==0.28.1'
       - name: Read existing failure with the unchanged production-proof authentication
         run: |
+          # Separate runner mask commands from retained proof output.
+          exec 3>&1
+          export NICO_PROOF_MASK_FD=3
           python scripts/production_blocked_run_diagnostic_v1.py \
             --run-id "$DIAGNOSTIC_RUN_ID" \
             --expected-commit "$DIAGNOSTIC_SOURCE_COMMIT" \

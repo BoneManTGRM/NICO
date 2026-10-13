@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import stat
+import sys
 import urllib.parse
 import urllib.request
 from typing import Any
@@ -13,15 +15,38 @@ SESSION_HEADER = "X-NICO-Operator-Session"
 
 _PROOF_SECRETS: set[str] = set()
 
+# Script entrypoints and package callers must share the same redaction registry.
+for _alias in ('github_actions_nico_proof_auth_v1', 'scripts.github_actions_nico_proof_auth_v1'):
+    sys.modules.setdefault(_alias, sys.modules[__name__])
+
+
+def _runner_mask_command(value: str) -> None:
+    """FD3 is opened by the workflow BEFORE any retained stdout/stderr pipeline.
+
+    Mask data intentionally contains the credential and may go only to this
+    runner command pipe, never ordinary stdout/stderr or an artifact file.
+    Missing/closed/file-backed channels fail closed; there is no log fallback.
+    """
+    try:
+        if os.getenv('NICO_PROOF_MASK_FD') != '3' or not stat.S_ISFIFO(os.fstat(3).st_mode):
+            raise ValueError
+        escaped = value.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+        data = ('::add-mask::' + escaped + '\n').encode('utf-8')
+        while data:
+            written = os.write(3, data)
+            if written <= 0:
+                raise OSError
+            data = data[written:]
+    except (OSError, ValueError):
+        raise RuntimeError('production_proof_runner_mask_channel_unavailable') from None
+
 
 def _register_proof_secret(value: str) -> None:
     if not value:
         return
     _PROOF_SECRETS.add(value)
     if os.getenv("GITHUB_ACTIONS") == "true":
-        # Escape workflow-command data, including newlines, before registration.
-        escaped = value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-        print("::add-mask::" + escaped, flush=True)
+        _runner_mask_command(value)
 
 
 def redact_proof_secrets(value: Any) -> Any:
