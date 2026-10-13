@@ -9,6 +9,9 @@ import yaml
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+PRODUCER_REF = 'refs/pull/1722/merge'
+FULL_GROUP = 'cpp-full-project-integration-${{ github.ref }}'
+DIAGNOSTIC_GROUP = 'cpp-full-project-integration-' + PRODUCER_REF
 REQUIRED_TEST_FILES = {
     'tests/test_cpp_fixture_tree.py', 'tests/test_cpp_bounded_fuzz.py',
     'tests/test_cpp_fuzz_tool_provisioning.py', 'tests/test_cpp_generated_context.py',
@@ -107,21 +110,73 @@ def test_pending_native_workflows_are_queued_without_replacing_each_other(filena
     concurrency = workflow["concurrency"]
     assert concurrency.get("queue") == "max", "pending native evidence can be cancelled"
     assert concurrency["cancel-in-progress"] is False
-    assert concurrency["group"] == "cpp-full-project-integration-${{ github.ref }}"
+    expected = FULL_GROUP if filename == 'cpp-full-project-integration.yml' else DIAGNOSTIC_GROUP
+    assert concurrency == {'group': expected, 'queue': 'max', 'cancel-in-progress': False}
 
 
-def test_native_queue_remains_serial_and_preserves_existing_execution_boundaries():
+def _native_workflows():
     directory = ROOT / ".github/workflows"
     full = yaml.safe_load((directory / "cpp-full-project-integration.yml").read_text())
     diagnostic = yaml.safe_load((directory / "native-timeout-diagnostic.yml").read_text())
-    assert full["concurrency"] == diagnostic["concurrency"]
+    return full, diagnostic
+
+
+def _assert_native_schedule(full, diagnostic):
+    assert full['concurrency'] == {'group': FULL_GROUP, 'queue': 'max', 'cancel-in-progress': False}
+    assert diagnostic['concurrency'] == {'group': DIAGNOSTIC_GROUP, 'queue': 'max', 'cancel-in-progress': False}
+    # This stacked PR has its own github.ref. Its fixed lock must equal the
+    # full workflow's evaluated lock for the producer PR, not its own PR ref.
+    assert full['concurrency']['group'].replace('${{ github.ref }}', PRODUCER_REF) == diagnostic['concurrency']['group']
     assert full["permissions"] == {"contents": "read"}
     assert diagnostic["permissions"] == {"contents": "read", "actions": "read"}
     assert full["jobs"]["project-baseline-qualification"]["timeout-minutes"] == 155
     isolated = diagnostic["jobs"]["isolated-diagnostic"]
     assert isolated["timeout-minutes"] == 55
-    assert "head.repo.full_name == github.repository" in isolated["if"]
+    assert isolated['if'] == (
+        "github.event.pull_request.head.repo.full_name == github.repository && "
+        "github.event.pull_request.head.ref == 'diagnostic/current-primary-38380333159' && "
+        "github.event.pull_request.base.ref == 'repair/ast-boundary-independent-fc9a0a75-20261012'")
+    assert isolated.get('continue-on-error', False) is False
+    assert not any(step.get('continue-on-error', False) for step in isolated['steps'])
     guard = next(step for step in isolated["steps"] if step.get("id") == "need")
+    assert 'gh api repos/BoneManTGRM/NICO/actions/runs/38380333159 > native-diagnostic-evidence/predecessor.json' in guard['run']
+    assert 'test "$(jq -r .head_sha native-diagnostic-evidence/predecessor.json)" = 2bd1ea9dac2d38b721661eab68a26ef7d9747e33' in guard['run']
     assert 'test "$status" = completed' in guard["run"]
     assert "success) echo 'required=false'" in guard["run"]
     assert "failure) echo 'required=true'" in guard["run"]
+
+
+def test_native_queue_remains_serial_and_preserves_existing_execution_boundaries():
+    _assert_native_schedule(*_native_workflows())
+
+
+@pytest.mark.parametrize('fault', [
+    'wrong_producer', 'own_pr_lock', 'full_lock', 'full_queue', 'diagnostic_queue',
+    'full_cancel', 'diagnostic_cancel', 'permissions', 'full_budget', 'diagnostic_budget',
+    'repository_guard', 'head_guard', 'base_guard', 'producer_run', 'producer_head',
+    'completed_guard', 'continue_job', 'continue_step',
+])
+def test_native_schedule_rejects_wrong_lock_or_weakened_boundaries(fault):
+    full, diagnostic = _native_workflows()
+    isolated = diagnostic['jobs']['isolated-diagnostic']
+    guard = next(step for step in isolated['steps'] if step.get('id') == 'need')
+    if fault == 'wrong_producer': diagnostic['concurrency']['group'] = DIAGNOSTIC_GROUP.replace('1722', '1727')
+    elif fault == 'own_pr_lock': diagnostic['concurrency']['group'] = FULL_GROUP
+    elif fault == 'full_lock': full['concurrency']['group'] = 'unshared'
+    elif fault == 'full_queue': full['concurrency'].pop('queue')
+    elif fault == 'diagnostic_queue': diagnostic['concurrency']['queue'] = 'single'
+    elif fault == 'full_cancel': full['concurrency']['cancel-in-progress'] = True
+    elif fault == 'diagnostic_cancel': diagnostic['concurrency']['cancel-in-progress'] = True
+    elif fault == 'permissions': diagnostic['permissions']['contents'] = 'write'
+    elif fault == 'full_budget': full['jobs']['project-baseline-qualification']['timeout-minutes'] += 1
+    elif fault == 'diagnostic_budget': isolated['timeout-minutes'] += 1
+    elif fault == 'repository_guard': isolated['if'] = isolated['if'].replace('head.repo.full_name == github.repository', 'head.repo.full_name != github.repository')
+    elif fault == 'head_guard': isolated['if'] = isolated['if'].replace('diagnostic/current-primary-38380333159', 'unreviewed')
+    elif fault == 'base_guard': isolated['if'] = isolated['if'].replace('repair/ast-boundary-independent-fc9a0a75-20261012', 'main')
+    elif fault == 'producer_run': guard['run'] = guard['run'].replace('38380333159', '38403144843')
+    elif fault == 'producer_head': guard['run'] = guard['run'].replace('2bd1ea9dac2d38b721661eab68a26ef7d9747e33', '0'*40)
+    elif fault == 'completed_guard': guard['run'] = guard['run'].replace('test "$status" = completed', 'true')
+    elif fault == 'continue_job': isolated['continue-on-error'] = True
+    elif fault == 'continue_step': guard['continue-on-error'] = True
+    with pytest.raises(AssertionError):
+        _assert_native_schedule(full, diagnostic)
