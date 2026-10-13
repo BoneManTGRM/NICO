@@ -10,6 +10,7 @@ const STATUS_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+$/;
 const SCANNER_EVIDENCE_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/scanner-evidence$/;
 const CHECKOUT_RECOVERY_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/scanner-checkout-recovery$/;
 const CONTINUE_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/continue$/;
+const PDF_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/(?:report\/pdf|localized-report\/(?:en|es-MX)\/pdf)$/;
 const ARTIFACT_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/(?:report\/(?:markdown|html|json|pdf|evidence-package)|localized-report\/(?:en|es-MX)(?:\/(?:pdf|evidence-package))?|approved-delivery-package)$/;
 const ALLOWED_PATH = /^\/assessment\/(?:comprehensive-intake|comprehensive-run(?:\/[^/?#]+(?:\/(?:continue|review-queue|review-work|review|authorize-delivery|approved-delivery-package|automated-delivery-package|report\/(?:markdown|html|json|pdf|evidence-package)|localized-report\/(?:en|es-MX)(?:\/(?:pdf|evidence-package))?))?)?)$/;
 const LOCALIZED_EDITION_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/localized-editions\/es-MX(?:\/(?:review|authorize-delivery|approved-delivery-package))?$/;
@@ -62,6 +63,74 @@ function timeoutFor(method: string, path: string): number {
   if (method === "GET" && STATUS_PATH.test(path)) return 60_000;
   if (method === "POST" && CONTINUE_PATH.test(path)) return 240_000;
   return method === "GET" ? 30_000 : 240_000;
+}
+
+function pdfTransferDiagnostics(startedAt: number) {
+  // Never log request IDs, paths, credentials, exception text, or body content.
+  const traceId = crypto.randomUUID();
+  let headersMs: number | null = null;
+  let firstByteMs: number | null = null;
+  let bytes = 0;
+  let finished = false;
+  let metadata: Record<string, number | string | null> = {};
+  const elapsed = () => Math.max(0, Date.now() - startedAt);
+  function emit(outcome: string) {
+    try {
+      console.info(JSON.stringify({event: "nico_pdf_proxy_transfer", trace_id: traceId,
+        outcome, elapsed_ms: elapsed(), headers_ms: headersMs,
+        first_byte_read_ms: firstByteMs, upstream_body_bytes: bytes, ...metadata}));
+    } catch {
+      // Telemetry availability must not change artifact transport.
+    }
+  }
+  function finish(outcome: string) {
+    if (finished) return;
+    finished = true;
+    emit(outcome);
+  }
+  return {
+    finish,
+    wrap(response: Response, headers: Headers) {
+      headersMs = elapsed();
+      const length = response.headers.get("content-length") || "";
+      const encoding = (response.headers.get("content-encoding") || "").trim().toLowerCase();
+      const framing = (response.headers.get("transfer-encoding") || "").trim().toLowerCase();
+      metadata = {upstream_status: response.status,
+        declared_content_length: /^\d{1,15}$/.test(length) ? Number(length) : null,
+        content_encoding: ["gzip", "br", "deflate", "identity"].includes(encoding) ? encoding : encoding ? "other" : "absent",
+        transfer_encoding: framing === "chunked" ? "chunked" : framing ? "other" : "absent"};
+      headers.set("X-NICO-Proxy-Trace-ID", traceId);
+      headers.set("X-NICO-Proxy-Headers-Ms", String(headersMs));
+      emit("headers_received");
+      if (!response.body) {
+        finish("no_body");
+        return null;
+      }
+      const reader = response.body.getReader();
+      return new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          try {
+            const {done, value} = await reader.read();
+            if (done) {
+              finish("upstream_complete");
+              controller.close();
+            } else {
+              bytes += value.byteLength;
+              if (firstByteMs === null && value.byteLength) firstByteMs = elapsed();
+              controller.enqueue(value);
+            }
+          } catch (error) {
+            finish("body_error");
+            controller.error(error);
+          }
+        },
+        async cancel(reason) {
+          finish("consumer_cancelled");
+          await reader.cancel(reason);
+        },
+      }, {highWaterMark: 0});
+    },
+  };
 }
 
 async function proxyAssessment(
@@ -133,6 +202,8 @@ async function proxyAssessment(
   const timeoutMs = timeoutFor(request.method, path);
   const artifactRead = request.method === "GET" && (ARTIFACT_PATH.test(path) || LOCALIZED_EDITION_PATH.test(path));
   const startedAt = Date.now();
+  const pdfDiagnostics = request.method === "GET" && PDF_PATH.test(path)
+    ? pdfTransferDiagnostics(startedAt) : null;
 
   try {
     const response = await fetch(upstream, {
@@ -153,12 +224,14 @@ async function proxyAssessment(
       const value = response.headers.get(name);
       if (value) responseHeaders.set(name, value);
     }
-    return new Response(response.body, {
+    const responseBody = pdfDiagnostics ? pdfDiagnostics.wrap(response, responseHeaders) : response.body;
+    return new Response(responseBody, {
       status: response.status,
       statusText: response.statusText,
       headers: responseHeaders,
     });
   } catch (error) {
+    pdfDiagnostics?.finish("before_response_error");
     const timedOut = error instanceof DOMException && error.name === "TimeoutError";
     return errorResponse(
       timedOut ? 504 : 502,
