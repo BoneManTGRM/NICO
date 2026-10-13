@@ -13,6 +13,8 @@ from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import Browser, Page, sync_playwright
 
+from github_actions_nico_proof_auth_v1 import redact_proof_secrets
+
 from comprehensive_production_run_handoff_v1 import (
     load_source_proof,
     require_canonical_json_digest,
@@ -53,14 +55,81 @@ TERMINAL_UI_PENDING_SCORE_MARKERS = (
 )
 
 
+class ProofRequestError(RuntimeError):
+    """Only locally constructed, credential-free request telemetry."""
+
+
+def _proof_http_get(page: Any, operation: str, url: str, **kwargs: Any) -> Any:
+    # Never serialize Playwright exception text: its call log contains cookies.
+    if operation not in {"terminal_manifest", "report_pdf", "canonical_status",
+                         "canonical_json", "localized_markdown"}:
+        raise ValueError("unknown_proof_http_operation")
+    started = time.monotonic()
+    try:
+        return page.request.get(url, **kwargs)
+    except Exception as exc:
+        category = "timeout" if type(exc).__name__ == "TimeoutError" else "transport_error"
+        elapsed_ms = max(0, int((time.monotonic() - started) * 1000))
+        raise ProofRequestError(
+            f"proof_http_request_failed operation={operation} method=GET "
+            f"category={category} timeout_ms={int(kwargs['timeout'])} elapsed_ms={elapsed_ms}"
+        ).with_traceback(exc.__traceback__) from None
+
+
+def _safe_exception(exc: BaseException) -> str:
+    # Never inspect arbitrary exception messages, types, chains or frame locals.
+    if type(exc) is ProofRequestError and len(exc.args) == 1 and type(exc.args[0]) is str:
+        if re.fullmatch(
+            r"proof_http_request_failed operation=(terminal_manifest|report_pdf|canonical_status|canonical_json|localized_markdown) "
+            r"method=GET category=(timeout|transport_error) timeout_ms=[0-9]+ elapsed_ms=[0-9]+",
+            exc.args[0],
+        ):
+            return exc.args[0]
+    category = "assertion_failed" if isinstance(exc, AssertionError) else (
+        "timeout" if type(exc).__name__ == "TimeoutError" else "exception")
+    operation = "proof"
+    line = 0
+    allowed = {
+        "_require_existing_source_args", "_verify_manifest_and_pdf",
+        "_verify_canonical_truth", "_click_markdown_and_verify",
+        "_wait_for_run_id", "_wait_for_same_run_ui", "_wait_for_terminal",
+        "_wait_for_terminal_ui_ready", "_mobile_terminal_layout",
+        "_mobile_locale_round_trip", "_observe_terminal_stability",
+        "_prove_visibility_hidden_visible", "run_existing_proof", "run_proof",
+    }
+    tb = exc.__traceback__
+    while tb is not None:
+        code = tb.tb_frame.f_code
+        if code.co_filename == __file__ and code.co_name in allowed:
+            operation, line = code.co_name, tb.tb_lineno
+        tb = tb.tb_next
+    return f"proof_failed category={category} operation={operation} assertion_line={line} exception details redacted"
+
+
 def _bounded(value: Any, limit: int = 500) -> str:
+    if isinstance(value, BaseException):
+        return _safe_exception(value)
     text = " ".join(str(value or "").split())
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+def _safe_json(payload: dict[str, Any], *, indent: int | None = None) -> str:
+    return json.dumps(redact_proof_secrets(payload), indent=indent, sort_keys=True)
+
+
 def _write(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    path.write_text(_safe_json(payload, indent=2), encoding="utf-8")
+
+
+def _finish_failure(path: Path, payload: dict[str, Any], exc: Exception) -> None:
+    message = _safe_exception(exc)
+    try:
+        _write(path, payload)
+    except Exception as persistence_error:
+        # A failed artifact write must not revive the original sensitive chain.
+        message += " artifact_write_failed " + _safe_exception(persistence_error)
+    raise RuntimeError(message).with_traceback(exc.__traceback__) from None
 
 
 def _require_existing_source_args(args: argparse.Namespace) -> str:
@@ -241,7 +310,7 @@ def _reload_and_restore(page: Page, run_id: str, timeout_ms: int, *, expect_acti
 
 
 def _verify_manifest_and_pdf(page: Page, frontend_origin: str, run_id: str) -> dict[str, Any]:
-    status = page.request.get(
+    status = _proof_http_get(page, "terminal_manifest",
         f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}",
         headers={
             "Accept": "application/json",
@@ -269,7 +338,7 @@ def _verify_manifest_and_pdf(page: Page, frontend_origin: str, run_id: str) -> d
     for embedded in ("pdf_base64", "markdown", "html", "json"):
         assert embedded not in reports, f"Projected browser response embedded {embedded}"
 
-    pdf = page.request.get(
+    pdf = _proof_http_get(page, "report_pdf",
         f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}/report/pdf",
         headers={"Accept": "application/pdf", "Cache-Control": "no-store"},
         timeout=120_000,
@@ -601,7 +670,7 @@ def _verify_canonical_truth(
     expected_sha: str,
     expected_digest: str,
 ) -> dict[str, Any]:
-    status = page.request.get(
+    status = _proof_http_get(page, "canonical_status",
         f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}",
         headers={
             "Accept": "application/json",
@@ -619,7 +688,7 @@ def _verify_canonical_truth(
     assert payload.get("human_review_required") is True
     assert payload.get("client_delivery_allowed") is False
 
-    report = page.request.get(
+    report = _proof_http_get(page, "canonical_json",
         f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}/report/json",
         headers={"Accept": "application/json", "Cache-Control": "no-store"},
         timeout=120_000,
@@ -987,7 +1056,7 @@ def _click_markdown_and_verify(
         f"localized-report/{report_language}"
     )
     origin = urlparse(str(page.url))
-    response = page.request.get(
+    response = _proof_http_get(page, "localized_markdown",
         f"{origin.scheme}://{origin.netloc}{markdown_path}",
         headers={"Accept": "application/json", "Cache-Control": "no-store"},
         timeout=120_000,
@@ -1582,9 +1651,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    _require_existing_source_args(args)
     failure: dict[str, Any] | None = None
     try:
+        _require_existing_source_args(args)
         with sync_playwright() as playwright:
             browser = _launch_chromium(playwright)
             try:
@@ -1598,13 +1667,12 @@ def main(argv: list[str] | None = None) -> int:
             "frontend_url": args.frontend_url.rstrip("/"),
             "repository": args.repository,
             "expected_sha": args.expected_sha,
-            "error": f"{type(exc).__name__}: {_bounded(exc, 1500)}",
+            "error": _safe_exception(exc),
             "finished_at_epoch": time.time(),
         }
-        _write(args.output, failure)
-        raise
+        _finish_failure(args.output, failure, exc)
     _write(args.output, result)
-    print(json.dumps(result, sort_keys=True))
+    print(_safe_json(result))
     return 0
 
 
