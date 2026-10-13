@@ -2,6 +2,7 @@ name: Isolated Native Timeout Diagnostic
 
 on:
   pull_request:
+    types: [synchronize]
     paths:
       - 'scripts/native_timeout_diagnostic.py'
       - 'tests/test_native_timeout_diagnostic.py'
@@ -20,7 +21,7 @@ concurrency:
 
 jobs:
   isolated-diagnostic:
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'diagnostic/current-primary-38380333159' && github.event.pull_request.base.ref == 'repair/ast-boundary-independent-fc9a0a75-20261012'
+    if: github.run_attempt == 1 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'diagnostic/current-primary-38380333159' && github.event.pull_request.base.ref == 'repair/ast-boundary-independent-fc9a0a75-20261012'
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     steps:
@@ -62,7 +63,7 @@ jobs:
           ref: ac9db3069b9f90e81e126a090b99ad456e122cf8
           path: toolchain/full-project/cppcheck
           persist-credentials: false
-      - name: Reuse the exact existing tool recipe
+      - name: Reconstruct the pinned original tool image
         if: steps.need.outputs.required == 'true'
         run: |
           python - <<'PY'
@@ -120,11 +121,30 @@ jobs:
           persist-credentials: false
           submodules: false
           lfs: false
-      - name: Measure only the three current primary contexts
+      - name: Bind the explicit context-2 budget policy to fresh image identities
+        if: steps.need.outputs.required == 'true'
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from scripts.native_timeout_diagnostic import load_retained, create_budget_policy, canonical_bytes, sha, CURRENT_ARCHIVE_SHA
+          from scripts.native_stage_counters.binding import load_binding
+          image=Path('native-diagnostic-evidence/stage-image-id.txt').read_text().strip()
+          original=Path('full-project-image-id.txt').read_text().strip()
+          binding_sha=Path('native-diagnostic-evidence/stage-binding/binding.sha256').read_text().strip()
+          binding=load_binding(Path('native-diagnostic-evidence/stage-binding/binding.json'),image,binding_sha,original)
+          retained=load_retained(Path('retained-timeout.zip'),CURRENT_ARCHIVE_SHA,Path('tests/fixtures/cpp/bitcoin-configuration-benchmark.json').read_bytes(),current_primary=True)
+          policy=create_budget_policy(retained,binding,image,binding_sha,original)
+          raw=canonical_bytes(policy)
+          Path('native-diagnostic-evidence/execution-policy.json').write_bytes(raw)
+          Path('native-diagnostic-evidence/execution-policy.sha256').write_text(sha(raw)+'\n')
+          PY
+      - name: Measure only basic.cpp under the declared 180-second case policy
         if: steps.need.outputs.required == 'true'
         run: >-
           python -m scripts.native_timeout_diagnostic
-          --mode current-primary
+          --mode current-primary-budget-v1
+          --execution-policy native-diagnostic-evidence/execution-policy.json
+          --execution-policy-sha256 "$(cat native-diagnostic-evidence/execution-policy.sha256)"
           --archive retained-timeout.zip
           --archive-sha256 dbf890120e44a7d0f99133d69f316c9e8d7dce0210f3ae627e248ffa1c4e7e92
           --qualification-source qualification-input

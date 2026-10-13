@@ -215,7 +215,8 @@ print(json.dumps({'cpu': pairs('cpu.stat'), 'memory_events': pairs('memory.event
 
 class Sandbox:
     """Diagnostic lifecycle using the production sandbox's exact resource policy."""
-    def __init__(self, source, targets, image, output, *, executable, seconds, command=None):
+    def __init__(self, source, targets, image, output, *, executable, seconds, command=None,
+                 expected_resource_args=None):
         from nico.assessment_worker_container import _command
         from nico.assessment_worker_capacity_v1 import BASELINE_QUALIFICATION_PROFILE
         if not re.fullmatch(r'sha256:[a-f0-9]{64}', image):
@@ -225,6 +226,7 @@ class Sandbox:
         self.source, self.targets, self.image = Path(source), targets, image
         self.output = Path(output); self.output.mkdir(mode=0o700)
         self.executable, self.seconds, self.profile = executable, seconds, BASELINE_QUALIFICATION_PROFILE
+        self.expected_resource_args = expected_resource_args
         self.name = 'nico-timeout-diagnostic-' + uuid4().hex
         self.command = command or _command
         self.started = time.monotonic(); self.deadline = self.started + seconds
@@ -307,11 +309,17 @@ class Sandbox:
             image = json.loads(self.call('image',['docker','image','inspect',self.image])['output'])
             if len(image)!=1 or image[0]['Id'] != self.image:
                 raise ValueError('diagnostic_image_mismatch')
+            resource_args = docker_resource_args(self.profile, executable=self.executable)
+            if self.expected_resource_args is not None:
+                if resource_args != self.expected_resource_args:
+                    raise ValueError('diagnostic_budget_resource_mismatch')
+                self.receipt['approved_resource_args'] = list(resource_args)
+                self.save()
             self.created = True
             self.receipt['cleanup_required'] = True
             self.call('create', ['docker','create','--name',self.name,'--network=none','--read-only',
                 '--user=1000:1000','--cap-drop=ALL','--security-opt=no-new-privileges',
-                *docker_resource_args(self.profile, executable=self.executable), '--log-driver=none',
+                *resource_args, '--log-driver=none',
                 '--env=HOME=/work','--env=TMPDIR=/work','--entrypoint=sleep',self.image,str(self.seconds+15)])
             self.call('start',['docker','start',self.name])
             setup = json.loads(self.exec('analysis-setup',['python3','-I','-S','-c',ANALYSIS_SETUP_PROGRAM], user=ANALYSIS_USER)['output'])
@@ -601,6 +609,158 @@ CURRENT_TOOLS = {'cppcheck':'f5215eabbc2666859254ace73a5f53eb991cb285f94a733d668
     'nico-clang-header-observer.so':'45474684723784ea89d5531bf52730adedddc312814c083e990e8a2df1bf43f9'}
 CURRENT_CASES = {2:'src/init/basic.cpp', 4:'src/init/bitcoin-node.cpp', 10:'src/compat/stdin.cpp'}
 DIAGNOSTIC_FLAGS = ['--showtime=file', '--report-progress=1']
+BUDGET_MODE = 'current-primary-budget-v1'
+BUDGET_POLICY_SCHEMA = 'nico.current-primary-budget-policy.v1'
+BUDGET_EVIDENCE_SCHEMA = 'nico.current-primary-budget-evidence.v1'
+BUDGET_ANALYZER_SOURCE = 'ac4d82c590588700a462c4b7b3f5ea5acd8cfcfb'
+BUDGET_COLLECTOR_SHA256 = 'ce65638b5400b69fddcf69910cc5ab1067059cf720e8b75825b26d2acf304ddf'
+BUDGET_VALIDATOR_SHA256 = '9a1a557eef8fd00715dfcb733a9e84b33aff5c48ff145e2d3ac1f62d18fe725a'
+BUDGET_LIMITS = {'case_seconds': 180, 'wall_seconds': 540, 'parallel': 1}
+BUDGET_RESOURCE_ARGS = ['--cpus=4', '--memory=12g', '--memory-swap=12g', '--pids-limit=256',
+    '--tmpfs=/work:rw,nosuid,nodev,noexec,size=9663676416,mode=1777']
+
+
+def _budget_replace(text, old, new, count=1):
+    if text.count(old) != count:
+        raise ValueError('diagnostic_budget_source_anchor')
+    return text.replace(old, new)
+
+
+def budget_program(allowed_commands):
+    """Adapt pinned collector code locally; never edit its production defaults."""
+    from nico.assessment_cpp_project_static import PROGRAM
+    if sha(PROGRAM.encode()) != BUDGET_COLLECTOR_SHA256:
+        raise ValueError('diagnostic_budget_collector_identity')
+    if (not isinstance(allowed_commands, list) or len(allowed_commands) != 1
+            or not isinstance(allowed_commands[0], list)
+            or '--project=/work/analysis/static-baseline/u2.json' not in allowed_commands[0]):
+        raise ValueError('diagnostic_budget_command')
+    program = primary_program(stage_counters=True, allowed_commands=allowed_commands)
+    # The collector's aggregate deadline and version-probe ceiling stay intact.
+    program = _budget_replace(program,
+        "min(deadline, dispatch_start + limits['case_seconds']), native_environment)",
+        'min(deadline, dispatch_start + 180), native_environment)')
+    program = _budget_replace(program, 'time.monotonic()+90', 'time.monotonic()+180')
+    program = _budget_replace(program,
+        "expected = {2:'src/init/basic.cpp',4:'src/init/bitcoin-node.cpp',10:'src/compat/stdin.cpp'}",
+        "expected = {2:'src/init/basic.cpp'}")
+    program = _budget_replace(program, 'request=json.loads(raw)', '''payload=json.loads(raw)
+if not isinstance(payload, dict) or set(payload) != {'request','policy'}:
+    raise ValueError('diagnostic_budget_payload')
+request, policy = payload['request'], payload['policy']
+if (len(sys.argv) != 2 or hashlib.sha256(_canonical(policy)).hexdigest() != sys.argv[1]
+        or policy.get('schema') != 'nico.current-primary-budget-policy.v1'
+        or policy.get('limits') != {'case_seconds':180,'wall_seconds':540,'parallel':1}
+        or policy.get('parent_request_sha256') != hashlib.sha256(_canonical(request)).hexdigest()
+        or policy.get('selected_index') != 2 or type(policy.get('selected_index')) is not int
+        or policy.get('selected_path') != 'src/init/basic.cpp'
+        or policy.get('context_id') != request['contexts'][2]['context_id']
+        or policy.get('database_sha256') != request['contexts'][2]['analyzer_database_sha256']
+        or policy.get('invocation_sha256') != hashlib.sha256(_canonical(stage_allowed_commands[0])).hexdigest()):
+    raise ValueError('diagnostic_budget_policy')''')
+    program = _budget_replace(program, "schema='nico.current-primary-diagnostic.v1'",
+        "schema='nico.current-primary-budget-evidence.v1', execution_policy_sha256=sys.argv[1]")
+    program = _budget_replace(program,
+        'dispatched_indices=[2,4,10], diagnostic_parallel=1, retained_population=577)',
+        'dispatched_indices=[2], diagnostic_parallel=1, retained_population=577)')
+    program = _budget_replace(program,
+        "print(_canonical({'diagnostic_partial_record':row}).decode(), flush=True)",
+        "print(_canonical({'diagnostic_partial_record':row, 'execution_policy_sha256':sys.argv[1]}).decode(), flush=True)")
+    return program
+
+
+def create_budget_policy(retained, binding, image, binding_sha256, original_image):
+    """Hash policy-independent executable first; policy is supplied as data."""
+    from scripts.native_stage_counters.binding import validate_binding
+    validate_binding(binding, image, binding_sha256, original_image)
+    selected = select_primary_cases(retained)[0]
+    program = budget_program([selected['invocation']])
+    return {'schema': BUDGET_POLICY_SCHEMA, 'mode': BUDGET_MODE,
+        'analyzer_source_revision': BUDGET_ANALYZER_SOURCE,
+        'controller_source_sha256': sha(Path(__file__).read_bytes()),
+        'input_archive_sha256': CURRENT_ARCHIVE_SHA,
+        'parent_request_sha256': sha(canonical_bytes(retained['primary_request'])),
+        'retained_population': 577, 'selected_index': 2, 'selected_path': 'src/init/basic.cpp',
+        'context_id': selected['context_id'], 'database_sha256': selected['database_sha256'],
+        'invocation_sha256': sha(canonical_bytes(selected['invocation'])),
+        'limits': dict(BUDGET_LIMITS), 'resource_args': list(BUDGET_RESOURCE_ARGS),
+        'image': image, 'original_image': original_image, 'runtime_binding_sha256': binding_sha256,
+        'collector_sha256': BUDGET_COLLECTOR_SHA256, 'validator_sha256': BUDGET_VALIDATOR_SHA256,
+        'program_sha256': sha(program.encode()),
+        'production_qualified': False, 'assessment_completed': False, 'full_project_qualified': False}
+
+
+def validate_budget_policy(policy, expected_sha256, retained, binding, image, binding_sha256, original_image):
+    expected = create_budget_policy(retained, binding, image, binding_sha256, original_image)
+    if (not isinstance(policy, dict) or policy != expected
+            or expected_sha256 != sha(canonical_bytes(policy))
+            or any(type(policy['limits'][key]) is not int for key in BUDGET_LIMITS)
+            or type(policy['selected_index']) is not int
+            or any(policy[key] is not False for key in
+                   ('production_qualified','assessment_completed','full_project_qualified'))):
+        raise ValueError('diagnostic_budget_policy')
+    return policy
+
+
+def validate_budget_evidence(raw, request, policy, policy_sha256):
+    """Use pinned correctness checks on actual diagnostic bytes and one context.
+
+    No partial production request or reserialized native evidence is constructed.
+    The original request digest remains bound; only this private validator's
+    selected record population, schema and declared duration ceiling differ.
+    """
+    import inspect
+    from nico import assessment_cpp_project_static as static
+    source = inspect.getsource(static.validate_project_static)
+    if sha(source.encode()) != BUDGET_VALIDATOR_SHA256:
+        raise ValueError('diagnostic_budget_validator_identity')
+    if not isinstance(raw, bytes) or not 0 < len(raw) <= static.STREAM_LIMIT:
+        raise ValueError('diagnostic_budget_evidence_limit')
+    value = json.loads(raw)
+    if (policy_sha256 != sha(canonical_bytes(policy))
+            or policy.get('parent_request_sha256') != sha(canonical_bytes(request))
+            or len(request.get('contexts', [])) != 577
+            or request['contexts'][2]['index'] != 2
+            or request['contexts'][2]['path'] != 'src/init/basic.cpp'
+            or policy.get('context_id') != request['contexts'][2]['context_id']
+            or policy.get('database_sha256') != request['contexts'][2]['analyzer_database_sha256']
+            or value.get('execution_policy_sha256') != policy_sha256
+            or value.get('schema') != BUDGET_EVIDENCE_SCHEMA
+            or value.get('dispatched_indices') != [2] or value.get('diagnostic_parallel') != 1
+            or value.get('retained_population') != 577 or value.get('diagnostic_flags') != DIAGNOSTIC_FLAGS
+            or any(value.get(key) is not False for key in
+                   ('production_qualified','assessment_completed','full_project_qualified'))):
+        raise ValueError('diagnostic_budget_evidence_policy')
+    rows = value.get('records')
+    if not isinstance(rows, list) or len(rows) != 1:
+        raise ValueError('diagnostic_budget_record_count')
+    executed = request['contexts'][2]['analyzer_invocation'] + DIAGNOSTIC_FLAGS
+    if rows[0].get('executed_invocation') != (executed if rows[0].get('execution') is not None else None):
+        raise ValueError('diagnostic_budget_executed_command')
+    source = _budget_replace(source, "request['contexts']", 'selected_contexts', 3)
+    source = _budget_replace(source, 'native_evidence_sha256 = _digest(raw)',
+        "native_evidence_sha256 = _digest(raw)\n    selected_contexts = [request['contexts'][2]]")
+    source = _budget_replace(source,
+        "fields = {'schema', 'request_sha256', 'analyst_uid', 'version', 'records', 'duration_ms'}",
+        "fields = {'schema', 'request_sha256', 'analyst_uid', 'version', 'records', 'duration_ms',\n"
+        "        'execution_policy_sha256','production_qualified','assessment_completed','full_project_qualified',\n"
+        "        'diagnostic_flags','dispatched_indices','diagnostic_parallel','retained_population'}")
+    source = _budget_replace(source, "request['schema'].replace('-request.', '-evidence.')",
+        repr(BUDGET_EVIDENCE_SCHEMA))
+    source = _budget_replace(source, "_execution(row['execution'], 93000)",
+        "_execution(row['execution'], 183000)")
+    source = _budget_replace(source, 'compact_fields = legacy_fields |',
+        "legacy_fields |= {'executed_invocation'}\n    compact_fields = legacy_fields |")
+    source = _budget_replace(source,
+        "evidence['duration_ms'] * _request_limits(request)['parallel']",
+        "evidence['duration_ms'] * 1")
+    namespace = dict(vars(static))
+    exec(compile(source, '<pinned-budget-validator>', 'exec'), namespace)
+    checked = namespace['validate_project_static'](raw, request)
+    return {**checked, 'case_complete': checked['complete']
+        and checked.get('header_context_evidence_complete') is True,
+        'complete': False, 'production_qualified': False,
+        'assessment_completed': False, 'full_project_qualified': False}
 
 
 def retained_operation_artifact(archive, receipt, key):
@@ -796,7 +956,8 @@ def verify_primary_runtime(observed, stage_binding=None):
         raise ValueError('diagnostic_rebuilt_tool_identity')
 
 
-def run_primary(source, targets, image, output, retained, *, stage_binding=None, stage_binding_sha256=None, original_image=None):
+def run_primary(source, targets, image, output, retained, *, stage_binding=None, stage_binding_sha256=None, original_image=None,
+                execution_policy=None, execution_policy_sha256=None):
     from nico.assessment_cpp_project_snapshot import PROJECT_RESTORE_PROGRAM
     from nico.assessment_cpp_static_environment import environment_request, validate_environment, ENV_PROGRAM, ENV_STREAM_LIMIT
     from nico.assessment_cpp_project_static import STREAM_LIMIT
@@ -804,6 +965,12 @@ def run_primary(source, targets, image, output, retained, *, stage_binding=None,
     if stage_binding is not None:
         from scripts.native_stage_counters.binding import validate_binding
         validate_binding(stage_binding, image, stage_binding_sha256, original_image)
+    if execution_policy is not None:
+        validate_budget_policy(execution_policy, execution_policy_sha256, retained,
+            stage_binding, image, stage_binding_sha256, original_image)
+        selected = selected[:1]
+    elif execution_policy_sha256 is not None:
+        raise ValueError('diagnostic_budget_policy_required')
     snapshot = retained['snapshot']
     result = {'scope':'three_current_primary_contexts','complete':False,
         'selected':selected,'retained_population':577,'unselected_contexts':574,
@@ -815,7 +982,13 @@ def run_primary(source, targets, image, output, retained, *, stage_binding=None,
     if stage_binding is not None:
         result['stage_runtime_binding'] = stage_binding
         result['stage_runtime_binding_sha256'] = stage_binding_sha256
-    box = Sandbox(source,targets,image,output,executable=False,seconds=540)
+    if execution_policy is not None:
+        result.update(scope='one_current_context_declared_budget', selected=selected,
+            unselected_contexts=576, case_seconds=180, execution_policy=execution_policy,
+            execution_policy_sha256=execution_policy_sha256,
+            original_request_sha256=execution_policy['parent_request_sha256'])
+    box = Sandbox(source,targets,image,output,executable=False,seconds=540,
+        **({'expected_resource_args': execution_policy['resource_args']} if execution_policy is not None else {}))
     try:
         with box:
             identity = "import hashlib,json,pathlib; paths=['/usr/local/bin/cppcheck','/opt/nico-clang-header-observer.so']; assert all(pathlib.Path(p).is_file() and pathlib.Path(p).stat().st_size <= 32*1024*1024 for p in paths); print(json.dumps({p:hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() for p in paths}))"
@@ -837,10 +1010,15 @@ def run_primary(source, targets, image, output, retained, *, stage_binding=None,
             if {k:v for k,v in model.items() if k not in ignored} != {k:v for k,v in retained['environment'].items() if k not in ignored}:
                 raise ValueError('diagnostic_environment_bytes_changed')
             before=box.resources('resources-before')
-            commands = [retained['primary_request']['contexts'][i]['analyzer_invocation'] + DIAGNOSTIC_FLAGS for i in CURRENT_CASES]
-            program = primary_program(stage_counters=stage_binding is not None, allowed_commands=commands)
-            native=box.exec('current-primary',['python3','-I','-S','-c',program],user='1001:1001',
-                data=canonical_bytes(retained['primary_request']),seconds=540,limit=STREAM_LIMIT,require=False)
+            commands = [row['invocation'] for row in selected]
+            program = (budget_program(commands) if execution_policy is not None else
+                primary_program(stage_counters=stage_binding is not None, allowed_commands=commands))
+            payload = ({'request':retained['primary_request'], 'policy':execution_policy}
+                       if execution_policy is not None else retained['primary_request'])
+            program_args = [execution_policy_sha256] if execution_policy is not None else []
+            native=box.exec('current-primary',
+                ['python3','-I','-S','-c',program,*program_args],user='1001:1001',
+                data=canonical_bytes(payload),seconds=540,limit=STREAM_LIMIT,require=False)
             result.update(exit_code=native['exit_code'],
                           timed_out=native['timed_out'],output_truncated=native['output_truncated'])
             if stage_binding is not None:
@@ -856,11 +1034,23 @@ def run_primary(source, targets, image, output, retained, *, stage_binding=None,
                 return result
             result['resources_delta']=metrics_delta(before,after)
             if native['exit_code']==0 and not native['timed_out'] and not native['output_truncated']:
-                evidence=json.loads(native['output'].splitlines()[-1])
-                if evidence.get('schema')!='nico.current-primary-diagnostic.v1' or [r['context_id'] for r in evidence['records']] != [r['context_id'] for r in selected]:
+                evidence_raw = native['output'].splitlines()[-1]
+                evidence=json.loads(evidence_raw)
+                expected_schema = BUDGET_EVIDENCE_SCHEMA if execution_policy is not None else 'nico.current-primary-diagnostic.v1'
+                if evidence.get('schema')!=expected_schema or [r['context_id'] for r in evidence['records']] != [r['context_id'] for r in selected]:
                     raise ValueError('diagnostic_result_binding')
                 result['evidence']=evidence
-                result['complete']=all(r['execution'] and r['execution']['exit_code']==0 and not r['execution']['timed_out'] and not r['execution']['output_truncated'] and r['error'] is None for r in evidence['records'])
+                if execution_policy is not None:
+                    try:
+                        checked = validate_budget_evidence(evidence_raw,
+                            retained['primary_request'], execution_policy, execution_policy_sha256)
+                    except Exception as exc:
+                        result['case_validation_error'] = str(exc)
+                        raise
+                    result['case_validation'] = checked
+                    result['case_complete'] = checked['case_complete']
+                else:
+                    result['complete']=all(r['execution'] and r['execution']['exit_code']==0 and not r['execution']['timed_out'] and not r['execution']['output_truncated'] and r['error'] is None for r in evidence['records'])
     finally:
         result.update(boundary_verified=box.receipt['boundary_verified'],cleanup_verified=box.receipt['cleanup_verified'])
         box.receipt['result']=result;box.save()
@@ -894,12 +1084,14 @@ def main():
     parser.add_argument('--archive-sha256',required=True)
     parser.add_argument('--qualification-source',type=Path,required=True)
     parser.add_argument('--qualification-manifest',type=Path,required=True)
-    parser.add_argument('--mode',choices=['current-primary'],required=True)
+    parser.add_argument('--mode',choices=['current-primary', BUDGET_MODE],required=True)
     parser.add_argument('--image',required=True)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--stage-runtime-binding',type=Path)
     parser.add_argument('--stage-runtime-binding-sha256')
     parser.add_argument('--original-image')
+    parser.add_argument('--execution-policy',type=Path)
+    parser.add_argument('--execution-policy-sha256')
     args = parser.parse_args()
     if args.archive_sha256 != CURRENT_ARCHIVE_SHA:
         raise ValueError('diagnostic_current_archive_required')
@@ -909,22 +1101,44 @@ def main():
         stage_binding = load_binding(args.stage_runtime_binding, args.image, args.stage_runtime_binding_sha256, args.original_image)
     elif args.stage_runtime_binding_sha256 is not None or args.original_image is not None:
         raise ValueError('diagnostic_stage_binding_required')
+    if args.mode == BUDGET_MODE:
+        if (stage_binding is None or args.execution_policy is None
+                or args.execution_policy_sha256 is None):
+            raise ValueError('diagnostic_budget_policy_required')
+        raw_policy = args.execution_policy.read_bytes()
+        if len(raw_policy) > 16384:
+            raise ValueError('diagnostic_budget_policy_limit')
+        execution_policy = json.loads(raw_policy)
+    else:
+        if args.execution_policy is not None or args.execution_policy_sha256 is not None:
+            raise ValueError('diagnostic_budget_mode_required')
+        execution_policy = None
     args.output.mkdir(mode=0o700)
     outcome={'schema':'nico.current-primary-diagnostic-controller.v1',
              **diagnostic_status(False,False,False,False)}
+    if execution_policy is not None:
+        outcome.update(schema='nico.current-primary-budget-controller.v1',
+            execution_policy=execution_policy,execution_policy_sha256=args.execution_policy_sha256)
     import tempfile
     from scripts.qualify_cpp_project_configuration import freeze_configuration_checkout
     try:
         retained=load_retained(args.archive,args.archive_sha256,args.qualification_manifest.read_bytes(),current_primary=True)
         select_primary_cases(retained)
+        if execution_policy is not None:
+            validate_budget_policy(execution_policy,args.execution_policy_sha256,retained,
+                stage_binding,args.image,args.stage_runtime_binding_sha256,args.original_image)
         with tempfile.TemporaryDirectory(prefix='nico-current-primary-') as temporary:
             root=Path(temporary)/'source'
             source=freeze_configuration_checkout(args.qualification_source,root,retained['manifest'])
             if source['targets'] != retained['receipt']['source']['targets']:
                 raise ValueError('diagnostic_frozen_population_mismatch')
-            outcome['static']=run_primary(root,source['targets'],args.image,args.output/'static',retained,stage_binding=stage_binding,stage_binding_sha256=args.stage_runtime_binding_sha256,original_image=args.original_image)
+            outcome['static']=run_primary(root,source['targets'],args.image,args.output/'static',retained,
+                stage_binding=stage_binding,stage_binding_sha256=args.stage_runtime_binding_sha256,
+                original_image=args.original_image,execution_policy=execution_policy,
+                execution_policy_sha256=args.execution_policy_sha256)
             result=outcome['static']
-            outcome.update(diagnostic_status(True,result['complete'],result['boundary_verified'],result['cleanup_verified']))
+            case_complete = result.get('case_complete', False) if execution_policy is not None else result['complete']
+            outcome.update(diagnostic_status(True,case_complete,result['boundary_verified'],result['cleanup_verified']))
     except Exception as exc:
         outcome['error']=str(exc) if str(exc).startswith('diagnostic_') else type(exc).__name__
         raise
