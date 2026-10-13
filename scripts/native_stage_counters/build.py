@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -47,6 +48,29 @@ def prepare(context, recipe, destination):
     return receipt
 
 
+def cleanup_capture_container(name, owner):
+    """Resolve the invocation's label before removing its exact container ID."""
+    inspected = subprocess.run(
+        ['docker', 'inspect', '--type=container', '--format={{json .}}', name],
+        check=False, capture_output=True, timeout=15)
+    if inspected.returncode:
+        # A failed create may have left no container. Other daemon failures are
+        # not evidence of absence and must remain visible.
+        missing = {f'Error: No such object: {name}', f'Error: No such container: {name}'}
+        if inspected.stderr.decode(errors='replace').strip() in missing:
+            return
+        raise subprocess.CalledProcessError(inspected.returncode, inspected.args,
+                                            inspected.stdout, inspected.stderr)
+    value = json.loads(inspected.stdout)
+    container_id = value.get('Id', '')
+    if (value.get('Name') != '/' + name
+            or value.get('Config', {}).get('Labels', {}).get('nico.stage.capture-owner') != owner
+            or not re.fullmatch(r'[a-f0-9]{64}', container_id)):
+        raise ValueError('diagnostic_stage_cleanup_ownership_mismatch')
+    subprocess.run(['docker', 'rm', '--force', container_id],
+                   check=True, capture_output=True, timeout=15)
+
+
 def capture(original_image, image, output, recipe):
     """Read tool bytes from stopped containers, never execute their entrypoints."""
     output.mkdir()
@@ -55,8 +79,12 @@ def capture(original_image, image, output, recipe):
         if not __import__('re').fullmatch(r'sha256:[a-f0-9]{64}',identity):
             raise ValueError('diagnostic_stage_image_invalid')
         name='nico-stage-bind-'+uuid4().hex
-        subprocess.run(['docker','create','--name',name,'--network=none','--read-only','--entrypoint=/bin/true',identity],check=True,capture_output=True,timeout=15)
+        owner=uuid4().hex
+        failure=None
         try:
+            subprocess.run(['docker','create','--name',name,'--label','nico.stage.capture-owner='+owner,
+                            '--network=none','--read-only','--entrypoint=/bin/true',identity],
+                           check=True,capture_output=True,timeout=15)
             for key,path in [('binary','/usr/local/bin/cppcheck'),('observer','/opt/nico-clang-header-observer.so')]:
                 target=output/(kind+'-'+key)
                 subprocess.run(['docker','cp',name+':'+path,str(target)],check=True,capture_output=True,timeout=15)
@@ -65,8 +93,17 @@ def capture(original_image, image, output, recipe):
                 target=output/'overlay.json'
                 subprocess.run(['docker','cp',name+':/opt/nico-stage-overlay/stage-counter-receipt.json',str(target)],check=True,capture_output=True,timeout=15)
                 overlay=validate_overlay(json.loads(target.read_text()))
+        except BaseException as exc:
+            failure=exc
+            raise
         finally:
-            subprocess.run(['docker','rm','--force',name],check=True,capture_output=True,timeout=15)
+            try:
+                cleanup_capture_container(name, owner)
+            except Exception as cleanup_error:
+                if failure is None:
+                    raise
+                failure.add_note('diagnostic_stage_cleanup_failed: '
+                                 + type(cleanup_error).__name__ + ': ' + str(cleanup_error))
     if hashes['original-binary'] != ORIGINAL_BINARY_SHA256 or any(hashes[k+'-observer']!=OBSERVER_SHA256 for k in ('original','instrumented')):
         raise ValueError('diagnostic_stage_original_tool_identity')
     # Recipe identity is re-derived independently from the reviewed production file.

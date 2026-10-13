@@ -320,3 +320,108 @@ def test_case_counter_retention_survives_outer_incomplete_json():
     invalid=collect_case_snapshots(json.dumps({'diagnostic_partial_record':row}).encode(),
                                    {'instrumented_binary_sha256':'a'*64},['owned-case'])
     assert invalid[0]['error']=='stage_execution_output_binding' and invalid[0]['snapshots'] is None
+
+
+@pytest.mark.parametrize('failure_point', ['create_timeout', 'create_error', 'extract_error'])
+@pytest.mark.parametrize('cleanup', ['removed', 'absent', 'inspect_error', 'inspect_timeout',
+                                     'remove_error', 'remove_timeout', 'foreign'])
+def test_capture_failure_cleans_only_owned_container_and_preserves_failure(
+        tmp_path, monkeypatch, failure_point, cleanup):
+    import json
+    import subprocess
+    from scripts.native_stage_counters import build
+    calls=[]; ownership={}; container_id='d'*64
+    original=(subprocess.TimeoutExpired(['docker','create'],15) if failure_point=='create_timeout'
+              else subprocess.CalledProcessError(1,['docker',failure_point],stderr=b'original failure'))
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        assert kwargs['timeout']==15 and kwargs['capture_output'] is True
+        operation=argv[1]
+        if operation=='create':
+            ownership['name']=argv[argv.index('--name')+1]
+            ownership['owner']=argv[argv.index('--label')+1].split('=',1)[1]
+            if failure_point.startswith('create'): raise original
+        elif operation=='cp':
+            assert argv[2].startswith(ownership['name']+':')
+            raise original
+        elif operation=='inspect':
+            assert argv[-1]==ownership['name']
+            if cleanup=='inspect_timeout':raise subprocess.TimeoutExpired(argv,15)
+            if cleanup in ('absent','inspect_error'):
+                error=(f"Error: No such object: {ownership['name']}".encode()
+                       if cleanup=='absent' else b'daemon unavailable')
+                return subprocess.CompletedProcess(argv,1,b'',error)
+            value={'Id':container_id,'Name':'/'+ownership['name'],
+                   'Config':{'Labels':{'nico.stage.capture-owner':
+                                      'someone-else' if cleanup=='foreign' else ownership['owner']}}}
+            return subprocess.CompletedProcess(argv,0,json.dumps(value).encode(),b'')
+        elif operation=='rm':
+            assert argv==['docker','rm','--force',container_id]
+            if cleanup=='remove_timeout':raise subprocess.TimeoutExpired(argv,15)
+            if cleanup=='remove_error':raise subprocess.CalledProcessError(1,argv,stderr=b'cleanup failure')
+        else:pytest.fail('Unexpected Docker operation: '+operation)
+        return subprocess.CompletedProcess(argv,0,b'',b'')
+
+    monkeypatch.setattr(build.subprocess,'run',run)
+    with pytest.raises(type(original)) as caught:
+        build.capture('sha256:'+'a'*64,'sha256:'+'b'*64,tmp_path/'out',tmp_path/'recipe')
+    assert caught.value is original
+    assert sum(call[1]=='create' for call in calls)==1
+    assert sum(call[1]=='inspect' for call in calls)==1
+    assert sum(call[1]=='rm' for call in calls)==int(cleanup in ('removed','remove_error','remove_timeout'))
+    notes=getattr(original,'__notes__',[])
+    if cleanup in ('removed','absent'):assert notes==[]
+    else:assert len(notes)==1 and notes[0].startswith('diagnostic_stage_cleanup_failed: ')
+    assert not (tmp_path/'out'/'binding.json').exists()
+
+
+@pytest.mark.parametrize('failure', ['timeout','error'])
+def test_cleanup_failure_after_successful_extraction_fails_capture(tmp_path, monkeypatch, failure):
+    import json
+    import subprocess
+    from scripts.native_stage_counters import build
+    owned={}; calls=[]; container_id='d'*64
+    cleanup_error=(subprocess.TimeoutExpired(['docker','rm'],15) if failure=='timeout'
+                   else subprocess.CalledProcessError(1,['docker','rm'],stderr=b'cleanup failure'))
+    def run(argv, **kwargs):
+        calls.append(argv)
+        assert kwargs['timeout']==15
+        if argv[1]=='create':
+            owned['name']=argv[argv.index('--name')+1]
+            owned['label']=argv[argv.index('--label')+1].split('=',1)[1]
+        elif argv[1]=='cp':Path(argv[-1]).write_bytes(b'owned fixture bytes')
+        elif argv[1]=='inspect':
+            value={'Id':container_id,'Name':'/'+owned['name'],
+                   'Config':{'Labels':{'nico.stage.capture-owner':owned['label']}}}
+            return subprocess.CompletedProcess(argv,0,json.dumps(value).encode(),b'')
+        elif argv[1]=='rm':
+            assert argv[-1]==container_id
+            raise cleanup_error
+        else:pytest.fail('Unexpected Docker operation')
+        return subprocess.CompletedProcess(argv,0,b'',b'')
+    monkeypatch.setattr(build.subprocess,'run',run)
+    with pytest.raises(type(cleanup_error)) as caught:
+        build.capture('sha256:'+'a'*64,'sha256:'+'b'*64,tmp_path/'out',tmp_path/'recipe')
+    assert caught.value is cleanup_error
+    assert [c[1] for c in calls]==['create','cp','cp','inspect','rm']
+    assert not (tmp_path/'out'/'binding.json').exists()
+
+
+@pytest.mark.parametrize('changed', ['name','id','label'])
+def test_cleanup_never_removes_unverified_container(monkeypatch, changed):
+    import json
+    import subprocess
+    from scripts.native_stage_counters import build
+    value={'Id':'a'*64,'Name':'/owned','Config':{'Labels':{'nico.stage.capture-owner':'token'}}}
+    if changed=='name':value['Name']='/other'
+    elif changed=='id':value['Id']='ambiguous-prefix'
+    else:value['Config']['Labels']={}
+    calls=[]
+    def run(argv, **kwargs):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv,0,json.dumps(value).encode(),b'')
+    monkeypatch.setattr(build.subprocess,'run',run)
+    with pytest.raises(ValueError,match='ownership_mismatch'):
+        build.cleanup_capture_container('owned','token')
+    assert len(calls)==1 and calls[0][1]=='inspect'
