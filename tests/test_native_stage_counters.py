@@ -186,11 +186,12 @@ def runtime_binding():
              'activation':{'environment':'NICO_CPP_STAGE_COUNTERS','exact_value':'1'},
              'members':[{'path':p,'before_sha256':b.SOURCE_SHA256[p],'after_sha256':b.AFTER_SHA256[p],
                          'semantic_bytes_restored':True} for p in sorted(b.SOURCE_SHA256)]}
-    return {'schema':'nico.stage-runtime-binding.v1','original_image':'sha256:'+'b'*64,'image':'sha256:'+'c'*64,
+    return {'schema':'nico.stage-runtime-binding.v2','original_image':'sha256:'+'b'*64,'image':'sha256:'+'c'*64,
             'original_binary_sha256':b.ORIGINAL_BINARY_SHA256,'instrumented_binary_sha256':'a'*64,
             'observer_sha256':b.OBSERVER_SHA256,'original_archive_sha256':b.ARCHIVE_SHA256,'flags':b.FLAGS,
             'build_flags':b.BUILD_FLAGS,'compiler_version':'14.2.0','activation':overlay['activation'],
-            'build_verified':True,'overlay':overlay,'recipe':recipe}
+            'build_verified':True,'overlay':overlay,'recipe':recipe,'grouping':b.expected_grouping(),
+            'candidate_patch_sha256':b.CANDIDATE_PATCH_SHA256,'candidate_source_sha256':dict(b.AFTER_SHA256)}
 
 
 def test_runtime_binding_preserves_original_archive_authentication():
@@ -425,3 +426,151 @@ def test_cleanup_never_removes_unverified_container(monkeypatch, changed):
     with pytest.raises(ValueError,match='ownership_mismatch'):
         build.cleanup_capture_container('owned','token')
     assert len(calls)==1 and calls[0][1]=='inspect'
+
+
+@pytest.mark.parametrize('part', ['old_schema','old_binary','local_ungrouped_counters','local_grouping_binary',
+                                  'grouping_missing','grouping_before','grouping_after',
+                                  'combined_source','combined_overlay','group_script','candidate_patch'])
+def test_grouped_binding_rejects_stale_or_substituted_composition(part):
+    from scripts.native_stage_counters import binding as b
+    value=runtime_binding()
+    if part=='old_schema': value['schema']='nico.stage-runtime-binding.v1'
+    elif part=='old_binary': value['instrumented_binary_sha256']=b.PRE_GROUPING_BINARY_SHA256
+    elif part=='local_ungrouped_counters': value['instrumented_binary_sha256']='ed79c96b90b246110b696290e580b555ffdc7438c6f6b878adc0bee48e9911c7'
+    elif part=='local_grouping_binary': value['instrumented_binary_sha256']=b.LOCAL_UNINSTRUMENTED_BINARY_SHA256
+    elif part=='grouping_missing': value.pop('grouping')
+    elif part=='grouping_before': value['grouping']['input_sha256']['lib/token.cpp']='0'*64
+    elif part=='grouping_after': value['grouping']['output_sha256']='0'*64
+    elif part=='combined_source': value['candidate_source_sha256']['lib/templatesimplifier.cpp']='0'*64
+    elif part=='combined_overlay': value['overlay']['overlay_identity_sha256']='4c82ebc973709634ad378c98ce0fd0c7fdfe4a73726b48503967de3c60319607'
+    elif part=='group_script': value['recipe']['grouping_script_sha256']='0'*64
+    else: value['candidate_patch_sha256']='0'*64
+    with pytest.raises(ValueError):
+        b.validate_binding(value,value['image'],b.binding_digest(value),value['original_image'])
+
+
+def test_grouping_order_and_exact_script_are_bound(tmp_path):
+    from scripts.native_stage_counters import build, binding as b, specialization_groups as groups
+    recipe=Path('docker/assessment-full-project-fuzz.Dockerfile')
+    updated, receipt=build.recipe_identity(recipe)
+    assert patch.digest(Path(groups.__file__).read_bytes())==b.GROUP_SCRIPT_SHA256
+    assert receipt['candidate_patch_sha256']==b.CANDIDATE_PATCH_SHA256
+    assert updated.index('patch_cppcheck_header_evidence.py /opt/tool-src') < updated.index('python3 /opt/nico-specialization-groups.py') < updated.index('python3 /opt/nico-stage-instrument.py') < updated.index('timeout 180s make')
+    assert b.SOURCE_SHA256['lib/templatesimplifier.cpp']==b.expected_grouping()['output_sha256']
+    # Neither order can silently apply to the other's output.
+    with pytest.raises(ValueError,match='source_identity_mismatch'):
+        patch.instrument('lib/templatesimplifier.cpp', b'old or altered source')
+    with pytest.raises(ValueError,match='source_identity'):
+        groups.transform(b'counter-modified source')
+
+
+def test_real_owned_verdict_requires_every_exact_case_and_existing_todos():
+    from scripts.native_stage_counters import owned_regressions as owned
+    names=owned.expected_names()
+    assert len(names)==253 and len(set(names))==253
+    assert names[:3]==['TestSimplifyTemplate::nicoGroupingRealDeclarationCallbacks',
+                      'TestSimplifyTemplate::nicoGroupingRealCopyUnregister',
+                      'TestSimplifyTemplate::nicoGroupingRepeatedExpansion']
+    stdout='\n'.join(names)+'\nNumber of tests: 253\nNumber of todos: 12\n'
+    stderr='Tests failed: 0\n'
+    execution={'exit_code':0,'timed_out':False}
+    assert owned.verdict(stdout,stderr,execution)['passed']
+    for changed in (stdout.replace(names[3]+'\n',''),stdout+names[3]+'\n',
+                    stdout.replace('253','0'),stdout.replace('todos: 12','todos: 11'),
+                    stdout.replace(names[3],names[3]+'not-real')):
+        assert not owned.verdict(changed,stderr,execution)['passed']
+    assert not owned.verdict(stdout,'Tests failed: 1\n',execution)['passed']
+    assert not owned.verdict(stdout,stderr,{'exit_code':1,'timed_out':False})['passed']
+    assert not owned.verdict(stdout,stderr,{'exit_code':0,'timed_out':True})['passed']
+
+
+def test_owned_harness_retains_failed_build_and_does_not_start_tests(tmp_path,monkeypatch,owned_tool_identities):
+    from scripts.native_stage_counters import owned_regressions as owned
+    source=tmp_path/'source';(source/'lib').mkdir(parents=True);(source/'test').mkdir()
+    raw=b'owned source'
+    for name in owned.AFTER_SHA256: (source/name).write_bytes(raw)
+    (source/'lib/nico_stage_counters.h').write_bytes(raw)
+    (source/'test/testsimplifytemplate.cpp').write_bytes(raw)
+    monkeypatch.setattr(owned,'AFTER_SHA256',{n:owned.digest(raw) for n in owned.AFTER_SHA256})
+    monkeypatch.setattr(owned,'HEADER_SHA256',owned.digest(raw))
+    monkeypatch.setattr(owned,'PRODUCTION_SOURCE_SHA256',{})
+    monkeypatch.setattr(owned,'apply_fixture',lambda *args:raw)
+    calls=[]
+    def phase(source,output,name,argv,seconds):
+        calls.append((name,seconds))
+        return {'exit_code':2,'timed_out':False,'error':None}
+    monkeypatch.setattr(owned,'run_phase',phase)
+    result=owned.run(source,tmp_path/'out')
+    assert not result['passed'] and len(result['tests_not_run'])==253
+    assert calls==[('build',300)] and (tmp_path/'out/result.json').is_file()
+
+
+def test_owned_patch_identity_checked_before_source_application():
+    from scripts.native_stage_counters import owned_regressions as owned
+    with pytest.raises(ValueError,match='input_identity'):
+        owned.apply_fixture(b'unreviewed', (owned.ROOT/'owned-fixtures.patch').read_bytes())
+    assert patch.digest((owned.ROOT/'owned-fixtures.patch').read_bytes())==owned.PATCH_SHA256
+
+
+def test_owned_phase_cleans_descendants_even_when_parent_exits_on_term(tmp_path,monkeypatch):
+    from scripts.native_stage_counters import owned_regressions as owned
+    import subprocess,signal
+    waits=[];signals=[];environments=[]
+    class Process:
+        pid=123456
+        def wait(self,timeout):
+            waits.append(timeout)
+            if len(waits)==1: raise subprocess.TimeoutExpired(['owned'],timeout)
+            return -signal.SIGTERM
+    def popen(argv,**kwargs):
+        environments.append(kwargs['env']);return Process()
+    monkeypatch.setattr(owned.subprocess,'Popen',popen)
+    monkeypatch.setattr(owned.os,'killpg',lambda pid,sig:signals.append((pid,sig)))
+    monkeypatch.setenv('MAKEFLAGS','-n')
+    receipt=owned.run_phase(tmp_path,tmp_path,'owned',['not-executed'],10)
+    assert receipt['timed_out'] and receipt['cleanup']=='remaining_group_killed'
+    assert signals==[(123456,signal.SIGTERM),(123456,signal.SIGKILL)]
+    assert 'MAKEFLAGS' not in environments[0] and 'NICO_CPP_STAGE_COUNTERS' not in environments[0]
+    assert (tmp_path/'owned.json').is_file()
+
+
+def test_owned_phase_start_failure_is_retained(tmp_path,monkeypatch):
+    from scripts.native_stage_counters import owned_regressions as owned
+    def popen(*args,**kwargs):raise PermissionError('owned denied')
+    monkeypatch.setattr(owned.subprocess,'Popen',popen)
+    receipt=owned.run_phase(tmp_path,tmp_path,'owned',['not-executed'],10)
+    assert receipt['exit_code'] is None and receipt['error']=='PermissionError: owned denied'
+    assert (tmp_path/'owned.json').is_file()
+
+
+def test_owned_harness_refuses_stale_objects_before_build(tmp_path,owned_tool_identities):
+    from scripts.native_stage_counters import owned_regressions as owned
+    source=tmp_path/'source';source.mkdir();(source/'stale.o').write_bytes(b'old')
+    with pytest.raises(ValueError,match='clean_build_required'):
+        owned.run(source,tmp_path/'out')
+    assert not (tmp_path/'out').exists()
+
+
+def test_owned_successful_build_without_binary_is_retained_as_failure(tmp_path,monkeypatch,owned_tool_identities):
+    from scripts.native_stage_counters import owned_regressions as owned
+    source=tmp_path/'source';(source/'lib').mkdir(parents=True);(source/'test').mkdir()
+    raw=b'owned source';(source/'lib/nico_stage_counters.h').write_bytes(raw)
+    (source/'test/testsimplifytemplate.cpp').write_bytes(raw)
+    monkeypatch.setattr(owned,'AFTER_SHA256',{})
+    monkeypatch.setattr(owned,'PRODUCTION_SOURCE_SHA256',{})
+    monkeypatch.setattr(owned,'HEADER_SHA256',owned.digest(raw))
+    monkeypatch.setattr(owned,'apply_fixture',lambda *args:raw)
+    monkeypatch.setattr(owned,'run_phase',lambda *args:{'exit_code':0,'timed_out':False,'error':None})
+    result=owned.run(source,tmp_path/'out')
+    assert not result['passed'] and result['error'].startswith('FileNotFoundError:')
+    assert len(result['tests_not_run'])==253 and (tmp_path/'out/result.json').is_file()
+
+
+@pytest.fixture
+def owned_tool_identities(tmp_path,monkeypatch):
+    # Pure Python harness tests must not depend on CI having the native compiler.
+    from scripts.native_stage_counters import owned_regressions as owned
+    executable=tmp_path/'owned-tool'; executable.write_bytes(b'owned, never executed')
+    for name in ('COMPILER','MAKE'):
+        monkeypatch.setattr(owned,name,executable)
+        monkeypatch.setattr(owned,name+'_SHA256',owned.digest(executable.read_bytes()))

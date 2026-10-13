@@ -1,0 +1,82 @@
+--- a/test/testsimplifytemplate.cpp
++++ b/test/testsimplifytemplate.cpp
+@@ -26,6 +26,8 @@
+ #include "tokenlist.h"
+ 
+ #include <cstring>
++#include <map>
++#include <list>
+ #include <sstream>
+ #include <string>
+ #include <vector>
+@@ -39,6 +41,9 @@
+     const Settings settings = settingsBuilder().severity(Severity::portability).build();
+ 
+     void run() override {
++        TEST_CASE(nicoGroupingRealDeclarationCallbacks);
++        TEST_CASE(nicoGroupingRealCopyUnregister);
++        TEST_CASE(nicoGroupingRepeatedExpansion);
+         TEST_CASE(template1);
+         TEST_CASE(template2);
+         TEST_CASE(template3);
+@@ -324,6 +329,60 @@
+         ASSERT_LOC(tokenizer.tokenize(code), file, line);
+ 
+         return tokenizer.tokens()->stringifyList(nullptr, true);
++    }
++
++
++    void nicoGroupingRealDeclarationCallbacks() {
++        SimpleTokenList tokens("template < > class Box ;");
++        Token* start = tokens.front();
++        Token* name = start->tokAt(4);
++        TemplateSimplifier::TokenAndName declaration(start, "ns", name, start->tokAt(2));
++        ASSERT(declaration.isSpecialization());
++        ASSERT(declaration.isClass());
++        ASSERT(!declaration.isAlias() && !declaration.isFriend());
++        std::map<std::string, std::list<const Token*>> groups;
++        groups[declaration.fullName()].push_back(declaration.nameToken());
++        groups[declaration.fullName()].push_back(declaration.nameToken());
++        ASSERT_EQUALS(2U, groups.at("ns :: Box").size());
++        name->str("Renamed");
++        ASSERT_EQUALS("Renamed", groups.at("ns :: Box").front()->str());
++        ASSERT_EQUALS("ns :: Box", declaration.fullName());
++        start->swapWithNext();
++        ASSERT(declaration.token() == start->next());
++        ASSERT(declaration.nameToken() == name);
++        ASSERT(declaration.isSpecialization() && declaration.isClass());
++        start->deleteNext();
++        ASSERT(declaration.token() == nullptr);
++        ASSERT(declaration.nameToken() == name);
++        ASSERT_EQUALS("ns :: Box", declaration.fullName());
++        ASSERT_EQUALS("Renamed", groups.at("ns :: Box").back()->str());
++        groups.clear();
++        ASSERT(groups.empty());
++    }
++
++    void nicoGroupingRealCopyUnregister() {
++        SimpleTokenList tokens("Box ;");
++        Token* name = tokens.front();
++        TemplateSimplifier::TokenAndName original(name, "ns");
++        ASSERT_EQUALS(1U, name->templateSimplifierPointers()->size());
++        {
++            TemplateSimplifier::TokenAndName copy(original);
++            ASSERT_EQUALS(2U, name->templateSimplifierPointers()->size());
++            name->swapWithNext();
++            ASSERT(original.token() == name->next());
++            ASSERT(copy.token() == name->next());
++        }
++        ASSERT_EQUALS(1U, name->next()->templateSimplifierPointers()->size());
++        name->deleteNext();
++        ASSERT(original.token() == nullptr);
++        ASSERT_EQUALS("ns :: Box", original.fullName());
++    }
++
++    void nicoGroupingRepeatedExpansion() {
++        const char code[] = "template <class T> T f(T val) { T a; }\nf<int>(10);";
++        const char expected[] = "int f<int> ( int val ) ; f<int> ( 10 ) ; int f<int> ( int val ) { int a ; }";
++        for (unsigned i = 0; i < 8; ++i)
++            ASSERT_EQUALS(expected, tok(code));
+     }
+ 
+     void template1() {

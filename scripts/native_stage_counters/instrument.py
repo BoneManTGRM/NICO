@@ -14,7 +14,7 @@ import stat
 
 SOURCE_SHA256 = {
     'lib/tokenize.cpp': '76beaa920046dbe057c5b20b09c043802351692657e2b3f269cf4612984eac88',
-    'lib/templatesimplifier.cpp': '61e6d1c8be0327fe8689c132b95ad519d95685e88d9766e8862e625b80e11d4f',
+    'lib/templatesimplifier.cpp': 'd77673074aa057005844006f6a8e7a97a3320155c2e538635463e2ab82028d13',
 }
 ORIGINAL_BINARY_SHA256 = 'f5215eabbc2666859254ace73a5f53eb991cb285f94a733d6682ea85f26d2544'
 HEADER = Path(__file__).with_name('nico_stage_counters.h')
