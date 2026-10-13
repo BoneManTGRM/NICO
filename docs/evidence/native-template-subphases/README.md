@@ -1,4 +1,7 @@
-# Local template subphase measurement
+# Held exact-per-transition candidate (historical)
+
+The results below describe c571221, retained without rewriting that commit or its
+receipts. The current sparse design is documented in ../native-sparse-intervals/README.md.
 
 Review-only base: 63f4e03068a386eddda4dc31c41e9f5d4b24579d. No hosted
 run, assessed input execution, publication, production recipe, workflow, scheduling

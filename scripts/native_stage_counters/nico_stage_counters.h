@@ -17,12 +17,14 @@ enum Field : unsigned {
     Phase, Pass, Call, Alias, OuterVisits, InnerVisits, ScopeNodes, MatchCalls,
     BaseQueries, BaseVisits, ScopeQueries, ChildVisits, Replacements, Instantiations,
     UsingCalls, Aliases, RhsDistanceCalls, RhsDistanceTokens, RhsParses, PreludeVisits,
-    SelectionCpuNs, MatchingCpuNs, ExpansionCpuNs, ReplacementCpuNs,
+    StableSelectionNs, StableMatchingNs, StableExpansionNs, StableReplacementNs,
     SelectionEntered, MatchingEntered, ExpansionEntered, ReplacementEntered,
     SelectionCompleted, MatchingCompleted, ExpansionCompleted, ReplacementCompleted,
     SelectionVisits, SpecializationVisits, SpecializationTokenVisits,
     ExpansionOuterVisits, ExpansionBodyVisits, ReplacementVisits, ReplacementNestedVisits,
-    ActiveBucket, BucketDepth, ThreadClockStatus, Count
+    ActiveBucket, BucketDepth, ThreadClockStatus,
+    TransitionId, TransitionSaturated, ClockReads,
+    UnattributedNs, OutsideNs, ObserverNs, IntervalNs, IntervalKind, Count
 };
 constexpr unsigned SampleOperations = 4096;
 constexpr unsigned MaxRecords = 128;
@@ -38,7 +40,8 @@ inline bool enabled() {
 struct State {
     std::uint64_t v[Count] = {};
     unsigned operations = 0;
-    std::uint64_t lastThreadNs = 0;
+    std::uint64_t lastThreadNs = 0, lastPostNs = 0, baselineTransition = 0, baselineBucket = 0;
+    bool baselineValid = false;
 };
 inline State& state() { static thread_local State value; return value; }
 inline unsigned lane() {
@@ -83,18 +86,61 @@ inline bool threadNow(std::uint64_t& ns) noexcept {
     return false;
 #endif
 }
-inline void checkpointCpu() noexcept {
+// Called only by accepted checkpoints, never by scope guards or visits.
+inline bool readThread(std::uint64_t& now) noexcept {
     State& s = state();
-    if (s.v[ThreadClockStatus] == 2) return;
-    std::uint64_t now = 0;
+    if (s.v[ThreadClockStatus] == 2) return false;
+    increment(s.v[ClockReads]);
     if (!threadNow(now) || (s.v[ThreadClockStatus] == 1 && now < s.lastThreadNs)) {
         s.v[ThreadClockStatus] = 2;
-        return;
+        s.baselineValid = false;
+        return false;
     }
-    if (s.v[ThreadClockStatus] == 1 && s.v[ActiveBucket])
-        addSaturated(s.v[SelectionCpuNs + s.v[ActiveBucket] - 1], now - s.lastThreadNs);
     s.lastThreadNs = now;
     s.v[ThreadClockStatus] = 1;
+    return true;
+}
+inline void transition() noexcept {
+    State& s = state();
+    increment(s.v[TransitionId]);
+    if (s.v[TransitionId] == std::numeric_limits<std::uint64_t>::max())
+        s.v[TransitionSaturated] = 1;
+}
+struct Checkpoint {
+    std::uint64_t pre = 0, transitionId = 0, bucket = 0;
+    bool valid = false;
+};
+// Interval kind: 0=prefix, 1..4=unchanged bucket, 5=mixed/saturated,
+// 6=outside measured scopes, 7=clock unavailable. Prefix/tail remain unknown.
+inline Checkpoint beginCheckpoint() noexcept {
+    State& s = state();
+    Checkpoint c;
+    c.transitionId = s.v[TransitionId]; c.bucket = s.v[ActiveBucket];
+    c.valid = readThread(c.pre);
+    s.v[IntervalNs] = 0;
+    s.v[IntervalKind] = c.valid ? 0 : 7;
+    if (c.valid && s.baselineValid) {
+        const auto delta = c.pre - s.lastPostNs;
+        s.v[IntervalNs] = delta;
+        if (!s.v[TransitionSaturated] && c.transitionId == s.baselineTransition && c.bucket == s.baselineBucket) {
+            s.v[IntervalKind] = c.bucket ? c.bucket : 6;
+            addSaturated(s.v[c.bucket ? StableSelectionNs + c.bucket - 1 : OutsideNs], delta);
+        } else {
+            s.v[IntervalKind] = 5;
+            addSaturated(s.v[UnattributedNs], delta);
+        }
+    }
+    return c;
+}
+inline void endCheckpoint(const Checkpoint& c) noexcept {
+    State& s = state();
+    std::uint64_t post = 0;
+    if (!c.valid || !readThread(post)) { s.baselineValid = false; return; }
+    addSaturated(s.v[ObserverNs], post - c.pre);
+    s.lastPostNs = post;
+    // A reentrant transition during checkpoint processing invalidates attribution.
+    s.baselineValid = c.transitionId == s.v[TransitionId] && c.bucket == s.v[ActiveBucket];
+    s.baselineTransition = s.v[TransitionId]; s.baselineBucket = s.v[ActiveBucket];
 }
 class TemplateScope {
     unsigned bucket;
@@ -103,7 +149,7 @@ public:
     explicit TemplateScope(unsigned value) noexcept : bucket(value) {
         if (!enabled()) return;
         State& s = state();
-        checkpointCpu();
+        transition();
         previous = s.v[ActiveBucket]; depth = s.v[BucketDepth];
         s.v[ActiveBucket] = bucket;
         increment(s.v[BucketDepth]);
@@ -112,7 +158,7 @@ public:
     ~TemplateScope() noexcept {
         if (!enabled()) return;
         State& s = state();
-        checkpointCpu();
+        transition();
         if (!std::uncaught_exception())
             increment(s.v[SelectionCompleted + bucket - 1]);
         s.v[ActiveBucket] = previous; s.v[BucketDepth] = depth;
@@ -125,7 +171,6 @@ inline void emit(unsigned event, unsigned kind) {
     Output& o = output();
     if (o.busy.test_and_set(std::memory_order_acquire)) return;
     const auto now = std::chrono::steady_clock::now();
-    checkpointCpu();
     const unsigned bit = event == 1 ? (1U << kind) : 0;
     // At most three first-entry records bypass the global one-second limit.
     const bool first = bit && !(o.firstEntries & bit);
@@ -137,10 +182,11 @@ inline void emit(unsigned event, unsigned kind) {
     o.firstEntries |= bit;
     o.last = now;
     ++o.records;
+    const Checkpoint checkpoint = beginCheckpoint();
     char line[MaxRecordBytes];
     const auto wall = std::chrono::duration_cast<std::chrono::microseconds>(now - o.start).count();
     const std::clock_t cpu = std::clock();
-    int size = std::snprintf(line, sizeof(line), "NICO_STAGE_V2 %u %u %u %u %llu %lld %llu",
+    int size = std::snprintf(line, sizeof(line), "NICO_STAGE_V3 %u %u %u %u %llu %lld %llu",
         o.records, event, kind, lane(), static_cast<unsigned long long>(wall),
         static_cast<long long>(cpu), static_cast<unsigned long long>(CLOCKS_PER_SEC));
     for (unsigned i = 0; i < Count && size > 0 && size < static_cast<int>(sizeof(line)) - 1; ++i) {
@@ -154,6 +200,7 @@ inline void emit(unsigned event, unsigned kind) {
         (void)std::fwrite(line, 1, static_cast<unsigned>(size), stderr);
         (void)std::fflush(stderr); // Entry/progress survives abrupt process termination.
     }
+    endCheckpoint(checkpoint);
     o.busy.clear(std::memory_order_release);
 }
 inline void bump(Field field) {

@@ -5,7 +5,7 @@ import re
 import pytest
 
 from scripts.native_stage_counters import instrument as patch
-from scripts.native_stage_counters.evidence import FIELDS, FIELDS_V2, parse_snapshots
+from scripts.native_stage_counters.evidence import FIELDS, FIELDS_V3, parse_snapshots
 
 
 def record(seq=1, event=1, phase=3, inner=0):
@@ -121,7 +121,7 @@ def test_header_counter_order_matches_evidence_contract():
     enum = re.search(r'enum Field : unsigned \{(.*?)Count\n\};', header, re.S).group(1)
     names = [n.strip() for n in enum.split(',') if n.strip()]
     snake = lambda name: re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
-    assert [snake(n) for n in names] == list(FIELDS_V2)
+    assert [snake(n) for n in names] == list(FIELDS_V3)
 
 
 def test_full_record_budget_is_accepted_but_never_qualified():
@@ -207,7 +207,7 @@ def runtime_binding():
              'activation':{'environment':'NICO_CPP_STAGE_COUNTERS','exact_value':'1'},
              'members':[{'path':p,'before_sha256':b.SOURCE_SHA256[p],'after_sha256':b.AFTER_SHA256[p],
                          'semantic_bytes_restored':True} for p in sorted(b.SOURCE_SHA256)]}
-    return {'schema':'nico.stage-runtime-binding.v3','record_version':2,'original_image':'sha256:'+'b'*64,'image':'sha256:'+'c'*64,
+    return {'schema':'nico.stage-runtime-binding.v4','record_version':3,'original_image':'sha256:'+'b'*64,'image':'sha256:'+'c'*64,
             'original_binary_sha256':b.ORIGINAL_BINARY_SHA256,'instrumented_binary_sha256':'a'*64,
             'observer_sha256':b.OBSERVER_SHA256,'original_archive_sha256':b.ARCHIVE_SHA256,'flags':b.FLAGS,
             'build_flags':b.BUILD_FLAGS,'compiler_version':'14.2.0','activation':overlay['activation'],

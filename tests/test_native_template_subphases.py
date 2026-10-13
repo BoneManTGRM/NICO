@@ -16,18 +16,19 @@ def binary(tmp_path_factory):
     assert result.returncode==0,result.stderr.decode()
     return path
 
-@pytest.mark.parametrize('mode',['scopes','snapshot','clock','unavailable','caps','mutation','rate','visit-clock','backward'])
+@pytest.mark.parametrize('mode',['scopes','snapshot','clock','unavailable','caps','mutation','rate','visit-clock','backward','post-failure','saturation','cross-checkpoint'])
 def test_owned_accounting(binary,mode):
     r=subprocess.run([str(binary),mode],env={**os.environ,'NICO_CPP_STAGE_COUNTERS':'1'},capture_output=True,timeout=5)
     assert r.returncode==0,(r.stdout,r.stderr)
-    parsed=e.parse_snapshots(r.stderr,timed_out=mode=='snapshot',binary_sha256='a'*64,expected_version=2)
+    parsed=e.parse_snapshots(r.stderr,timed_out=mode=='snapshot',binary_sha256='a'*64,expected_version=3)
     if mode=='caps':assert len(parsed['records'])==128
+    if mode=='scopes':assert parsed['records'][-1]['transition_id']==10
     if mode=='snapshot':
-        row=parsed['records'][0]
+        row=parsed['records'][-1]
         assert row['active_bucket']==3 and row['bucket_depth']==2
-        assert row['selection_cpu_ns']==10 and row['expansion_cpu_ns']==30
+        assert row['stable_selection_ns']==0 and row['stable_expansion_ns']==30
         assert row['expansion_completed']==0
-    if mode in ('clock','unavailable'):assert parsed['records'][0]['thread_clock_status']==2
+    if mode in ('clock','unavailable'):assert parsed['records'][-1]['thread_clock_status']==2
 
 @pytest.mark.parametrize('value',['','0','true','11'])
 def test_disabled_no_clock_or_output(binary,value):
@@ -45,7 +46,7 @@ def record(**updates):
 def test_malformed_v2_rejected(updates):
     with pytest.raises(ValueError):e.parse_snapshots(record(**updates),timed_out=True,binary_sha256='a'*64,expected_version=2)
 
-@pytest.mark.parametrize('raw',[b'NICO_STAGE_V3 1\n',record().replace(b'V2',b'V1'),record()+record().replace(b'V2',b'V1')])
+@pytest.mark.parametrize('raw',[b'NICO_STAGE_V4 1\n',record().replace(b'V2',b'V1'),record()+record().replace(b'V2',b'V1')])
 def test_mismatched_versions_fail_closed(raw):
     with pytest.raises(ValueError):e.parse_snapshots(raw,timed_out=True,binary_sha256='a'*64,expected_version=2)
 
@@ -92,7 +93,7 @@ def test_clock_metadata_mismatch_rejected(second):
         e.parse_snapshots(record()+second,timed_out=True,binary_sha256='a'*64,expected_version=2)
 
 
-@pytest.mark.parametrize('raw',[b'NICO_STAGE_V3 1', b'NICO_STAGE_V2 '+b'1 '*600])
+@pytest.mark.parametrize('raw',[b'NICO_STAGE_V4 1', b'NICO_STAGE_V2 '+b'1 '*600])
 def test_invalid_partial_record_rejected(raw):
     with pytest.raises(ValueError):
         e.parse_snapshots(raw,timed_out=True,binary_sha256='a'*64,expected_version=2)
@@ -102,3 +103,64 @@ def test_partial_only_v2_retains_version():
     result=e.parse_snapshots(b'NICO_STAGE_V2 1',timed_out=True,binary_sha256='a'*64)
     assert result['schema']=='nico.cppcheck-stage-counter-evidence.v2'
     assert result['incomplete_tail'] and not result['records']
+
+
+def sparse_record(seq=1, **updates):
+    row=dict.fromkeys(e.FIELDS_V3,0)
+    row.update(phase=1,thread_clock_status=1,clock_reads=2*seq-1)
+    row.update(updates)
+    return (f'NICO_STAGE_V3 {seq} 0 1 0 {seq*100} 10 1000000 '+' '.join(str(row[k]) for k in e.FIELDS_V3)+'\n').encode()
+
+@pytest.mark.parametrize('change',[
+    {'transition_saturated':1},{'transition_id':2**64-1},{'clock_reads':3},
+    {'interval_kind':1},{'stable_selection_ns':1},{'observer_ns':1},
+    {'interval_kind':7},{'thread_clock_status':2},{'active_bucket':1,'bucket_depth':1},
+])
+def test_sparse_malformed_prefix(change):
+    with pytest.raises(ValueError):
+        e.parse_snapshots(sparse_record(**change),timed_out=True,binary_sha256='a'*64,expected_version=3)
+
+
+def test_sparse_interval_attribution_and_totals_fail_closed():
+    first=sparse_record(active_bucket=1,bucket_depth=1,selection_entered=1,transition_id=1)
+    attrs=dict(active_bucket=1,bucket_depth=1,selection_entered=1,transition_id=1,interval_kind=1,interval_ns=20,stable_selection_ns=20,observer_ns=2)
+    good=sparse_record(2,**attrs)
+    parsed=e.parse_snapshots(first+good,timed_out=True,binary_sha256='a'*64,expected_version=3)
+    assert parsed['records'][-1]['stable_selection_ns']==20
+    for changed in [{'transition_id':3},{'stable_selection_ns':19},{'active_bucket':2,'matching_entered':1},{'clock_reads':5}]:
+        with pytest.raises(ValueError):
+            e.parse_snapshots(first+sparse_record(2,**{**attrs,**changed}),timed_out=True,binary_sha256='a'*64,expected_version=3)
+
+
+def test_sparse_old_records_do_not_satisfy_new_binding():
+    from test_native_stage_counters import runtime_binding
+    value=runtime_binding()
+    for version in [1,2,True,None,'3']:
+        value['record_version']=version
+        with pytest.raises(ValueError):b.validate_binding(value,value['image'],b.binding_digest(value),value['original_image'])
+    with pytest.raises(ValueError,match='version_mismatch'):
+        e.parse_snapshots(record(),timed_out=True,binary_sha256='a'*64,expected_version=3)
+    assert e.parse_snapshots(record(),timed_out=True,binary_sha256='a'*64)['schema'].endswith('.v2')
+
+
+def test_sparse_transition_saturation_never_claims_stable_interval():
+    first=sparse_record(transition_id=2**64-1,transition_saturated=1)
+    second=sparse_record(2,transition_id=2**64-1,transition_saturated=1,interval_kind=5,interval_ns=10,unattributed_ns=10)
+    assert e.parse_snapshots(first+second,timed_out=True,binary_sha256='a'*64,expected_version=3)['records'][-1]['unattributed_ns']==10
+    with pytest.raises(ValueError):
+        e.parse_snapshots(first+sparse_record(2,transition_id=2**64-1,transition_saturated=1,interval_kind=6,interval_ns=10,outside_ns=10),timed_out=True,binary_sha256='a'*64,expected_version=3)
+
+
+def test_sparse_worst_width_stays_within_existing_record_cap():
+    row=dict.fromkeys(e.FIELDS_V3,2**64-1)
+    row.update(phase=3,**{'pass':10},active_bucket=4,thread_clock_status=2,
+        transition_saturated=1,clock_reads=255,interval_kind=7)
+    raw=('NICO_STAGE_V3 128 2 3 4294967295 18446744073709551615 9223372036854775807 1000000 '+
+         ' '.join(str(row[k]) for k in e.FIELDS_V3)+'\n').encode()
+    assert len(raw)<=e.MAX_RECORD_BYTES
+
+
+def test_held_exact_timer_binding_rejected():
+    from test_native_stage_counters import runtime_binding
+    value=runtime_binding();value['schema']='nico.stage-runtime-binding.v3';value['record_version']=2
+    with pytest.raises(ValueError):b.validate_binding(value,value['image'],b.binding_digest(value),value['original_image'])
