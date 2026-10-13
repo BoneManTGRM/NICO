@@ -15,7 +15,7 @@ SYNTHETIC_SECRET = 'synthetic-session-value-not-a-real-credential'
 @pytest.fixture
 def recovery(monkeypatch):
     sync = ModuleType('playwright.sync_api')
-    sync.Browser = sync.Page = object
+    sync.Browser = sync.Page = sync.Locator = object
     sync.sync_playwright = lambda: None
     monkeypatch.setitem(sys.modules, 'playwright', ModuleType('playwright'))
     monkeypatch.setitem(sys.modules, 'playwright.sync_api', sync)
@@ -174,7 +174,7 @@ def test_exchange_registers_tokens_before_use(monkeypatch):
     assert SYNTHETIC_SECRET not in json.dumps(retained)
 
 
-@pytest.mark.parametrize('entrypoint', ['v1', 'v2'])
+@pytest.mark.parametrize('entrypoint', ['v1', 'v2', 'v3'])
 @pytest.mark.parametrize('outcome', ['success', 'failure', 'artifact_failure'])
 def test_entrypoint_output_boundaries(recovery, monkeypatch, tmp_path, capsys, entrypoint, outcome):
     import github_actions_nico_proof_auth_v1 as auth
@@ -189,6 +189,12 @@ def test_entrypoint_output_boundaries(recovery, monkeypatch, tmp_path, capsys, e
         def __exit__(self, *args): return False
     if entrypoint == 'v1':
         module = recovery
+        monkeypatch.setattr(recovery, '_launch_chromium', lambda p: SimpleNamespace(close=lambda: None))
+    elif entrypoint == 'v3':
+        monkeypatch.setitem(sys.modules, 'mobile_restart_live_acceptance_v1', recovery)
+        spec = importlib.util.spec_from_file_location('output_chromium', ROOT / 'scripts/mobile_restart_live_acceptance_v3.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
         monkeypatch.setattr(recovery, '_launch_chromium', lambda p: SimpleNamespace(close=lambda: None))
     else:
         monkeypatch.setitem(sys.modules, 'mobile_restart_live_acceptance_v1', recovery)
@@ -214,6 +220,8 @@ def test_entrypoint_output_boundaries(recovery, monkeypatch, tmp_path, capsys, e
                 error.nico_diagnostic = {'nested': [SYNTHETIC_SECRET]}
                 raise error from middle
     monkeypatch.setattr(recovery, 'run_proof', prove)
+    if entrypoint == 'v3':
+        monkeypatch.setattr(module, 'run_proof', prove)
     if outcome == 'artifact_failure':
         def write_failure(*args):
             raise sensitive_error(OSError)
