@@ -245,14 +245,193 @@ def test_static_diagnostic_uses_unchanged_native_collector_and_keeps_full_scope_
 def test_workflow_serializes_with_existing_native_run_and_has_no_write_permission():
     from pathlib import Path
     workflow=Path('.github/workflows/native-timeout-diagnostic.yml').read_text()
-    assert 'group: cpp-full-project-integration-${{ github.ref }}' in workflow
+    assert 'group: cpp-full-project-integration-refs/pull/1722/merge' in workflow
+    qualification=Path('.github/workflows/cpp-full-project-integration.yml').read_text()
+    assert 'group: cpp-full-project-integration-${{ github.ref }}' in qualification
+    assert 'queue: max' in workflow
     assert 'cancel-in-progress: false' in workflow
     assert 'actions: read' in workflow and 'contents: read' in workflow
     import re
     assert not re.search(r'^\s+[a-z-]+:\s*write\s*$',workflow,re.M) and 'secrets.' not in workflow
     assert 'timeout-minutes: 55' in workflow
-    assert '36177497388' in workflow and 'case "$conclusion"' in workflow
+    assert '38380333159' in workflow and 'case "$conclusion"' in workflow
     assert 'success)' in workflow and 'failure)' in workflow
-    assert '10883294546' in workflow
-    assert 'd4933e0120105b8427ebe813cfec2f8487e5d801b980e7cbfbc942adc0ffd41e' in workflow
-    assert 'owned_control' in workflow
+    assert '11811288494' in workflow
+    assert 'dbf890120e44a7d0f99133d69f316c9e8d7dce0210f3ae627e248ffa1c4e7e92' in workflow
+    assert '--mode current-primary' in workflow
+    assert 'owned_primary_control' in workflow
+    assert workflow.index('Exercise the owned static-only boundary first') < workflow.index('Measure only the three current primary contexts')
+    assert '--test cluster_linearize_tests' not in workflow
+    assert 'diagnostic/current-primary-38380333159' in workflow
+
+
+def _current_selection_fixture():
+    from scripts import native_timeout_diagnostic as d
+    contexts=[{} for _ in range(577)]; records=[{} for _ in range(577)]
+    for index,path in d.CURRENT_CASES.items():
+        argv=['/usr/local/bin/cppcheck','--xml','-j1','--project=/work/analysis/static-baseline/u'+str(index)+'.json']
+        contexts[index]={'index':index,'path':path,'context_id':str(index),'analyzer_invocation':argv,
+                         'analyzer_database_sha256':'a'*64}
+        records[index]={'context_id':str(index),'invocation':argv,
+                        'execution':{'exit_code':None if index!=10 else 0,
+                                     'timed_out':index!=10,'output_truncated':False,'duration_ms':114}}
+    return {'primary_request':{'schema':'nico.cpp-project-static-request.v4','contexts':contexts,
+            'limits':{'wall_seconds':540,'case_seconds':90,'parallel':2}},'primary_raw':{'records':records}}
+
+
+def test_current_selection_retains_original_commands_population_and_evidence():
+    from copy import deepcopy
+    from scripts import native_timeout_diagnostic as d
+    retained=_current_selection_fixture(); before=deepcopy(retained)
+    selected=d.select_primary_cases(retained)
+    assert retained==before
+    assert [r['index'] for r in selected]==[2,4,10]
+    for row in selected:
+        assert row['invocation']==before['primary_request']['contexts'][row['index']]['analyzer_invocation']+['--showtime=file','--report-progress=1']
+
+
+@pytest.mark.parametrize('fault',['population','path','timeout','command','budget'])
+def test_current_selection_rejects_drift_before_dispatch(fault):
+    from scripts import native_timeout_diagnostic as d
+    retained=_current_selection_fixture()
+    if fault=='population':retained['primary_request']['contexts'].pop()
+    if fault=='path':retained['primary_request']['contexts'][2]['path']='different.cpp'
+    if fault=='timeout':retained['primary_raw']['records'][4]['execution']['timed_out']=False
+    if fault=='command':retained['primary_raw']['records'][10]['invocation']=['different']
+    if fault=='budget':retained['primary_request']['limits']['case_seconds']=91
+    with pytest.raises(ValueError,match='diagnostic_current_'):
+        d.select_primary_cases(retained)
+
+
+def _primary_adapter_namespace():
+    import ast,time
+    from scripts import native_timeout_diagnostic as d
+    program=ast.parse(d.primary_program())
+    compile(program,'current-primary-program','exec')
+    nodes=[n for n in program.body if (
+        isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='original_run' for t in n.targets))
+        or isinstance(n,ast.ClassDef) and n.name=='ThreadPoolExecutor']
+    # Only the final diagnostic _run adapter, not the production collector runner.
+    nodes.insert(1,[n for n in program.body if isinstance(n,ast.FunctionDef) and n.name=='_run'][-1])
+    calls=[]
+    def fake_run(argv,stem,deadline,environment):
+        calls.append((argv,stem,deadline,environment));return {'owned':True}
+    ns={'_run':fake_run,'time':time,'_canonical':lambda x:json.dumps(x).encode()}
+    exec(compile(ast.Module(body=nodes,type_ignores=[]),'owned-adapter','exec'),ns)
+    return ns,calls
+
+
+def test_diagnostic_scheduler_runs_only_reviewed_indices_and_retains_partial_records(capsys):
+    ns,_=_primary_adapter_namespace(); retained=_current_selection_fixture(); seen=[]
+    with ns['ThreadPoolExecutor'](2) as pool:
+        result=list(pool.map(lambda c:seen.append(c['index']) or {'context_id':c['context_id']},retained['primary_request']['contexts']))
+    assert seen==[2,4,10] and len(result)==3
+    assert len(capsys.readouterr().out.splitlines())==3
+    with pytest.raises(ValueError,match='diagnostic_parallel_contract'): ns['ThreadPoolExecutor'](4)
+    with pytest.raises(ValueError,match='diagnostic_population'):
+        list(ns['ThreadPoolExecutor'](2).map(lambda c:pytest.fail('must not dispatch'),[{}]*475))
+
+
+def test_diagnostic_instrumentation_only_appends_flags_and_never_extends_deadline():
+    import time
+    ns,calls=_primary_adapter_namespace()
+    argv=['/usr/local/bin/cppcheck','--xml','--enable=warning','-j1']
+    deadline=time.monotonic()+20;env={'EXACT':'retained'}
+    ns['_run'](argv,'stem',deadline,env)
+    assert calls[0]==(argv+['--showtime=file','--report-progress=1'],'stem',deadline,env)
+    ns['_run'](['/usr/local/bin/cppcheck','--version'],'v',deadline,env)
+    assert calls[1][0]==['/usr/local/bin/cppcheck','--version']
+    assert argv==['/usr/local/bin/cppcheck','--xml','--enable=warning','-j1']
+
+
+def test_partial_timeout_and_findings_are_retained_with_executed_argv(capsys):
+    ns,_=_primary_adapter_namespace(); retained=_current_selection_fixture()
+    def failed(context):
+        return {'context_id':context['context_id'],'invocation':context['analyzer_invocation'],
+                'execution':{'timed_out':True,'exit_code':None,'output':'retained phase output'},
+                'xml':'partial XML with target findings','error':'worker_project_static_unavailable'}
+    records=list(ns['ThreadPoolExecutor'](2).map(failed,retained['primary_request']['contexts']))
+    partial=[json.loads(line)['diagnostic_partial_record'] for line in capsys.readouterr().out.splitlines()]
+    assert records==partial and len(partial)==3
+    for row in partial:
+        assert row['execution']['timed_out'] is True
+        assert row['execution']['output']=='retained phase output'
+        assert row['xml']=='partial XML with target findings'
+        assert row['executed_invocation']==row['invocation']+['--showtime=file','--report-progress=1']
+
+
+def test_owned_control_is_static_only_and_uses_existing_noexec_boundary(tmp_path,monkeypatch):
+    from scripts import native_timeout_diagnostic as d
+    calls=[]
+    class OwnedBox:
+        def __init__(self,source,targets,image,output,**kwargs):
+            assert kwargs=={'executable':False,'seconds':60}
+            assert set(targets)=={'owned.cpp'}
+            self.receipt={'cleanup_verified':True}
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def exec(self,key,argv,**kwargs):calls.append((key,argv,kwargs))
+    monkeypatch.setattr(d,'Sandbox',OwnedBox)
+    d.owned_primary_control('sha256:'+'a'*64,tmp_path/'control')
+    assert len(calls)==1 and calls[0][1][0]=='/usr/local/bin/cppcheck'
+    assert calls[0][2]=={'user':'1001:1001','seconds':30}
+    assert '--showtime=file' in calls[0][1] and '--report-progress=1' in calls[0][1]
+
+
+def test_current_export_hashes_every_member_and_rejects_tool_or_path_drift(tmp_path,monkeypatch):
+    import zipfile,hashlib
+    from scripts import native_timeout_diagnostic as d
+    files={'cppcheck':b'owned executable bytes','nico-clang-header-observer.so':b'owned observer',
+           'image-config-digest.txt':d.CURRENT_IMAGE.encode(),
+           'image.json':json.dumps([{'Id':d.CURRENT_IMAGE}]).encode()}
+    files.update({'cfg/model'+str(i):b'owned' for i in range(70)})
+    hashes={k:{'size_bytes':len(v),'sha256':hashlib.sha256(v).hexdigest()} for k,v in files.items()}
+    monkeypatch.setattr(d,'CURRENT_TOOLS',{k:hashes[k]['sha256'] for k in d.CURRENT_TOOLS})
+    def archive(tamper=False):
+        target=tmp_path/('bad.zip' if tamper else 'good.zip')
+        with zipfile.ZipFile(target,'w') as z:
+            z.writestr('cpp-collection-toolchain-manifest.json',json.dumps({'schema':'nico.cpp-collection-tool-export.v1','image_config_digest':d.CURRENT_IMAGE,'files':hashes}))
+            for name,raw in files.items():z.writestr('cpp-collection-toolchain/'+name,raw+b'changed' if tamper and name=='cfg/model69' else raw)
+        return zipfile.ZipFile(target)
+    receipt={'producer_source_sha':d.CURRENT_PRODUCER,'probe':{'image_config_digest':d.CURRENT_IMAGE}}
+    with archive() as z:d.verify_current_export(z,receipt)
+    with archive(True) as z,pytest.raises(ValueError,match='diagnostic_current_export_digest'):d.verify_current_export(z,receipt)
+
+
+@pytest.mark.parametrize('native_timeout',[False,True])
+def test_primary_controller_restores_and_matches_environment_and_retains_failure(tmp_path,monkeypatch,native_timeout):
+    from scripts import native_timeout_diagnostic as d
+    from nico import assessment_cpp_static_environment as env
+    retained=_current_selection_fixture()
+    retained.update(snapshot={'files':{},'file_population_sha256':'b'*64},
+                    compiler_request={'generated_files':{}},compiler_raw=b'owned',environment={'models':'owned'})
+    monkeypatch.setattr(env,'environment_request',lambda *a,**k:{'owned':True})
+    monkeypatch.setattr(env,'validate_environment',lambda *a:{'models':'owned'})
+    calls=[]
+    class Box:
+        def __init__(self,*a,**k):
+            assert k=={'executable':False,'seconds':540}
+            self.receipt={'boundary_verified':True,'cleanup_verified':False}
+        def __enter__(self):return self
+        def __exit__(self,*a):self.receipt['cleanup_verified']=True
+        def save(self):pass
+        def resources(self,key):return {'cpu':{},'memory_events':{}}
+        def exec(self,key,argv,**kwargs):
+            calls.append((key,argv,kwargs))
+            assert kwargs['user']=='1001:1001'
+            if key=='tool-identity':value={'/usr/local/bin/cppcheck':d.CURRENT_TOOLS['cppcheck'],'/opt/nico-clang-header-observer.so':d.CURRENT_TOOLS['nico-clang-header-observer.so']}
+            elif key=='generated-restore':value={'files':{},'file_population_sha256':'b'*64}
+            elif key=='environment':value={}
+            else:
+                assert key=='current-primary' and kwargs['seconds']==540 and kwargs['require'] is False
+                assert json.loads(kwargs['data'])==retained['primary_request']
+                rows=[{'context_id':str(i),'execution':{'exit_code':0,'timed_out':False,'output_truncated':False},'error':None} for i in (2,4,10)]
+                value={'schema':'nico.current-primary-diagnostic.v1','records':rows}
+                return {'output':json.dumps(value).encode(),'exit_code':None if native_timeout else 0,'timed_out':native_timeout,'output_truncated':False}
+            return {'output':json.dumps(value).encode()}
+    monkeypatch.setattr(d,'Sandbox',Box)
+    result=d.run_primary(tmp_path,{},'sha256:'+'c'*64,tmp_path/'output',retained)
+    assert result['complete'] is (not native_timeout)
+    assert result['cleanup_verified'] and result['production_qualified'] is False
+    assert result['unselected_contexts']==574 and result['original_image_replay'] is False
+    assert [r[0] for r in calls]==['tool-identity','generated-restore','environment','current-primary']
