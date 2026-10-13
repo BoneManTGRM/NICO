@@ -399,7 +399,8 @@ def test_current_export_hashes_every_member_and_rejects_tool_or_path_drift(tmp_p
 
 
 @pytest.mark.parametrize('native_timeout',[False,True])
-def test_primary_controller_restores_and_matches_environment_and_retains_failure(tmp_path,monkeypatch,native_timeout):
+@pytest.mark.parametrize('resource_deadline',[False,True])
+def test_primary_controller_restores_and_matches_environment_and_retains_failure(tmp_path,monkeypatch,native_timeout,resource_deadline):
     from scripts import native_timeout_diagnostic as d
     from nico import assessment_cpp_static_environment as env
     retained=_current_selection_fixture()
@@ -415,7 +416,13 @@ def test_primary_controller_restores_and_matches_environment_and_retains_failure
         def __enter__(self):return self
         def __exit__(self,*a):self.receipt['cleanup_verified']=True
         def save(self):pass
-        def resources(self,key):return {'cpu':{},'memory_events':{}}
+        def resources(self,key):
+            if key=='resources-after' and resource_deadline:
+                # Native outcome must already be retained before this checkpoint.
+                assert self.receipt['result']['timed_out'] is native_timeout
+                assert self.receipt['result']['exit_code'] == (None if native_timeout else 0)
+                raise ValueError('diagnostic_deadline')
+            return {'cpu':{},'memory_events':{}}
         def exec(self,key,argv,**kwargs):
             calls.append((key,argv,kwargs))
             assert kwargs['user']=='1001:1001'
@@ -431,7 +438,57 @@ def test_primary_controller_restores_and_matches_environment_and_retains_failure
             return {'output':json.dumps(value).encode()}
     monkeypatch.setattr(d,'Sandbox',Box)
     result=d.run_primary(tmp_path,{},'sha256:'+'c'*64,tmp_path/'output',retained)
-    assert result['complete'] is (not native_timeout)
+    assert result['complete'] is (not native_timeout and not resource_deadline)
+    assert result['timed_out'] is native_timeout
+    assert result['output_truncated'] is False
+    if resource_deadline:
+        assert result['resources_after_unavailable']=='diagnostic_deadline'
+        assert result['resources_delta'] is None
     assert result['cleanup_verified'] and result['production_qualified'] is False
     assert result['unselected_contexts']==574 and result['original_image_replay'] is False
     assert [r[0] for r in calls]==['tool-identity','generated-restore','environment','current-primary']
+
+
+@pytest.mark.parametrize('close_streams', [False, True])
+@pytest.mark.parametrize('require', [False, True])
+def test_outer_deadline_preserves_real_command_output_before_error(tmp_path, close_streams, require):
+    import hashlib
+    import os
+    import sys
+    import time
+    from scripts.native_timeout_diagnostic import Sandbox
+
+    box = Sandbox(tmp_path, {}, 'sha256:'+'a'*64, tmp_path/'deadline',
+                  executable=False, seconds=540)
+    # Exercise the real command boundary at an abbreviated outer deadline.
+    # Only this owned Python child runs; no container or assessed input is used.
+    box.deadline = time.monotonic() + 0.5
+    program = ("import os,time; print('owned partial finding pid='+str(os.getpid()),flush=True); "
+               + ('os.close(1); os.close(2); ' if close_streams else '')
+               + 'time.sleep(30)')
+    argv = [sys.executable, '-I', '-S', '-c', program]
+    if require:
+        with pytest.raises(ValueError, match='^diagnostic_deadline$'):
+            box.call('owned-deadline', argv, seconds=540, limit=1024)
+    else:
+        native = box.call('owned-deadline', argv, seconds=540, limit=1024, require=False)
+        assert native['timed_out'] and native['exit_code'] == 124
+    receipt = json.loads((box.output/'receipt.json').read_bytes())
+    row = receipt['operations'][-1]
+    assert receipt['budget_seconds'] == 540
+    assert row['timed_out'] is True and row['exit_code'] == 124
+    assert row['output_truncated'] is False
+    raw = (box.output/row['output_path']).read_bytes()
+    assert raw.startswith(b'owned partial finding pid=') and raw.endswith(b'\n')
+    assert row['output_bytes'] == len(raw) <= 1024
+    assert row['output_sha256'] == hashlib.sha256(raw).hexdigest()
+    pid = int(raw.split(b'=')[1])
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)
+    # A spent budget cannot start another operation, but cleanup remains allowed.
+    with pytest.raises(ValueError, match='^diagnostic_deadline$'):
+        box.call('must-not-start', [sys.executable, '-c', 'raise SystemExit(99)'])
+    assert len(box.receipt['operations']) == 1
+    cleaned = box.call('owned-cleanup', [sys.executable, '-I', '-S', '-c', "print('cleanup')"],
+                       cleanup=True, seconds=5)
+    assert cleaned['exit_code'] == 0 and cleaned['output'] == b'cleanup\n'

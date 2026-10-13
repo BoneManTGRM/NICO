@@ -243,7 +243,11 @@ class Sandbox:
         start = time.monotonic()
         remaining = seconds if cleanup else min(seconds, self.deadline-start)
         try:
-            result = self.command(argv, checkpoint=(lambda: None) if cleanup else self.checkpoint,
+            # The subprocess timeout is already clamped to the outer budget.
+            # A deadline checkpoint inside _command would discard captured bytes
+            # before its native timeout result can return. Persist that result
+            # first, then enforce the outer deadline below.
+            result = self.command(argv, checkpoint=lambda: None,
                 timeout=remaining, input_bytes=data, limit=limit, native_exit=True)
         except BaseException as exc:
             self.receipt['operations'].append({'id':key, 'argv':argv, 'exit_code':None,
@@ -260,6 +264,8 @@ class Sandbox:
                'duration_ms':int((time.monotonic()-start)*1000), 'output_sha256':sha(raw),
                'output_bytes':len(raw), 'output_path':file.name}
         self.receipt['operations'].append(row); self.save()
+        if not cleanup and require:
+            self.checkpoint()
         if require and (result['exit_code'] != 0 or result['timed_out'] or result['output_truncated']):
             raise ValueError('diagnostic_operation_failed:'+key)
         return result
@@ -733,9 +739,16 @@ def run_primary(source, targets, image, output, retained):
             before=box.resources('resources-before')
             native=box.exec('current-primary',['python3','-I','-S','-c',primary_program()],user='1001:1001',
                 data=canonical_bytes(retained['primary_request']),seconds=540,limit=STREAM_LIMIT,require=False)
-            after=box.resources('resources-after')
-            result.update(resources_delta=metrics_delta(before,after),exit_code=native['exit_code'],
+            result.update(exit_code=native['exit_code'],
                           timed_out=native['timed_out'],output_truncated=native['output_truncated'])
+            box.receipt['result']=result;box.save()
+            try:
+                after=box.resources('resources-after')
+            except ValueError as exc:
+                if str(exc) != 'diagnostic_deadline': raise
+                result.update(resources_delta=None,resources_after_unavailable='diagnostic_deadline')
+                return result
+            result['resources_delta']=metrics_delta(before,after)
             if native['exit_code']==0 and not native['timed_out'] and not native['output_truncated']:
                 evidence=json.loads(native['output'].splitlines()[-1])
                 if evidence.get('schema')!='nico.current-primary-diagnostic.v1' or [r['context_id'] for r in evidence['records']] != [r['context_id'] for r in selected]:
