@@ -615,7 +615,7 @@ BUDGET_EVIDENCE_SCHEMA = 'nico.current-primary-budget-evidence.v1'
 BUDGET_ANALYZER_SOURCE = 'ac4d82c590588700a462c4b7b3f5ea5acd8cfcfb'
 BUDGET_COLLECTOR_SHA256 = 'ce65638b5400b69fddcf69910cc5ab1067059cf720e8b75825b26d2acf304ddf'
 BUDGET_VALIDATOR_SHA256 = '9a1a557eef8fd00715dfcb733a9e84b33aff5c48ff145e2d3ac1f62d18fe725a'
-BUDGET_LIMITS = {'case_seconds': 180, 'wall_seconds': 540, 'parallel': 1}
+BUDGET_LIMITS = {'case_seconds': 360, 'wall_seconds': 540, 'parallel': 1}
 BUDGET_RESOURCE_ARGS = ['--cpus=4', '--memory=12g', '--memory-swap=12g', '--pids-limit=256',
     '--tmpfs=/work:rw,nosuid,nodev,noexec,size=9663676416,mode=1777']
 
@@ -639,8 +639,8 @@ def budget_program(allowed_commands):
     # The collector's aggregate deadline and version-probe ceiling stay intact.
     program = _budget_replace(program,
         "min(deadline, dispatch_start + limits['case_seconds']), native_environment)",
-        'min(deadline, dispatch_start + 180), native_environment)')
-    program = _budget_replace(program, 'time.monotonic()+90', 'time.monotonic()+180')
+        'min(deadline, dispatch_start + 360), native_environment)')
+    program = _budget_replace(program, 'time.monotonic()+90', 'time.monotonic()+360')
     program = _budget_replace(program,
         "expected = {2:'src/init/basic.cpp',4:'src/init/bitcoin-node.cpp',10:'src/compat/stdin.cpp'}",
         "expected = {2:'src/init/basic.cpp'}")
@@ -650,7 +650,7 @@ if not isinstance(payload, dict) or set(payload) != {'request','policy'}:
 request, policy = payload['request'], payload['policy']
 if (len(sys.argv) != 2 or hashlib.sha256(_canonical(policy)).hexdigest() != sys.argv[1]
         or policy.get('schema') != 'nico.current-primary-budget-policy.v1'
-        or policy.get('limits') != {'case_seconds':180,'wall_seconds':540,'parallel':1}
+        or policy.get('limits') != {'case_seconds':360,'wall_seconds':540,'parallel':1}
         or policy.get('parent_request_sha256') != hashlib.sha256(_canonical(request)).hexdigest()
         or policy.get('selected_index') != 2 or type(policy.get('selected_index')) is not int
         or policy.get('selected_path') != 'src/init/basic.cpp'
@@ -702,12 +702,231 @@ def validate_budget_policy(policy, expected_sha256, retained, binding, image, bi
     return policy
 
 
+def _validate_budget_project_static(raw, request):
+    """Explicit diagnostic adaptation of the pinned production validator.
+
+    Shared decoding, header, checker and finding helpers remain authoritative.
+    Tests compare this callable's AST with the pinned validator plus the stated
+    one-context schema, serial accounting and diagnostic duration adaptations.
+    """
+    from nico.assessment_cpp_project_static import (STREAM_LIMIT, TOOL_VERSION,
+        HEADER_TOOL_MANIFEST_SHA256, _digest, _canonical, _execution, _decode_xml,
+        validate_header_tool_receipt, context_dependencies, _header_standard,
+        _header_effective_inputs, validate_header_trace, modeled_missing_include)
+    from xml.etree import ElementTree as ET
+    from nico.assessment_cpp_full_project import _json
+    from nico.assessment_cpp_configuration import decode_stream
+    from nico.cppcheck_native_output import parse_native
+    if not isinstance(raw, bytes) or not 0 < len(raw) <= STREAM_LIMIT:
+        raise ValueError('worker_project_static_output_limit')
+    evidence = _json(raw)
+    native_evidence_sha256 = _digest(raw)
+    selected_contexts = [request['contexts'][2]]
+    fields = {'schema', 'request_sha256', 'analyst_uid', 'version', 'records', 'duration_ms',
+        'execution_policy_sha256','production_qualified','assessment_completed','full_project_qualified',
+        'diagnostic_flags','dispatched_indices','diagnostic_parallel','retained_population'}
+    header_provenance = request['schema'].endswith(('.v3','.v4'))
+    if header_provenance:
+        fields |= {'header_tool_receipt','header_tool_receipt_sha256'}
+    if (not isinstance(evidence, dict) or set(evidence) != fields
+            or evidence['schema'] != BUDGET_EVIDENCE_SCHEMA
+            or evidence['request_sha256'] != _digest(_canonical(request))
+            or type(evidence['analyst_uid']) is not int or evidence['analyst_uid'] != 1001
+            or type(evidence['duration_ms']) is not int or not 0 <= evidence['duration_ms'] <= 543000
+            or not isinstance(evidence['records'], list) or len(evidence['records']) != len(selected_contexts)):
+        raise ValueError('worker_project_static_evidence_invalid')
+    if header_provenance:
+        try:
+            receipt=base64.b64decode(evidence['header_tool_receipt'],validate=True)
+        except (TypeError,ValueError) as error:
+            raise ValueError('worker_project_static_header_tool_invalid') from error
+        if _digest(receipt)!=evidence['header_tool_receipt_sha256']:
+            raise ValueError('worker_project_static_header_tool_invalid')
+        validate_header_tool_receipt(receipt)
+    version_ok, version = _execution(evidence['version'], 8000)
+    if not version_ok or version.strip() != ('Cppcheck ' + TOOL_VERSION).encode():
+        raise ValueError('worker_project_static_tool_version')
+    attempted, analyzed, findings, limitations, modeled_inputs, header_contexts = [], [], [], [], [], []
+    environment_model = request.get('compiler_environment')
+    duration = evidence['version']['duration_ms']
+    legacy_fields = {'context_id', 'invocation', 'database_sha256', 'execution', 'xml', 'xml_sha256', 'error'}
+    legacy_fields |= {'executed_invocation'}
+    compact_fields = legacy_fields | {'xml_encoding'}
+    for context, row in zip(selected_contexts, evidence['records']):
+        expected_fields = compact_fields if 'xml_encoding' in row else legacy_fields
+        if header_provenance:
+            expected_fields |= {'header_trace','header_trace_sha256','header_trace_encoding'}
+        if (not isinstance(row, dict) or set(row) != expected_fields or row['context_id'] != context['context_id']
+                or row['invocation'] != context['analyzer_invocation']
+                or row['database_sha256'] != context['analyzer_database_sha256']
+                or row['error'] is not None and (not isinstance(row['error'], str)
+                    or re.fullmatch(r'worker_project_static_[a-z_]+', row['error']) is None)):
+            raise ValueError('worker_project_static_record_invalid')
+        xml = _decode_xml(row['xml'], row['xml_sha256'], row.get('xml_encoding', 'identity'))
+        header_trace = (_decode_xml(row['header_trace'],row['header_trace_sha256'],row['header_trace_encoding'])
+            if header_provenance else None)
+        if row['execution'] is None:
+            if row['error'] is None or xml or header_trace:
+                raise ValueError('worker_project_static_missing_execution')
+            limitations.append({'context_id': context['context_id'], 'rule_id': row['error']})
+            continue
+        success, progress = _execution(row['execution'], 363000)
+        attempted.append(context['context_id'])
+        duration += row['execution']['duration_ms']
+        if not success or row['error']:
+            limitations.append({'context_id': context['context_id'],
+                'rule_id': row['error'] or 'native_execution_incomplete'})
+            continue
+        try:
+            xml_text = xml.decode('utf-8', 'strict')
+        except UnicodeError as error:
+            raise ValueError('worker_project_static_xml_invalid') from error
+        # Match the pinned producer's UTF-8 output before the parser can
+        # auto-detect another encoding and process prohibited declarations.
+        if not xml or '\x00' in xml_text or '<!DOCTYPE' in xml_text.upper() or '<!ENTITY' in xml_text.upper():
+            raise ValueError('worker_project_static_xml_invalid')
+        locations = {'/work/source/' + p: ('original', p, sha)
+                     for p, sha in context['source_dependencies'].items()}
+        locations.update({'/work/analysis/generated-baseline/' + p: ('generated', p, sha)
+                          for p, sha in context['generated_dependencies'].items()})
+        if request['schema'].endswith('.v4'):
+            origin, path = context['origin'], context['path']
+            source_sha = (request['targets'][path] if origin == 'original'
+                          else request['generated_files'][path]['sha256'])
+            locations[context['analysis_file']] = (origin, path, source_sha)
+        if environment_model is not None:
+            dependencies = context_dependencies(environment_model, context['context_id'])
+            locations.update({row['projection']: ('toolchain', path, row['sha256'])
+                              for path, row in dependencies.items() if row['projection']})
+            query = environment_model['queries'][environment_model['contexts'][context['context_id']]['query']]
+            locations[query['predefines_path']] = ('compiler_predefines', query['predefines_path'], query['predefines_sha256'])
+        if header_provenance:
+            if not header_trace:
+                raise ValueError('worker_project_static_header_trace_missing')
+            # Inventory remains complete even when a file was not a compiler
+            # dependency. This does not credit that file as included or parsed.
+            header_locations = dict(locations)
+            header_locations.update({'/work/source/'+p:('original',p,sha) for p,sha in request['targets'].items()})
+            header_locations.update({'/work/analysis/generated-baseline/'+p:('generated',p,value['sha256'])
+                for p,value in request['generated_files'].items()})
+            definitions={}
+            for arg in context['invocation']:
+                if arg.startswith('-D'):
+                    name,separator,value=arg[2:].partition('=');definitions[name]=value if separator else '1'
+                elif arg.startswith('-U'):
+                    definitions.pop(arg[2:],None)
+            header=validate_header_trace(header_trace,source=context['analysis_file'],locations=header_locations,
+                standard=_header_standard(context,environment_model),configuration_defines=definitions,
+                effective_inputs=_header_effective_inputs(context))
+            header_contexts.append({'context_id':context['context_id'],
+                **{key:value for key,value in header.items() if key!='inventoried_files'}})
+        try:
+            document = ET.fromstring(xml)
+            # Unknown diagnostic locations are retained raw but cannot become
+            # source-bound findings or a completed context. Parse once and pass
+            # the same verified tree into the native adapter.
+            for loc in document.findall('errors/error/location'):
+                if loc.get('file') not in locations:
+                    raise ValueError('worker_project_static_location_unbound')
+            native_findings, limits, observed = parse_native(xml_text, progress.decode('utf-8'),
+                sorted(locations), version=TOOL_VERSION, document=document)
+        except (ET.ParseError, UnicodeError) as exc:
+            raise ValueError('worker_project_static_xml_invalid') from exc
+        if environment_model is not None:
+            modeled_index = {}
+            for path, member in dependencies.items():
+                if member['modeled_name'] and member['model']:
+                    modeled_index.setdefault((member['modeled_name'], member['model']), []).append(path)
+            execution_limits = []
+            for entry in limits:
+                modeled = modeled_missing_include(entry, environment_model, context['context_id'],
+                    dependencies, modeled_index)
+                if modeled:
+                    modeled_inputs.append({**modeled, 'native_evidence_sha256': native_evidence_sha256})
+                else:
+                    execution_limits.append(entry)
+            limits = execution_limits
+            if not any(entry['rule_id'] == 'checkersReport' for entry in limits):
+                limits.append({'rule_id': 'native_checkers_not_confirmed',
+                               'message': 'Positive native checker inventory is required.'})
+        limitations.extend({**entry, 'context_id': context['context_id']} for entry in limits)
+        if observed != [context['analysis_file']]:
+            limitations.append({'context_id': context['context_id'], 'rule_id': 'native_target_not_confirmed'})
+            continue
+        for finding in native_findings:
+            origin, path, sha = locations[finding['path']]
+            value = {**finding, 'path': path, 'origin': origin, 'source_sha256': sha,
+                'context_id': context['context_id'], 'native_evidence_sha256': native_evidence_sha256,
+                'locations': [{'origin': locations[p['path']][0], 'path': locations[p['path']][1],
+                    'source_sha256': locations[p['path']][2], 'line': p['line'], 'column': p['column']}
+                    for p in finding['locations']]}
+            value['id'] = 'cpp-context-' + _digest(_canonical({k: v for k, v in value.items()
+                                                             if k != 'native_evidence_sha256'}))
+            findings.append(value)
+        if not any(entry['rule_id'] != 'checkersReport' for entry in limits):
+            analyzed.append(context['context_id'])
+    if duration > evidence['duration_ms'] * 1 + 1000:
+        raise ValueError('worker_project_static_duration_invalid')
+    required = [c['context_id'] for c in selected_contexts]
+    headers = {}
+    if header_provenance:
+        inventory=['/work/source/'+p for p in request['targets']]
+        inventory += ['/work/analysis/generated-baseline/'+p for p in request['generated_files']]
+        headers={p:{'included_contexts':[],'parsed_contexts':[],'analyzed_contexts':[]} for p in sorted(inventory)
+            if p.lower().endswith(('.h','.hh','.hpp','.hxx','.inc','.ipp','.tpp'))}
+        for proof in header_contexts:
+            for field,members in [('included_contexts','include_observed_files'),('parsed_contexts','parsed_token_files'),('analyzed_contexts','normal_pass_token_files')]:
+                for path in proof[members]:
+                    if path in headers:
+                        state=headers[path]
+                        state[field].append(proof['context_id'])
+        context_complete=(len(header_contexts)==len(required) and all(
+            p['normal_pass_completed'] and p['physical_token_origin_verified'] for p in header_contexts))
+        population_complete=context_complete and all(row['analyzed_contexts'] for row in headers.values())
+    # Aggregate only validated primary records. Fallback merging must not turn
+    # these observations into primary analyzed credit. Counts may overlap.
+    executions = [row['execution'] for row in evidence['records'] if row['execution'] is not None]
+    primary_diagnostics = {
+        'wall_duration_ms': evidence['duration_ms'],
+        'execution_duration_ms': sum(row['duration_ms'] for row in executions),
+        'max_execution_duration_ms': max((row['duration_ms'] for row in executions), default=None),
+        'executions': len(executions), 'analyzed': len(analyzed),
+        'missing_execution': len(evidence['records']) - len(executions),
+        'timed_out': sum(row['timed_out'] for row in executions),
+        'nonzero_exit': sum(row['exit_code'] != 0 for row in executions),
+        'output_truncated': sum(row['output_truncated'] for row in executions),
+        'record_error': sum(row['error'] is not None for row in evidence['records']),
+        'syntax_error': sum(row['rule_id'] == 'syntaxError' for row in limitations),
+        'internal_ast_error': sum(row['rule_id'] == 'internalAstError' for row in limitations),
+    }
+    return {'required_contexts': required, 'attempted_contexts': attempted, 'analyzed_contexts': analyzed,
+        'primary_diagnostics': primary_diagnostics,
+        'complete': analyzed == required, 'findings': findings, 'limitations': limitations,
+        **({'modeled_inputs': modeled_inputs, 'compiler_environment_sha256': environment_model['native_evidence_sha256']}
+           if environment_model is not None else {}),
+        'native_evidence_sha256': native_evidence_sha256, 'compiler_evidence_sha256': request['compiler_evidence_sha256'],
+        'static_analysis_executed': bool(attempted), 'analyzer_header_coverage_verified': False,
+        **({'header_context_evidence':header_contexts,'header_context_evidence_complete':context_complete,
+            'header_population':headers,'header_population_complete':population_complete,
+            'header_unvisited_files':sorted(p for p,row in headers.items() if not row['included_contexts']),
+            'header_tool_manifest_sha256':HEADER_TOOL_MANIFEST_SHA256} if header_provenance else {}),
+        'model_limits': (['Observed GCC predefines and compiler-resolved dependency bytes bind each context.',
+                          ('Compiler-resolved immutable headers are physical inputs; library models supplement checker semantics.'
+                           if environment_model.get('physical_header_inputs') is True else
+                           'Named public C/C++ and POSIX headers use hash-verified upstream library models, not implementation-header analysis.'),
+                          'Compiler header visitation does not establish analyzer header coverage.']
+                         if environment_model is not None else
+                         ['Compiler predefined macro equivalence is not established.',
+                          'Header visitation evidence belongs to the separate compiler pass.']),
+        'human_review_completed': False, 'production_qualified': False}
+
+
 def validate_budget_evidence(raw, request, policy, policy_sha256):
     """Use pinned correctness checks on actual diagnostic bytes and one context.
 
     No partial production request or reserialized native evidence is constructed.
-    The original request digest remains bound; only this private validator's
-    selected record population, schema and declared duration ceiling differ.
+    The original request digest remains bound; only this explicit diagnostic validator's
+    selected record population, schema, serial accounting and duration ceiling differ.
     """
     import inspect
     from nico import assessment_cpp_project_static as static
@@ -737,26 +956,7 @@ def validate_budget_evidence(raw, request, policy, policy_sha256):
     executed = request['contexts'][2]['analyzer_invocation'] + DIAGNOSTIC_FLAGS
     if rows[0].get('executed_invocation') != (executed if rows[0].get('execution') is not None else None):
         raise ValueError('diagnostic_budget_executed_command')
-    source = _budget_replace(source, "request['contexts']", 'selected_contexts', 3)
-    source = _budget_replace(source, 'native_evidence_sha256 = _digest(raw)',
-        "native_evidence_sha256 = _digest(raw)\n    selected_contexts = [request['contexts'][2]]")
-    source = _budget_replace(source,
-        "fields = {'schema', 'request_sha256', 'analyst_uid', 'version', 'records', 'duration_ms'}",
-        "fields = {'schema', 'request_sha256', 'analyst_uid', 'version', 'records', 'duration_ms',\n"
-        "        'execution_policy_sha256','production_qualified','assessment_completed','full_project_qualified',\n"
-        "        'diagnostic_flags','dispatched_indices','diagnostic_parallel','retained_population'}")
-    source = _budget_replace(source, "request['schema'].replace('-request.', '-evidence.')",
-        repr(BUDGET_EVIDENCE_SCHEMA))
-    source = _budget_replace(source, "_execution(row['execution'], 93000)",
-        "_execution(row['execution'], 183000)")
-    source = _budget_replace(source, 'compact_fields = legacy_fields |',
-        "legacy_fields |= {'executed_invocation'}\n    compact_fields = legacy_fields |")
-    source = _budget_replace(source,
-        "evidence['duration_ms'] * _request_limits(request)['parallel']",
-        "evidence['duration_ms'] * 1")
-    namespace = dict(vars(static))
-    exec(compile(source, '<pinned-budget-validator>', 'exec'), namespace)
-    checked = namespace['validate_project_static'](raw, request)
+    checked = _validate_budget_project_static(raw, request)
     return {**checked, 'case_complete': checked['complete']
         and checked.get('header_context_evidence_complete') is True,
         'complete': False, 'production_qualified': False,
@@ -984,7 +1184,7 @@ def run_primary(source, targets, image, output, retained, *, stage_binding=None,
         result['stage_runtime_binding_sha256'] = stage_binding_sha256
     if execution_policy is not None:
         result.update(scope='one_current_context_declared_budget', selected=selected,
-            unselected_contexts=576, case_seconds=180, execution_policy=execution_policy,
+            unselected_contexts=576, case_seconds=360, execution_policy=execution_policy,
             execution_policy_sha256=execution_policy_sha256,
             original_request_sha256=execution_policy['parent_request_sha256'])
     box = Sandbox(source,targets,image,output,executable=False,seconds=540,

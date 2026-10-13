@@ -263,7 +263,7 @@ def test_workflow_serializes_with_existing_native_run_and_has_no_write_permissio
     assert 'types: [synchronize]' in workflow and 'github.run_attempt == 1' in workflow
     assert '--execution-policy-sha256' in workflow
     assert 'owned_primary_control' in workflow
-    assert workflow.index('Exercise the owned static-only boundary first') < workflow.index('Measure only basic.cpp under the declared 180-second case policy')
+    assert workflow.index('Exercise the owned static-only boundary first') < workflow.index('Measure only basic.cpp under the declared 360-second case policy')
     assert '--test cluster_linearize_tests' not in workflow
     assert 'diagnostic/current-primary-38380333159' in workflow
 
@@ -695,20 +695,21 @@ def test_budget_policy_binds_one_context_without_mutating_original_request():
     assert d.validate_budget_policy(policy,d.sha(d.canonical_bytes(policy)),retained,
         binding,binding['image'],digest,binding['original_image']) == policy
     assert retained == before and retained['primary_request']['limits']['case_seconds']==90
-    assert policy['selected_index']==2 and policy['limits']=={'case_seconds':180,'wall_seconds':540,'parallel':1}
+    assert policy['selected_index']==2 and policy['limits']=={'case_seconds':360,'wall_seconds':540,'parallel':1}
     assert policy['program_sha256']==d.sha(d.budget_program([d.select_primary_cases(retained)[0]['invocation']]).encode())
     assert policy['analyzer_source_revision']=='ac4d82c590588700a462c4b7b3f5ea5acd8cfcfb'
     assert policy['production_qualified'] is False
 
 
-@pytest.mark.parametrize('fault',['index','path','case','aggregate','parallel','resource','image','original',
+@pytest.mark.parametrize('fault',['index','path','case','prior_case','aggregate','parallel','resource','image','original',
     'request','program','controller','binding','population','qualified','hash'])
 def test_budget_policy_rejects_rehashed_deviations(fault):
     from scripts import native_timeout_diagnostic as d
     retained,binding,digest,policy=_budget_policy_fixture()
     if fault=='index':policy['selected_index']=4
     elif fault=='path':policy['selected_path']='src/init/bitcoin-node.cpp'
-    elif fault=='case':policy['limits']['case_seconds']=181
+    elif fault=='case':policy['limits']['case_seconds']=361
+    elif fault=='prior_case':policy['limits']['case_seconds']=180
     elif fault=='aggregate':policy['limits']['wall_seconds']=541
     elif fault=='parallel':policy['limits']['parallel']=2
     elif fault=='resource':policy['resource_args'][0]='--cpus=8'
@@ -745,7 +746,7 @@ def test_budget_wrapper_extends_selected_command_and_preserves_aggregate_clippin
     ns,calls,retained,_=_budget_adapter()
     argv=retained['primary_request']['contexts'][2]['analyzer_invocation']
     ns['_run'](argv,'u2',640,{'EXACT':'owned'})
-    assert calls[-1][2]==280 and calls[-1][0]==argv+['--showtime=file','--report-progress=1']
+    assert calls[-1][2]==460 and calls[-1][0]==argv+['--showtime=file','--report-progress=1']
     ns['_run'](argv,'u2',150,{'EXACT':'owned'})
     assert calls[-1][2]==150
     ns['_run'](['/usr/local/bin/cppcheck','--version'],'version',105,{'EXACT':'owned'})
@@ -760,7 +761,7 @@ def test_budget_scheduler_dispatches_exactly_context2_and_flushes_its_record(cap
         records=list(pool.map(lambda c:seen.append(c['index']) or {'context_id':c['context_id']},retained['primary_request']['contexts']))
     assert seen==[2] and len(records)==1
     assert json.loads(capsys.readouterr().out)['execution_policy_sha256']
-    assert 'min(deadline, dispatch_start + 180)' in program
+    assert 'min(deadline, dispatch_start + 360)' in program
     assert "limits = _request_limits(request)" in program
     assert "start + 5" in program
     assert ns['PHYSICAL_LIMITS']=={'wall_seconds':540,'case_seconds':90,'parallel':2}
@@ -788,6 +789,7 @@ def test_workflow_budget_is_explicit_once_after_contracts_controls_and_policy():
     control=next(n for n,s in enumerate(steps) if s.get('name')=='Prove analyzer opt-in and absence on owned source before acquisition')
     policy=next(n for n,s in enumerate(steps) if s.get('name')=='Bind the explicit context-2 budget policy to fresh image identities')
     assert contracts<control<policy<steps.index(run[0])
+    assert 'tests/test_no_production_unsafe_primitives.py' in steps[contracts]['run']
     assert not any('--mode current-primary\n' in s.get('run','') for s in steps)
 
 
@@ -811,7 +813,7 @@ def _budget_native_fixture(tmp_path):
         row[field]=encoded;row[hashfield]=digest
         if field=='header_trace':row['header_trace_encoding']=encoding
     execution=row['execution'];progress=base64.b64decode(execution['output']).replace(b'unit.cpp',b'src/init/basic.cpp')
-    execution.update(output=base64.b64encode(progress).decode(),output_sha256=d.sha(progress),duration_ms=150000)
+    execution.update(output=base64.b64encode(progress).decode(),output_sha256=d.sha(progress),duration_ms=330000)
     request['contexts'] += [deepcopy(request['contexts'][0]) for _ in range(573)]
     for c in request['contexts']:
         c['analyzer_database_sha256']=d.sha(c['analyzer_database'].encode())
@@ -826,13 +828,13 @@ def _budget_native_fixture(tmp_path):
     policy_sha=d.sha(d.canonical_bytes(policy))
     row['executed_invocation']=row['invocation']+d.DIAGNOSTIC_FLAGS
     output.update(schema=d.BUDGET_EVIDENCE_SCHEMA,request_sha256=d.sha(d.canonical_bytes(request)),records=[row],
-        duration_ms=150005,execution_policy_sha256=policy_sha,production_qualified=False,
+        duration_ms=330005,execution_policy_sha256=policy_sha,production_qualified=False,
         assessment_completed=False,full_project_qualified=False,dispatched_indices=[2],diagnostic_parallel=1,
         retained_population=577,diagnostic_flags=d.DIAGNOSTIC_FLAGS)
     return request,policy,policy_sha,output
 
 
-def test_budget_accepts_completed_150second_owned_case_and_keeps_qualification_false(tmp_path):
+def test_budget_accepts_completed_330second_owned_case_and_keeps_qualification_false(tmp_path):
     from scripts import native_timeout_diagnostic as d
     from nico import assessment_cpp_project_static as static
     req,policy,digest,native=_budget_native_fixture(tmp_path)
@@ -854,7 +856,7 @@ def test_budget_correctness_gates_remain_mandatory(tmp_path,fault):
     row=native['records'][0]
     if fault=='header':row['header_trace']='';row['header_trace_sha256']=None
     elif fault=='xml':row['xml']='';row['xml_sha256']=None
-    elif fault=='duration':row['execution']['duration_ms']=183001
+    elif fault=='duration':row['execution']['duration_ms']=363001
     elif fault=='record':native['records'].append(dict(row))
     elif fault=='command':row['executed_invocation'].append('--suppress=all')
     elif fault=='policy':native['execution_policy_sha256']='f'*64
@@ -866,8 +868,8 @@ def test_budget_correctness_gates_remain_mandatory(tmp_path,fault):
 def test_budget_retains_timeout_with_actual_xml_and_unknown_completion(tmp_path):
     from scripts import native_timeout_diagnostic as d
     req,policy,digest,native=_budget_native_fixture(tmp_path)
-    native['records'][0]['execution'].update(exit_code=124,timed_out=True,duration_ms=180001)
-    native['duration_ms']=180010
+    native['records'][0]['execution'].update(exit_code=124,timed_out=True,duration_ms=360001)
+    native['duration_ms']=360010
     raw=d.canonical_bytes(native)
     checked=d.validate_budget_evidence(raw,req,policy,digest)
     assert not checked['case_complete'] and not checked['complete']
@@ -928,7 +930,7 @@ def test_cli_explicit_budget_mode_runs_once_and_never_claims_assessment(tmp_path
     assert outcome['static']['complete'] is False
 
 
-def test_full_generated_budget_program_uses_180_deadline_and_emits_only_new_schema(tmp_path,capsys,monkeypatch):
+def test_full_generated_budget_program_uses_360_deadline_and_emits_only_new_schema(tmp_path,capsys,monkeypatch):
     import base64,io,types,hashlib
     from pathlib import Path
     from scripts import native_timeout_diagnostic as d
@@ -983,7 +985,7 @@ def test_full_generated_budget_program_uses_180_deadline_and_emits_only_new_sche
     monkeypatch.setitem(__import__('sys').modules,'resource',ns['resource'])
     exec('raw = sys.stdin.buffer.read(REQUEST_LIMIT+1)'+suffix,ns)
     frames=[json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert len(calls)==2 and calls[0][1]==105 and calls[1][1]==280
+    assert len(calls)==2 and calls[0][1]==105 and calls[1][1]==460
     assert len(frames)==2 and frames[-1]['schema']==d.BUDGET_EVIDENCE_SCHEMA
     assert frames[-1]['dispatched_indices']==[2] and len(frames[-1]['records'])==1
     assert request['limits']=={'wall_seconds':540,'case_seconds':90,'parallel':2}
@@ -1004,3 +1006,47 @@ def test_budget_completed_case_preserves_genuine_source_bound_findings(tmp_path)
     assert checked['findings'][0]['rule_id']=='nullPointer'
     assert checked['findings'][0]['source_sha256']==req['targets']['src/init/basic.cpp']
     assert checked['production_qualified'] is False
+
+
+def test_explicit_budget_validator_matches_pinned_correctness_checks():
+    """Only the declared diagnostic adaptations may differ from production."""
+    import ast,inspect,textwrap
+    from scripts import native_timeout_diagnostic as d
+    from nico import assessment_cpp_project_static as static
+    source=inspect.getsource(static.validate_project_static)
+    assert d.sha(source.encode())==d.BUDGET_VALIDATOR_SHA256
+    replacements=[
+        ('def validate_project_static(', 'def _validate_budget_project_static(',1),
+        ("request['contexts']",'selected_contexts',3),
+        ('native_evidence_sha256 = _digest(raw)',
+         "native_evidence_sha256 = _digest(raw)\n    selected_contexts = [request['contexts'][2]]",1),
+        ("fields = {'schema', 'request_sha256', 'analyst_uid', 'version', 'records', 'duration_ms'}",
+         "fields = {'schema', 'request_sha256', 'analyst_uid', 'version', 'records', 'duration_ms',\n"
+         "        'execution_policy_sha256','production_qualified','assessment_completed','full_project_qualified',\n"
+         "        'diagnostic_flags','dispatched_indices','diagnostic_parallel','retained_population'}",1),
+        ("request['schema'].replace('-request.', '-evidence.')",'BUDGET_EVIDENCE_SCHEMA',1),
+        ("_execution(row['execution'], 93000)","_execution(row['execution'], 363000)",1),
+        ('compact_fields = legacy_fields |',"legacy_fields |= {'executed_invocation'}\n    compact_fields = legacy_fields |",1),
+        ("evidence['duration_ms'] * _request_limits(request)['parallel']","evidence['duration_ms'] * 1",1),
+    ]
+    for old,new,count in replacements:
+        assert source.count(old)==count
+        source=source.replace(old,new)
+    expected=ast.parse(textwrap.dedent(source)).body[0]
+    actual=ast.parse(textwrap.dedent(inspect.getsource(d._validate_budget_project_static))).body[0]
+    for node in (expected,actual):
+        node.body=node.body[1:]  # Docstrings may explain their different scopes.
+    helper_import=actual.body.pop(0)
+    assert isinstance(helper_import,ast.ImportFrom)
+    assert helper_import.module=='nico.assessment_cpp_project_static'
+    for imported in helper_import.names:
+        assert getattr(static,imported.name) is not None and imported.asname is None
+    assert ast.dump(actual,include_attributes=False)==ast.dump(expected,include_attributes=False)
+
+
+def test_explicit_budget_validator_rejects_pinned_validator_drift(tmp_path,monkeypatch):
+    from scripts import native_timeout_diagnostic as d
+    req,policy,digest,native=_budget_native_fixture(tmp_path)
+    monkeypatch.setattr(d,'BUDGET_VALIDATOR_SHA256','f'*64)
+    with pytest.raises(ValueError,match='diagnostic_budget_validator_identity'):
+        d.validate_budget_evidence(d.canonical_bytes(native),req,policy,digest)
