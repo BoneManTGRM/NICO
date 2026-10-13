@@ -492,3 +492,39 @@ def test_outer_deadline_preserves_real_command_output_before_error(tmp_path, clo
     cleaned = box.call('owned-cleanup', [sys.executable, '-I', '-S', '-c', "print('cleanup')"],
                        cleanup=True, seconds=5)
     assert cleaned['exit_code'] == 0 and cleaned['output'] == b'cleanup\n'
+
+
+def test_retained_native_database_reconstructs_snapshot_population_without_replacing_original(tmp_path):
+    import base64
+    from copy import deepcopy
+    from scripts import native_timeout_diagnostic as d
+    from tests.test_cpp_native_command_transport import run_case
+    from nico.assessment_cpp_project_compiler import project_compiler_request
+    probe,targets,docker,out,_ = run_case(tmp_path)
+    original = base64.b64decode(probe['compilation_database'], validate=True)
+    artifacts = {row['id']:(out/row['output_artifact']['path']).read_bytes()
+                 for row in probe['operations'] if row.get('output_artifact')}
+    snapshot = json.loads(artifacts['project-generated-context'])
+    before = deepcopy(probe)
+    with pytest.raises(ValueError, match='worker_generated_project_snapshot_invalid'):
+        project_compiler_request(original,targets,snapshot,extended_budget=True)
+    analysis = d.reconstruct_current_database(probe,targets,original,artifacts)
+    request = project_compiler_request(analysis,targets,snapshot,extended_budget=True)
+    assert probe == before and original == docker.database
+    assert analysis != original and len(request['contexts']) == 2
+    assert request['database_sha256'] == probe['analysis_compilation_database_sha256']
+    # The owned transport uses the standard compiler budget; compare every
+    # identity/input/command field with the extended-budget reconstruction.
+    assert {k:v for k,v in request.items() if k not in {'schema','limits'}} == {
+        k:v for k,v in docker.compiler_request.items() if k not in {'schema','limits'}}
+    for fault in ('database','analysis_digest','plan','freeze','cache','membership','native_post'):
+        changed=deepcopy(probe); retained=dict(artifacts); raw=original
+        if fault=='database': raw += b' '
+        if fault=='analysis_digest': changed['analysis_compilation_database_sha256']='0'*64
+        if fault=='plan': changed['native_command_plan']['context_count']=1
+        if fault=='freeze': changed['native_command_freeze']={}
+        if fault=='cache': changed['configuration_cache_sha256']='0'*64
+        if fault=='membership': retained['project-enabled-targets-post-build'] += b' '
+        if fault=='native_post': retained['project-native-commands-post-build']=b'{}'
+        with pytest.raises(ValueError):
+            d.reconstruct_current_database(changed,targets,raw,retained)

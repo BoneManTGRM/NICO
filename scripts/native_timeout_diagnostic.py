@@ -149,10 +149,16 @@ def load_retained(path, expected_sha, manifest_raw, *, current_primary=False):
         environment_raw = artifact('project-static-environment')
         primary_raw = artifact('project-static-evidence')
         fallback_raw = None if current_primary else artifact('project-static-clang-fallback')
+        native_inputs = ({key:artifact(key) for key in (
+            'project-enabled-targets','project-enabled-targets-post-build',
+            'project-native-commands','project-native-commands-post-build')}
+            if current_primary else None)
     probe = receipt['probe']
     database = base64.b64decode(probe['compilation_database'], validate=True)
     if sha(database) != probe['compilation_database_sha256']:
         raise ValueError('diagnostic_database_digest_mismatch')
+    if current_primary:
+        database = reconstruct_current_database(probe, source['targets'], database, native_inputs)
     from nico.assessment_cpp_project_compiler import project_compiler_request
     from nico.assessment_cpp_static_environment import environment_request, validate_environment
     from nico.assessment_cpp_project_static import project_static_request, validate_project_static
@@ -593,6 +599,38 @@ CURRENT_TOOLS = {'cppcheck':'f5215eabbc2666859254ace73a5f53eb991cb285f94a733d668
     'nico-clang-header-observer.so':'45474684723784ea89d5531bf52730adedddc312814c083e990e8a2df1bf43f9'}
 CURRENT_CASES = {2:'src/init/basic.cpp', 4:'src/init/bitcoin-node.cpp', 10:'src/compat/stdin.cpp'}
 DIAGNOSTIC_FLAGS = ['--showtime=file', '--report-progress=1']
+
+
+def reconstruct_current_database(probe, targets, original_database, artifacts):
+    """Rebuild the retained native analysis plan without replacing the original DB."""
+    from nico.assessment_cpp_configuration import COMPILER_VERSION
+    from nico.assessment_cpp_fileapi_membership import runtime_cmake_path
+    from nico.assessment_cpp_native_commands import configured_native_commands, validate_native_plan_freeze
+    membership = artifacts['project-enabled-targets']
+    if membership != artifacts['project-enabled-targets-post-build']:
+        raise ValueError('diagnostic_native_membership_changed')
+    cache = base64.b64decode(probe['configuration_cache'], validate=True)
+    if sha(cache) != probe['configuration_cache_sha256']:
+        raise ValueError('diagnostic_native_cache_digest')
+    if sha(original_database) != probe['compilation_database_sha256']:
+        raise ValueError('diagnostic_database_digest_mismatch')
+    kwargs = dict(source_root='/work/source',build_root='/work/build',client=probe['fileapi_client'],
+        cache_sha256=sha(cache),compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
+        compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},cmake_path=runtime_cmake_path(True))
+    native = artifacts['project-native-commands']
+    plan = configured_native_commands(native,membership,original_database,targets,**kwargs)
+    freeze = validate_native_plan_freeze(native,artifacts['project-native-commands-post-build'],
+        membership,original_database,targets,**kwargs)
+    if (plan != {k:v for k,v in probe['native_command_plan'].items() if k != 'artifact'}
+            or freeze != probe['native_command_freeze']
+            or plan['analysis_database'] != probe['analysis_compilation_database']
+            or plan['analysis_database_sha256'] != probe['analysis_compilation_database_sha256']
+            or plan['context_count'] != probe['analysis_invocations']):
+        raise ValueError('diagnostic_native_plan_binding')
+    database = base64.b64decode(plan['analysis_database'], validate=True)
+    if sha(database) != plan['analysis_database_sha256']:
+        raise ValueError('diagnostic_analysis_database_digest')
+    return database
 
 
 def verify_current_export(archive, receipt):
