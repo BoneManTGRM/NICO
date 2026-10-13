@@ -60,6 +60,39 @@ def test_missing_or_ambiguous_recipe_is_rejected():
         provision_script("jobs: {}", "missing")
 
 
+@pytest.mark.parametrize('metadata', ['', '        id: collection_image\n'])
+def test_recipe_step_id_preserves_exact_script_and_step_boundary(metadata):
+    workflow = ('  project-baseline-qualification:\n'
+        '      - name: Provision\n' + metadata + '        run: |\n'
+        '          set -euo pipefail\n'
+        '          docker build --network=none .\n'
+        '      - name: Next\n        run: |\n          echo excluded\n')
+    assert provision_script(workflow, 'Provision') == (
+        'set -euo pipefail\ndocker build --network=none .\n')
+    with pytest.raises(ValueError, match='diagnostic_recipe_step_invalid'):
+        provision_script(workflow + '      - name: Provision\n        run: |\n          echo duplicate\n', 'Provision')
+
+
+@pytest.mark.parametrize('metadata', [
+    '        id: ${{ inputs.id }}\n', '        id: collection image\n',
+    '        id: one\n        id: two\n', '        if: always()\n',
+    '        env:\n          KEY: value\n', '        uses: some/action\n',
+])
+def test_recipe_rejects_unsupported_step_metadata(metadata):
+    workflow = ('  project-baseline-qualification:\n'
+        '      - name: Provision\n' + metadata + '        run: |\n          echo recipe\n')
+    with pytest.raises(ValueError, match='diagnostic_recipe_step_invalid'):
+        provision_script(workflow, 'Provision')
+
+
+@pytest.mark.parametrize('script', ['', '          echo ${{ secrets.TOKEN }}\n'])
+def test_recipe_step_id_does_not_allow_empty_or_interpolated_script(script):
+    workflow = ('  project-baseline-qualification:\n'
+        '      - name: Provision\n        id: collection_image\n        run: |\n' + script)
+    with pytest.raises(ValueError, match='diagnostic_recipe_interpolation_unsupported'):
+        provision_script(workflow, 'Provision')
+
+
 def test_malformed_unhashable_test_name_is_a_selection_error():
     with pytest.raises(ValueError, match='diagnostic_test_selection_invalid'):
         isolated_ctest_argv([{}], 'a', 300)
