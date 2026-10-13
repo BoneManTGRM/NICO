@@ -5,7 +5,7 @@ import re
 import pytest
 
 from scripts.native_stage_counters import instrument as patch
-from scripts.native_stage_counters.evidence import FIELDS, parse_snapshots
+from scripts.native_stage_counters.evidence import FIELDS, FIELDS_V2, parse_snapshots
 
 
 def record(seq=1, event=1, phase=3, inner=0):
@@ -121,7 +121,7 @@ def test_header_counter_order_matches_evidence_contract():
     enum = re.search(r'enum Field : unsigned \{(.*?)Count\n\};', header, re.S).group(1)
     names = [n.strip() for n in enum.split(',') if n.strip()]
     snake = lambda name: re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
-    assert [snake(n) for n in names] == list(FIELDS)
+    assert [snake(n) for n in names] == list(FIELDS_V2)
 
 
 def test_full_record_budget_is_accepted_but_never_qualified():
@@ -135,6 +135,27 @@ def owned_template_source(tmp_path, monkeypatch):
     raw = (b'#include "templatesimplifier.h"\n'
            b'    for (; passCount < passCountMax; ++passCount) {\n'
            b'            if (instantiated) {\n')
+    raw += b"""
+void TemplateSimplifier::expandTemplate()
+{
+    for (Token *tok3 = mTokenList.front(); tok3; tok3 = tok3 ? tok3->next() : nullptr) {
+        for (; tok3; tok3 = tok3->next()) {
+static bool isLowerThanLogicalAnd
+bool TemplateSimplifier::matchSpecialization()
+{
+    for (auto it = specializations.cbegin(); it != specializations.cend(); ++it) {
+        while (declToken != endToken) {
+std::string TemplateSimplifier::getNewName(
+bool TemplateSimplifier::simplifyTemplateInstantiations()
+{
+    for (const TokenAndName &instantiation : mTemplateInstantiations) {
+static bool matchTemplateParameters(
+void TemplateSimplifier::replaceTemplateUsage()
+{
+    for (Token *nameTok = mTokenList.front(); nameTok; nameTok = nameTok->next()) {
+                for (auto ti = mTemplateInstantiations.cbegin(); ti != mTemplateInstantiations.cend();) {
+static bool specMatch(
+"""
     name = 'lib/templatesimplifier.cpp'
     (source/name).write_bytes(raw)
     monkeypatch.setattr(patch, 'SOURCE_SHA256', {name: patch.digest(raw)})
@@ -186,7 +207,7 @@ def runtime_binding():
              'activation':{'environment':'NICO_CPP_STAGE_COUNTERS','exact_value':'1'},
              'members':[{'path':p,'before_sha256':b.SOURCE_SHA256[p],'after_sha256':b.AFTER_SHA256[p],
                          'semantic_bytes_restored':True} for p in sorted(b.SOURCE_SHA256)]}
-    return {'schema':'nico.stage-runtime-binding.v2','original_image':'sha256:'+'b'*64,'image':'sha256:'+'c'*64,
+    return {'schema':'nico.stage-runtime-binding.v3','record_version':2,'original_image':'sha256:'+'b'*64,'image':'sha256:'+'c'*64,
             'original_binary_sha256':b.ORIGINAL_BINARY_SHA256,'instrumented_binary_sha256':'a'*64,
             'observer_sha256':b.OBSERVER_SHA256,'original_archive_sha256':b.ARCHIVE_SHA256,'flags':b.FLAGS,
             'build_flags':b.BUILD_FLAGS,'compiler_version':'14.2.0','activation':overlay['activation'],
@@ -314,7 +335,7 @@ def test_case_counter_retention_survives_outer_incomplete_json():
     row={'context_id':'owned-case','execution':{'output':base64.b64encode(raw).decode(),
          'output_sha256':hashlib.sha256(raw).hexdigest(),'timed_out':True,'output_truncated':True}}
     native=(json.dumps({'diagnostic_partial_record':row})+'\n{"incomplete":').encode()
-    found=collect_case_snapshots(native,{'instrumented_binary_sha256':'a'*64},['owned-case','unstarted'])
+    found=collect_case_snapshots(native,{'instrumented_binary_sha256':'a'*64,'record_version':1},['owned-case','unstarted'])
     assert found[0]['snapshots']['incomplete_tail'] and len(found[0]['snapshots']['records'])==1
     assert found[1]['error']=='stage_execution_not_retained'
     row['execution']['output_sha256']='0'*64

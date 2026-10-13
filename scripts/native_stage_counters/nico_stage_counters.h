@@ -8,12 +8,21 @@
 #include <cstdlib>
 #include <ctime>
 #include <limits>
+#include <exception>
+#include <cerrno>
+#include <time.h>
 
 namespace NicoStage {
 enum Field : unsigned {
     Phase, Pass, Call, Alias, OuterVisits, InnerVisits, ScopeNodes, MatchCalls,
     BaseQueries, BaseVisits, ScopeQueries, ChildVisits, Replacements, Instantiations,
-    UsingCalls, Aliases, RhsDistanceCalls, RhsDistanceTokens, RhsParses, PreludeVisits, Count
+    UsingCalls, Aliases, RhsDistanceCalls, RhsDistanceTokens, RhsParses, PreludeVisits,
+    SelectionCpuNs, MatchingCpuNs, ExpansionCpuNs, ReplacementCpuNs,
+    SelectionEntered, MatchingEntered, ExpansionEntered, ReplacementEntered,
+    SelectionCompleted, MatchingCompleted, ExpansionCompleted, ReplacementCompleted,
+    SelectionVisits, SpecializationVisits, SpecializationTokenVisits,
+    ExpansionOuterVisits, ExpansionBodyVisits, ReplacementVisits, ReplacementNestedVisits,
+    ActiveBucket, BucketDepth, ThreadClockStatus, Count
 };
 constexpr unsigned SampleOperations = 4096;
 constexpr unsigned MaxRecords = 128;
@@ -29,6 +38,7 @@ inline bool enabled() {
 struct State {
     std::uint64_t v[Count] = {};
     unsigned operations = 0;
+    std::uint64_t lastThreadNs = 0;
 };
 inline State& state() { static thread_local State value; return value; }
 inline unsigned lane() {
@@ -48,11 +58,74 @@ inline Output& output() { static Output value; return value; }
 inline void increment(std::uint64_t& v) {
     if (v != std::numeric_limits<std::uint64_t>::max()) ++v;
 }
+// Bucket 0=inactive, 1=selection remainder, 2=matching, 3=expansion, 4=replacement.
+// Clock status 0=not attempted, 1=available, 2=unavailable (sticky).
+inline void addSaturated(std::uint64_t& value, std::uint64_t amount) noexcept {
+    const auto max = std::numeric_limits<std::uint64_t>::max();
+    value = amount > max - value ? max : value + amount;
+}
+inline bool threadNow(std::uint64_t& ns) noexcept {
+#ifdef NICO_STAGE_TEST_CLOCK
+    return NICO_STAGE_TEST_CLOCK(ns);
+#elif defined(CLOCK_THREAD_CPUTIME_ID)
+    struct timespec ts;
+    const int savedErrno = errno;
+    const int result = clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+    errno = savedErrno;
+    if (result != 0 || ts.tv_sec < 0 ||
+        ts.tv_nsec < 0 || ts.tv_nsec >= 1000000000) return false;
+    const auto seconds = static_cast<std::uint64_t>(ts.tv_sec);
+    if (seconds > (std::numeric_limits<std::uint64_t>::max() - ts.tv_nsec) / 1000000000) return false;
+    ns = seconds * 1000000000 + static_cast<std::uint64_t>(ts.tv_nsec);
+    return true;
+#else
+    (void)ns;
+    return false;
+#endif
+}
+inline void checkpointCpu() noexcept {
+    State& s = state();
+    if (s.v[ThreadClockStatus] == 2) return;
+    std::uint64_t now = 0;
+    if (!threadNow(now) || (s.v[ThreadClockStatus] == 1 && now < s.lastThreadNs)) {
+        s.v[ThreadClockStatus] = 2;
+        return;
+    }
+    if (s.v[ThreadClockStatus] == 1 && s.v[ActiveBucket])
+        addSaturated(s.v[SelectionCpuNs + s.v[ActiveBucket] - 1], now - s.lastThreadNs);
+    s.lastThreadNs = now;
+    s.v[ThreadClockStatus] = 1;
+}
+class TemplateScope {
+    unsigned bucket;
+    std::uint64_t previous = 0, depth = 0;
+public:
+    explicit TemplateScope(unsigned value) noexcept : bucket(value) {
+        if (!enabled()) return;
+        State& s = state();
+        checkpointCpu();
+        previous = s.v[ActiveBucket]; depth = s.v[BucketDepth];
+        s.v[ActiveBucket] = bucket;
+        increment(s.v[BucketDepth]);
+        increment(s.v[SelectionEntered + bucket - 1]);
+    }
+    ~TemplateScope() noexcept {
+        if (!enabled()) return;
+        State& s = state();
+        checkpointCpu();
+        if (!std::uncaught_exception())
+            increment(s.v[SelectionCompleted + bucket - 1]);
+        s.v[ActiveBucket] = previous; s.v[BucketDepth] = depth;
+    }
+    TemplateScope(const TemplateScope&) = delete;
+    TemplateScope& operator=(const TemplateScope&) = delete;
+};
 inline void emit(unsigned event, unsigned kind) {
     if (!enabled()) return;
     Output& o = output();
     if (o.busy.test_and_set(std::memory_order_acquire)) return;
     const auto now = std::chrono::steady_clock::now();
+    checkpointCpu();
     const unsigned bit = event == 1 ? (1U << kind) : 0;
     // At most three first-entry records bypass the global one-second limit.
     const bool first = bit && !(o.firstEntries & bit);
@@ -67,7 +140,7 @@ inline void emit(unsigned event, unsigned kind) {
     char line[MaxRecordBytes];
     const auto wall = std::chrono::duration_cast<std::chrono::microseconds>(now - o.start).count();
     const std::clock_t cpu = std::clock();
-    int size = std::snprintf(line, sizeof(line), "NICO_STAGE_V1 %u %u %u %u %llu %lld %llu",
+    int size = std::snprintf(line, sizeof(line), "NICO_STAGE_V2 %u %u %u %u %llu %lld %llu",
         o.records, event, kind, lane(), static_cast<unsigned long long>(wall),
         static_cast<long long>(cpu), static_cast<unsigned long long>(CLOCKS_PER_SEC));
     for (unsigned i = 0; i < Count && size > 0 && size < static_cast<int>(sizeof(line)) - 1; ++i) {
@@ -92,6 +165,17 @@ inline void bump(Field field) {
     if (++s.operations == SampleOperations) {
         s.operations = 0;
         emit(0, static_cast<unsigned>(s.v[Phase]));
+    }
+}
+// Independent of the using-only Call field. No clock/log on individual visits.
+inline void templateBump(Field field) noexcept {
+    if (!enabled()) return;
+    State& s = state();
+    if (!s.v[ActiveBucket]) return;
+    increment(s.v[field]);
+    if (++s.operations == SampleOperations) {
+        s.operations = 0;
+        emit(0, 1);
     }
 }
 inline void distanceTokens(std::uint64_t count) {

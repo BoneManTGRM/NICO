@@ -7,11 +7,11 @@ from . import specialization_groups as groups
 
 OBSERVER_SHA256 = '45474684723784ea89d5531bf52730adedddc312814c083e990e8a2df1bf43f9'
 ARCHIVE_SHA256 = 'dbf890120e44a7d0f99133d69f316c9e8d7dce0210f3ae627e248ffa1c4e7e92'
-OVERLAY_SHA256 = 'cb505b6b0bb207d30529627c19dff93146baa404658325d2625c371ca3cd1721'
-HEADER_SHA256 = '924d2ad1ffd460fb894df6b493be029db2c1dd8b5b335f58bcdcbf69377f693f'
+OVERLAY_SHA256 = 'f838fcb5843cb7d0109b49a79f3fcb167f8667fb0b5098246c9014d1901dbcb4'
+HEADER_SHA256 = '5758247ace70aaaa532da5e81bd578905e9ea9243841f8193865602fca88b11b'
 AFTER_SHA256 = {
     'lib/tokenize.cpp': '0ad11c73e55a130a3e9eb660b807353527f065d6eae58564546f00852d594c5e',
-    'lib/templatesimplifier.cpp': '80715d5d7e76777f19779648afa82b78cd290f08786220f23360cb39157425c7',
+    'lib/templatesimplifier.cpp': '29ed29fd5a504ee6628927a7fabfe19f2b9ef8f80c4d5a518d93e4bc8ab44871',
 }
 FLAGS = ['--showtime=file', '--report-progress=1']
 BUILD_FLAGS = ['MATCHCOMPILER=yes', 'FILESDIR=/opt/cppcheck', 'CXXFLAGS=-O2 -DNDEBUG', '-j2']
@@ -72,7 +72,8 @@ def validate_binding(value, image, expected_sha256, original_image):
             or value.get('original_image')!=original_image):
         raise ValueError('diagnostic_stage_provenance_binding')
     binary = value.get('instrumented_binary_sha256', '')
-    if (value.get('schema') != 'nico.stage-runtime-binding.v2'
+    if (value.get('schema') != 'nico.stage-runtime-binding.v3'
+            or type(value.get('record_version')) is not int or value.get('record_version') != 2
             or not re.fullmatch(r'sha256:[a-f0-9]{64}', image)
             or value.get('image') != image or value.get('original_image') == image
             or not re.fullmatch(r'sha256:[a-f0-9]{64}', value.get('original_image', ''))

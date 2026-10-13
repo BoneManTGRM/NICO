@@ -90,6 +90,28 @@ def instrument(relative: str, raw: bytes) -> bytes:
         raw = insert(raw, b'    for (; passCount < passCountMax; ++passCount) {\n',
                      b'        NicoStage::Frame nicoTemplate(1, passCount + 1);')
         raw = insert(raw, b'            if (instantiated) {\n', b'                NicoStage::instantiated();')
+        # Restrict anchors to their pinned functions; additions reverse byte-for-byte.
+        regions = [
+            ('void TemplateSimplifier::expandTemplate(', 'static bool isLowerThanLogicalAnd', 3, [
+                ('    for (Token *tok3 = mTokenList.front(); tok3; tok3 = tok3 ? tok3->next() : nullptr) {\n', 'ExpansionOuterVisits'),
+                ('        for (; tok3; tok3 = tok3->next()) {\n', 'ExpansionBodyVisits')]),
+            ('bool TemplateSimplifier::matchSpecialization(', 'std::string TemplateSimplifier::getNewName(', 2, [
+                ('    for (auto it = specializations.cbegin(); it != specializations.cend(); ++it) {\n', 'SpecializationVisits'),
+                ('        while (declToken != endToken) {\n', 'SpecializationTokenVisits')]),
+            ('bool TemplateSimplifier::simplifyTemplateInstantiations(', 'static bool matchTemplateParameters(', 1, [
+                ('    for (const TokenAndName &instantiation : mTemplateInstantiations) {\n', 'SelectionVisits')]),
+            ('void TemplateSimplifier::replaceTemplateUsage(', 'static bool specMatch(', 4, [
+                ('    for (Token *nameTok = mTokenList.front(); nameTok; nameTok = nameTok->next()) {\n', 'ReplacementVisits'),
+                ('                for (auto ti = mTemplateInstantiations.cbegin(); ti != mTemplateInstantiations.cend();) {\n', 'ReplacementNestedVisits')]),
+        ]
+        for start, stop, bucket, visits in regions:
+            first = raw.index(start.encode()); last = raw.index(stop.encode(), first)
+            body = raw[first:last]
+            entry = body[:body.index(b'{\n') + 2]
+            body = insert(body, entry, f'    NicoStage::TemplateScope nicoSubphase({bucket});'.encode())
+            for anchor, field in visits:
+                body = insert(body, anchor.encode(), f'        NicoStage::templateBump(NicoStage::{field});'.encode())
+            raw = raw[:first] + body + raw[last:]
     if strip_instrumentation(raw) != original:
         raise ValueError('stage_semantic_source_changed')
     return raw

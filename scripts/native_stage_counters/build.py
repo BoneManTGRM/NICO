@@ -131,7 +131,7 @@ def capture(original_image, image, output, recipe):
         expected=prepare(Path(temp),Path('docker/assessment-full-project-fuzz.Dockerfile'),Path(temp)/'Dockerfile')
     if digest(recipe.read_bytes())!=expected['diagnostic_recipe_sha256']:
         raise ValueError('diagnostic_stage_recipe_identity')
-    binding={'schema':'nico.stage-runtime-binding.v2','original_image':original_image,'image':image,
+    binding={'schema':'nico.stage-runtime-binding.v3','record_version':2,'original_image':original_image,'image':image,
              'original_binary_sha256':ORIGINAL_BINARY_SHA256,'instrumented_binary_sha256':hashes['instrumented-binary'],
              'observer_sha256':OBSERVER_SHA256,'original_archive_sha256':ARCHIVE_SHA256,
              'flags':FLAGS,'build_flags':BUILD_FLAGS,'compiler_version':'14.2.0',

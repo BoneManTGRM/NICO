@@ -23,7 +23,7 @@ def owned_program(binding):
             assert ('NICO_CPP_STAGE_COUNTERS' in environment)==enabled
             assert 'NICO_CPP_STAGE_COUNTERS' not in base
             value=subprocess.run(argv,env=environment,capture_output=True,timeout=20,cwd='/work/analysis')
-            rows=[line for line in value.stderr.splitlines() if line.startswith(b'NICO_STAGE_V1 ')]
+            rows=[line for line in value.stderr.splitlines() if line.startswith(b'NICO_STAGE_V2 ')]
             assert value.returncode==0 and bool(rows)==enabled
             assert len(rows)<=128 and all(len(row)+1<=1024 for row in rows)
             records.append({'enabled':enabled,'exit_code':value.returncode,'stage_lines':len(rows),
