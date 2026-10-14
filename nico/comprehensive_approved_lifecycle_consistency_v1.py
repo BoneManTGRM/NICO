@@ -75,6 +75,7 @@ _STATUS_REPLACEMENTS: tuple[tuple[str, str], ...] = (
 _FORBIDDEN_APPROVED_PATTERNS: tuple[str, ...] = (
     r"\bpending human approval\b",
     r"\bhuman approval pending\b",
+    r"\bhuman approval\s*:\s*pending\b",
     r"\bhuman decision pending\b",
     r"\breview state\s*:\s*pending\b",
     r"\bapproval state\s*:\s*pending\b",

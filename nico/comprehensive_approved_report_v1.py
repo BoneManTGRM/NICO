@@ -171,7 +171,7 @@ def _replace_finality_text(value: str) -> str:
     # The review-truth appendix uses a distinct approval label in Markdown/HTML.
     # The immutable edition names the separate delivery certificate, never authorization.
     output = re.sub(
-        r"(\bFinal human approval\s*:\s*(?:</strong>\s*)?)pending\b",
+        r"(\b(?:Final human approval|Human approval)\s*:\s*(?:</strong>\s*)?)pending\b",
         r"\1APPROVED",
         output,
         flags=re.IGNORECASE,
@@ -383,6 +383,7 @@ def _rewrite_pdf(
                 changed = True
         review_truth_page = "HUMAN REVIEW AND APPROVAL TRUTH" in page_text
         review_truth_value_label = ""
+        previous_label = ""
         for operands, operator in stream.operations:
             if operator in {b"Tj", b"'", b'"'}:
                 targets = operands
@@ -409,14 +410,36 @@ def _rewrite_pdf(
                         } else ""
                     if (cover_page or approval_record_page) and updated == original:
                         normalized = original.strip().casefold()
-                        if normalized == "pending":
+                        if normalized == "pending" and approval_record_page:
+                            if previous_label in {
+                                "reviewer identity", "reviewer role", "reviewer authorization",
+                                "review timestamp", "reviewer notes",
+                            }:
+                                updated = "See certificate"
+                            elif previous_label == "approval record id":
+                                updated = "Not recorded"
+                            elif previous_label in {"decision", "human approval", "approval state", "review state"}:
+                                updated = "Approved"
+                        elif normalized == "pending" and cover_page:
                             updated = "Approved"
                         elif normalized == "blocked":
                             updated = "Controlled"
-                        elif normalized == "pendiente":
+                        elif normalized == "pendiente" and approval_record_page:
+                            if previous_label in {
+                                "identidad del revisor", "rol del revisor", "autorización del revisor",
+                                "fecha y hora de revisión", "marca de tiempo de la revisión",
+                                "notas del revisor",
+                            }:
+                                updated = "Ver certificado"
+                            elif previous_label == "id del registro de aprobación":
+                                updated = "No registrado"
+                            elif previous_label in {"decisión", "aprobación humana", "estado de aprobación", "estado de revisión"}:
+                                updated = "Aprobada"
+                        elif normalized == "pendiente" and cover_page:
                             updated = "Aprobada"
                         elif normalized == "bloqueada":
                             updated = "Controlada"
+                    previous_label = original.strip().casefold()
                     if updated != original:
                         targets[index] = TextStringObject(updated)
                         changed = True
