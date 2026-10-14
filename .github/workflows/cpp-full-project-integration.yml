@@ -297,7 +297,11 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check -r requirements.txt
           python -m pytest -q tests/test_cpp_llvm_toolchain_inventory.py
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - name: Authenticate LLVM 17 package identities without installing tools
+        run: python -m scripts.cpp_llvm_toolchain_inventory
+      - name: Retain authenticated inventory or actual failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: cpp-llvm-inventory-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: llvm-toolchain-inventory/
