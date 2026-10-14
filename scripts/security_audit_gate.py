@@ -297,6 +297,41 @@ def _known_public_cppcheck_source_digest(finding: dict[str, Any]) -> bool:
     return False
 
 
+def _known_reviewed_native_source_hash(finding: dict[str, Any]) -> bool:
+    """Retain eleven owner-reviewed immutable source hashes; see evidence note.
+
+    These observations have no Verified field. Do not infer absence from a
+    false-like value, or approve other matches sharing a fingerprint.
+    """
+    if "Verified" in finding:
+        return False
+    observations = (
+        ('e14c620a321c12b168d0ad2cd3c1fb78bc111a1c', 'scripts/native_stage_counters/specialization_groups.py', 15, 11, 88, "token.cpp': 'REDACTED'"),
+        ('63f4e03068a386eddda4dc31c41e9f5d4b24579d', 'scripts/native_stage_counters/specialization_groups.py', 15, 11, 88, "token.cpp': 'REDACTED'"),
+        ('c2b3ba6045f2b3751108a40f95677c8e9d8c50cc', 'docs/evidence/cpp-stage-counters-local/README.md', 18, 11, 92, 'tokenizer SHA256:REDACTED'),
+        ('c2b3ba6045f2b3751108a40f95677c8e9d8c50cc', 'scripts/native_stage_counters/instrument.py', 16, 11, 91, "tokenize.cpp': 'REDACTED'"),
+        ('63f4e03068a386eddda4dc31c41e9f5d4b24579d', 'scripts/native_stage_counters/owned_regressions.py', 21, 35, 115, "tokenize.cpp': 'REDACTED'"),
+        ('63f4e03068a386eddda4dc31c41e9f5d4b24579d', 'scripts/native_stage_counters/owned_regressions.py', 21, 123, 200, "token.cpp': 'REDACTED'"),
+        ('63f4e03068a386eddda4dc31c41e9f5d4b24579d', 'scripts/native_stage_counters/owned_regressions.py', 21, 208, 289, "tokenlist.cpp': 'REDACTED'"),
+        ('e14c620a321c12b168d0ad2cd3c1fb78bc111a1c', 'scripts/native_stage_counters/owned_regressions.py', 21, 35, 115, "tokenize.cpp': 'REDACTED'"),
+        ('e14c620a321c12b168d0ad2cd3c1fb78bc111a1c', 'scripts/native_stage_counters/owned_regressions.py', 21, 123, 200, "token.cpp': 'REDACTED'"),
+        ('e14c620a321c12b168d0ad2cd3c1fb78bc111a1c', 'scripts/native_stage_counters/owned_regressions.py', 21, 208, 289, "tokenlist.cpp': 'REDACTED'"),
+        ('c2b3ba6045f2b3751108a40f95677c8e9d8c50cc', 'scripts/native_stage_counters/binding.py', 12, 11, 91, "tokenize.cpp': 'REDACTED'"),
+    )
+    for commit, path, line, start, end, context in observations:
+        expected = {
+            "Commit": commit, "File": path, "RuleID": "generic-api-key",
+            "Secret": "REDACTED", "Match": context,
+            "Fingerprint": f"{commit}:{path}:generic-api-key:{line}",
+            "StartLine": line, "EndLine": line,
+            "StartColumn": start, "EndColumn": end,
+        }
+        if all(type(finding.get(key)) is type(value) and finding[key] == value
+               for key, value in expected.items()):
+            return True
+    return False
+
+
 def _gitleaks(root: Path) -> dict[str, Any]:
     data, error = _read_json(root, "gitleaks.json")
     summary, summary_error = _read_json(root, "gitleaks-summary.json")
@@ -352,7 +387,8 @@ def _gitleaks(root: Path) -> dict[str, Any]:
             approved_public_signing_fingerprints += 1
             disposition = "approved_public_signing_fingerprint"
         elif (_known_public_cppcheck_source_blob(finding)
-              or _known_public_cppcheck_source_digest(finding)):
+              or _known_public_cppcheck_source_digest(finding)
+              or _known_reviewed_native_source_hash(finding)):
             approved_public_source_hashes += 1
             disposition = "approved_public_source_hash"
         else:

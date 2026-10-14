@@ -1,0 +1,20 @@
+.......                                                                  [100%]
+=============================== warnings summary ===============================
+../nico-venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /workspace/nico-venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_comprehensive_operator_presentation_v1.py::test_old_approval_renders_corrected_export_without_mutating_receipt_or_source
+tests/test_comprehensive_operator_presentation_v1.py::test_old_approval_renders_corrected_export_without_mutating_receipt_or_source
+tests/test_comprehensive_operator_presentation_v1.py::test_old_approval_renders_corrected_export_without_mutating_receipt_or_source
+tests/test_comprehensive_operator_presentation_v1.py::test_old_approval_renders_corrected_export_without_mutating_receipt_or_source
+tests/test_comprehensive_operator_presentation_v1.py::test_old_approval_renders_corrected_export_without_mutating_receipt_or_source
+tests/test_comprehensive_operator_presentation_v1.py::test_old_approval_renders_corrected_export_without_mutating_receipt_or_source
+tests/test_comprehensive_operator_presentation_v1.py::test_old_approval_renders_corrected_export_without_mutating_receipt_or_source
+tests/test_comprehensive_operator_presentation_v1.py::test_old_approval_renders_corrected_export_without_mutating_receipt_or_source
+tests/test_comprehensive_operator_presentation_v1.py::test_old_approval_renders_corrected_export_without_mutating_receipt_or_source
+  /workspace/nico-venv/lib/python3.12/site-packages/pypdf/_page.py:1342: DeprecationWarning: Calling `PageObject.replace_contents()` for pages not assigned to a writer is deprecated and will be removed in pypdf 7.0.0. Attach the page to the writer first or use `PdfWriter(clone_from=...)` directly. The existing approach has proved being unreliable.
+    self.replace_contents(ContentStream(new_content_array, self.pdf))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+7 passed, 10 warnings in 6.29s

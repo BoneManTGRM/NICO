@@ -143,3 +143,78 @@ def test_retained_briefing_status_uses_completed_dispositions_only(completed):
         assert policy in surface
         if completed:
             assert 'candidate dispositions recorded' in surface
+
+
+def test_future_approval_preserves_reviewer_and_risk_meaning():
+    from copy import deepcopy
+    from nico.comprehensive_approved_lifecycle_consistency_v1 import install_approved_lifecycle_consistency
+    install_approved_lifecycle_consistency()
+    body = io.BytesIO()
+    pdf = canvas.Canvas(body, invariant=1)
+    lines = ['Human Review and Exact-Artifact Approval', 'PENDING HUMAN APPROVAL',
+             'Human approval: Pending', 'Reviewer identity', 'Pending', 'Reviewer role',
+             'Pending', 'Review timestamp', 'Pending', 'Approval record ID', 'Pending',
+             'Reviewer notes', 'Pending', 'Decision', 'Pending', 'Residual-risk acceptance',
+             'Pending', 'Technical evidence: pending upstream remediation',
+             '1 report pages (certificate excluded)']
+    for index, line in enumerate(lines):
+        pdf.drawString(50, 750 - index * 22, line)
+    pdf.save()
+    raw = body.getvalue()
+    package = {'json': {'identity': {'run_id': 'synthetic_future_approval', 'commit_sha': 'a'*40}},
+               'markdown': 'Human approval: Pending', 'html': '<p>Human approval: Pending</p>',
+               'pdf_base64': base64.b64encode(raw).decode(), 'pdf_sha256': hashlib.sha256(raw).hexdigest()}
+    original = deepcopy(package)
+    final = approved.build_approved_report_package(package, reviewer='SYNTHETIC REVIEWER',
+        reviewer_role='SYNTHETIC ROLE', decision_reason='SYNTHETIC TEST ONLY', decided_at='2026-10-14T00:00:00Z')
+    pages = PdfReader(io.BytesIO(base64.b64decode(final['pdf_base64']))).pages
+    text = pages[0].extract_text()
+    for surface in (text, final['markdown'], final['html']):
+        assert 'Human approval: Pending' not in surface
+    for label in ('Reviewer identity', 'Reviewer role', 'Review timestamp', 'Reviewer notes'):
+        assert label + '\nSee certificate' in text
+    assert 'Approval record ID\nNot recorded' in text
+    assert 'Decision\nApproved' in text
+    assert 'Residual-risk acceptance\nPending' in text
+    assert 'Technical evidence: pending upstream remediation' in text
+    assert '1 report pages (certificate excluded)' in text
+    assert len(pages) == final['pdf_page_count'] == 2
+    assert 'SYNTHETIC REVIEWER' in pages[-1].extract_text()
+    assert 'SYNTHETIC ROLE' in pages[-1].extract_text()
+    assert package == original
+    assert final['client_delivery_allowed'] is False
+
+
+def test_spanish_approval_table_keeps_unaccepted_risk_pending():
+    body = io.BytesIO()
+    pdf = canvas.Canvas(body, invariant=1)
+    for index, line in enumerate(('Revisión humana y aprobación', 'Identidad del revisor',
+                                 'Pendiente', 'Rol del revisor', 'Pendiente', 'Decisión',
+                                 'Pendiente', 'ID del registro de aprobación', 'Pendiente',
+                                 'Aceptación del riesgo residual', 'Pendiente')):
+        pdf.drawString(50, 750 - index * 22, line)
+    pdf.save()
+    raw = body.getvalue()
+    certificate = approved._certificate_pdf(reviewer='SYNTHETIC REVIEWER',
+        reviewer_role='SYNTHETIC ROLE', decision_reason='SYNTHETIC TEST ONLY',
+        decided_at='2026-10-14T00:00:00Z', source_pdf_sha256=hashlib.sha256(raw).hexdigest(),
+        run_id='synthetic_spanish', repository='synthetic/fixture', commit_sha='a'*40, spanish=True)
+    final = approved._rewrite_pdf(raw, certificate_pdf=certificate, spanish=True)
+    text = PdfReader(io.BytesIO(final)).pages[0].extract_text()
+    assert 'Identidad del revisor\nVer certificado' in text
+    assert 'Rol del revisor\nVer certificado' in text
+    assert 'ID del registro de aprobación\nNo registrado' in text
+    assert 'Decisión\nAprobada' in text
+    assert 'Aceptación del riesgo residual\nPendiente' in text
+
+
+def test_future_approval_validator_rejects_stale_human_approval_label():
+    from nico.comprehensive_approved_lifecycle_consistency_v1 import assert_approved_lifecycle_consistency
+    body = io.BytesIO()
+    pdf = canvas.Canvas(body, invariant=1)
+    pdf.drawString(50, 750, 'Human approval: Pending')
+    pdf.save()
+    package = {'json': {'identity': {'run_id': 'synthetic_stale_label'}},
+               'markdown': '', 'html': '', 'pdf_base64': base64.b64encode(body.getvalue()).decode()}
+    with pytest.raises(ValueError, match='lifecycle_inconsistent:pdf'):
+        assert_approved_lifecycle_consistency(package)
