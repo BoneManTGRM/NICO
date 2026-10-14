@@ -30,3 +30,9 @@ early for that package, and the exact full-line compatibility matcher cannot mat
 its truncated sentence. This repair does NOT migrate that retained diagnostic;
 its source evidence must remain unchanged. Fresh generation and fully bound,
 complete legacy-generated lines are the verified scope.
+
+Reconciled once with main d04ac7e48a60615c07c029bfee43ee2b3c1b891e after
+PR1731 merged. Focused summary, engagement-literal round-trip and inherited exact
+service-occurrence security tests passed: 85 tests. Prior 82-test renderer
+verification remains applicable to unchanged report changes. No assessment or
+deployment was requested.
