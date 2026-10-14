@@ -568,8 +568,15 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
 
     cell_style = ParagraphStyle("SourceEvidenceCell", fontName="Helvetica", fontSize=7.1, leading=9.0)
     title_style = ParagraphStyle("SourceEvidenceTitle", parent=cell_style, fontName="Helvetica-Bold", fontSize=8.2, leading=10.0, spaceBefore=5, spaceAfter=3, keepWithNext=True)
-    def cell(value: Any, heading: bool = False, literal: bool = False) -> Any:
-        return Paragraph(html.escape(str(value) if literal else _source_cell(value, spanish=spanish)), title_style if heading else cell_style)
+    def cell(value: Any, heading: bool = False, literal: bool = False, preview: bool = False) -> Any:
+        text = str(value) if literal else _source_cell(value, spanish=spanish)
+        if preview:
+            # Presentation only: keep long paths/cells within the preview budget.
+            # Full values and their original order remain bound by the table hash.
+            text = " ".join(text.split())
+            if len(text) > 80:
+                text = text[:79] + "…"
+        return Paragraph(html.escape(text), title_style if heading else cell_style)
     flowables: list[Any] = []
     observed = stage.get("source_observation")
     if isinstance(observed, dict):
@@ -585,6 +592,7 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
     )
     for table_index, table in enumerate(_source_tables(stage)):
         rows = table["rows"]
+        total_rows = len(rows)
         columns = table["columns"]
         summary = source_table_summary(table) if table_index < structured_count else None
         if summary is not None:
@@ -595,18 +603,21 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
             flowables.append(cell(f"{digest_label}: {summary['sha256']}", literal=True))
             flowables.append(cell(summary["reference_token"], literal=True))
             disclosure = (
-                "Este PDF presenta el resumen de la tabla. Todas las filas, columnas y valores, sin abreviar, "
+                "Este PDF presenta una vista previa en el orden original. Las demás filas se omiten del PDF. "
+                "Las celdas que terminan en … están truncadas a 80 caracteres. Todas las filas, columnas y valores, sin abreviar, "
                 "se conservan en el JSON de evidencia canónica de esta misma edición. El hash vincula el "
                 "título, las columnas y las filas completas en su orden original; no establece verificación "
                 "en ejecución, aprobación humana ni autorización de entrega."
                 if spanish else
-                "This PDF presents the table summary. Every complete row, column and value is retained "
+                "This PDF presents a preview in original order. Remaining rows are omitted from the PDF. "
+                "Cells ending in … are truncated to 80 characters. Every complete row, column and value is retained "
                 "in this same edition's canonical evidence JSON. The hash binds the title, columns and "
                 "complete rows in their original order; it does not establish runtime verification, "
                 "human approval or delivery authorization."
             )
             flowables += [cell(disclosure, literal=True), Spacer(1, 5)]
-            continue
+            preview_count = 24 if table["title"] == "Source interactions and potential boundaries" else 15
+            rows = rows[:preview_count]
         # row_limit bounds each layout batch, not the substantive evidence retained.
         # Existing report page, byte and process-time limits remain unchanged.
         batch_size = max(1, row_limit)
@@ -616,12 +627,16 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
             heading = table["title"]
             if offset:
                 heading = _source_cell(heading, spanish=spanish) + (" (continuación)" if spanish else " (continued)")
-            flowables.append(cell(heading, True))
+            if summary is None or offset:
+                flowables.append(cell(heading, True))
             values = [[cell(value) for value in columns]] + [
-                [cell(value, literal=column in {"Source", "Target"} or (column == "Value" and row[0] in table.get("literal_value_labels", ()) and value is not None)) for column, value in zip(columns, row)]
+                [cell(value, preview=summary is not None, literal=column in {"Source", "Target"} or (column == "Value" and row[0] in table.get("literal_value_labels", ()) and value is not None)) for column, value in zip(columns, row)]
                 for row in batch
             ]
-            if len(rows) <= batch_size:
+            if summary is not None:
+                note_text = (f"Vista previa: filas {offset + 1}–{end}; se muestran {len(rows)} de {total_rows} filas." if spanish else
+                             f"Preview: rows {offset + 1}–{end}; showing {len(rows)} of {total_rows} rows.")
+            elif len(rows) <= batch_size:
                 note_text = (f"Se muestran las {len(rows)} filas completas." if spanish else
                              f"Showing all {len(rows)} rows in full.")
             else:
