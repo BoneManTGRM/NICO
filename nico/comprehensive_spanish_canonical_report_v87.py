@@ -35,6 +35,16 @@ _CANONICAL_PARITY_EXACT = {
     # This changes presentation only; the unavailable execution record stays raw.
     "eslint is not installed in the worker image.": "eslint no está instalado en la imagen del trabajador.",
     "eslint: eslint is not installed in the worker image.": "eslint: eslint no está instalado en la imagen del trabajador.",
+    "Trusted global ESLint identity, source boundary or complete output could not be verified. Project-aware ESLint remains disabled without NICO_ALLOW_PROJECT_COMMANDS=true.": (
+        "No se pudieron verificar la identidad de ESLint global de confianza, los límites de la fuente "
+        "o la integridad de la salida. ESLint con conocimiento del proyecto sigue deshabilitado "
+        "sin NICO_ALLOW_PROJECT_COMMANDS=true."
+    ),
+    "eslint: Trusted global ESLint identity, source boundary or complete output could not be verified. Project-aware ESLint remains disabled without NICO_ALLOW_PROJECT_COMMANDS=true.": (
+        "eslint: No se pudieron verificar la identidad de ESLint global de confianza, los límites de la fuente "
+        "o la integridad de la salida. ESLint con conocimiento del proyecto sigue deshabilitado "
+        "sin NICO_ALLOW_PROJECT_COMMANDS=true."
+    ),
     "Native target execution or parsing is incomplete; retained observations require review.": "La ejecución o el análisis nativo de los objetivos está incompleto; las observaciones conservadas requieren revisión.",
     "Native XML was not completely parsed.": "El XML nativo no se analizó por completo.",
     "Native target is outside the frozen population.": "El objetivo nativo está fuera de la población fijada.",

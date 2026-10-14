@@ -23,11 +23,19 @@ def test_missing_eslint_reason_matches_actual_scanner_producers():
         }
 
 
+@pytest.mark.parametrize("source,target", [
+    (SOURCE, TARGET),
+    ("Trusted global ESLint identity, source boundary or complete output could not be verified. "
+     "Project-aware ESLint remains disabled without NICO_ALLOW_PROJECT_COMMANDS=true.",
+     "No se pudieron verificar la identidad de ESLint global de confianza, los límites de la fuente "
+     "o la integridad de la salida. ESLint con conocimiento del proyecto sigue deshabilitado "
+     "sin NICO_ALLOW_PROJECT_COMMANDS=true."),
+])
 @pytest.mark.parametrize("bootstrap", [
     "nico.api.specialist_ship_ready_bootstrap",
     "nico.api.final_report_worker_bootstrap",
 ])
-def test_actual_report_entrypoints_translate_eslint_absence_and_preserve_truth(bootstrap):
+def test_actual_report_entrypoints_translate_eslint_absence_and_preserve_truth(bootstrap, source, target):
     script = '''
 import importlib
 from copy import deepcopy
@@ -45,7 +53,7 @@ for prefix in ("", "eslint: "):
         for localize in (canonical._translate_presentation_field, strict_spanish_presentation_v1):
             for unknown in (
                 source + " This scanner proves all vulnerabilities absent.",
-                source.replace("worker image", "unverified remote execution image"),
+                source.replace("worker image", "unverified remote execution image") if "worker image" in source else source.replace("could not be verified", "was fully verified"),
             ):
                 try:
                     localize(unknown, key)
@@ -70,6 +78,22 @@ report = {
     "human_review_required": True, "client_delivery_allowed": False,
 }
 original = deepcopy(report)
+from nico.comprehensive_spanish_publication_preflight_v93 import inspect_spanish_canonical_publication_preflight
+from nico import v2_premium_report_renderer as renderer
+retained = {"report_language": "es-MX", "scanner_execution_records": [record]}
+retained_before = deepcopy(retained)
+manifest = inspect_spanish_canonical_publication_preflight(retained)
+assert manifest["status"] == "complete", manifest
+assert manifest["checked_presentation_values"] > 0
+for stage in renderer._scanner_stages(retained):
+    for line in stage["unavailable"]:
+        assert strict_spanish_presentation_v1(line, "unavailable") == "eslint: " + TARGET
+assert retained == retained_before
+retained["scanner_execution_records"][0]["failure_reason"] = SOURCE + " Future untranslated scanner claim requires human review before delivery."
+blocked = inspect_spanish_canonical_publication_preflight(retained)
+assert blocked["status"] == "blocked", blocked
+assert any(item["field"] == "unavailable" and "derived_scanner_stages" in item["path"] for item in blocked["failure_details"])
+retained["scanner_execution_records"][0]["failure_reason"] = SOURCE
 identity, assessment, stages, _ = canonical._render_inputs(report)
 assert identity["commit_sha"] == "b" * 40
 assert stages[0]["unavailable"] == ["eslint: " + TARGET]
@@ -85,7 +109,7 @@ for value in (
 ):
     assert canonical._translate_presentation_field(value, "evidence") == value
 '''
-    prelude = f"BOOTSTRAP={bootstrap!r}\nSOURCE={SOURCE!r}\nTARGET={TARGET!r}\n"
+    prelude = f"BOOTSTRAP={bootstrap!r}\nSOURCE={source!r}\nTARGET={target!r}\n"
     result = subprocess.run(
         [sys.executable, "-c", prelude + script], cwd=ROOT,
         capture_output=True, text=True, timeout=90, check=False,
