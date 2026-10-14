@@ -288,7 +288,7 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
   const operation = (async () => {
     let preparationJobId: string | undefined;
     if (asynchronous) {
-      preparationJobId = await prepareReviewPdf(runId, reportLanguage, {...binding, isCurrent}, key, actions, controller);
+      preparationJobId = await prepareReviewPdf(runId, reportLanguage, {...binding, isCurrent}, key, actions, controller, resumeOnly);
       startDownloadDeadline();
       showStatus(actions, spanishUi() ? "Descargando y verificando el PDF…" : "Downloading and verifying the PDF…");
     }
@@ -349,8 +349,15 @@ function preparationQuery(jobId: string, binding: DownloadBinding): string {
 function savedPreparation(key: string): string {
   try {
     const value = window.sessionStorage.getItem(`nico-review-preparation:${key}`) || "";
-    return value === "requested" || /^reviewpdfprep_[0-9a-f]{64}$/.test(value) ? value : "";
+    if (value === "requested" || /^requested:v1:[0-9]{1,16}$/.test(value)) return "requested";
+    return /^reviewpdfprep_[0-9a-f]{64}$/.test(value) ? value : "";
   } catch { return ""; }
+}
+function savedAdmissionDeadline(key: string): number {
+  try {
+    const value = window.sessionStorage.getItem(`nico-review-preparation:${key}`) || "";
+    return /^requested:v1:[0-9]{1,16}$/.test(value) ? Number(value.split(":")[2]) : 0;
+  } catch { return 0; }
 }
 function savePreparation(key: string, jobId: string): void {
   try {
@@ -359,18 +366,22 @@ function savePreparation(key: string, jobId: string): void {
   } catch { /* Durable backend status remains authoritative. */ }
 }
 async function prepareReviewPdf(runId: string, language: ReportLanguage, binding: DownloadBinding,
-  key: string, actions: Element, controller: AbortController): Promise<string> {
+  key: string, actions: Element, controller: AbortController, resumeOnly = false): Promise<string> {
   let jobId = savedPreparation(key);
-  const preparationDeadline = Date.now() + 900_000;
+  const admissionDeadline = savedAdmissionDeadline(key) || Date.now() + 900_000;
+  if (jobId === "requested") savePreparation(key, `requested:v1:${admissionDeadline}`);
+  const singleStatusCheck = jobId === "requested" && admissionDeadline <= Date.now() && !resumeOnly;
+  const preparationDeadline = singleStatusCheck ? Date.now() + 30_000
+    : jobId === "requested" ? Math.min(admissionDeadline, Date.now() + 900_000) : Date.now() + 900_000;
   const stillPending = () => new PdfDownloadFailure(spanishUi()
-    ? "La preparación sigue pendiente. Vuelve a esta página para consultar su estado."
-    : "Preparation is still pending. Return to this page to check its status.");
+    ? "La preparación sigue pendiente. Selecciona descargar de nuevo para consultar su estado."
+    : "Preparation is still pending. Select download again to check its status.");
   const read = async (prepare: boolean) => {
     if (controller.signal.aborted) throw controller.signal.reason;
     if (binding.isCurrent && !binding.isCurrent()) throw integrityError();
     const remaining = preparationDeadline - Date.now();
     if (remaining <= 0) throw stillPending();
-    if (prepare) savePreparation(key, "requested");
+    if (prepare) savePreparation(key, `requested:v1:${preparationDeadline}`);
     const response = await fetch(preparationHref(runId, language) + (prepare ? "" : `?${preparationQuery(jobId, binding)}`), {
       method: prepare ? "POST" : "GET", cache: "no-store", credentials: "same-origin",
       headers: {Accept: "application/json", ...(prepare ? {"Content-Type": "application/json"} : {})},
@@ -384,6 +395,8 @@ async function prepareReviewPdf(runId: string, language: ReportLanguage, binding
       throw error;
     });
     if (!response.ok) {
+      // An unlocked lookup miss cannot rule out an admission COMMIT in flight.
+      if (!prepare && jobId === "requested" && response.status === 404) return "admission_unknown";
       if ([404, 409, 422].includes(response.status)) savePreparation(key, "");
       if (response.status === 503) throw stillPending();
       throw downloadError(response);
@@ -402,6 +415,7 @@ async function prepareReviewPdf(runId: string, language: ReportLanguage, binding
   };
   let state = await read(!jobId);
   const messages: Record<string, [string, string]> = {
+    admission_unknown: ["Checking whether PDF preparation was accepted…", "Comprobando si se aceptó la preparación del PDF…"],
     queued: ["PDF preparation is queued. You can return to this page later.", "La preparación del PDF está en cola. Puedes volver a esta página más tarde."],
     preparing: ["Preparing the complete review PDF…", "Preparando el PDF completo para revisión…"],
     verifying: ["Verifying the prepared PDF…", "Verificando el PDF preparado…"],
@@ -415,7 +429,7 @@ async function prepareReviewPdf(runId: string, language: ReportLanguage, binding
         : "PDF preparation failed or was cancelled. The assessment is unchanged.");
     }
     const remaining = preparationDeadline - Date.now();
-    if (attempt >= 360 || remaining <= 0) throw stillPending();
+    if (singleStatusCheck || attempt >= 360 || remaining <= 0) throw stillPending();
     showStatus(actions, messages[state][spanishUi() ? 1 : 0]);
     await new Promise<void>((resolve, reject) => {
       const abort = () => {window.clearTimeout(timer); reject(controller.signal.reason);};

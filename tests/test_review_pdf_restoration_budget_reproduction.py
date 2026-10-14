@@ -489,3 +489,44 @@ def test_private_directory_retained_until_child_exit_is_confirmed():
     while not state['temporary_files_cleanup_confirmed'] and time.monotonic()<deadline:
         Event().wait(.01)
     assert state['temporary_files_cleanup_confirmed'] and not root.exists()
+
+
+def test_scheduled_heartbeat_remains_outstanding_through_supervisor_shutdown(seam, monkeypatch):
+    from threading import Event, Thread, current_thread
+    from nico.review_pdf_preparation_deadline_v1 import DeadlineGuard
+    service, jobs, source, capacity, _, _, _ = seam
+    scheduled, start_release, active, finish = (Event() for _ in range(4))
+    errors = []
+    original_start = Thread.start
+    def delayed_start(thread):
+        if current_thread().name == 'nico-review-lease' and thread.name == 'nico-review-bounded-call':
+            scheduled.set()
+            assert start_release.wait(2)
+        return original_start(thread)
+    def heartbeat(*args, **kwargs):
+        active.set()
+        assert finish.wait(2)
+    def failed_capture(*args):
+        assert scheduled.wait(1)
+        raise ValueError('synthetic validation failure')
+    monkeypatch.setattr(DeadlineGuard, 'HEARTBEAT_INTERVAL', .002)
+    monkeypatch.setattr(Thread, 'start', delayed_start)
+    monkeypatch.setattr(jobs, 'heartbeat', heartbeat)
+    source.capture.side_effect = failed_capture
+    def run():
+        try: service.run_once(identity())
+        except BaseException as error: errors.append(error)
+    coordinator = Thread(target=run)
+    coordinator.start()
+    try:
+        assert scheduled.wait(1)
+        coordinator.join(1)
+        assert not coordinator.is_alive() and isinstance(errors[0], ValueError)
+        assert not capacity.acquire(blocking=False)
+        start_release.set()
+        assert active.wait(1)
+        assert not capacity.acquire(timeout=.1), 'blocked heartbeat must retain capacity after supervisor exits'
+    finally:
+        start_release.set(); finish.set(); coordinator.join(1)
+    assert capacity.acquire(timeout=1)
+    capacity.release()

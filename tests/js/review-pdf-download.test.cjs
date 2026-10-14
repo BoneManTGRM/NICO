@@ -508,7 +508,7 @@ test('lost admission response resumes by bound GET lookup without creating anoth
   const storage=new Map();
   const first=setup(async()=>{throw new DOMException('synthetic timeout','TimeoutError');},'en',undefined,{async:true,storage});
   first.click();await first.settled();
-  assert.equal([...storage.values()][0],'requested');
+  assert.match([...storage.values()][0],/^requested:v1:\d+$/);
   first.cleanUp();
   const recovered=setup(async(url)=>url.includes('/pdf?')?response():preparation('ready'),
     'en',undefined,{async:true,storage,recover:true});
@@ -519,11 +519,11 @@ test('lost admission response resumes by bound GET lookup without creating anoth
   assert.equal(recovered.anchors.length,1);
 });
 
-for(const status of [404,409,422,503])test(`preparation HTTP ${status} preserves only recoverable request markers`,async()=>{
+for(const status of [409,422,503])test(`preparation HTTP ${status} preserves only recoverable request markers`,async()=>{
   const storage=new Map();
   const first=setup(async()=>{throw new DOMException('synthetic timeout','TimeoutError');},'en',undefined,{async:true,storage});
   first.click();await first.settled();first.cleanUp();
-  assert.equal([...storage.values()][0],'requested');
+  assert.match([...storage.values()][0],/^requested:v1:\d+$/);
   const restored=setup(async()=>new Response('{}',{status}), 'en',undefined,{async:true,storage,recover:true});
   await restored.settled();
   assert.equal(restored.calls.length,1);assert.equal(restored.calls[0].init.method,'GET');
@@ -533,4 +533,38 @@ for(const status of [404,409,422,503])test(`preparation HTTP ${status} preserves
     restored.click();await restored.settled();
     assert.equal(restored.calls[1].init.method,'POST','definitive stale identity allows explicit retry');
   }
+});
+
+test('uncertain admission 503 then lookup 404 retains GET recovery until late commit is visible',async()=>{
+  const storage=new Map();
+  const first=setup(async()=>new Response('{}',{status:503}),'en',undefined,{async:true,storage});
+  first.click();await first.settled();first.cleanUp();
+  assert.match([...storage.values()][0],/^requested:v1:\d+$/);
+  let reads=0;
+  const restored=setup(async(url)=>url.includes('/pdf?')?response():
+    ++reads===1?new Response('{}',{status:404}):preparation('ready'),
+    'en',undefined,{async:true,storage,recover:true});
+  await flush();
+  assert.match([...storage.values()][0],/^requested:v1:\d+$/,'not-found before COMMIT is not authoritative absence');
+  await poll(restored);await restored.settled();
+  assert.equal(restored.calls.every(call=>call.init.method==='GET'),true);
+  assert.equal(restored.anchors.length,1);assert.equal(storage.size,0);
+});
+
+test('uncertain admission recovery retains original deadline across reload and permits one explicit GET',async()=>{
+  const storage=new Map(), clock={now:1000,timeouts:[]};
+  const first=setup(async()=>new Response('{}',{status:503}),'en',undefined,{async:true,storage,clock});
+  first.click();await first.settled();first.cleanUp();
+  assert.equal([...storage.values()][0],'requested:v1:901000');
+  clock.now=900000;
+  const restored=setup(async()=>new Response('{}',{status:404}),'en',undefined,{async:true,storage,clock,recover:true});
+  await flush();
+  const timer=restored.timers.find(t=>t.ms===1000&&!t.cleared);assert.ok(timer);
+  clock.now=901000;timer.fn();await restored.settled();restored.cleanUp();
+  assert.equal(restored.calls.length,1);assert.equal([...storage.values()][0],'requested:v1:901000');
+  const again=setup(async()=>new Response('{}',{status:404}),'en',undefined,{async:true,storage,clock,recover:true});
+  await again.settled();assert.equal(again.calls.length,0,'reload cannot restart polling deadline');
+  again.click();await again.settled();
+  assert.equal(again.calls.length,1);assert.equal(again.calls[0].init.method,'GET');
+  assert.equal([...storage.values()][0],'requested:v1:901000');
 });

@@ -25,6 +25,7 @@ class DeadlineGuard:
         self.commit_started = False
         self.commit_acknowledged = False
         self.threads = []
+        self.completions = []
         self.lock = RLock()
 
     def begin_commit(self):
@@ -63,8 +64,13 @@ class DeadlineGuard:
         thread = Thread(target=invoke, daemon=True, name='nico-review-bounded-call')
         with self.lock:
             self.threads.append(thread)
+            self.completions.append(done)
         started = self.clock()
-        thread.start()
+        try:
+            thread.start()
+        except BaseException:
+            done.set()
+            raise
         while not done.wait(.02):
             self.check()
             with self.lock:
@@ -83,7 +89,8 @@ class DeadlineGuard:
 
     def idle(self):
         with self.lock:
-            return all(not thread.is_alive() for thread in self.threads)
+            return all(done.is_set() and not thread.is_alive()
+                       for thread, done in zip(self.threads, self.completions))
 
     def supervise_lease(self, heartbeat):
         finished = Event()

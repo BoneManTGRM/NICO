@@ -176,11 +176,11 @@ class ReviewPdfPreparationService:
             def release_when_finished():
                 # A timed-out Python/DB phase can still be running. Quarantine
                 # capacity until every operation and physical child has exited.
+                if lease_thread is not None:
+                    lease_thread.join()
                 while (any(not item.idle() for item in state['pending_guards'])
                        or not state.get('temporary_files_cleanup_confirmed', True)):
                     Event().wait(.02)
-                if lease_thread is not None:
-                    lease_thread.join()
                 if state.get('physical_worker_exit_confirmed'):
                     self.capacity.release()
             if (all(item.idle() for item in state['pending_guards'])
