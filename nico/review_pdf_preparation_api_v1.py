@@ -39,10 +39,13 @@ def runtime_policy():
     for value in _live_policy(build_same_run_locale_pdf_response):
         if callable(value):
             values.append([value.__module__, value.__qualname__,
-                hashlib.sha256(marshal.dumps(value.__code__)).hexdigest()])
+                # Protocol 0 serializes the complete code object without the
+                # reference-sharing flags that change when code attributes are
+                # retained during rendering. The policy must survive a restart.
+                hashlib.sha256(marshal.dumps(value.__code__, 0)).hexdigest()])
         else:
             values.append(value)
-    return revision, _fingerprint(['review-pdf-api.v1', revision, values])
+    return revision, _fingerprint(['review-pdf-api.v2', revision, values])
 
 
 class PreparationBusy(RuntimeError):

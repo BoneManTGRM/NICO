@@ -45,3 +45,25 @@ def test_existing_workflow_retains_proofs_and_uploads_new_evidence():
     assert 'image: postgres:16-alpine' in workflow
     assert 'audit-results/postgres-review-pdf-preparation-proof.json' in workflow.split('path: |')[1]
     assert 'assert "postgresql://" not in json.dumps(review_pdf)' in workflow
+
+
+def test_lifecycle_failure_writes_bounded_evidence_and_still_fails(tmp_path, monkeypatch):
+    import json
+    from scripts import postgres_review_pdf_lifecycle_proof as lifecycle
+    def fail(progress):
+        progress['phase'] = 'fresh_process_retrieve'
+        progress['checks']['real_child_render'] = True
+        raise RuntimeError('private payload or connection URL must not appear')
+    monkeypatch.setattr(lifecycle, 'proof', fail)
+    output = tmp_path/'failure.json'
+    with pytest.raises(RuntimeError):
+        lifecycle.write_proof(output)
+    result = json.loads(output.read_text())
+    assert result['status'] == 'failed'
+    assert result['phase'] == 'fresh_process_retrieve'
+    assert result['checks'] == {'real_child_render': True}
+    assert result['error_type'] == 'RuntimeError'
+    assert result['assessment_executed'] is False
+    assert result['live_production_claim'] is False
+    assert result['client_delivery_allowed'] is False
+    assert 'private payload' not in output.read_text()

@@ -91,7 +91,10 @@ def fresh_read(expected):
     return {'fresh_process_retrieved_exact_bytes': True, 'identity_hash_and_gates_verified': True}
 
 
-def proof():
+def proof(progress=None):
+    progress = {} if progress is None else progress
+    checks = progress.setdefault("checks", {})
+    progress["phase"] = "existing_fixture_database"
     from nico.review_pdf_preparation_jobs_v1 import PreparationConflict
     adapter = existing_adapter()
     # Existing infrastructure only. A missing table fails, never initializes schema.
@@ -101,6 +104,7 @@ def proof():
     release = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
     os.environ['RAILWAY_GIT_COMMIT_SHA'] = release
     started_wall, started_cpu = time.monotonic(), time.process_time()
+    progress["phase"] = "build_owned_source"
     record = build_owned_record()
     runtime = runtime_for(adapter)
     store = runtime.source.store
@@ -111,11 +115,13 @@ def proof():
     status = runtime.source.controller._status_artifact_from_record(restored)
     reports = status['reports']
     binding = dict(commit_sha=status['commit_sha'], canonical_truth_sha256=reports['canonical_truth_sha256'])
+    progress["phase"] = "admit_and_render"
     queued = runtime.prepare(status['run_id'], 'es-MX', binding)
     identity, job = runtime._job(status['run_id'], 'es-MX', queued['job_id'], binding)
     source_before = runtime.source.capture(identity)
     ready = runtime.service.run_once(identity)
     assert ready['status'] == 'ready' and ready['client_delivery_allowed'] is False
+    progress["phase"] = "same_process_retrieve"
     response = runtime.retrieve(identity.run_id, identity.language, identity.job_id, binding)
     assert response.body.startswith(b'%PDF')
     expected = dict(identity=asdict(identity), job_id=identity.job_id, binding=binding,
@@ -125,10 +131,14 @@ def proof():
     assert store.load(identity.run_id) == persisted
     runtime.close()
     del runtime, store
+    checks.update(real_store_restore=True, real_child_render=True, locked_ready_publication=True,
+        source_and_history_unchanged_during_preparation=True)
+    progress["phase"] = "fresh_process_retrieve"
     child = subprocess.run([sys.executable, __file__, '--read'], input=json.dumps(expected),
         text=True, capture_output=True, timeout=60)
     assert child.returncode == 0, child.stderr[-2000:]
-    checks = json.loads(child.stdout)
+    checks.update(json.loads(child.stdout))
+    progress["phase"] = "negative_controls"
     runtime = runtime_for(existing_adapter())
     # Existing source revision identity fencing; no source bytes are edited.
     from dataclasses import replace
@@ -162,11 +172,32 @@ def proof():
     checks.update(real_store_restore=True, real_child_render=True, locked_ready_publication=True,
         source_and_history_unchanged_during_preparation=True, feature_flags_off=True)
     runtime.close()
+    progress['phase'] = 'complete'
     return dict(status='passed', synthetic=True, live_production_claim=False,
         actual_retained_report_timing=False, assessment_executed=False, client_delivery_allowed=False,
         commit_sha=release, source_commit_sha=identity.commit_sha, pdf_sha256=expected['pdf_sha256'],
         pdf_bytes=expected['pdf_bytes'], checks=checks,
         wall_seconds=round(time.monotonic()-started_wall,3), parent_cpu_seconds=round(time.process_time()-started_cpu,3))
+
+
+def write_proof(output):
+    """Retain bounded failure evidence without exception text or source contents."""
+    progress = {'phase': 'starting', 'checks': {}}
+    wall, cpu = time.monotonic(), time.process_time()
+    try:
+        result = proof(progress)
+    except Exception as exc:
+        result = dict(status='failed', synthetic=True, live_production_claim=False,
+            actual_retained_report_timing=False, assessment_executed=False,
+            client_delivery_allowed=False, phase=progress['phase'], checks=progress['checks'],
+            error_type=type(exc).__name__,
+            wall_seconds=round(time.monotonic()-wall, 3),
+            parent_cpu_seconds=round(time.process_time()-cpu, 3))
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(result, indent=2)+'\n')
+        raise
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(result, indent=2)+'\n')
 
 
 if __name__ == '__main__':
@@ -178,6 +209,4 @@ if __name__ == '__main__':
         print(json.dumps(fresh_read(json.load(sys.stdin))))
     else:
         if args.output is None: parser.error('--output required')
-        result = proof()
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps(result, indent=2)+'\n')
+        write_proof(args.output)
