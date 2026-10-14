@@ -1,0 +1,31 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________________ test_absent_literal_does_not_dispatch_regex __________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f70a928fec0>
+
+    def test_absent_literal_does_not_dispatch_regex(monkeypatch):
+        def unexpected(_source):
+            raise AssertionError('absent literals must not dispatch a regex scan')
+        monkeypatch.setattr(parity, '_safe_replace_pattern', unexpected)
+        for helper in (parity._safe_replace, canonical._safe_replace):
+>           assert helper('Retained evidence ' * 750, 'Unrelated phrase', 'replacement') == 'Retained evidence ' * 750
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_spanish_absent_literal_fast_path.py:20: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+nico/comprehensive_spanish_presentation_parity_v1.py:175: in _safe_replace
+    pattern = _safe_replace_pattern(source)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+_source = 'Unrelated phrase'
+
+    def unexpected(_source):
+>       raise AssertionError('absent literals must not dispatch a regex scan')
+E       AssertionError: absent literals must not dispatch a regex scan
+
+tests/test_spanish_absent_literal_fast_path.py:17: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_spanish_absent_literal_fast_path.py::test_absent_literal_does_not_dispatch_regex
+1 failed, 2 deselected in 0.18s

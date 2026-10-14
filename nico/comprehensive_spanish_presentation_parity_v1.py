@@ -170,7 +170,9 @@ def _safe_replace_pattern(source: str) -> re.Pattern[str] | None:
 
 
 def _safe_replace(text: str, source: str, target: str) -> str:
-    if not source:
+    # Patterns are case-sensitive escaped literals with optional boundaries.
+    # An absent literal cannot match; keep ordered replacements unchanged.
+    if not source or source not in text:
         return text
     pattern = _safe_replace_pattern(source)
     if pattern is not None:

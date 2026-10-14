@@ -1,0 +1,44 @@
+{'pdf_sha256': '824dbd6880bc8759efaa29bcb1f1751113baad59b7c8b0023b21e4674a82f94d', 'bytes': 174592, 'pages': 22, 'text_sha256': '613b71dd45c160610709b53c8996455c7003c9df3353ae2e07e4228abc92a914', 'metadata': {'/Producer': 'pypdf'}, 'document_id': 'None', 'canonical_truth_sha256': '57514898111c669df08672516f2c5bcd888ae270650a16a8051a27923d62e937', 'report_language': 'es-MX'}
+         38545328 function calls (37613219 primitive calls) in 12.339 seconds
+
+   Ordered by: cumulative time
+   List reduced from 2479 to 35 due to restriction <35>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000   12.343   12.343 test_cross_locale_pdf_repeatability_v1.py:79(_pdf_observation)
+      2/1    0.000    0.000   11.840   11.840 contextlib.py:78(inner)
+        1    0.000    0.000   11.840   11.840 comprehensive_commercial_ship_projection_v3.py:910(pdf_response)
+        1    0.000    0.000   11.840   11.840 comprehensive_same_run_locale_report_v1.py:1453(build_same_run_locale_pdf_response)
+        1    0.000    0.000   11.839   11.839 comprehensive_commercial_ship_projection_v3.py:888(report_with_integrity_gate)
+        1    0.000    0.000   11.839   11.839 comprehensive_canonical_truth_hash_compat_v1.py:182(build_locale_report)
+        1    0.000    0.000   11.712   11.712 comprehensive_same_run_locale_report_v1.py:1238(build_same_run_locale_report)
+     77/6    0.001    0.000   11.702    1.950 report_delivery_timing_v1.py:50(observed)
+        1    0.000    0.000   11.698   11.698 comprehensive_commercial_ship_projection_v3.py:818(localized_render_target)
+        1    0.000    0.000    9.508    9.508 comprehensive_same_run_locale_report_v1.py:753(_render_target)
+        1    0.000    0.000    9.508    9.508 comprehensive_same_run_locale_report_v1.py:683(_assemble_target)
+        1    0.000    0.000    9.453    9.453 phase17_canonical_artifact_rebuild_v1.py:596(rebuild_client_artifacts)
+        1    0.000    0.000    7.008    7.008 comprehensive_review_candidate_publication_v75.py:417(finalize_client_report_package)
+        1    0.000    0.000    7.007    7.007 comprehensive_ci_operational_truth_v71.py:471(finalize_client_report_package)
+        1    0.000    0.000    7.005    7.005 comprehensive_artifact_manifest_approval_v1.py:1413(finalize_client_report_package)
+      431    0.022    0.000    5.899    0.014 _page.py:2157(extract_text)
+      431    0.067    0.000    5.877    0.014 _page.py:1840(_extract_text)
+      853    0.002    0.000    5.116    0.006 _data_structures.py:1523(operations)
+      757    0.599    0.001    5.114    0.007 _data_structures.py:1368(_parse_content_stream)
+        1    0.000    0.000    4.064    4.064 comprehensive_client_truth_final_v1.py:716(finalize_client_report_package)
+415155/346698    0.598    0.000    4.035    0.000 _data_structures.py:1551(read_object)
+        1    0.000    0.000    3.697    3.697 comprehensive_client_report_render_v60.py:366(finalize)
+       42    0.000    0.000    3.469    0.083 report_pdf_text.py:115(extract_pdf_page_texts)
+       12    0.000    0.000    3.467    0.289 report_pdf_text.py:109(_parse_pdf_page_texts)
+      262    0.002    0.000    3.449    0.013 report_pdf_text.py:112(<genexpr>)
+        1    0.000    0.000    3.390    3.390 comprehensive_client_review_companion_v7_finalizer_binding.py:26(finalize)
+        1    0.001    0.001    3.390    3.390 client_report_completion_v2.py:313(finalize_client_report_package)
+        1    0.000    0.000    2.941    2.941 comprehensive_four_phase_report_v1.py:312(attach_artifact_manifest)
+        1    0.000    0.000    2.879    2.879 comprehensive_exact_artifact_hash_binding_v1.py:514(attach_artifact_manifest)
+        1    0.000    0.000    2.877    2.877 comprehensive_manifest_navigation_v1.py:456(attach_artifact_manifest)
+        1    0.000    0.000    2.499    2.499 comprehensive_artifact_manifest_approval_v1.py:639(attach_artifact_manifest)
+        1    0.000    0.000    2.441    2.441 comprehensive_four_phase_report_v1.py:281(_append_pdf)
+        1    0.000    0.000    2.179    2.179 comprehensive_commercial_ship_projection_v3.py:494(_finalize_artifact_navigation)
+125755/122120    0.100    0.000    1.850    0.000 {method 'join' of 'str' objects}
+        2    0.000    0.000    1.830    0.915 comprehensive_four_phase_pdf_v1.py:313(apply_four_phase_pdf)
+
+

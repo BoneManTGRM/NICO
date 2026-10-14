@@ -641,3 +641,57 @@ def test_crossed_commit_path_pair_and_real_credential_remain_blocking(tmp_path):
     assert result['blocking'] == 2
     assert result['approved_public_source_hashes'] == 6
     assert [x['disposition'] for x in result['triage'][-2:]] == ['blocking', 'blocking']
+
+
+NATIVE_SOURCE_HASH_OBSERVATIONS = json.loads(
+    (Path(__file__).parent / 'fixtures/security/native_source_hash_observations.json').read_text()
+)
+
+
+def test_eleven_native_source_hashes_retain_artifacts_and_gates(tmp_path):
+    _clean_evidence(tmp_path)
+    result = _cpp_source_digest_evidence(tmp_path, NATIVE_SOURCE_HASH_OBSERVATIONS)
+    assert result['finding_count'] == result['approved_public_source_hashes'] == 11
+    assert result['blocking'] == 0
+    assert len(result['triage']) == 11
+    manifest = build_manifest(tmp_path)
+    assert manifest['security_gate']['status'] == 'passed'
+    assert manifest['human_review_required'] is True
+    assert manifest['client_delivery_allowed'] is False
+
+
+@pytest.mark.parametrize('finding', NATIVE_SOURCE_HASH_OBSERVATIONS)
+@pytest.mark.parametrize('field,value', (
+    ('Commit', '0' * 40), ('File', 'docs/unreviewed.txt'),
+    ('RuleID', 'unreviewed-rule'), ('Secret', 'unredacted-value'),
+    ('Match', 'unreviewed REDACTED context'), ('Fingerprint', 'different'),
+    ('StartLine', 999), ('EndLine', 999), ('StartColumn', 999), ('EndColumn', 999),
+    ('StartLine', '21'), ('StartColumn', 11.0), ('EndColumn', True),
+    ('Commit', None), ('Verified', True), ('Verified', False),
+    ('Verified', None), ('Verified', 0), ('Verified', 'false'),
+))
+def test_native_source_hash_disposition_rejects_changed_fields(tmp_path, finding, field, value):
+    result = _cpp_source_digest_evidence(tmp_path, [{**finding, field: value}])
+    assert result['finding_count'] == result['blocking'] == 1
+
+
+@pytest.mark.parametrize('finding', NATIVE_SOURCE_HASH_OBSERVATIONS)
+@pytest.mark.parametrize('field', tuple(NATIVE_SOURCE_HASH_OBSERVATIONS[0]))
+def test_native_source_hash_disposition_requires_every_field(tmp_path, finding, field):
+    changed = dict(finding)
+    del changed[field]
+    assert _cpp_source_digest_evidence(tmp_path, [changed])['blocking'] == 1
+
+
+def test_native_source_hash_mixed_and_unknown_observations_block(tmp_path):
+    _clean_evidence(tmp_path)
+    original = NATIVE_SOURCE_HASH_OBSERVATIONS[0]
+    unknown = dict(original, Commit='0' * 40)
+    unknown['Fingerprint'] = f"{unknown['Commit']}:{unknown['File']}:generic-api-key:{unknown['StartLine']}"
+    malformed = dict(original, Secret=None)
+    findings = [*NATIVE_SOURCE_HASH_OBSERVATIONS, unknown, malformed]
+    result = _cpp_source_digest_evidence(tmp_path, findings)
+    assert result['finding_count'] == 13
+    assert result['approved_public_source_hashes'] == 11
+    assert result['blocking'] == 2
+    assert build_manifest(tmp_path)['security_gate']['status'] == 'blocked'
