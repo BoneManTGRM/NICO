@@ -22,3 +22,11 @@ found no remaining blockers. No production render or assessment was run.
 This does not claim standalone full-detail PDF parity. Parent inspection found
 49 structured findings but seven detailed PDF cards, consistent with the prior
 report. Accessible structured artifacts remain necessary for full detail.
+
+Parent's retained diagnostic inspection limits migration claims further: its old
+executive sentence is already truncated to 1,200 characters, and 49/55 rewritten
+roadmap entries lack package_id/source_binding. The existing binding guard returns
+early for that package, and the exact full-line compatibility matcher cannot match
+its truncated sentence. This repair does NOT migrate that retained diagnostic;
+its source evidence must remain unchanged. Fresh generation and fully bound,
+complete legacy-generated lines are the verified scope.
