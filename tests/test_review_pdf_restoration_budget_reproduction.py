@@ -311,10 +311,10 @@ def test_timed_out_serializer_keeps_directory_until_writer_physically_finishes(m
         assert state['temporary_files_cleanup_confirmed'] is False
     finally:
         release.set(); thread.join(1)
-    # Join the cleanup outcome with a bounded event-driven observation.
+    # Directory removal precedes cleanup confirmation; wait for the full outcome.
     import time
     deadline = time.monotonic()+1
-    while paths[0].parent.exists() and time.monotonic()<deadline:
+    while not state['temporary_files_cleanup_confirmed'] and time.monotonic()<deadline:
         Event().wait(.01)
     assert not paths[0].parent.exists()
     assert state['temporary_files_cleanup_confirmed'] is True
