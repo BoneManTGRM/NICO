@@ -33,7 +33,18 @@ def test_both_toolchain_builds_apply_the_same_pinned_source_repair():
     docker = Path('docker/assessment-full-project-fuzz.Dockerfile').read_text()
     assert 'COPY repair_cppcheck_placement_ast.py /opt/repair_cppcheck_placement_ast.py' in docker
     assert docker.index('python3 /opt/repair_cppcheck_placement_ast.py') < docker.index('make -C /opt/tool-src')
-    assert 'org.nico.cppcheck.repair="placement-new-initializer-ast-v1"' in docker
+    repairs = ('placement', 'format_var_template')
+    for name in repairs:
+        script = f'repair_cppcheck_{name}_ast.py'
+        assert all(b.count(f'cp scripts/{script} toolchain/full-project/') == 1 for b in builds)
+        assert docker.count(f'COPY {script} /opt/{script}') == 1
+        assert docker.count(f'python3 /opt/{script}') == 1
+    assert (docker.index('python3 /opt/repair_cppcheck_placement_ast.py')
+            < docker.index('python3 /opt/repair_cppcheck_format_var_template_ast.py')
+            < docker.index('make -C /opt/tool-src'))
+    label = 'org.nico.cppcheck.repair="placement-new-initializer-ast-v1+format-var-template-ast-v1"'
+    assert docker.count('org.nico.cppcheck.repair=') == 1
+    assert label in docker
     assert 'COPYING' in docker
 
 

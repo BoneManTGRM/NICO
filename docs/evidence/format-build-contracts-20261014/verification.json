@@ -1,0 +1,83 @@
+{
+  "scope": "Mechanical integration and build-record fixes only; native Cppcheck patch bytes unchanged",
+  "base_commit": "ae198582411adcf7b9818bcb70469c515f367664",
+  "original_repair_branch": "repair/format-var-template-ast-20261013",
+  "active_diagnostic_run": 38496068857,
+  "before_existing_controls": {
+    "failed": 4,
+    "passed": 0,
+    "log_sha256": "76d1b9efc45d703feb5497a5ec3769136a1adcf466f5ed96529e6fab573b2156"
+  },
+  "new_controls_before_fix": {
+    "failed": 7,
+    "passed": 4,
+    "note": "Includes new receipt/API requirements as well as behavior regressions; not native C++ tests."
+  },
+  "affected_suite": {
+    "tests": 106,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit_sha256": "a18a75661ea7ff00cbcd8d479c6bf6082b40fe0c34f6f8d0275925bf737d3574"
+  },
+  "local_python": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
+  "local_platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+  "hosted_python_3_11_parity": false,
+  "native_parser_qualified": false,
+  "original_bitcoin_context_qualified": false,
+  "full_contract_suite": "Attempted; execution interrupted by tool time limit before terminal result or JUnit. Not passed.",
+  "full_contract_selection_collection": "Collection-only attempt exceeded its 10-second budget. No native analyzer rerun.",
+  "database_pilot": "HOLD",
+  "production_changed": false,
+  "existing_branch_changed": false,
+  "remaining": [
+    "Recover and review the unpublished narrowed binding correction and its two positive member controls.",
+    "Collect existing original-context diagnostic result with exact runtime/input identities.",
+    "Run all applicable gates on final reconciled candidate; local tests are not hosted/native qualification."
+  ],
+  "patch_sha256": "b1a3f3fbff98697f1074bfa1ffea83cb144dde7e26027bfc88fd56459a152b10",
+  "files": [
+    {
+      "path": ".github/workflows/cpp-full-project-integration.yml",
+      "before_git_blob": "adf71033d31ae5dc6c8ee7c335042653dbd06322",
+      "after_git_blob": "bee14048793b16ae6600ee37ead1d42635bbc44d",
+      "after_sha256": "ea4d282b1b76cc75a2a768391bdfdfbdb2dbcccac839de239fd7fe304ea767e1",
+      "size": 21174
+    },
+    {
+      "path": "docker/assessment-full-project-fuzz.Dockerfile",
+      "before_git_blob": "e9cbd010c9bf51bc8d6b749500adabd399be2a5b",
+      "after_git_blob": "9e99a426b35fc4925ce99df47e76711d4a720c31",
+      "after_sha256": "4e937cef30aa6eb8cf4c70b7c4b00a17d4487f1beff660ff3119e8ac70885de8",
+      "size": 5630
+    },
+    {
+      "path": "scripts/repair_cppcheck_format_var_template_ast.py",
+      "before_git_blob": "8916fb41b5234c9736dd57edb068f05d5e9c8d35",
+      "after_git_blob": "458aa4c8c7e0bc9d9c3d96fe75d47124ff4b7850",
+      "after_sha256": "9b26d91715ff0182195c24a29656f01d7d1790f61be91b0c8fa2f264d823d56d",
+      "size": 4195
+    },
+    {
+      "path": "scripts/verify_cppcheck_repair_chain.py",
+      "before_git_blob": null,
+      "after_git_blob": "59a0044d6d6b34cf7254470721a7d6c80eb817f2",
+      "after_sha256": "fcf56ad31a0caa62c06e8e73238b19ebfa3565f778330ad685e83040788599c8",
+      "size": 2309
+    },
+    {
+      "path": "tests/test_cpp_placement_tool_repair.py",
+      "before_git_blob": "86f2189ac2282c4c2e040a178b31d52edb1c35da",
+      "after_git_blob": "0c5757d008455f3a34ed48f8fda96194faede527",
+      "after_sha256": "20c115a8c8656da7412fa7306d84dcc344cf5c8704b9a7a9963f56ec6de05024",
+      "size": 5246
+    },
+    {
+      "path": "tests/test_cpp_format_tool_repair.py",
+      "before_git_blob": null,
+      "after_git_blob": "985004e9578d6bec95513f208feecf0504bee5d9",
+      "after_sha256": "9128a998aba7d93343235bba3f4c402718ee2d4bb1c38bdbccac10f0081c20f8",
+      "size": 9424
+    }
+  ]
+}

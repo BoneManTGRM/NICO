@@ -44,6 +44,7 @@ RUN cd /opt/project-dependency-inputs && sha256sum -c SHA256SUMS \
     && test "$(g++ -dumpfullversion)" = 14.2.0 \
     && python3 /opt/repair_cppcheck_placement_ast.py /opt/tool-src/lib/tokenlist.cpp > /opt/nico-cppcheck-repair.json \
     && python3 /opt/repair_cppcheck_format_var_template_ast.py /opt/tool-src > /opt/nico-cppcheck-format-var-template-repair.json \
+    && python3 -m json.tool /opt/nico-cppcheck-format-var-template-repair.json >/dev/null \
     && timeout 180s make -C /opt/tool-src -j2 MATCHCOMPILER=yes FILESDIR=/opt/cppcheck 'CXXFLAGS=-O2 -DNDEBUG' \
     && cp /opt/tool-src/cppcheck /usr/local/bin/cppcheck \
     && mkdir -p /opt/cppcheck \
