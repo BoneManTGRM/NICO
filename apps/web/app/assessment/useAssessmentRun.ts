@@ -563,7 +563,8 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
           setAttempt(Math.min(count, MAX_POLL_ATTEMPTS));
           setStarted(null);
           setMessage(
-            stable === "review_required" ? copy.comprehensiveReview : copy.stopped,
+            stable === "complete" ? copy.comprehensiveComplete
+            : stable === "review_required" ? copy.comprehensiveReview : copy.stopped,
           );
           return;
         }
@@ -719,7 +720,8 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         setPhase(stable);
         setStarted(null);
         setMessage(
-          stable === "review_required" ? copy.comprehensiveReview : copy.stopped,
+          stable === "complete" ? copy.comprehensiveComplete
+            : stable === "review_required" ? copy.comprehensiveReview : copy.stopped,
         );
         return;
       }

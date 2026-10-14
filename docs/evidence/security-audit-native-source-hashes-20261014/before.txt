@@ -1,0 +1,40 @@
+F....................................................................... [ 22%]
+........................................................................ [ 44%]
+........................................................................ [ 67%]
+........................................................................ [ 89%]
+................................F                                        [100%]
+=================================== FAILURES ===================================
+_________ test_eleven_native_source_hashes_retain_artifacts_and_gates __________
+
+tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-12/test_eleven_native_source_hash0')
+
+    def test_eleven_native_source_hashes_retain_artifacts_and_gates(tmp_path):
+        _clean_evidence(tmp_path)
+        result = _cpp_source_digest_evidence(tmp_path, NATIVE_SOURCE_HASH_OBSERVATIONS)
+>       assert result['finding_count'] == result['approved_public_source_hashes'] == 11
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'approved_public_source_hashes'
+
+tests/test_security_audit_gate.py:654: KeyError
+_________ test_native_source_hash_mixed_and_unknown_observations_block _________
+
+tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-12/test_native_source_hash_mixed_0')
+
+    def test_native_source_hash_mixed_and_unknown_observations_block(tmp_path):
+        _clean_evidence(tmp_path)
+        original = NATIVE_SOURCE_HASH_OBSERVATIONS[0]
+        unknown = dict(original, Commit='0' * 40)
+        unknown['Fingerprint'] = f"{unknown['Commit']}:{unknown['File']}:generic-api-key:{unknown['StartLine']}"
+        malformed = dict(original, Secret=None)
+        findings = [*NATIVE_SOURCE_HASH_OBSERVATIONS, unknown, malformed]
+        result = _cpp_source_digest_evidence(tmp_path, findings)
+        assert result['finding_count'] == 13
+>       assert result['approved_public_source_hashes'] == 11
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'approved_public_source_hashes'
+
+tests/test_security_audit_gate.py:695: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_security_audit_gate.py::test_eleven_native_source_hashes_retain_artifacts_and_gates
+FAILED tests/test_security_audit_gate.py::test_native_source_hash_mixed_and_unknown_observations_block
+2 failed, 319 passed, 239 deselected in 0.57s
