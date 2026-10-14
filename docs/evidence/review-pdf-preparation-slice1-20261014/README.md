@@ -1,4 +1,4 @@
-# Ordinary review-PDF preparation: dormant durable-ledger slice
+# Ordinary review-PDF preparation: local SQLite test scaffold
 
 Base: `a5a552fcb78ff6311346dd8d3154663bad7cbcb5`. Separate branch excludes both
 performance candidates. The owner explicitly authorized isolated implementation
@@ -6,6 +6,62 @@ and tests on October 14; production changes, spending and deployment remain out
 of scope. This slice does not fix deployed download behavior by itself.
 
 ## Storage finding
+
+**Correction after production architecture review:** this slice is a local test
+scaffold, not a production-ready durable ledger. Its SQLite adapter type check
+does not verify a persistent mount, and reopening a local test file does not
+prove survival of container replacement or sharing between replicas.
+
+The parent verified Railway service `d9d51992-d34a-4348-a83d-1f760faaa6a8`
+through `describe_service` at 17:36 UTC on October 14, 2026: `volumes: []`, one
+replica in `europe-west4-drams3a`, no staged changes, source
+`568d5c530b9a7ecdd892d8b7f5023ba5d348e0d9`. `DATABASE_URL` and
+`NICO_DISABLE_POSTGRES` are defined; their values were not retrieved. This
+metadata does not establish which adapter is active. No new volume or database
+pilot activation is authorized. Local SQLite must not be activated for this job.
+
+### Source wiring and activation boundary
+
+- `Dockerfile:32-35` requires durable delivery/assessment storage but enables the
+  SQLite fallback at `/data/nico-runtime.sqlite3`; the path itself supplies no
+  volume. `NICO_WEB_WORKERS=1` is a default, not a distributed lock.
+- `nico/api/production_bootstrap.py` installs the general storage facade and
+  durability truth wrappers. `nico/durable_runtime_storage.py` prefers resolved
+  PostgreSQL aliases, otherwise permits explicitly enabled SQLite. The general
+  facade also observes `NICO_DISABLE_POSTGRES`.
+- `nico/comprehensive_production_bootstrap.py` resolves the same private database
+  aliases for the canonical run store, or explicitly enabled SQLite with its
+  persistence proof. With durable assessment storage required, unverified SQLite
+  is blocked. Its PostgreSQL selection does not consult the general facade's
+  `NICO_DISABLE_POSTGRES` flag. Therefore presence of those two variable names
+  cannot prove that the general facade and canonical run store use the same DB.
+- `nico/comprehensive_runtime.py` constructs `ComprehensiveRunStore` using the
+  selected connection factory. Canonical runs and existing final-report lease
+  rows live in `nico_comprehensive_runs` and
+  `nico_comprehensive_final_report_jobs`, not the general `client_jobs` collection.
+- This scaffold would instead write `nico_records` rows with
+  `table_name='client_jobs'` in the supplied SQLite adapter's file. It has no
+  production binding. PostgreSQL has an existing `client_jobs` JSONB table in
+  `nico/storage.py`; using it could avoid new DDL, but only after confirming the
+  active shared database, existing table, authorized access, and binding to the
+  canonical store. Those production conditions are not established here.
+
+`BEGIN IMMEDIATE` serializes writers on the **same SQLite file**; lease tokens
+fence stale owners only within that file. Separate replica/container files do
+not coordinate. The existing publication semaphore is explicitly process-local;
+it is not a global worker-capacity limit. A PostgreSQL implementation would need
+atomic enqueue/claim and lease-fenced writes in shared database transactions,
+including concurrent-process, restart and stale-owner tests. Existing revision
+checks on canonical runs do not automatically protect this separate ledger.
+
+No new volume, schema, service or security permission is required by the dormant
+scaffold. Production activation cannot proceed on it. A same-database PostgreSQL
+implementation might require no infrastructure expansion, but that remains
+conditional on the existing-table/access checks above; no schema creation or
+permission expansion is authorized implicitly. If no suitable existing durable
+store is available, stop rather than provision one. API/UI and worker activation
+are paused pending this prerequisite. All results remain `rendered_unverified`
+until full artifact validation and an authoritative source-binding recheck.
 
 No new schema is needed for this slice. Existing `SQLiteRuntimeAdapter` has
 `nico_records`, including the logical `client_jobs` collection. Existing
@@ -73,3 +129,25 @@ client emitted its existing HTTPX deprecation warning; no test failed.
 Do not activate this partial ledger or claim download readiness. No push, hosted
 CI, migration execution, assessment, production mutation, spending, merge,
 deployment or C++ work occurred. Database pilot remains HOLD.
+
+## Follow-up storage verification
+
+Using `/workspace/nico-venv/bin/python`, ran the hosted-persistence guard,
+runtime-storage-truth and preparation-ledger suites together: **34 passed,
+2 failed**. All 27 ledger tests and all 5 hosted-persistence tests passed.
+Two existing runtime-storage-truth tests expected the temporary SQLite path to
+be non-durable. This executor's `/tmp` is a separate `tmpfs` mount/device;
+`runtime_storage_truth_patch.sqlite_mount_verified` accepts a different device
+without excluding tmpfs, so it reported verified durability. The canonical
+bootstrap uses a separate detector that excludes ephemeral filesystem types.
+This is an additional reason not to use the general adapter's durability flag
+alone as activation evidence. No repair or production conclusion is inferred
+from these two failures; they are retained as an unresolved storage-truth issue.
+The first invocation with system Python could not run because pytest was absent;
+the existing project virtual environment supplied the reported test run.
+
+`git diff --check` passed. This follow-up changes documentation/module labeling
+only and deliberately does not advance API/UI or runtime activation. Required
+next evidence is the active canonical/general adapter selection and confirmation
+that the existing shared durable database contains the authorized job table;
+variable values or credentials are not needed in the handoff.

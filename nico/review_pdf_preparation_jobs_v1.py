@@ -1,6 +1,9 @@
-"""Dormant review-PDF job ledger using the existing SQLite runtime collection.
+"""Local test scaffold for a review-PDF ledger in a SQLite runtime collection.
 
 No worker, route, schema initialization or assessment write is installed here.
+SQLite adapter type does not establish deployment durability or replica sharing.
+This implementation is not suitable for activation on the current production
+service, which has no volume; PostgreSQL support remains unimplemented.
 Callers must authenticate and validate the retained source before enqueueing.
 Rendered is deliberately unverified: this slice cannot authorize a download.
 """
