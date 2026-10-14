@@ -72,6 +72,9 @@ jobs:
         run: python scripts/postgres_worker_protocol_proof.py --evidence audit-results/postgres-worker-protocol-proof.json
       - name: Prove retained review-PDF ledger ownership on existing Postgres
         run: python scripts/postgres_review_pdf_preparation_proof.py --output audit-results/postgres-review-pdf-preparation-proof.json
+      - name: Prove synthetic full retained PDF lifecycle on existing Postgres
+        timeout-minutes: 4
+        run: python scripts/postgres_review_pdf_lifecycle_proof.py --output audit-results/postgres-review-pdf-lifecycle-proof.json
       - name: Qualify near-cap run save and fresh-process reload on real Postgres
         run: |
           python scripts/postgres_run_storage_capacity_proof.py --transport v2 --output audit-results/run-storage-capacity-v2.json
@@ -149,6 +152,22 @@ jobs:
           assert review_pdf["commit_sha"] == subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
           assert "postgresql://" not in json.dumps(review_pdf)
           assert "NICO_TEST_DATABASE_URL" not in json.dumps(review_pdf)
+          lifecycle = json.loads(Path("audit-results/postgres-review-pdf-lifecycle-proof.json").read_text())
+          assert lifecycle["status"] == "passed" and lifecycle["synthetic"] is True
+          assert lifecycle["live_production_claim"] is False
+          assert lifecycle["actual_retained_report_timing"] is False
+          assert lifecycle["assessment_executed"] is False
+          assert lifecycle["client_delivery_allowed"] is False
+          assert lifecycle["commit_sha"] == review_pdf["commit_sha"]
+          assert all(value is True for value in lifecycle["checks"].values())
+          for key in ("fresh_process_retrieved_exact_bytes", "identity_hash_and_gates_verified",
+                      "real_store_restore", "real_child_render", "locked_ready_publication",
+                      "source_and_history_unchanged_during_preparation", "feature_flags_off",
+                      "stale_source_rejected", "stale_owner_rejected", "cancelled_job_not_rendered",
+                      "mutated_source_cannot_retrieve_old_pdf"):
+              assert lifecycle["checks"][key] is True
+          assert "postgresql://" not in json.dumps(lifecycle)
+          assert "NICO_TEST_DATABASE_URL" not in json.dumps(lifecycle)
           PY
 
       - name: Upload restart proof evidence
@@ -163,5 +182,6 @@ jobs:
             audit-results/postgres-worker-job-proof.json
             audit-results/postgres-worker-protocol-proof.json
             audit-results/postgres-review-pdf-preparation-proof.json
+            audit-results/postgres-review-pdf-lifecycle-proof.json
           if-no-files-found: error
           retention-days: 30

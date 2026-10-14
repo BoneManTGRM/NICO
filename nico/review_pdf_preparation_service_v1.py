@@ -173,20 +173,21 @@ class ReviewPdfPreparationService:
             if lease_done is not None:
                 lease_done.set()
                 lease_thread.join(timeout=.05)
-            def release_when_finished():
-                # A timed-out Python/DB phase can still be running. Quarantine
-                # capacity until every operation and physical child has exited.
+            def release_when_finished(*, wait):
+                # One protocol for immediate and deferred release: the supervisor
+                # must have physically stopped before the final operation snapshot.
                 if lease_thread is not None:
-                    lease_thread.join()
+                    lease_thread.join(timeout=None if wait else 0)
+                    if lease_thread.is_alive():
+                        return False
                 while (any(not item.idle() for item in state['pending_guards'])
                        or not state.get('temporary_files_cleanup_confirmed', True)):
+                    if not wait:
+                        return False
                     Event().wait(.02)
                 if state.get('physical_worker_exit_confirmed'):
                     self.capacity.release()
-            if (all(item.idle() for item in state['pending_guards'])
-                    and state.get('temporary_files_cleanup_confirmed', True)
-                    and (lease_thread is None or not lease_thread.is_alive())):
-                if state.get('physical_worker_exit_confirmed'):
-                    self.capacity.release()
-            else:
-                Thread(target=release_when_finished, daemon=True, name='nico-review-quarantine').start()
+                return True
+            if not release_when_finished(wait=False):
+                Thread(target=lambda: release_when_finished(wait=True), daemon=True,
+                       name='nico-review-quarantine').start()

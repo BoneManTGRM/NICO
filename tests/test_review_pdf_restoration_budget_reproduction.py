@@ -530,3 +530,49 @@ def test_scheduled_heartbeat_remains_outstanding_through_supervisor_shutdown(sea
         start_release.set(); finish.set(); coordinator.join(1)
     assert capacity.acquire(timeout=1)
     capacity.release()
+
+
+def test_pre_registration_heartbeat_cannot_race_immediate_capacity_release(seam, monkeypatch):
+    from threading import Event, Thread, current_thread
+    from nico.review_pdf_preparation_deadline_v1 import DeadlineGuard
+    service, jobs, source, capacity, _, _, _ = seam
+    checked, proceed, active, finish, supervisor_exited = (Event() for _ in range(5))
+    errors = []
+    original_check, original_idle, original_supervise = DeadlineGuard.check, DeadlineGuard.idle, DeadlineGuard.supervise_lease
+    paused = [False]
+    def check(guard):
+        original_check(guard)
+        if current_thread().name == 'nico-review-lease' and not paused[0]:
+            paused[0] = True; checked.set(); assert proceed.wait(2)
+    def supervise(guard, heartbeat):
+        done, thread = original_supervise(guard, heartbeat)
+        def observe(): thread.join(); supervisor_exited.set()
+        Thread(target=observe, daemon=True).start()
+        return done, thread
+    def idle(guard):
+        snapshot = original_idle(guard)
+        if guard.stop.is_set() and current_thread().name == 'synthetic-coordinator' and snapshot:
+            # Force a scheduler switch after the unsafe first idle snapshot.
+            proceed.set(); assert active.wait(1); assert supervisor_exited.wait(1)
+        return snapshot
+    def heartbeat(*args, **kwargs): active.set(); assert finish.wait(2)
+    def capture(*args): assert checked.wait(1); raise ValueError('synthetic source failure')
+    monkeypatch.setattr(DeadlineGuard, 'HEARTBEAT_INTERVAL', .002)
+    monkeypatch.setattr(DeadlineGuard, 'check', check)
+    monkeypatch.setattr(DeadlineGuard, 'idle', idle)
+    monkeypatch.setattr(DeadlineGuard, 'supervise_lease', supervise)
+    monkeypatch.setattr(jobs, 'heartbeat', heartbeat)
+    source.capture.side_effect = capture
+    def run():
+        try: service.run_once(identity())
+        except BaseException as error: errors.append(error)
+    coordinator = Thread(target=run, name='synthetic-coordinator'); coordinator.start()
+    try:
+        assert checked.wait(1)
+        coordinator.join(1)
+        assert not coordinator.is_alive() and isinstance(errors[0], ValueError)
+        proceed.set(); assert active.wait(1); assert supervisor_exited.wait(1)
+        assert not capacity.acquire(timeout=.1), 'immediate release must observe supervisor exit before final idle snapshot'
+    finally:
+        proceed.set(); finish.set(); coordinator.join(1)
+    assert capacity.acquire(timeout=1); capacity.release()
