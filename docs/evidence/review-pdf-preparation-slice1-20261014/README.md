@@ -151,3 +151,64 @@ only and deliberately does not advance API/UI or runtime activation. Required
 next evidence is the active canonical/general adapter selection and confirmation
 that the existing shared durable database contains the authorized job table;
 variable values or credentials are not needed in the handoff.
+
+## Authorized source-only PostgreSQL and mount-classification follow-up
+
+This section supersedes the earlier statement that PostgreSQL source support is
+unimplemented. Activation remains blocked. `PostgresReviewPdfPreparationJobs`
+accepts an already constructed `PostgresAdapter`; it neither constructs one nor
+executes its schema initializer. It writes only the existing `client_jobs`
+columns, with JSONB payload and timestamp conversion. No migration, dependency
+installation, service change, new volume or production database access occurred.
+
+Each mutation takes a transaction-scoped advisory lock derived from the complete
+job identity, before reading or inserting the row. This includes the absent-row
+enqueue race. READ COMMITTED ensures the read after waiting sees the preceding
+commit; `clock_timestamp()` checks expiry after lock acquisition, unlike a
+transaction-start clock. Lock wait is bounded to five seconds; errors roll back
+and close the connection. Identity, tenant, lease, attempt and deadline checks
+remain in effect. The lock coordinates cooperating ledger writers in the same
+database, not separate databases or global render capacity. Activation requires
+confirming existing advisory-lock function access as well as table privileges;
+no permission grant is implemented or authorized here.
+
+No PostgreSQL binaries, local socket or running Docker fixture were available.
+Psycopg is already installed, but no server was provisioned. The seven new tests
+use a **mock driver only**: they check transaction ordering, bounded lock failure,
+deduplication decisions, scope/source conflicts, lease fencing, limits, rollback
+and unverified results. They do not establish real PostgreSQL concurrency,
+isolation, JSONB adaptation, restart durability or SQL execution compatibility.
+Those checks remain explicit gates before activation, alongside live adapter and
+existing-table readiness. Parent also reports redacted connector variables and
+a blocked health route; no alternate transport was attempted.
+
+The mount defect was reproduced before repair: seven failures (the two original
+tests plus five synthetic ephemeral/nested/missing-evidence cases), four passes.
+The general storage detector now classifies the nearest containing mount from
+mountinfo, rejecting ephemeral filesystems and ambiguous/missing mount evidence.
+It no longer treats a different device or any mount point as durability proof.
+Existing explicit operator confirmation is preserved. ext4/xfs cases pass;
+tmpfs/ramfs/overlay, nested ephemeral mounts and missing evidence fail closed.
+This correction does not establish durability for Railway's volume-less service.
+
+Focused run after repair: **99 passed**, comprising 27 SQLite ledger tests,
+7 PostgreSQL mock tests, 11 storage-truth tests, 5 hosted-persistence guard tests
+and 49 public client-job boundary tests. Existing HTTPX deprecation warning only.
+No runtime wiring, API/UI or artifact publication was added. All rendered results
+remain `rendered_unverified`, requiring full validation and authoritative source
+recheck before any future ready/download transition.
+
+Independent review caught ambiguous stacked mounts at the same path; both entry
+orders now fail closed. Those two additional regressions increase total coverage
+to 101 tests (13 storage-truth tests). PostgreSQL transaction setup uses
+`SET TRANSACTION ISOLATION LEVEL READ COMMITTED` after psycopg's implicit BEGIN,
+avoiding a redundant explicit BEGIN. Independent PostgreSQL review found no
+blocking correctness issue within the dormant mock-qualified scope. Full real
+PostgreSQL concurrent deduplication/claim, process restart and fencing tests are
+still not run and must not be inferred from these results.
+
+After the final two corrections, reran the affected suites: 18 storage/hosted
+checks passed, then 20 PostgreSQL-mock/storage-truth checks passed. Together with
+the unchanged suites from the 99-test run this covers 101 distinct passing tests;
+there was no single 101-test invocation. The mount reviewer independently
+confirmed the stacked-mount finding resolved with no remaining blocker.

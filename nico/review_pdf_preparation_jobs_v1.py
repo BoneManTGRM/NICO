@@ -1,9 +1,9 @@
-"""Local test scaffold for a review-PDF ledger in a SQLite runtime collection.
+"""Dormant review-PDF ledger for existing SQLite/PostgreSQL runtime collections.
 
 No worker, route, schema initialization or assessment write is installed here.
 SQLite adapter type does not establish deployment durability or replica sharing.
-This implementation is not suitable for activation on the current production
-service, which has no volume; PostgreSQL support remains unimplemented.
+SQLite is not suitable for the current volume-less production service.
+PostgreSQL support requires independent real-database qualification before use.
 Callers must authenticate and validate the retained source before enqueueing.
 Rendered is deliberately unverified: this slice cannot authorize a download.
 """
@@ -17,6 +17,7 @@ import re
 from uuid import uuid4
 
 from nico.durable_runtime_storage import SQLiteRuntimeAdapter
+from nico.storage import PostgresAdapter
 
 WORKFLOW = 'review_pdf_preparation.v1'
 PREFIX = 'reviewpdfprep_'
@@ -73,7 +74,7 @@ class ReviewPdfPreparationJobs:
         self.adapter = adapter
 
     @contextmanager
-    def _transaction(self):
+    def _transaction(self, identity):
         connection = self.adapter._connect()
         try:
             connection.execute('BEGIN IMMEDIATE')
@@ -126,7 +127,7 @@ class ReviewPdfPreparationJobs:
     def enqueue(self, identity, *, preparation_authorized=False):
         if preparation_authorized is not True:
             raise PermissionError('explicit_review_pdf_preparation_required')
-        with self._transaction() as connection:
+        with self._transaction(identity) as connection:
             prior = self._read(connection, identity)
             if prior is not None:
                 return prior
@@ -140,7 +141,7 @@ class ReviewPdfPreparationJobs:
 
     def claim(self, identity):
         """Claim only after the future coordinator acquires existing render capacity."""
-        with self._transaction() as connection:
+        with self._transaction(identity) as connection:
             job = self._read(connection, identity)
             if job is None:
                 raise PreparationConflict('preparation_not_enqueued')
@@ -169,7 +170,7 @@ class ReviewPdfPreparationJobs:
         return job, now
 
     def heartbeat(self, identity, lease_id):
-        with self._transaction() as connection:
+        with self._transaction(identity) as connection:
             job, now = self._owned(connection, identity, lease_id)
             job.update(updated_epoch=now, lease_until_epoch=min(now + 30, job['deadline_epoch']))
             self._write(connection, identity, job)
@@ -181,7 +182,7 @@ class ReviewPdfPreparationJobs:
             raise PreparationConflict('preparation_source_changed')
         if type(pdf_sha256) is not str or not re.fullmatch('[0-9a-f]{64}', pdf_sha256):
             raise ValueError('invalid_rendered_pdf_digest')
-        with self._transaction() as connection:
+        with self._transaction(identity) as connection:
             job, now = self._owned(connection, identity, lease_id)
             job.update(status='rendered_unverified', updated_epoch=now,
                        pdf_sha256=pdf_sha256, lease_id='', lease_until_epoch=0)
@@ -189,8 +190,73 @@ class ReviewPdfPreparationJobs:
             return job
 
     def fail(self, identity, lease_id):
-        with self._transaction() as connection:
+        with self._transaction(identity) as connection:
             job, now = self._owned(connection, identity, lease_id)
             job.update(status='failed', updated_epoch=now, lease_id='', lease_until_epoch=0)
             self._write(connection, identity, job)
             return job
+
+
+class PostgresReviewPdfPreparationJobs(ReviewPdfPreparationJobs):
+    """Existing client_jobs table only; never instantiate an adapter or run DDL.
+
+    All ledger writers must use the transaction-scoped identity lock, including
+    enqueue before a row exists. Hash collisions only serialize unrelated jobs.
+    Public client-job writers reject this reserved namespace. This lock is not
+    a global rendering-capacity limit or artifact/source validation.
+    """
+
+    def __init__(self, adapter):
+        if not isinstance(adapter, PostgresAdapter):
+            raise TypeError('review_pdf_jobs_require_existing_postgres_runtime')
+        self.adapter = adapter
+
+    @contextmanager
+    def _transaction(self, identity):
+        connection = self.adapter._connect()
+        try:
+            # Use a fresh READ COMMITTED snapshot after a competing writer commits.
+            connection.execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED')
+            connection.execute("SET LOCAL lock_timeout = '5s'")
+            lock_key = int.from_bytes(hashlib.sha256(identity.job_id.encode()).digest()[:8],
+                                      'big', signed=True)
+            connection.execute('SELECT pg_advisory_xact_lock(%s)', (lock_key,))
+            yield connection
+            connection.commit()
+        except BaseException:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    @staticmethod
+    def _now(connection):
+        # Transaction time predates lock acquisition; wall time must fence expiry.
+        row = connection.execute('SELECT EXTRACT(EPOCH FROM clock_timestamp()) AS epoch').fetchone()
+        return float(row['epoch'])
+
+    @staticmethod
+    def _read(connection, identity):
+        row = connection.execute(
+            'SELECT customer_id, project_id, status, payload FROM client_jobs WHERE job_id=%s',
+            (identity.job_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        job = row['payload']
+        if (not isinstance(job, dict) or row['customer_id'] != identity.customer_id
+                or row['project_id'] != identity.project_id
+                or job.get('workflow') != WORKFLOW or job.get('identity') != asdict(identity)
+                or job.get('job_id') != identity.job_id or job.get('status') != row['status']):
+            raise PreparationConflict('preparation_identity_conflict')
+        return job
+
+    def _write(self, connection, identity, job):
+        connection.execute(
+            'INSERT INTO client_jobs(job_id,customer_id,project_id,status,payload,created_at,updated_at) '
+            'VALUES(%s,%s,%s,%s,%s,to_timestamp(%s),to_timestamp(%s)) '
+            'ON CONFLICT(job_id) DO UPDATE SET status=excluded.status, '
+            'payload=excluded.payload,updated_at=excluded.updated_at',
+            (identity.job_id, identity.customer_id, identity.project_id, job['status'],
+             self.adapter._jsonb(job), job['created_epoch'], job['updated_epoch']),
+        )
