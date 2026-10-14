@@ -127,3 +127,31 @@ test('a superseded polling loop cannot restore a cleared run after its final rea
   assert.equal(h.render().issue, null);
   assert.equal(h.window.location.searchParams.has('run_id'), false);
 });
+
+for (const locale of ['en', 'es-MX']) {
+  for (const via of ['restore', 'continuation']) {
+    for (const status of ['approved', 'review_required', 'complete', 'failed', 'blocked']) {
+      test(`${locale} ${via}: ${status} message agrees with terminal phase`, async () => {
+        const result = {...finished, status, human_review_required: status !== 'approved', client_delivery_allowed: false};
+        const h = harness(calls => via === 'continuation' && calls.length === 1 ? active : result, locale);
+        await h.render().retry();
+        const state = h.render();
+        const expected = status === 'approved' ? 'complete' : ['failed', 'blocked'].includes(status) ? 'failed' : 'review_required';
+        assert.equal(state.phase, expected);
+        assert.equal(state.result.client_delivery_allowed, false);
+        assert.equal(state.result.run_id, RUN);
+        assert.equal(h.storage.has('nico.comprehensive.active-run.v1'), false);
+        assert.equal(h.calls.some(call => call.method === 'POST'), via === 'continuation');
+        if (expected === 'complete') {
+          assert.doesNotMatch(state.message, /stopped|failed|blocked|se detuvo|falló|bloqueada/i);
+          assert.doesNotMatch(state.message, /awaiting internal|en espera de revisión/i);
+          assert.ok(state.message.length > 0);
+        } else if (expected === 'failed') {
+          assert.match(state.message, locale === 'en' ? /stopped/ : /se detuvo/);
+        } else {
+          assert.match(state.message, locale === 'en' ? /awaiting internal technical review/ : /revisión técnica interna/);
+        }
+      });
+    }
+  }
+}

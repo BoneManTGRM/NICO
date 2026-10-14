@@ -1,0 +1,3026 @@
+.F...................................................................... [ 36%]
+..............................................F...F..................... [ 72%]
+........F.F.F.....................FFFFFFFFF.FFFFFFFF..                   [100%]
+=================================== FAILURES ===================================
+______ test_spanish_approved_labels_preserve_stakeholder_pending_evidence ______
+
+    def test_spanish_approved_labels_preserve_stakeholder_pending_evidence():
+        # These lines are emitted by the actual es-MX renderer for revision 72.
+        text = '\n'.join((
+            'Estado de revisión: aprobación humana pendiente',
+            'Estado de aprobación: aprobación humana pendiente',
+            'Identidad del revisor: Pendiente',
+            'Rol del revisor: Pendiente',
+            'Autorización del revisor: Pendiente',
+            'Decisión: Pendiente',
+            'La aprobación humana autorizada sigue pendiente y la entrega al cliente permanece bloqueada.',
+            'La entrega al cliente está bloqueada.',
+            'Estado: Solo marco — pendiente de validación de las partes interesadas',
+        ))
+        result = approved._replace_finality_text(text)
+        for stale in ('aprobación humana pendiente', 'del revisor: Pendiente',
+                      'Decisión: Pendiente', 'humana autorizada sigue pendiente',
+                      'cliente está bloqueada'):
+            assert stale.casefold() not in result.casefold()
+        assert 'Estado: Solo marco — pendiente de validación de las partes interesadas' in result
+        escaped = '<li>&lt;span data-nico-client-literal=&quot;true&quot;&gt;Estado de revisión: aprobación humana pendiente&lt;/span&gt;</li>'
+        assert 'aprobación humana pendiente' not in approved._replace_finality_text(escaped)
+        evidence = 'Evidencia técnica: Decisión: Pendiente; identidad del revisor: Pendiente'
+>       assert approved._replace_finality_text(evidence) == evidence
+E       AssertionError: assert 'Evidencia té...visión humana' == 'Evidencia té...or: Pendiente'
+E         
+E         - Evidencia técnica: Decisión: Pendiente; identidad del revisor: Pendiente
+E         + Evidencia técnica: Decisión: Aprobada; Identidad del revisor: Registrada en el certificado de revisión humana
+
+tests/test_comprehensive_approved_review_truth_v1.py:98: AssertionError
+_ test_alternate_locale_calls_full_production_assembler_and_invalidates_approval _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f1fd58214f0>
+
+    def test_alternate_locale_calls_full_production_assembler_and_invalidates_approval(
+        monkeypatch,
+    ):
+        from nico import phase17_canonical_artifact_rebuild_v1 as phase17
+    
+        status = _approved_status(
+            source_language="en",
+            client_delivery_allowed=True,
+            canonical_updates={
+                "approval": {"decision": "approved", "reviewer_identity": "human"},
+                "accepted_edition": {"accepted_edition": True},
+                "human_review_completed": True,
+                "client_delivery_allowed": True,
+                "approval_status": "approved_final",
+                "delivery_status": "authorized",
+            },
+        )
+        status["reports"].update(
+            {
+                "human_review_completed": True,
+                "client_delivery_allowed": True,
+                "approval_status": "approved_final",
+                "delivery_status": "authorized",
+            }
+        )
+        before = deepcopy(status)
+        calls = []
+        pdf_bytes = b"%PDF-1.4\nlocalized-full"
+    
+        def assemble(package):
+            calls.append(deepcopy(package))
+            localized_json = deepcopy(package["json"])
+            localized_json.update(
+                {
+                    "approval_status": "pending_human_approval",
+                    "delivery_status": "blocked_pending_human_approval",
+                    "client_delivery_allowed": False,
+                }
+            )
+            return {
+                "json": localized_json,
+                "markdown": "# Informe integral",
+                "html": "<article>Informe integral</article>",
+                "pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"),
+                "pdf_sha256": subject.hashlib.sha256(pdf_bytes).hexdigest(),
+                "pdf_page_count": 1,
+                "canonical_json_sha256": "b" * 64,
+                "artifact_manifest": {"manifest_id": "localized-manifest"},
+                "approval_status": "pending_human_approval",
+                "delivery_status": "blocked_pending_human_approval",
+                "client_delivery_allowed": False,
+            }
+    
+        monkeypatch.setattr(phase17, "rebuild_client_artifacts", assemble)
+    
+>       result = subject.build_same_run_locale_report(status, "es-MX")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_comprehensive_same_run_locale_report_v1.py:1206: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+nico/comprehensive_commercial_ship_projection_v3.py:901: in report_with_integrity_gate
+    return current_report(source, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_canonical_truth_hash_compat_v1.py:187: in build_locale_report
+    result = current(reconciled_status, report_language)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1339: in build_same_run_locale_report
+    artifacts = _render_target(canonical_copy, target_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:54: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:840: in localized_render_target
+    return _finalize_artifact_navigation(artifacts, navigation_truth)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:54: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:517: in _finalize_artifact_navigation
+    recovered, repository_section_recovered = _ensure_repository_delivery_section(
+nico/report_delivery_timing_v1.py:54: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:422: in _ensure_repository_delivery_section
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../nico-venv/lib/python3.12/site-packages/pypdf/_reader.py:151: in __init__
+    self._initialize_stream(stream)
+../nico-venv/lib/python3.12/site-packages/pypdf/_reader.py:175: in _initialize_stream
+    self.read(stream)
+../nico-venv/lib/python3.12/site-packages/pypdf/_reader.py:689: in read
+    self._find_eof_marker(stream)
+../nico-venv/lib/python3.12/site-packages/pypdf/_reader.py:802: in _find_eof_marker
+    line = read_previous_line(stream)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+stream = <_io.BytesIO object at 0x7f1fd6b66a20>
+
+    def read_previous_line(stream: StreamType) -> bytes:
+        """
+        Given a byte stream with current position X, return the previous line.
+    
+        All characters between the first CR/LF byte found before X
+        (or, the start of the file, if no such byte is found) and position X
+        After this call, the stream will be positioned one byte after the
+        first non-CRLF character found beyond the first CR/LF byte before X,
+        or, if no such byte is found, at the beginning of the stream.
+    
+        Args:
+            stream: StreamType:
+    
+        Returns:
+            The data which was read.
+    
+        """
+        line_content = []
+        found_crlf = False
+        if stream.tell() == 0:
+>           raise PdfStreamError(STREAM_TRUNCATED_PREMATURELY)
+E           pypdf.errors.PdfStreamError: Stream has ended unexpectedly
+
+../nico-venv/lib/python3.12/site-packages/pypdf/_utils.py:380: PdfStreamError
+------------------------------ Captured log call -------------------------------
+WARNING  pypdf._reader:_utils.py:509 EOF marker not found
+__ test_real_composed_same_run_en_es_preserves_truth_literals_and_navigation ___
+
+    def test_real_composed_same_run_en_es_preserves_truth_literals_and_navigation() -> None:
+        from tests.test_v2_premium_report_renderer import _package
+    
+        from nico.comprehensive_engagement_metadata_v1 import (
+            build_comprehensive_engagement_metadata,
+        )
+        from nico.comprehensive_report_review_integrity_v1 import (
+            install_comprehensive_report_review_integrity_v1,
+        )
+        from nico.comprehensive_semantic_navigation_v1 import semantic_entry_records
+        from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
+    
+        install_comprehensive_report_review_integrity_v1()
+        fixture = {
+            "client_name": "Compañía  Águila",
+            "project_name": "Proyecto  Ñandú /  Release 2.0",
+            "primary_technical_contact": "María-José  Pérez - CTO /  Ingeniería",
+            "access_method": "GitHub  Enterprise - acceso de  solo lectura",
+            "authorized_scope": (
+                "organizacion/proyecto - rama  release/2026.08; código, configuración y  CI/CD."
+            ),
+        }
+        human_evidence = {
+            "stakeholder_context": {
+                "evidence": {
+                    key: [fixture[key]]
+                    for key in (
+                        "primary_technical_contact",
+                        "access_method",
+                        "authorized_scope",
+                    )
+                }
+            }
+        }
+        package = _package("en")
+        source_customer_id = package["json"]["identity"]["customer_id"]
+        source_project_id = package["json"]["identity"]["project_id"]
+        engagement = build_comprehensive_engagement_metadata(
+            client_name=fixture["client_name"],
+            project_name=fixture["project_name"],
+            human_evidence=human_evidence,
+        )
+        package["json"]["engagement_metadata"] = engagement
+        package["json"]["identity"].update(
+            {
+                "customer_name": fixture["client_name"],
+                "project_name": fixture["project_name"],
+                "primary_technical_contact": fixture["primary_technical_contact"],
+                "access_method": fixture["access_method"],
+                "authorized_scope": fixture["authorized_scope"],
+                "engagement_metadata_sha256": engagement[
+                    "engagement_metadata_sha256"
+                ],
+            }
+        )
+        source = rebuild_client_artifacts(package)
+        source_json = deepcopy(source["json"])
+        source_hash = subject.canonical_sha256(source_json)
+        reports = deepcopy(source)
+        reports["report_id"] = "comprehensive_report_same_run_real"
+        reports["canonical_truth_sha256"] = source_hash
+        status = {
+            "run_id": source_json["identity"]["run_id"],
+            "repository": source_json["identity"]["repository"],
+            "commit_sha": source_json["identity"]["commit_sha"],
+            "evidence_ledger_id": source_json["identity"]["evidence_ledger_id"],
+            "report_language": "en",
+            "terminal": True,
+            "reports": reports,
+        }
+        before = deepcopy(status)
+    
+        localized = subject.build_same_run_locale_report(status, "es-MX")
+    
+        assert status == before
+        assert source_json["identity"]["customer_id"] == source_customer_id
+        assert source_json["identity"]["project_id"] == source_project_id
+        assert localized["canonical_truth_sha256"] == source_hash
+        assert localized["report"]["json"] == source_json
+        assert localized["report"]["localized_artifact_json"]["identity"][
+            "report_language"
+        ] == "es-MX"
+        assert localized["report"]["approval_status"] == "pending_human_approval"
+        assert localized["report"]["delivery_status"] == "blocked_pending_human_approval"
+        assert localized["report"]["artifact_manifest"]["manifest_id"]
+        assert localized["localized_artifact_approval_invalidated"] is True
+    
+        source_summary = next(
+            stage
+            for stage in source_json["stage_summaries"]
+            if stage.get("stage_id") == "client_evidence_summary"
+        )
+        localized_json = localized["report"]["localized_artifact_json"]
+        localized_summary = next(
+            stage
+            for stage in localized_json["stage_summaries"]
+            if stage.get("stage_id") == "client_evidence_summary"
+        )
+        expected_english_summary = (
+            f"Client name: {fixture['client_name']}",
+            f"Project name: {fixture['project_name']}",
+            f"Primary technical contact: {fixture['primary_technical_contact']}",
+            f"Access method: {fixture['access_method']}",
+            f"Authorized scope: {fixture['authorized_scope']}",
+        )
+        expected_spanish_summary = (
+            f"Nombre del cliente: {fixture['client_name']}",
+            f"Nombre del proyecto: {fixture['project_name']}",
+            f"Contacto técnico principal: {fixture['primary_technical_contact']}",
+            f"Método de acceso: {fixture['access_method']}",
+            f"Alcance autorizado: {fixture['authorized_scope']}",
+        )
+        assert tuple(source_summary["evidence"][:5]) == expected_english_summary
+        assert tuple(localized_summary["evidence"][:5]) == expected_spanish_summary
+        assert all(
+            source_summary["evidence"].count(line) == 1
+            for line in expected_english_summary
+        )
+        assert all(
+            localized_summary["evidence"].count(line) == 1
+            for line in expected_spanish_summary
+        )
+    
+        source_reader = PdfReader(io.BytesIO(base64.b64decode(source["pdf_base64"])))
+        localized_pdf = base64.b64decode(localized["report"]["pdf_base64"])
+        localized_reader = PdfReader(io.BytesIO(localized_pdf))
+        source_entries, source_spanish = semantic_entry_records(source_reader)
+        localized_entries, localized_spanish = semantic_entry_records(localized_reader)
+        assert source_spanish is False
+        assert localized_spanish is True
+        assert {entry["section_id"] for entry in localized_entries} == {
+            entry["section_id"] for entry in source_entries
+        }
+        assert source_reader.outline
+        assert localized_reader.outline
+    
+        for reader, headings in (
+            (source_reader, {"Findings"}),
+            (localized_reader, {"Hallazgos"}),
+        ):
+            orphan_pages = []
+            for page_number, page in enumerate(reader.pages, start=1):
+                lines = [
+                    line.strip()
+                    for line in (page.extract_text() or "").splitlines()
+                    if line.strip()
+                ]
+                content_lines = [
+                    line
+                    for line in lines
+                    if not re.fullmatch(
+                        r"(?:Document page|Página del documento)\s+\d+\s+(?:of|de)\s+\d+",
+                        line,
+                    )
+                    and not (
+                        line.startswith("NICO Comprehensive ·")
+                        and ("DRAFT" in line or "BORRADOR" in line)
+                    )
+                ]
+                if content_lines and content_lines[-1] in headings:
+                    orphan_pages.append(page_number)
+            assert orphan_pages == []
+    
+        source_pdf_text = "\n".join(
+            page.extract_text() or "" for page in source_reader.pages
+        )
+        localized_pdf_text = "\n".join(
+            page.extract_text() or "" for page in localized_reader.pages
+        )
+        assert "Índice" in localized_pdf_text
+        source_ci_body_pages = [
+            page_number
+            for page_number, page in enumerate(source_reader.pages, start=1)
+            if page_number != 2
+            and "CI/CD Operational Readiness and Historical Health"
+            in (page.extract_text() or "")
+        ]
+        localized_ci_body_pages = [
+            page_number
+            for page_number, page in enumerate(localized_reader.pages, start=1)
+            if page_number != 2
+            and "Preparación operativa y salud histórica de CI/CD"
+            in (page.extract_text() or "")
+        ]
+        assert len(source_ci_body_pages) == 1
+        assert localized_ci_body_pages == source_ci_body_pages
+        for authored_english in (
+            "NICO | Comprehensive client review | automated draft",
+            "Review page ",
+            "Human context or additional evidence is required before this section can be accepted.",
+            "Named people, rates, contract structure, geographic mix, and budget require client input.",
+            "Decision findings:",
+            "Exact-source findings:",
+            "Confirmed material scanner findings:",
+            "Review-required scanner candidates:",
+            "NICO · compact finding register · automated draft",
+            "Reduce complexity in page.tsx",
+            "The canonical finding was retained against the assessed immutable commit.",
+            "Regression risk is concentrated.",
+            "Extract state transitions, data loading, and side-effect orchestration from",
+            "The exact-SHA rerun no longer reports this condition at",
+            "Targeted tests and the repository's full required-check suite pass",
+        ):
+            assert authored_english not in localized_pdf_text
+        for allowed_literal in (
+            "RISK-P1-001",
+            "apps/web/app/page.tsx:100",
+            "page.tsx",
+            "Playwright",
+            "JSON",
+            "CSV",
+            "SHA",
+        ):
+            assert allowed_literal in localized_pdf_text
+        for expected in fixture.values():
+            assert expected in source["markdown"]
+            assert expected in source["html"]
+            assert expected in source_pdf_text
+            assert expected in localized["report"]["markdown"]
+            assert expected in localized["report"]["html"]
+            assert expected in localized_pdf_text
+            normalized_duplicate = re.sub(r" {2,}", " ", expected)
+            assert normalized_duplicate != expected
+            for surface in (
+                source["markdown"],
+                source["html"],
+                source_pdf_text,
+                localized["report"]["markdown"],
+                localized["report"]["html"],
+                localized_pdf_text,
+            ):
+>               assert normalized_duplicate not in surface
+E               AssertionError: assert 'Compañía Águila' not in 'NICO / EVID...e 21 of 21\n'
+E                 
+E                 'Compañía Águila' is contained here:
+E                   ent name: Compañía Águila
+E                    - Project name: Proyecto Ñandú / Release 2.0
+E                    - Primary technical contact: María-José Pérez - CTO / Ingeniería
+E                    - Access method: GitHub Enterprise - acceso de solo lectura
+E                    - Authorized scope: organizacion/proyecto - rama release/2026.08; código, configuración y CI/CD....
+E                 
+E                 ...Full output truncated (554 lines hidden), use '-vv' to show
+
+tests/test_comprehensive_same_run_locale_report_v1.py:1525: AssertionError
+_______ test_spanish_not_applicable_scanner_evidence_is_fully_localized ________
+
+    def test_spanish_not_applicable_scanner_evidence_is_fully_localized() -> None:
+        from nico.comprehensive_spanish_canonical_report_v87 import (
+            _translate_presentation_field,
+        )
+    
+        translated = _translate_presentation_field(
+            "pip-audit: not applicable; No supported Python dependency manifest or "
+            "source tree exists at the assessed commit; pip-audit is not applicable "
+            "to this repository snapshot.",
+            "evidence",
+        )
+    
+>       assert translated == (
+            "pip-audit: no aplicable; No existe un manifiesto de dependencias de Python "
+            "compatible ni un árbol de código fuente Python en el commit evaluado; "
+            "pip-audit no es aplicable a esta instantánea del repositorio."
+        )
+E       AssertionError: assert 'pip-audit: n...ory snapshot.' == 'pip-audit: n... repositorio.'
+E         
+E         - pip-audit: no aplicable; No existe un manifiesto de dependencias de Python compatible ni un árbol de código fuente Python en el commit evaluado; pip-audit no es aplicable a esta instantánea del repositorio.
+E         + pip-audit: not applicable; No supported Python dependency manifest or source tree exists at the assessed commit; pip-audit is not applicable to this repository snapshot.
+
+tests/test_spanish_canonical_report_parity_v87.py:131: AssertionError
+___ test_spanish_scanner_limitations_localize_the_production_truth_contract ____
+
+    def test_spanish_scanner_limitations_localize_the_production_truth_contract() -> None:
+        import pytest
+    
+        from nico.comprehensive_spanish_canonical_report_v87 import _localize_tree
+        from nico.comprehensive_spanish_current_copy_worker_v98 import (
+            install_comprehensive_spanish_current_copy_worker_v98,
+        )
+    
+        # Bind the current production worker explicitly so this assertion cannot
+        # depend on which localization compatibility module pytest imported first.
+        install_comprehensive_spanish_current_copy_worker_v98()
+    
+        source = {
+            "summary": (
+                "Technical maturity remains based on exact-commit technical controls. "
+                "Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. "
+                "NICO retains 639 review-required candidates and 0 confirmed material "
+                "findings as explicit review context. Candidate volume, clustering and "
+                "reviewer workload do not change numeric security or readiness scores."
+            ),
+            "evidence": [
+                (
+                    "Candidate volume and reviewer workload are operational review metrics "
+                    "and have no numeric technical-maturity or Evidence-Adjusted score effect."
+                ),
+                (
+                    "pip-audit: status=unavailable; exact_commit_match=True; "
+                    "verified_complete=False; findings=0; artifact_hash=unavailable"
+                ),
+                (
+                    "semgrep: status=completed; current_run=True; exact_commit_match=True; "
+                    "verified_complete=True; findings=2; artifact_hash=abc123"
+                ),
+                (
+                    "scanner_execution_records[0].failure_reason: pip-audit is not "
+                    "installed in the worker image."
+                ),
+                "Workflow outcome classes: No classified workflow outcomes retained.",
+                "Historical genuine-failure rate: None",
+            ],
+            "findings": [
+                "Actionable hotspot verified/report.py:10 · verified · complexity 40."
+            ],
+            "unavailable": [
+                (
+                    "pip-audit exact-SHA evidence remains completed: "
+                    "completion requirements were not met"
+                ),
+                (
+                    "semgrep exact-SHA evidence remains failed: status=failed; "
+                    "current_run_not_proven; execution_not_observed_for_this_report; "
+                    "exact_commit_match_not_proven; scanner_verification_not_proven; "
+                    "complete_artifact_capture_not_proven; artifact_hash_missing; "
+                    "full_git_history_not_verified"
+                ),
+            ]
+        }
+    
+        localized = _localize_tree(source)
+    
+        assert localized["summary"] == (
+            "La madurez técnica sigue basándose en controles técnicos del commit exacto. "
+            "La puntuación técnica ajustada por evidencia es 93/100 frente a una madurez técnica "
+            "de 93/100. NICO conserva 639 candidatos que requieren revisión y 0 hallazgos "
+            "materiales confirmados como contexto explícito de revisión. El volumen de "
+            "candidatos, la agrupación y la carga de trabajo de revisión no modifican las "
+            "puntuaciones numéricas de los controles técnicos."
+        )
+>       assert localized["evidence"] == [
+            (
+                "El volumen de candidatos y la carga de trabajo del revisor son métricas "
+                "operativas de revisión y no tienen efecto numérico sobre la madurez "
+                "técnica ni sobre la puntuación ajustada por evidencia."
+            ),
+            (
+                "pip-audit: estado=no disponible; coincidencia_commit_exacto=sí; "
+                "verificación_completa=no; hallazgos=0; hash_artefacto=no disponible"
+            ),
+            (
+                "semgrep: estado=completada; ejecución_actual=sí; "
+                "coincidencia_commit_exacto=sí; verificación_completa=sí; hallazgos=2; "
+                "hash_artefacto=abc123"
+            ),
+            (
+                "scanner_execution_records[0].failure_reason: pip-audit no "
+                "está instalado en la imagen del entorno de ejecución."
+            ),
+            (
+                "Clases de resultados de los flujos de trabajo: no se conservaron "
+                "resultados clasificados."
+            ),
+            "Tasa histórica de fallos reales: no disponible",
+        ]
+E       AssertionError: assert ['El volumen ...o disponible'] == ['El volumen ...o disponible']
+E         
+E         At index 1 diff: 'pip-audit: status=unavailable; exact_commit_match=True; verified_complete=False; findings=0; artifact_hash=unavailable' != 'pip-audit: estado=no disponible; coincidencia_commit_exacto=sí; verificación_completa=no; hallazgos=0; hash_artefacto=no disponible'
+E         Use -v to get more diff
+
+tests/test_spanish_canonical_report_parity_v87.py:361: AssertionError
+_______ test_spanish_localizes_reachable_unavailable_evidence_contracts ________
+
+    def test_spanish_localizes_reachable_unavailable_evidence_contracts() -> None:
+        import pytest
+    
+        from nico.comprehensive_spanish_canonical_report_v87 import (
+            _localize_tree,
+            _translate_presentation_field,
+        )
+        from nico.full_assessment_ci_evidence import _safe_note as ci_safe_note
+        from nico.full_assessment_complexity_evidence import collect_complexity_evidence
+        from nico.full_assessment_complexity_repository import (
+            _safe_note as complexity_safe_note,
+        )
+        from nico.full_assessment_repository_evidence import _safe_api_note
+    
+        base_collect_complexity_evidence = getattr(
+            collect_complexity_evidence,
+            "__wrapped__",
+            collect_complexity_evidence,
+        )
+        js_note = next(
+            note
+            for note in base_collect_complexity_evidence(
+                {"src/verified.ts": "export function verified() { return true; }"}
+            )["unavailable_data_notes"]
+            if note.startswith("JavaScript and TypeScript complexity uses")
+        )
+        repository_notes = [
+            _safe_api_note(label, error)
+            for label in (
+                "Repository metadata",
+                "Repository file-profile evidence",
+                "Workflow file evidence",
+                "Commit history",
+                "Pull-request history",
+                "Workflow-run history",
+            )
+            for error in ("404 missing", "403 forbidden", "429 rate limit", "500 server")
+        ]
+        ci_notes = [
+            ci_safe_note(label, error)
+            for label in (
+                "Workflow jobs for run 42",
+                "GitHub deployment evidence",
+                "Deployment status for 77",
+            )
+            for error in ("404 missing", "403 forbidden", "429 rate limit", "500 server")
+        ]
+        source = {
+            "unavailable": [
+                js_note,
+                (
+                    "TypeScript compiler AST evidence was unavailable for this run; "
+                    "JavaScript and TypeScript values use bounded lexical fallback and "
+                    "remain review-limited."
+                ),
+                "1 source parser limitation(s) were retained in the architecture evidence.",
+                "No eligible first-party source files were present in the exact-SHA source profile.",
+                (
+                    "Scanner evidence is not client-ready until every required scanner "
+                    "completes and every redacted raw artifact is retained."
+                ),
+                "No workflow files were present in the captured repository snapshot.",
+                (
+                    "Captured-commit collection reached its bounded runtime; remaining "
+                    "files are unavailable for this run."
+                ),
+                (
+                    "2 captured-commit profile item(s) were unavailable; complexity "
+                    "coverage is limited to readable sampled files."
+                ),
+                (
+                    "1 repository profile item(s) were unavailable; complexity coverage "
+                    "is limited to readable sampled files."
+                ),
+                (
+                    "1 Python source file(s) could not be parsed and were excluded from "
+                    "complexity metrics."
+                ),
+                "No eligible source files were present in the authorized repository text-file sample.",
+                (
+                    "Scanner candidates are separated from confirmed material findings. "
+                    "They remain human-review work and affect assurance only until disposition."
+                ),
+                "Workflow jobs for run 42 were returned without a jobs list.",
+                "GitHub deployment evidence was returned without a deployment list.",
+                (
+                    "OSV lookup skipped because no exact normalized dependency versions "
+                    "were available from the inspected manifests."
+                ),
+                "OSV lookup did not complete within the bounded dependency-review window.",
+                (
+                    "OSV lookup returned HTTP 429; dependency vulnerability status is "
+                    "incomplete."
+                ),
+                "OSV lookup returned a non-JSON response.",
+                "OSV lookup unavailable: HTTPSConnectionPool read timed out",
+                (
+                    "Exact-SHA source archive profiling was unavailable: TimeoutError. "
+                    "Existing bounded file evidence remains visible."
+                ),
+                (
+                    "Exact-SHA source archive was unavailable because the snapshot commit "
+                    "was missing."
+                ),
+                (
+                    "bandit exact-SHA evidence remains unavailable: bandit is not "
+                    "installed in the worker image."
+                ),
+                *repository_notes,
+                *ci_notes,
+                *(complexity_safe_note(error) for error in (
+                    "404 missing",
+                    "403 forbidden",
+                    "429 rate limit",
+                    "500 server",
+                )),
+            ],
+            "evidence": [
+                (
+                    "OSV returned 2 vulnerability record(s) for "
+                    "PyPI:verified-package@1.2.3: GHSA-1, CVE-2."
+                ),
+                (
+                    "OSV returned 1 vulnerability record(s) for "
+                    "npm:@scope/verified@2.0.0: GHSA-3."
+                ),
+                "OSV returned no vulnerability records for 1 pinned dependency query/queries.",
+                "Workflow jobs for run 123 were unavailable through the GitHub API.",
+                (
+                    "repository_evidence.unavailable_data_notes[0]: No workflow files "
+                    "were present in the captured repository snapshot."
+                ),
+                (
+                    "technical_analysis.complexity.unavailable_data_notes[2]: 1 Python "
+                    "source file(s) could not be parsed and were excluded from complexity metrics."
+                ),
+                (
+                    "snapshot.guardrail: All repository file evidence and scanner execution "
+                    "for this run must use this exact commit SHA or be marked unavailable."
+                ),
+            ],
+        }
+    
+        localized = _localize_tree(source)
+        rendered = "\n".join((*localized["unavailable"], *localized["evidence"]))
+    
+        for english in (
+            " was unavailable ",
+            "Workflow jobs for run",
+            "OSV lookup ",
+            "OSV returned ",
+            "could not be parsed",
+            "No workflow files were present",
+            "Scanner candidates are separated",
+        ):
+            assert english not in rendered
+        assert "PyPI:verified-package@1.2.3" in rendered
+        assert "GHSA-1, CVE-2" in rendered
+        assert "repository_evidence.unavailable_data_notes[0]" in rendered
+        assert "technical_analysis.complexity.unavailable_data_notes[2]" in rendered
+        assert "snapshot.guardrail" in rendered
+>       assert "All repository file evidence and scanner execution" not in rendered
+E       AssertionError: assert 'All reposit...er execution' not in 'La compleji...unavailable.'
+E         
+E         'All repository fil...d scanner execution' is contained here:
+E           uardrail: All repository file evidence and scanner execution for this run must use this exact commit SHA or be marked unavailable.
+E         ?           ++++++++++++++++++++++++++++++++++++++++++++++++++
+
+tests/test_spanish_canonical_report_parity_v87.py:693: AssertionError
+_ test_repeat_exact_retained_pdf_reuses_completed_validation_without_mutable_response _
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+>                       return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+nico/comprehensive_same_run_locale_report_v1.py:1575: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+nico/comprehensive_api_controller.py:1208: in retained_pdf_read_only
+    return finish_retained_pdf(prepared, build)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/retained_pdf_exact_input_cache_v1.py:295: in finish_retained_pdf
+    response = build()
+               ^^^^^^^
+nico/comprehensive_api_controller.py:1191: in build
+    response = builder(validated, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:913: in pdf_response
+    response = current_response(status, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1460: in build_same_run_locale_pdf_response
+    projection = build_same_run_locale_report(status, report_language)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:901: in report_with_integrity_gate
+    return current_report(source, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_canonical_truth_hash_compat_v1.py:187: in build_locale_report
+    result = current(reconciled_status, report_language)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1339: in build_same_run_locale_report
+    artifacts = _render_target(canonical_copy, target_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:830: in localized_render_target
+    artifacts = current_render_target(projected, report_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:759: in _render_target
+    return _assemble_target(canonical, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:689: in _assemble_target
+    localized = rebuild_client_artifacts(
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/phase17_canonical_artifact_rebuild_v1.py:619: in rebuild_client_artifacts
+    rendered = rebuild_single_pass_premium_artifacts(prepared)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_single_pass_premium_report.py:162: in rebuild_single_pass_premium_artifacts
+    result = deepcopy(rebuild_premium_client_artifacts_with_appendix(prepared))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_premium_evidence_appendix.py:133: in rebuild_premium_client_artifacts_with_appendix
+    result = deepcopy(rebuild_premium_client_artifacts(package))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_rendered_ci_boundary_producer_v79.py:444: in wrapped
+    return repair_rendered_ci_boundary(current(normalized))
+                                       ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_client_surface_structure_cleanup_v1.py:339: in rebuild
+    return current(package)
+           ^^^^^^^^^^^^^^^^
+nico/v2_premium_report_renderer.py:379: in rebuild_premium_client_artifacts
+    generated_at = _canonical_generated_at(canonical)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+canonical = {'assessment': {'client_delivery_allowed': False, 'human_review_required': True, 'locale': 'en', 'report_language': 'e...customer_id': 'owned_customer', 'evidence_ledger_id': 'ledger_cache_control', 'project_id': 'owned_project', ...}, ...}
+
+    def _canonical_generated_at(canonical: Mapping[str, Any]) -> str:
+        identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+        generated_at = _text(
+            identity.get("generated_at")
+            or identity.get("generation_timestamp")
+            or canonical.get("generated_at")
+            or canonical.get("generation_timestamp")
+        )
+        if not _TIMESTAMP.fullmatch(generated_at):
+>           raise ValueError("premium report renderer requires one canonical generated_at timestamp")
+E           ValueError: premium report renderer requires one canonical generated_at timestamp
+
+nico/v2_premium_report_renderer.py:55: ValueError
+
+The above exception was the direct cause of the following exception:
+
+retained = (PosixPath('/tmp/pytest-of-agent/pytest-4/test_repeat_exact_retained_pdf0/retained.sqlite3'), 'comprun_ddddddddddddddd...txref\n1007\n%%EOF\n', [True], <nico.comprehensive_api_controller.ComprehensiveApiController object at 0x7f1fd553c4a0>)
+
+    def test_repeat_exact_retained_pdf_reuses_completed_validation_without_mutable_response(retained):
+        database, run_id, endpoint, expected, calls, _ = retained
+        before = hashlib.sha256(database.read_bytes()).hexdigest()
+>       first = endpoint(run_id, 'en')
+                ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_retained_pdf_exact_input_cache_v1.py:84: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+                        return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                    except KeyError as exc:
+                        raise HTTPException(status_code=404, detail={
+                            "status": "not_found", "reason": "comprehensive_run_not_found",
+                        }) from exc
+                status = _controller_status(target, run_id)
+                return build_same_run_locale_pdf_response(status, report_language)
+        except ValueError as exc:
+>           raise _projection_http_error(exc) from exc
+E           fastapi.exceptions.HTTPException: 409: {'status': 'blocked', 'reason': 'premium report renderer requires one canonical generated_at timestamp'}
+
+nico/comprehensive_same_run_locale_report_v1.py:1583: HTTPException
+___ test_optional_numeric_observer_failure_preserves_original_validated_pdf ____
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+>                       return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+nico/comprehensive_same_run_locale_report_v1.py:1575: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+nico/comprehensive_api_controller.py:1208: in retained_pdf_read_only
+    return finish_retained_pdf(prepared, build)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/retained_pdf_exact_input_cache_v1.py:295: in finish_retained_pdf
+    response = build()
+               ^^^^^^^
+nico/comprehensive_api_controller.py:1191: in build
+    response = builder(validated, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:913: in pdf_response
+    response = current_response(status, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1460: in build_same_run_locale_pdf_response
+    projection = build_same_run_locale_report(status, report_language)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:901: in report_with_integrity_gate
+    return current_report(source, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_canonical_truth_hash_compat_v1.py:187: in build_locale_report
+    result = current(reconciled_status, report_language)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1339: in build_same_run_locale_report
+    artifacts = _render_target(canonical_copy, target_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:830: in localized_render_target
+    artifacts = current_render_target(projected, report_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:759: in _render_target
+    return _assemble_target(canonical, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:689: in _assemble_target
+    localized = rebuild_client_artifacts(
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/phase17_canonical_artifact_rebuild_v1.py:619: in rebuild_client_artifacts
+    rendered = rebuild_single_pass_premium_artifacts(prepared)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_single_pass_premium_report.py:162: in rebuild_single_pass_premium_artifacts
+    result = deepcopy(rebuild_premium_client_artifacts_with_appendix(prepared))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_premium_evidence_appendix.py:133: in rebuild_premium_client_artifacts_with_appendix
+    result = deepcopy(rebuild_premium_client_artifacts(package))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_rendered_ci_boundary_producer_v79.py:444: in wrapped
+    return repair_rendered_ci_boundary(current(normalized))
+                                       ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_client_surface_structure_cleanup_v1.py:339: in rebuild
+    return current(package)
+           ^^^^^^^^^^^^^^^^
+nico/v2_premium_report_renderer.py:379: in rebuild_premium_client_artifacts
+    generated_at = _canonical_generated_at(canonical)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+canonical = {'assessment': {'client_delivery_allowed': False, 'human_review_required': True, 'locale': 'en', 'report_language': 'e...customer_id': 'owned_customer', 'evidence_ledger_id': 'ledger_cache_control', 'project_id': 'owned_project', ...}, ...}
+
+    def _canonical_generated_at(canonical: Mapping[str, Any]) -> str:
+        identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+        generated_at = _text(
+            identity.get("generated_at")
+            or identity.get("generation_timestamp")
+            or canonical.get("generated_at")
+            or canonical.get("generation_timestamp")
+        )
+        if not _TIMESTAMP.fullmatch(generated_at):
+>           raise ValueError("premium report renderer requires one canonical generated_at timestamp")
+E           ValueError: premium report renderer requires one canonical generated_at timestamp
+
+nico/v2_premium_report_renderer.py:55: ValueError
+
+The above exception was the direct cause of the following exception:
+
+retained = (PosixPath('/tmp/pytest-of-agent/pytest-4/test_optional_numeric_observer0/retained.sqlite3'), 'comprun_ddddddddddddddd...txref\n1007\n%%EOF\n', [True], <nico.comprehensive_api_controller.ComprehensiveApiController object at 0x7f1fd52cd2b0>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f1fd5407e30>
+
+    def test_optional_numeric_observer_failure_preserves_original_validated_pdf(retained,monkeypatch):
+        from nico import current_retained_metadata_observer_v13 as observer
+        def unavailable(*args,**kwargs):
+            raise RuntimeError('owned optional observer fault')
+        monkeypatch.setattr(observer,'observe_validated_retained_pdf',unavailable)
+        database,run_id,endpoint,expected,calls,_=retained
+        before=hashlib.sha256(database.read_bytes()).hexdigest()
+>       response=endpoint(run_id,'en')
+                 ^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_retained_pdf_exact_input_cache_v1.py:103: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+                        return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                    except KeyError as exc:
+                        raise HTTPException(status_code=404, detail={
+                            "status": "not_found", "reason": "comprehensive_run_not_found",
+                        }) from exc
+                status = _controller_status(target, run_id)
+                return build_same_run_locale_pdf_response(status, report_language)
+        except ValueError as exc:
+>           raise _projection_http_error(exc) from exc
+E           fastapi.exceptions.HTTPException: 409: {'status': 'blocked', 'reason': 'premium report renderer requires one canonical generated_at timestamp'}
+
+nico/comprehensive_same_run_locale_report_v1.py:1583: HTTPException
+___________ test_changed_unrelated_stage_cannot_reuse_old_pdf_proof ____________
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+>                       return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+nico/comprehensive_same_run_locale_report_v1.py:1575: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+nico/comprehensive_api_controller.py:1208: in retained_pdf_read_only
+    return finish_retained_pdf(prepared, build)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/retained_pdf_exact_input_cache_v1.py:295: in finish_retained_pdf
+    response = build()
+               ^^^^^^^
+nico/comprehensive_api_controller.py:1191: in build
+    response = builder(validated, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:913: in pdf_response
+    response = current_response(status, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1460: in build_same_run_locale_pdf_response
+    projection = build_same_run_locale_report(status, report_language)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:901: in report_with_integrity_gate
+    return current_report(source, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_canonical_truth_hash_compat_v1.py:187: in build_locale_report
+    result = current(reconciled_status, report_language)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1339: in build_same_run_locale_report
+    artifacts = _render_target(canonical_copy, target_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:830: in localized_render_target
+    artifacts = current_render_target(projected, report_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:759: in _render_target
+    return _assemble_target(canonical, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:689: in _assemble_target
+    localized = rebuild_client_artifacts(
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/phase17_canonical_artifact_rebuild_v1.py:619: in rebuild_client_artifacts
+    rendered = rebuild_single_pass_premium_artifacts(prepared)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_single_pass_premium_report.py:162: in rebuild_single_pass_premium_artifacts
+    result = deepcopy(rebuild_premium_client_artifacts_with_appendix(prepared))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_premium_evidence_appendix.py:133: in rebuild_premium_client_artifacts_with_appendix
+    result = deepcopy(rebuild_premium_client_artifacts(package))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_rendered_ci_boundary_producer_v79.py:444: in wrapped
+    return repair_rendered_ci_boundary(current(normalized))
+                                       ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_client_surface_structure_cleanup_v1.py:339: in rebuild
+    return current(package)
+           ^^^^^^^^^^^^^^^^
+nico/v2_premium_report_renderer.py:379: in rebuild_premium_client_artifacts
+    generated_at = _canonical_generated_at(canonical)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+canonical = {'assessment': {'client_delivery_allowed': False, 'human_review_required': True, 'locale': 'en', 'report_language': 'e...customer_id': 'owned_customer', 'evidence_ledger_id': 'ledger_cache_control', 'project_id': 'owned_project', ...}, ...}
+
+    def _canonical_generated_at(canonical: Mapping[str, Any]) -> str:
+        identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+        generated_at = _text(
+            identity.get("generated_at")
+            or identity.get("generation_timestamp")
+            or canonical.get("generated_at")
+            or canonical.get("generation_timestamp")
+        )
+        if not _TIMESTAMP.fullmatch(generated_at):
+>           raise ValueError("premium report renderer requires one canonical generated_at timestamp")
+E           ValueError: premium report renderer requires one canonical generated_at timestamp
+
+nico/v2_premium_report_renderer.py:55: ValueError
+
+The above exception was the direct cause of the following exception:
+
+retained = (PosixPath('/tmp/pytest-of-agent/pytest-4/test_changed_unrelated_stage_c0/retained.sqlite3'), 'comprun_ddddddddddddddd...txref\n1007\n%%EOF\n', [True], <nico.comprehensive_api_controller.ComprehensiveApiController object at 0x7f1fd59c49e0>)
+
+    def test_changed_unrelated_stage_cannot_reuse_old_pdf_proof(retained):
+        database, run_id, endpoint, _, calls, _ = retained
+>       endpoint(run_id, 'en')
+
+tests/test_retained_pdf_exact_input_cache_v1.py:112: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+                        return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                    except KeyError as exc:
+                        raise HTTPException(status_code=404, detail={
+                            "status": "not_found", "reason": "comprehensive_run_not_found",
+                        }) from exc
+                status = _controller_status(target, run_id)
+                return build_same_run_locale_pdf_response(status, report_language)
+        except ValueError as exc:
+>           raise _projection_http_error(exc) from exc
+E           fastapi.exceptions.HTTPException: 409: {'status': 'blocked', 'reason': 'premium report renderer requires one canonical generated_at timestamp'}
+
+nico/comprehensive_same_run_locale_report_v1.py:1583: HTTPException
+____ test_changed_independent_history_commitment_cannot_reuse_old_pdf_proof ____
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+>                       return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+nico/comprehensive_same_run_locale_report_v1.py:1575: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+nico/comprehensive_api_controller.py:1208: in retained_pdf_read_only
+    return finish_retained_pdf(prepared, build)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/retained_pdf_exact_input_cache_v1.py:295: in finish_retained_pdf
+    response = build()
+               ^^^^^^^
+nico/comprehensive_api_controller.py:1191: in build
+    response = builder(validated, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:913: in pdf_response
+    response = current_response(status, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1460: in build_same_run_locale_pdf_response
+    projection = build_same_run_locale_report(status, report_language)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:901: in report_with_integrity_gate
+    return current_report(source, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_canonical_truth_hash_compat_v1.py:187: in build_locale_report
+    result = current(reconciled_status, report_language)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1339: in build_same_run_locale_report
+    artifacts = _render_target(canonical_copy, target_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:830: in localized_render_target
+    artifacts = current_render_target(projected, report_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:759: in _render_target
+    return _assemble_target(canonical, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:689: in _assemble_target
+    localized = rebuild_client_artifacts(
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/phase17_canonical_artifact_rebuild_v1.py:619: in rebuild_client_artifacts
+    rendered = rebuild_single_pass_premium_artifacts(prepared)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_single_pass_premium_report.py:162: in rebuild_single_pass_premium_artifacts
+    result = deepcopy(rebuild_premium_client_artifacts_with_appendix(prepared))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_premium_evidence_appendix.py:133: in rebuild_premium_client_artifacts_with_appendix
+    result = deepcopy(rebuild_premium_client_artifacts(package))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_rendered_ci_boundary_producer_v79.py:444: in wrapped
+    return repair_rendered_ci_boundary(current(normalized))
+                                       ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_client_surface_structure_cleanup_v1.py:339: in rebuild
+    return current(package)
+           ^^^^^^^^^^^^^^^^
+nico/v2_premium_report_renderer.py:379: in rebuild_premium_client_artifacts
+    generated_at = _canonical_generated_at(canonical)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+canonical = {'assessment': {'client_delivery_allowed': False, 'human_review_required': True, 'locale': 'en', 'report_language': 'e...customer_id': 'owned_customer', 'evidence_ledger_id': 'ledger_cache_control', 'project_id': 'owned_project', ...}, ...}
+
+    def _canonical_generated_at(canonical: Mapping[str, Any]) -> str:
+        identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+        generated_at = _text(
+            identity.get("generated_at")
+            or identity.get("generation_timestamp")
+            or canonical.get("generated_at")
+            or canonical.get("generation_timestamp")
+        )
+        if not _TIMESTAMP.fullmatch(generated_at):
+>           raise ValueError("premium report renderer requires one canonical generated_at timestamp")
+E           ValueError: premium report renderer requires one canonical generated_at timestamp
+
+nico/v2_premium_report_renderer.py:55: ValueError
+
+The above exception was the direct cause of the following exception:
+
+retained = (PosixPath('/tmp/pytest-of-agent/pytest-4/test_changed_independent_histo0/retained.sqlite3'), 'comprun_ddddddddddddddd...txref\n1007\n%%EOF\n', [True], <nico.comprehensive_api_controller.ComprehensiveApiController object at 0x7f1fd65aaf90>)
+
+    def test_changed_independent_history_commitment_cannot_reuse_old_pdf_proof(retained):
+        database, run_id, endpoint, _, calls, _ = retained
+>       endpoint(run_id, 'en')
+
+tests/test_retained_pdf_exact_input_cache_v1.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+                        return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                    except KeyError as exc:
+                        raise HTTPException(status_code=404, detail={
+                            "status": "not_found", "reason": "comprehensive_run_not_found",
+                        }) from exc
+                status = _controller_status(target, run_id)
+                return build_same_run_locale_pdf_response(status, report_language)
+        except ValueError as exc:
+>           raise _projection_http_error(exc) from exc
+E           fastapi.exceptions.HTTPException: 409: {'status': 'blocked', 'reason': 'premium report renderer requires one canonical generated_at timestamp'}
+
+nico/comprehensive_same_run_locale_report_v1.py:1583: HTTPException
+___ test_changed_artifact_or_approval_reenters_original_validation[missing] ____
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+>                       return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+nico/comprehensive_same_run_locale_report_v1.py:1575: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+nico/comprehensive_api_controller.py:1208: in retained_pdf_read_only
+    return finish_retained_pdf(prepared, build)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/retained_pdf_exact_input_cache_v1.py:295: in finish_retained_pdf
+    response = build()
+               ^^^^^^^
+nico/comprehensive_api_controller.py:1191: in build
+    response = builder(validated, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:913: in pdf_response
+    response = current_response(status, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1460: in build_same_run_locale_pdf_response
+    projection = build_same_run_locale_report(status, report_language)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:901: in report_with_integrity_gate
+    return current_report(source, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_canonical_truth_hash_compat_v1.py:187: in build_locale_report
+    result = current(reconciled_status, report_language)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1339: in build_same_run_locale_report
+    artifacts = _render_target(canonical_copy, target_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:830: in localized_render_target
+    artifacts = current_render_target(projected, report_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:759: in _render_target
+    return _assemble_target(canonical, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:689: in _assemble_target
+    localized = rebuild_client_artifacts(
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/phase17_canonical_artifact_rebuild_v1.py:619: in rebuild_client_artifacts
+    rendered = rebuild_single_pass_premium_artifacts(prepared)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_single_pass_premium_report.py:162: in rebuild_single_pass_premium_artifacts
+    result = deepcopy(rebuild_premium_client_artifacts_with_appendix(prepared))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_premium_evidence_appendix.py:133: in rebuild_premium_client_artifacts_with_appendix
+    result = deepcopy(rebuild_premium_client_artifacts(package))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_rendered_ci_boundary_producer_v79.py:444: in wrapped
+    return repair_rendered_ci_boundary(current(normalized))
+                                       ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_client_surface_structure_cleanup_v1.py:339: in rebuild
+    return current(package)
+           ^^^^^^^^^^^^^^^^
+nico/v2_premium_report_renderer.py:379: in rebuild_premium_client_artifacts
+    generated_at = _canonical_generated_at(canonical)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+canonical = {'assessment': {'client_delivery_allowed': False, 'human_review_required': True, 'locale': 'en', 'report_language': 'e...customer_id': 'owned_customer', 'evidence_ledger_id': 'ledger_cache_control', 'project_id': 'owned_project', ...}, ...}
+
+    def _canonical_generated_at(canonical: Mapping[str, Any]) -> str:
+        identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+        generated_at = _text(
+            identity.get("generated_at")
+            or identity.get("generation_timestamp")
+            or canonical.get("generated_at")
+            or canonical.get("generation_timestamp")
+        )
+        if not _TIMESTAMP.fullmatch(generated_at):
+>           raise ValueError("premium report renderer requires one canonical generated_at timestamp")
+E           ValueError: premium report renderer requires one canonical generated_at timestamp
+
+nico/v2_premium_report_renderer.py:55: ValueError
+
+The above exception was the direct cause of the following exception:
+
+retained = (PosixPath('/tmp/pytest-of-agent/pytest-4/test_changed_artifact_or_appro0/retained.sqlite3'), 'comprun_ddddddddddddddd...txref\n1007\n%%EOF\n', [True], <nico.comprehensive_api_controller.ComprehensiveApiController object at 0x7f1fd5574cb0>)
+change = 'missing'
+
+    @pytest.mark.parametrize('change', ['missing', 'corrupt', 'wrong_digest', 'stale_approval'])
+    def test_changed_artifact_or_approval_reenters_original_validation(retained, change):
+        database, run_id, endpoint, _, calls, _ = retained
+>       endpoint(run_id, 'en')
+
+tests/test_retained_pdf_exact_input_cache_v1.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+                        return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                    except KeyError as exc:
+                        raise HTTPException(status_code=404, detail={
+                            "status": "not_found", "reason": "comprehensive_run_not_found",
+                        }) from exc
+                status = _controller_status(target, run_id)
+                return build_same_run_locale_pdf_response(status, report_language)
+        except ValueError as exc:
+>           raise _projection_http_error(exc) from exc
+E           fastapi.exceptions.HTTPException: 409: {'status': 'blocked', 'reason': 'premium report renderer requires one canonical generated_at timestamp'}
+
+nico/comprehensive_same_run_locale_report_v1.py:1583: HTTPException
+___ test_changed_artifact_or_approval_reenters_original_validation[corrupt] ____
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+>                       return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+nico/comprehensive_same_run_locale_report_v1.py:1575: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+nico/comprehensive_api_controller.py:1208: in retained_pdf_read_only
+    return finish_retained_pdf(prepared, build)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/retained_pdf_exact_input_cache_v1.py:295: in finish_retained_pdf
+    response = build()
+               ^^^^^^^
+nico/comprehensive_api_controller.py:1191: in build
+    response = builder(validated, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:913: in pdf_response
+    response = current_response(status, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1460: in build_same_run_locale_pdf_response
+    projection = build_same_run_locale_report(status, report_language)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:901: in report_with_integrity_gate
+    return current_report(source, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_canonical_truth_hash_compat_v1.py:187: in build_locale_report
+    result = current(reconciled_status, report_language)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1339: in build_same_run_locale_report
+    artifacts = _render_target(canonical_copy, target_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:830: in localized_render_target
+    artifacts = current_render_target(projected, report_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:759: in _render_target
+    return _assemble_target(canonical, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:689: in _assemble_target
+    localized = rebuild_client_artifacts(
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/phase17_canonical_artifact_rebuild_v1.py:619: in rebuild_client_artifacts
+    rendered = rebuild_single_pass_premium_artifacts(prepared)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_single_pass_premium_report.py:162: in rebuild_single_pass_premium_artifacts
+    result = deepcopy(rebuild_premium_client_artifacts_with_appendix(prepared))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_premium_evidence_appendix.py:133: in rebuild_premium_client_artifacts_with_appendix
+    result = deepcopy(rebuild_premium_client_artifacts(package))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_rendered_ci_boundary_producer_v79.py:444: in wrapped
+    return repair_rendered_ci_boundary(current(normalized))
+                                       ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_client_surface_structure_cleanup_v1.py:339: in rebuild
+    return current(package)
+           ^^^^^^^^^^^^^^^^
+nico/v2_premium_report_renderer.py:379: in rebuild_premium_client_artifacts
+    generated_at = _canonical_generated_at(canonical)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+canonical = {'assessment': {'client_delivery_allowed': False, 'human_review_required': True, 'locale': 'en', 'report_language': 'e...customer_id': 'owned_customer', 'evidence_ledger_id': 'ledger_cache_control', 'project_id': 'owned_project', ...}, ...}
+
+    def _canonical_generated_at(canonical: Mapping[str, Any]) -> str:
+        identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+        generated_at = _text(
+            identity.get("generated_at")
+            or identity.get("generation_timestamp")
+            or canonical.get("generated_at")
+            or canonical.get("generation_timestamp")
+        )
+        if not _TIMESTAMP.fullmatch(generated_at):
+>           raise ValueError("premium report renderer requires one canonical generated_at timestamp")
+E           ValueError: premium report renderer requires one canonical generated_at timestamp
+
+nico/v2_premium_report_renderer.py:55: ValueError
+
+The above exception was the direct cause of the following exception:
+
+retained = (PosixPath('/tmp/pytest-of-agent/pytest-4/test_changed_artifact_or_appro1/retained.sqlite3'), 'comprun_ddddddddddddddd...txref\n1007\n%%EOF\n', [True], <nico.comprehensive_api_controller.ComprehensiveApiController object at 0x7f1fd6370ad0>)
+change = 'corrupt'
+
+    @pytest.mark.parametrize('change', ['missing', 'corrupt', 'wrong_digest', 'stale_approval'])
+    def test_changed_artifact_or_approval_reenters_original_validation(retained, change):
+        database, run_id, endpoint, _, calls, _ = retained
+>       endpoint(run_id, 'en')
+
+tests/test_retained_pdf_exact_input_cache_v1.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+                        return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                    except KeyError as exc:
+                        raise HTTPException(status_code=404, detail={
+                            "status": "not_found", "reason": "comprehensive_run_not_found",
+                        }) from exc
+                status = _controller_status(target, run_id)
+                return build_same_run_locale_pdf_response(status, report_language)
+        except ValueError as exc:
+>           raise _projection_http_error(exc) from exc
+E           fastapi.exceptions.HTTPException: 409: {'status': 'blocked', 'reason': 'premium report renderer requires one canonical generated_at timestamp'}
+
+nico/comprehensive_same_run_locale_report_v1.py:1583: HTTPException
+_ test_changed_artifact_or_approval_reenters_original_validation[wrong_digest] _
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+>                       return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+nico/comprehensive_same_run_locale_report_v1.py:1575: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+nico/comprehensive_api_controller.py:1208: in retained_pdf_read_only
+    return finish_retained_pdf(prepared, build)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/retained_pdf_exact_input_cache_v1.py:295: in finish_retained_pdf
+    response = build()
+               ^^^^^^^
+nico/comprehensive_api_controller.py:1191: in build
+    response = builder(validated, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:913: in pdf_response
+    response = current_response(status, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1460: in build_same_run_locale_pdf_response
+    projection = build_same_run_locale_report(status, report_language)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:901: in report_with_integrity_gate
+    return current_report(source, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_canonical_truth_hash_compat_v1.py:187: in build_locale_report
+    result = current(reconciled_status, report_language)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1339: in build_same_run_locale_report
+    artifacts = _render_target(canonical_copy, target_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:830: in localized_render_target
+    artifacts = current_render_target(projected, report_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:759: in _render_target
+    return _assemble_target(canonical, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:689: in _assemble_target
+    localized = rebuild_client_artifacts(
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/phase17_canonical_artifact_rebuild_v1.py:619: in rebuild_client_artifacts
+    rendered = rebuild_single_pass_premium_artifacts(prepared)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_single_pass_premium_report.py:162: in rebuild_single_pass_premium_artifacts
+    result = deepcopy(rebuild_premium_client_artifacts_with_appendix(prepared))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_premium_evidence_appendix.py:133: in rebuild_premium_client_artifacts_with_appendix
+    result = deepcopy(rebuild_premium_client_artifacts(package))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_rendered_ci_boundary_producer_v79.py:444: in wrapped
+    return repair_rendered_ci_boundary(current(normalized))
+                                       ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_client_surface_structure_cleanup_v1.py:339: in rebuild
+    return current(package)
+           ^^^^^^^^^^^^^^^^
+nico/v2_premium_report_renderer.py:379: in rebuild_premium_client_artifacts
+    generated_at = _canonical_generated_at(canonical)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+canonical = {'assessment': {'client_delivery_allowed': False, 'human_review_required': True, 'locale': 'en', 'report_language': 'e...customer_id': 'owned_customer', 'evidence_ledger_id': 'ledger_cache_control', 'project_id': 'owned_project', ...}, ...}
+
+    def _canonical_generated_at(canonical: Mapping[str, Any]) -> str:
+        identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+        generated_at = _text(
+            identity.get("generated_at")
+            or identity.get("generation_timestamp")
+            or canonical.get("generated_at")
+            or canonical.get("generation_timestamp")
+        )
+        if not _TIMESTAMP.fullmatch(generated_at):
+>           raise ValueError("premium report renderer requires one canonical generated_at timestamp")
+E           ValueError: premium report renderer requires one canonical generated_at timestamp
+
+nico/v2_premium_report_renderer.py:55: ValueError
+
+The above exception was the direct cause of the following exception:
+
+retained = (PosixPath('/tmp/pytest-of-agent/pytest-4/test_changed_artifact_or_appro2/retained.sqlite3'), 'comprun_ddddddddddddddd...txref\n1007\n%%EOF\n', [True], <nico.comprehensive_api_controller.ComprehensiveApiController object at 0x7f1fd56947d0>)
+change = 'wrong_digest'
+
+    @pytest.mark.parametrize('change', ['missing', 'corrupt', 'wrong_digest', 'stale_approval'])
+    def test_changed_artifact_or_approval_reenters_original_validation(retained, change):
+        database, run_id, endpoint, _, calls, _ = retained
+>       endpoint(run_id, 'en')
+
+tests/test_retained_pdf_exact_input_cache_v1.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+                        return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                    except KeyError as exc:
+                        raise HTTPException(status_code=404, detail={
+                            "status": "not_found", "reason": "comprehensive_run_not_found",
+                        }) from exc
+                status = _controller_status(target, run_id)
+                return build_same_run_locale_pdf_response(status, report_language)
+        except ValueError as exc:
+>           raise _projection_http_error(exc) from exc
+E           fastapi.exceptions.HTTPException: 409: {'status': 'blocked', 'reason': 'premium report renderer requires one canonical generated_at timestamp'}
+
+nico/comprehensive_same_run_locale_report_v1.py:1583: HTTPException
+_ test_changed_artifact_or_approval_reenters_original_validation[stale_approval] _
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+>                       return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+nico/comprehensive_same_run_locale_report_v1.py:1575: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+nico/comprehensive_api_controller.py:1208: in retained_pdf_read_only
+    return finish_retained_pdf(prepared, build)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/retained_pdf_exact_input_cache_v1.py:295: in finish_retained_pdf
+    response = build()
+               ^^^^^^^
+nico/comprehensive_api_controller.py:1191: in build
+    response = builder(validated, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:913: in pdf_response
+    response = current_response(status, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1460: in build_same_run_locale_pdf_response
+    projection = build_same_run_locale_report(status, report_language)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:901: in report_with_integrity_gate
+    return current_report(source, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_canonical_truth_hash_compat_v1.py:187: in build_locale_report
+    result = current(reconciled_status, report_language)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1339: in build_same_run_locale_report
+    artifacts = _render_target(canonical_copy, target_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:830: in localized_render_target
+    artifacts = current_render_target(projected, report_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:759: in _render_target
+    return _assemble_target(canonical, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:689: in _assemble_target
+    localized = rebuild_client_artifacts(
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/phase17_canonical_artifact_rebuild_v1.py:619: in rebuild_client_artifacts
+    rendered = rebuild_single_pass_premium_artifacts(prepared)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_single_pass_premium_report.py:162: in rebuild_single_pass_premium_artifacts
+    result = deepcopy(rebuild_premium_client_artifacts_with_appendix(prepared))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_premium_evidence_appendix.py:133: in rebuild_premium_client_artifacts_with_appendix
+    result = deepcopy(rebuild_premium_client_artifacts(package))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_rendered_ci_boundary_producer_v79.py:444: in wrapped
+    return repair_rendered_ci_boundary(current(normalized))
+                                       ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_client_surface_structure_cleanup_v1.py:339: in rebuild
+    return current(package)
+           ^^^^^^^^^^^^^^^^
+nico/v2_premium_report_renderer.py:379: in rebuild_premium_client_artifacts
+    generated_at = _canonical_generated_at(canonical)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+canonical = {'assessment': {'client_delivery_allowed': False, 'human_review_required': True, 'locale': 'en', 'report_language': 'e...customer_id': 'owned_customer', 'evidence_ledger_id': 'ledger_cache_control', 'project_id': 'owned_project', ...}, ...}
+
+    def _canonical_generated_at(canonical: Mapping[str, Any]) -> str:
+        identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+        generated_at = _text(
+            identity.get("generated_at")
+            or identity.get("generation_timestamp")
+            or canonical.get("generated_at")
+            or canonical.get("generation_timestamp")
+        )
+        if not _TIMESTAMP.fullmatch(generated_at):
+>           raise ValueError("premium report renderer requires one canonical generated_at timestamp")
+E           ValueError: premium report renderer requires one canonical generated_at timestamp
+
+nico/v2_premium_report_renderer.py:55: ValueError
+
+The above exception was the direct cause of the following exception:
+
+retained = (PosixPath('/tmp/pytest-of-agent/pytest-4/test_changed_artifact_or_appro3/retained.sqlite3'), 'comprun_ddddddddddddddd...txref\n1007\n%%EOF\n', [True], <nico.comprehensive_api_controller.ComprehensiveApiController object at 0x7f1fd5587b90>)
+change = 'stale_approval'
+
+    @pytest.mark.parametrize('change', ['missing', 'corrupt', 'wrong_digest', 'stale_approval'])
+    def test_changed_artifact_or_approval_reenters_original_validation(retained, change):
+        database, run_id, endpoint, _, calls, _ = retained
+>       endpoint(run_id, 'en')
+
+tests/test_retained_pdf_exact_input_cache_v1.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+                        return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                    except KeyError as exc:
+                        raise HTTPException(status_code=404, detail={
+                            "status": "not_found", "reason": "comprehensive_run_not_found",
+                        }) from exc
+                status = _controller_status(target, run_id)
+                return build_same_run_locale_pdf_response(status, report_language)
+        except ValueError as exc:
+>           raise _projection_http_error(exc) from exc
+E           fastapi.exceptions.HTTPException: 409: {'status': 'blocked', 'reason': 'premium report renderer requires one canonical generated_at timestamp'}
+
+nico/comprehensive_same_run_locale_report_v1.py:1583: HTTPException
+_______________ test_row_metadata_change_forces_fresh_validation _______________
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+>                       return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+nico/comprehensive_same_run_locale_report_v1.py:1575: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+nico/comprehensive_api_controller.py:1208: in retained_pdf_read_only
+    return finish_retained_pdf(prepared, build)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/retained_pdf_exact_input_cache_v1.py:295: in finish_retained_pdf
+    response = build()
+               ^^^^^^^
+nico/comprehensive_api_controller.py:1191: in build
+    response = builder(validated, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:913: in pdf_response
+    response = current_response(status, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1460: in build_same_run_locale_pdf_response
+    projection = build_same_run_locale_report(status, report_language)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:901: in report_with_integrity_gate
+    return current_report(source, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_canonical_truth_hash_compat_v1.py:187: in build_locale_report
+    result = current(reconciled_status, report_language)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1339: in build_same_run_locale_report
+    artifacts = _render_target(canonical_copy, target_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:830: in localized_render_target
+    artifacts = current_render_target(projected, report_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:759: in _render_target
+    return _assemble_target(canonical, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:689: in _assemble_target
+    localized = rebuild_client_artifacts(
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/phase17_canonical_artifact_rebuild_v1.py:619: in rebuild_client_artifacts
+    rendered = rebuild_single_pass_premium_artifacts(prepared)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_single_pass_premium_report.py:162: in rebuild_single_pass_premium_artifacts
+    result = deepcopy(rebuild_premium_client_artifacts_with_appendix(prepared))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_premium_evidence_appendix.py:133: in rebuild_premium_client_artifacts_with_appendix
+    result = deepcopy(rebuild_premium_client_artifacts(package))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_rendered_ci_boundary_producer_v79.py:444: in wrapped
+    return repair_rendered_ci_boundary(current(normalized))
+                                       ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_client_surface_structure_cleanup_v1.py:339: in rebuild
+    return current(package)
+           ^^^^^^^^^^^^^^^^
+nico/v2_premium_report_renderer.py:379: in rebuild_premium_client_artifacts
+    generated_at = _canonical_generated_at(canonical)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+canonical = {'assessment': {'client_delivery_allowed': False, 'human_review_required': True, 'locale': 'en', 'report_language': 'e...customer_id': 'owned_customer', 'evidence_ledger_id': 'ledger_cache_control', 'project_id': 'owned_project', ...}, ...}
+
+    def _canonical_generated_at(canonical: Mapping[str, Any]) -> str:
+        identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+        generated_at = _text(
+            identity.get("generated_at")
+            or identity.get("generation_timestamp")
+            or canonical.get("generated_at")
+            or canonical.get("generation_timestamp")
+        )
+        if not _TIMESTAMP.fullmatch(generated_at):
+>           raise ValueError("premium report renderer requires one canonical generated_at timestamp")
+E           ValueError: premium report renderer requires one canonical generated_at timestamp
+
+nico/v2_premium_report_renderer.py:55: ValueError
+
+The above exception was the direct cause of the following exception:
+
+retained = (PosixPath('/tmp/pytest-of-agent/pytest-4/test_row_metadata_change_force0/retained.sqlite3'), 'comprun_ddddddddddddddd...txref\n1007\n%%EOF\n', [True], <nico.comprehensive_api_controller.ComprehensiveApiController object at 0x7f1fd6481160>)
+
+    def test_row_metadata_change_forces_fresh_validation(retained):
+        database, run_id, endpoint, expected, calls, _ = retained
+>       endpoint(run_id, 'en')
+
+tests/test_retained_pdf_exact_input_cache_v1.py:159: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+                        return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                    except KeyError as exc:
+                        raise HTTPException(status_code=404, detail={
+                            "status": "not_found", "reason": "comprehensive_run_not_found",
+                        }) from exc
+                status = _controller_status(target, run_id)
+                return build_same_run_locale_pdf_response(status, report_language)
+        except ValueError as exc:
+>           raise _projection_http_error(exc) from exc
+E           fastapi.exceptions.HTTPException: 409: {'status': 'blocked', 'reason': 'premium report renderer requires one canonical generated_at timestamp'}
+
+nico/comprehensive_same_run_locale_report_v1.py:1583: HTTPException
+________ test_new_controller_and_store_do_not_inherit_old_runtime_proof ________
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+>                       return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+nico/comprehensive_same_run_locale_report_v1.py:1575: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+nico/comprehensive_api_controller.py:1208: in retained_pdf_read_only
+    return finish_retained_pdf(prepared, build)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/retained_pdf_exact_input_cache_v1.py:295: in finish_retained_pdf
+    response = build()
+               ^^^^^^^
+nico/comprehensive_api_controller.py:1191: in build
+    response = builder(validated, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:913: in pdf_response
+    response = current_response(status, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1460: in build_same_run_locale_pdf_response
+    projection = build_same_run_locale_report(status, report_language)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:901: in report_with_integrity_gate
+    return current_report(source, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_canonical_truth_hash_compat_v1.py:187: in build_locale_report
+    result = current(reconciled_status, report_language)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1339: in build_same_run_locale_report
+    artifacts = _render_target(canonical_copy, target_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:830: in localized_render_target
+    artifacts = current_render_target(projected, report_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:759: in _render_target
+    return _assemble_target(canonical, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:689: in _assemble_target
+    localized = rebuild_client_artifacts(
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/phase17_canonical_artifact_rebuild_v1.py:619: in rebuild_client_artifacts
+    rendered = rebuild_single_pass_premium_artifacts(prepared)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_single_pass_premium_report.py:162: in rebuild_single_pass_premium_artifacts
+    result = deepcopy(rebuild_premium_client_artifacts_with_appendix(prepared))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_premium_evidence_appendix.py:133: in rebuild_premium_client_artifacts_with_appendix
+    result = deepcopy(rebuild_premium_client_artifacts(package))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_rendered_ci_boundary_producer_v79.py:444: in wrapped
+    return repair_rendered_ci_boundary(current(normalized))
+                                       ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_client_surface_structure_cleanup_v1.py:339: in rebuild
+    return current(package)
+           ^^^^^^^^^^^^^^^^
+nico/v2_premium_report_renderer.py:379: in rebuild_premium_client_artifacts
+    generated_at = _canonical_generated_at(canonical)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+canonical = {'assessment': {'client_delivery_allowed': False, 'human_review_required': True, 'locale': 'en', 'report_language': 'e...customer_id': 'owned_customer', 'evidence_ledger_id': 'ledger_cache_control', 'project_id': 'owned_project', ...}, ...}
+
+    def _canonical_generated_at(canonical: Mapping[str, Any]) -> str:
+        identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+        generated_at = _text(
+            identity.get("generated_at")
+            or identity.get("generation_timestamp")
+            or canonical.get("generated_at")
+            or canonical.get("generation_timestamp")
+        )
+        if not _TIMESTAMP.fullmatch(generated_at):
+>           raise ValueError("premium report renderer requires one canonical generated_at timestamp")
+E           ValueError: premium report renderer requires one canonical generated_at timestamp
+
+nico/v2_premium_report_renderer.py:55: ValueError
+
+The above exception was the direct cause of the following exception:
+
+retained = (PosixPath('/tmp/pytest-of-agent/pytest-4/test_new_controller_and_store_0/retained.sqlite3'), 'comprun_ddddddddddddddd...txref\n1007\n%%EOF\n', [True], <nico.comprehensive_api_controller.ComprehensiveApiController object at 0x7f1fd57567b0>)
+
+    def test_new_controller_and_store_do_not_inherit_old_runtime_proof(retained):
+        database, run_id, endpoint, expected, calls, _ = retained
+>       endpoint(run_id, 'en')
+
+tests/test_retained_pdf_exact_input_cache_v1.py:176: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+                        return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                    except KeyError as exc:
+                        raise HTTPException(status_code=404, detail={
+                            "status": "not_found", "reason": "comprehensive_run_not_found",
+                        }) from exc
+                status = _controller_status(target, run_id)
+                return build_same_run_locale_pdf_response(status, report_language)
+        except ValueError as exc:
+>           raise _projection_http_error(exc) from exc
+E           fastapi.exceptions.HTTPException: 409: {'status': 'blocked', 'reason': 'premium report renderer requires one canonical generated_at timestamp'}
+
+nico/comprehensive_same_run_locale_report_v1.py:1583: HTTPException
+___________ test_live_codec_limit_change_cannot_reuse_old_validation ___________
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+>                       return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+nico/comprehensive_same_run_locale_report_v1.py:1575: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+nico/comprehensive_api_controller.py:1208: in retained_pdf_read_only
+    return finish_retained_pdf(prepared, build)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/retained_pdf_exact_input_cache_v1.py:295: in finish_retained_pdf
+    response = build()
+               ^^^^^^^
+nico/comprehensive_api_controller.py:1191: in build
+    response = builder(validated, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:913: in pdf_response
+    response = current_response(status, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1460: in build_same_run_locale_pdf_response
+    projection = build_same_run_locale_report(status, report_language)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:901: in report_with_integrity_gate
+    return current_report(source, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_canonical_truth_hash_compat_v1.py:187: in build_locale_report
+    result = current(reconciled_status, report_language)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1339: in build_same_run_locale_report
+    artifacts = _render_target(canonical_copy, target_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:830: in localized_render_target
+    artifacts = current_render_target(projected, report_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:759: in _render_target
+    return _assemble_target(canonical, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:689: in _assemble_target
+    localized = rebuild_client_artifacts(
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/phase17_canonical_artifact_rebuild_v1.py:619: in rebuild_client_artifacts
+    rendered = rebuild_single_pass_premium_artifacts(prepared)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_single_pass_premium_report.py:162: in rebuild_single_pass_premium_artifacts
+    result = deepcopy(rebuild_premium_client_artifacts_with_appendix(prepared))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_premium_evidence_appendix.py:133: in rebuild_premium_client_artifacts_with_appendix
+    result = deepcopy(rebuild_premium_client_artifacts(package))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_rendered_ci_boundary_producer_v79.py:444: in wrapped
+    return repair_rendered_ci_boundary(current(normalized))
+                                       ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_client_surface_structure_cleanup_v1.py:339: in rebuild
+    return current(package)
+           ^^^^^^^^^^^^^^^^
+nico/v2_premium_report_renderer.py:379: in rebuild_premium_client_artifacts
+    generated_at = _canonical_generated_at(canonical)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+canonical = {'assessment': {'client_delivery_allowed': False, 'human_review_required': True, 'locale': 'en', 'report_language': 'e...customer_id': 'owned_customer', 'evidence_ledger_id': 'ledger_cache_control', 'project_id': 'owned_project', ...}, ...}
+
+    def _canonical_generated_at(canonical: Mapping[str, Any]) -> str:
+        identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+        generated_at = _text(
+            identity.get("generated_at")
+            or identity.get("generation_timestamp")
+            or canonical.get("generated_at")
+            or canonical.get("generation_timestamp")
+        )
+        if not _TIMESTAMP.fullmatch(generated_at):
+>           raise ValueError("premium report renderer requires one canonical generated_at timestamp")
+E           ValueError: premium report renderer requires one canonical generated_at timestamp
+
+nico/v2_premium_report_renderer.py:55: ValueError
+
+The above exception was the direct cause of the following exception:
+
+retained = (PosixPath('/tmp/pytest-of-agent/pytest-4/test_live_codec_limit_change_c0/retained.sqlite3'), 'comprun_ddddddddddddddd...txref\n1007\n%%EOF\n', [True], <nico.comprehensive_api_controller.ComprehensiveApiController object at 0x7f1fd544a210>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f1fd544bf80>
+
+    def test_live_codec_limit_change_cannot_reuse_old_validation(retained, monkeypatch):
+        from nico import comprehensive_run_storage_codec_v1 as codec
+        _, run_id, endpoint, _, calls, _ = retained
+>       endpoint(run_id, 'en')
+
+tests/test_retained_pdf_exact_input_cache_v1.py:187: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+                        return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                    except KeyError as exc:
+                        raise HTTPException(status_code=404, detail={
+                            "status": "not_found", "reason": "comprehensive_run_not_found",
+                        }) from exc
+                status = _controller_status(target, run_id)
+                return build_same_run_locale_pdf_response(status, report_language)
+        except ValueError as exc:
+>           raise _projection_http_error(exc) from exc
+E           fastapi.exceptions.HTTPException: 409: {'status': 'blocked', 'reason': 'premium report renderer requires one canonical generated_at timestamp'}
+
+nico/comprehensive_same_run_locale_report_v1.py:1583: HTTPException
+___________ test_live_source_gate_change_cannot_reuse_old_validation ___________
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+>                       return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+nico/comprehensive_same_run_locale_report_v1.py:1575: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+nico/comprehensive_api_controller.py:1208: in retained_pdf_read_only
+    return finish_retained_pdf(prepared, build)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/retained_pdf_exact_input_cache_v1.py:295: in finish_retained_pdf
+    response = build()
+               ^^^^^^^
+nico/comprehensive_api_controller.py:1191: in build
+    response = builder(validated, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:913: in pdf_response
+    response = current_response(status, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1460: in build_same_run_locale_pdf_response
+    projection = build_same_run_locale_report(status, report_language)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:901: in report_with_integrity_gate
+    return current_report(source, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_canonical_truth_hash_compat_v1.py:187: in build_locale_report
+    result = current(reconciled_status, report_language)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1339: in build_same_run_locale_report
+    artifacts = _render_target(canonical_copy, target_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:830: in localized_render_target
+    artifacts = current_render_target(projected, report_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:759: in _render_target
+    return _assemble_target(canonical, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:689: in _assemble_target
+    localized = rebuild_client_artifacts(
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/phase17_canonical_artifact_rebuild_v1.py:619: in rebuild_client_artifacts
+    rendered = rebuild_single_pass_premium_artifacts(prepared)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_single_pass_premium_report.py:162: in rebuild_single_pass_premium_artifacts
+    result = deepcopy(rebuild_premium_client_artifacts_with_appendix(prepared))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_premium_evidence_appendix.py:133: in rebuild_premium_client_artifacts_with_appendix
+    result = deepcopy(rebuild_premium_client_artifacts(package))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_rendered_ci_boundary_producer_v79.py:444: in wrapped
+    return repair_rendered_ci_boundary(current(normalized))
+                                       ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_client_surface_structure_cleanup_v1.py:339: in rebuild
+    return current(package)
+           ^^^^^^^^^^^^^^^^
+nico/v2_premium_report_renderer.py:379: in rebuild_premium_client_artifacts
+    generated_at = _canonical_generated_at(canonical)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+canonical = {'assessment': {'client_delivery_allowed': False, 'human_review_required': True, 'locale': 'en', 'report_language': 'e...customer_id': 'owned_customer', 'evidence_ledger_id': 'ledger_cache_control', 'project_id': 'owned_project', ...}, ...}
+
+    def _canonical_generated_at(canonical: Mapping[str, Any]) -> str:
+        identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+        generated_at = _text(
+            identity.get("generated_at")
+            or identity.get("generation_timestamp")
+            or canonical.get("generated_at")
+            or canonical.get("generation_timestamp")
+        )
+        if not _TIMESTAMP.fullmatch(generated_at):
+>           raise ValueError("premium report renderer requires one canonical generated_at timestamp")
+E           ValueError: premium report renderer requires one canonical generated_at timestamp
+
+nico/v2_premium_report_renderer.py:55: ValueError
+
+The above exception was the direct cause of the following exception:
+
+retained = (PosixPath('/tmp/pytest-of-agent/pytest-4/test_live_source_gate_change_c0/retained.sqlite3'), 'comprun_ddddddddddddddd...txref\n1007\n%%EOF\n', [True], <nico.comprehensive_api_controller.ComprehensiveApiController object at 0x7f1fd56e5640>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f1fd54488f0>
+
+    def test_live_source_gate_change_cannot_reuse_old_validation(retained, monkeypatch):
+        _, run_id, endpoint, _, calls, _ = retained
+>       endpoint(run_id, 'en')
+
+tests/test_retained_pdf_exact_input_cache_v1.py:198: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+                        return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                    except KeyError as exc:
+                        raise HTTPException(status_code=404, detail={
+                            "status": "not_found", "reason": "comprehensive_run_not_found",
+                        }) from exc
+                status = _controller_status(target, run_id)
+                return build_same_run_locale_pdf_response(status, report_language)
+        except ValueError as exc:
+>           raise _projection_http_error(exc) from exc
+E           fastapi.exceptions.HTTPException: 409: {'status': 'blocked', 'reason': 'premium report renderer requires one canonical generated_at timestamp'}
+
+nico/comprehensive_same_run_locale_report_v1.py:1583: HTTPException
+______________ test_cache_version_change_forces_fresh_validation _______________
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+>                       return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+nico/comprehensive_same_run_locale_report_v1.py:1575: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+nico/comprehensive_api_controller.py:1208: in retained_pdf_read_only
+    return finish_retained_pdf(prepared, build)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/retained_pdf_exact_input_cache_v1.py:295: in finish_retained_pdf
+    response = build()
+               ^^^^^^^
+nico/comprehensive_api_controller.py:1191: in build
+    response = builder(validated, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:913: in pdf_response
+    response = current_response(status, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1460: in build_same_run_locale_pdf_response
+    projection = build_same_run_locale_report(status, report_language)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:901: in report_with_integrity_gate
+    return current_report(source, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_canonical_truth_hash_compat_v1.py:187: in build_locale_report
+    result = current(reconciled_status, report_language)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1339: in build_same_run_locale_report
+    artifacts = _render_target(canonical_copy, target_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:830: in localized_render_target
+    artifacts = current_render_target(projected, report_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:759: in _render_target
+    return _assemble_target(canonical, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:689: in _assemble_target
+    localized = rebuild_client_artifacts(
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/phase17_canonical_artifact_rebuild_v1.py:619: in rebuild_client_artifacts
+    rendered = rebuild_single_pass_premium_artifacts(prepared)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_single_pass_premium_report.py:162: in rebuild_single_pass_premium_artifacts
+    result = deepcopy(rebuild_premium_client_artifacts_with_appendix(prepared))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_premium_evidence_appendix.py:133: in rebuild_premium_client_artifacts_with_appendix
+    result = deepcopy(rebuild_premium_client_artifacts(package))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_rendered_ci_boundary_producer_v79.py:444: in wrapped
+    return repair_rendered_ci_boundary(current(normalized))
+                                       ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_client_surface_structure_cleanup_v1.py:339: in rebuild
+    return current(package)
+           ^^^^^^^^^^^^^^^^
+nico/v2_premium_report_renderer.py:379: in rebuild_premium_client_artifacts
+    generated_at = _canonical_generated_at(canonical)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+canonical = {'assessment': {'client_delivery_allowed': False, 'human_review_required': True, 'locale': 'en', 'report_language': 'e...customer_id': 'owned_customer', 'evidence_ledger_id': 'ledger_cache_control', 'project_id': 'owned_project', ...}, ...}
+
+    def _canonical_generated_at(canonical: Mapping[str, Any]) -> str:
+        identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+        generated_at = _text(
+            identity.get("generated_at")
+            or identity.get("generation_timestamp")
+            or canonical.get("generated_at")
+            or canonical.get("generation_timestamp")
+        )
+        if not _TIMESTAMP.fullmatch(generated_at):
+>           raise ValueError("premium report renderer requires one canonical generated_at timestamp")
+E           ValueError: premium report renderer requires one canonical generated_at timestamp
+
+nico/v2_premium_report_renderer.py:55: ValueError
+
+The above exception was the direct cause of the following exception:
+
+retained = (PosixPath('/tmp/pytest-of-agent/pytest-4/test_cache_version_change_forc0/retained.sqlite3'), 'comprun_ddddddddddddddd...txref\n1007\n%%EOF\n', [True], <nico.comprehensive_api_controller.ComprehensiveApiController object at 0x7f1fd5576390>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f1fd52ff620>
+
+    def test_cache_version_change_forces_fresh_validation(retained, monkeypatch):
+        from nico import retained_pdf_exact_input_cache_v1 as cache
+        _, run_id, endpoint, expected, calls, _ = retained
+>       endpoint(run_id, 'en')
+
+tests/test_retained_pdf_exact_input_cache_v1.py:214: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+                        return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                    except KeyError as exc:
+                        raise HTTPException(status_code=404, detail={
+                            "status": "not_found", "reason": "comprehensive_run_not_found",
+                        }) from exc
+                status = _controller_status(target, run_id)
+                return build_same_run_locale_pdf_response(status, report_language)
+        except ValueError as exc:
+>           raise _projection_http_error(exc) from exc
+E           fastapi.exceptions.HTTPException: 409: {'status': 'blocked', 'reason': 'premium report renderer requires one canonical generated_at timestamp'}
+
+nico/comprehensive_same_run_locale_report_v1.py:1583: HTTPException
+________________ test_uncompressed_legacy_rows_remain_uncached _________________
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+>                       return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+nico/comprehensive_same_run_locale_report_v1.py:1575: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+nico/comprehensive_api_controller.py:1208: in retained_pdf_read_only
+    return finish_retained_pdf(prepared, build)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/retained_pdf_exact_input_cache_v1.py:295: in finish_retained_pdf
+    response = build()
+               ^^^^^^^
+nico/comprehensive_api_controller.py:1191: in build
+    response = builder(validated, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:913: in pdf_response
+    response = current_response(status, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1460: in build_same_run_locale_pdf_response
+    projection = build_same_run_locale_report(status, report_language)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:901: in report_with_integrity_gate
+    return current_report(source, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_canonical_truth_hash_compat_v1.py:187: in build_locale_report
+    result = current(reconciled_status, report_language)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1339: in build_same_run_locale_report
+    artifacts = _render_target(canonical_copy, target_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:830: in localized_render_target
+    artifacts = current_render_target(projected, report_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:759: in _render_target
+    return _assemble_target(canonical, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:689: in _assemble_target
+    localized = rebuild_client_artifacts(
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/phase17_canonical_artifact_rebuild_v1.py:619: in rebuild_client_artifacts
+    rendered = rebuild_single_pass_premium_artifacts(prepared)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_single_pass_premium_report.py:162: in rebuild_single_pass_premium_artifacts
+    result = deepcopy(rebuild_premium_client_artifacts_with_appendix(prepared))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_premium_evidence_appendix.py:133: in rebuild_premium_client_artifacts_with_appendix
+    result = deepcopy(rebuild_premium_client_artifacts(package))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_rendered_ci_boundary_producer_v79.py:444: in wrapped
+    return repair_rendered_ci_boundary(current(normalized))
+                                       ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_client_surface_structure_cleanup_v1.py:339: in rebuild
+    return current(package)
+           ^^^^^^^^^^^^^^^^
+nico/v2_premium_report_renderer.py:379: in rebuild_premium_client_artifacts
+    generated_at = _canonical_generated_at(canonical)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+canonical = {'assessment': {'client_delivery_allowed': False, 'human_review_required': True, 'locale': 'en', 'report_language': 'e...customer_id': 'owned_customer', 'evidence_ledger_id': 'ledger_cache_control', 'project_id': 'owned_project', ...}, ...}
+
+    def _canonical_generated_at(canonical: Mapping[str, Any]) -> str:
+        identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+        generated_at = _text(
+            identity.get("generated_at")
+            or identity.get("generation_timestamp")
+            or canonical.get("generated_at")
+            or canonical.get("generation_timestamp")
+        )
+        if not _TIMESTAMP.fullmatch(generated_at):
+>           raise ValueError("premium report renderer requires one canonical generated_at timestamp")
+E           ValueError: premium report renderer requires one canonical generated_at timestamp
+
+nico/v2_premium_report_renderer.py:55: ValueError
+
+The above exception was the direct cause of the following exception:
+
+retained = (PosixPath('/tmp/pytest-of-agent/pytest-4/test_uncompressed_legacy_rows_0/retained.sqlite3'), 'comprun_ddddddddddddddd...txref\n1007\n%%EOF\n', [True], <nico.comprehensive_api_controller.ComprehensiveApiController object at 0x7f1fd55b6990>)
+
+    def test_uncompressed_legacy_rows_remain_uncached(retained):
+        database, run_id, endpoint, expected, calls, _ = retained
+        with sqlite3.connect(database) as connection:
+            row = connection.execute('SELECT payload FROM nico_comprehensive_runs WHERE run_id=?', (run_id,)).fetchone()
+            record = decode_run_storage(json.loads(row[0]))
+            connection.execute('UPDATE nico_comprehensive_runs SET payload=? WHERE run_id=?',
+                               (json.dumps(record, ensure_ascii=False), run_id))
+>       assert endpoint(run_id, 'en').body == endpoint(run_id, 'en').body == expected
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_retained_pdf_exact_input_cache_v1.py:227: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+                        return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                    except KeyError as exc:
+                        raise HTTPException(status_code=404, detail={
+                            "status": "not_found", "reason": "comprehensive_run_not_found",
+                        }) from exc
+                status = _controller_status(target, run_id)
+                return build_same_run_locale_pdf_response(status, report_language)
+        except ValueError as exc:
+>           raise _projection_http_error(exc) from exc
+E           fastapi.exceptions.HTTPException: 409: {'status': 'blocked', 'reason': 'premium report renderer requires one canonical generated_at timestamp'}
+
+nico/comprehensive_same_run_locale_report_v1.py:1583: HTTPException
+_________ test_missing_history_commitment_takes_original_backfill_path _________
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+>                       return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+nico/comprehensive_same_run_locale_report_v1.py:1575: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+nico/comprehensive_api_controller.py:1208: in retained_pdf_read_only
+    return finish_retained_pdf(prepared, build)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/retained_pdf_exact_input_cache_v1.py:295: in finish_retained_pdf
+    response = build()
+               ^^^^^^^
+nico/comprehensive_api_controller.py:1191: in build
+    response = builder(validated, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:913: in pdf_response
+    response = current_response(status, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1460: in build_same_run_locale_pdf_response
+    projection = build_same_run_locale_report(status, report_language)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:901: in report_with_integrity_gate
+    return current_report(source, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_canonical_truth_hash_compat_v1.py:187: in build_locale_report
+    result = current(reconciled_status, report_language)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1339: in build_same_run_locale_report
+    artifacts = _render_target(canonical_copy, target_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:830: in localized_render_target
+    artifacts = current_render_target(projected, report_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:759: in _render_target
+    return _assemble_target(canonical, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:689: in _assemble_target
+    localized = rebuild_client_artifacts(
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/phase17_canonical_artifact_rebuild_v1.py:619: in rebuild_client_artifacts
+    rendered = rebuild_single_pass_premium_artifacts(prepared)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_single_pass_premium_report.py:162: in rebuild_single_pass_premium_artifacts
+    result = deepcopy(rebuild_premium_client_artifacts_with_appendix(prepared))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_premium_evidence_appendix.py:133: in rebuild_premium_client_artifacts_with_appendix
+    result = deepcopy(rebuild_premium_client_artifacts(package))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_rendered_ci_boundary_producer_v79.py:444: in wrapped
+    return repair_rendered_ci_boundary(current(normalized))
+                                       ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_client_surface_structure_cleanup_v1.py:339: in rebuild
+    return current(package)
+           ^^^^^^^^^^^^^^^^
+nico/v2_premium_report_renderer.py:379: in rebuild_premium_client_artifacts
+    generated_at = _canonical_generated_at(canonical)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+canonical = {'assessment': {'client_delivery_allowed': False, 'human_review_required': True, 'locale': 'en', 'report_language': 'e...customer_id': 'owned_customer', 'evidence_ledger_id': 'ledger_cache_control', 'project_id': 'owned_project', ...}, ...}
+
+    def _canonical_generated_at(canonical: Mapping[str, Any]) -> str:
+        identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+        generated_at = _text(
+            identity.get("generated_at")
+            or identity.get("generation_timestamp")
+            or canonical.get("generated_at")
+            or canonical.get("generation_timestamp")
+        )
+        if not _TIMESTAMP.fullmatch(generated_at):
+>           raise ValueError("premium report renderer requires one canonical generated_at timestamp")
+E           ValueError: premium report renderer requires one canonical generated_at timestamp
+
+nico/v2_premium_report_renderer.py:55: ValueError
+
+The above exception was the direct cause of the following exception:
+
+retained = (PosixPath('/tmp/pytest-of-agent/pytest-4/test_missing_history_commitmen0/retained.sqlite3'), 'comprun_ddddddddddddddd...txref\n1007\n%%EOF\n', [True], <nico.comprehensive_api_controller.ComprehensiveApiController object at 0x7f1fd57823f0>)
+
+    def test_missing_history_commitment_takes_original_backfill_path(retained):
+        database, run_id, endpoint, expected, calls, _ = retained
+>       endpoint(run_id, 'en')
+
+tests/test_retained_pdf_exact_input_cache_v1.py:233: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+                        return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                    except KeyError as exc:
+                        raise HTTPException(status_code=404, detail={
+                            "status": "not_found", "reason": "comprehensive_run_not_found",
+                        }) from exc
+                status = _controller_status(target, run_id)
+                return build_same_run_locale_pdf_response(status, report_language)
+        except ValueError as exc:
+>           raise _projection_http_error(exc) from exc
+E           fastapi.exceptions.HTTPException: 409: {'status': 'blocked', 'reason': 'premium report renderer requires one canonical generated_at timestamp'}
+
+nico/comprehensive_same_run_locale_report_v1.py:1583: HTTPException
+______________ test_pdf_builder_runs_after_sql_connection_closes _______________
+
+status = {'artifact_schema': 'nico.comprehensive_api_controller.v8', 'service_id': 'comprehensive', 'operation': 'status', 'run_id': 'comprun_dddddddddddddddddddddddddddddddd', ...}
+language = 'en'
+
+    def observe_builder(status, language):
+        assert not opened, 'PDF preparation must not retain the DB connection'
+>       return original_builder(status, language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_retained_pdf_exact_input_cache_v1.py:265: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:913: in pdf_response
+    response = current_response(status, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1460: in build_same_run_locale_pdf_response
+    projection = build_same_run_locale_report(status, report_language)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:901: in report_with_integrity_gate
+    return current_report(source, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_canonical_truth_hash_compat_v1.py:187: in build_locale_report
+    result = current(reconciled_status, report_language)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1339: in build_same_run_locale_report
+    artifacts = _render_target(canonical_copy, target_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:830: in localized_render_target
+    artifacts = current_render_target(projected, report_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:759: in _render_target
+    return _assemble_target(canonical, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:689: in _assemble_target
+    localized = rebuild_client_artifacts(
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/phase17_canonical_artifact_rebuild_v1.py:619: in rebuild_client_artifacts
+    rendered = rebuild_single_pass_premium_artifacts(prepared)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_single_pass_premium_report.py:162: in rebuild_single_pass_premium_artifacts
+    result = deepcopy(rebuild_premium_client_artifacts_with_appendix(prepared))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_premium_evidence_appendix.py:133: in rebuild_premium_client_artifacts_with_appendix
+    result = deepcopy(rebuild_premium_client_artifacts(package))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_rendered_ci_boundary_producer_v79.py:444: in wrapped
+    return repair_rendered_ci_boundary(current(normalized))
+                                       ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_client_surface_structure_cleanup_v1.py:339: in rebuild
+    return current(package)
+           ^^^^^^^^^^^^^^^^
+nico/v2_premium_report_renderer.py:379: in rebuild_premium_client_artifacts
+    generated_at = _canonical_generated_at(canonical)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+canonical = {'assessment': {'client_delivery_allowed': False, 'human_review_required': True, 'locale': 'en', 'report_language': 'e...customer_id': 'owned_customer', 'evidence_ledger_id': 'ledger_cache_control', 'project_id': 'owned_project', ...}, ...}
+
+    def _canonical_generated_at(canonical: Mapping[str, Any]) -> str:
+        identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+        generated_at = _text(
+            identity.get("generated_at")
+            or identity.get("generation_timestamp")
+            or canonical.get("generated_at")
+            or canonical.get("generation_timestamp")
+        )
+        if not _TIMESTAMP.fullmatch(generated_at):
+>           raise ValueError("premium report renderer requires one canonical generated_at timestamp")
+E           ValueError: premium report renderer requires one canonical generated_at timestamp
+
+nico/v2_premium_report_renderer.py:55: ValueError
+
+The above exception was the direct cause of the following exception:
+
+retained = (PosixPath('/tmp/pytest-of-agent/pytest-4/test_pdf_builder_runs_after_sq0/retained.sqlite3'), 'comprun_ddddddddddddddd...txref\n1007\n%%EOF\n', [True], <nico.comprehensive_api_controller.ComprehensiveApiController object at 0x7f1fd6592ff0>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f1fd546e3f0>
+
+    def test_pdf_builder_runs_after_sql_connection_closes(retained, monkeypatch):
+        _, run_id, endpoint, expected, _, controller = retained
+        store = controller._service._store
+        original_factory = store._connection_factory
+        opened = []
+    
+        class ObservedConnection:
+            def __init__(self):
+                self.inner = original_factory()
+                opened.append(self)
+            def cursor(self):
+                return self.inner.cursor()
+            def commit(self):
+                return self.inner.commit()
+            def rollback(self):
+                return self.inner.rollback()
+            def close(self):
+                self.inner.close()
+                opened.remove(self)
+    
+        original_builder = locale.build_same_run_locale_pdf_response
+    
+        def observe_builder(status, language):
+            assert not opened, 'PDF preparation must not retain the DB connection'
+            return original_builder(status, language)
+    
+        monkeypatch.setattr(store, '_connection_factory', ObservedConnection)
+        monkeypatch.setattr(locale, 'build_same_run_locale_pdf_response', observe_builder)
+>       assert endpoint(run_id, 'en').body == expected
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_retained_pdf_exact_input_cache_v1.py:269: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+                        return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                    except KeyError as exc:
+                        raise HTTPException(status_code=404, detail={
+                            "status": "not_found", "reason": "comprehensive_run_not_found",
+                        }) from exc
+                status = _controller_status(target, run_id)
+                return build_same_run_locale_pdf_response(status, report_language)
+        except ValueError as exc:
+>           raise _projection_http_error(exc) from exc
+E           fastapi.exceptions.HTTPException: 409: {'status': 'blocked', 'reason': 'premium report renderer requires one canonical generated_at timestamp'}
+
+nico/comprehensive_same_run_locale_report_v1.py:1583: HTTPException
+__ test_invalidated_warm_ticket_cannot_mint_under_old_input_after_policy_aba ___
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+>                       return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+nico/comprehensive_same_run_locale_report_v1.py:1575: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+nico/comprehensive_api_controller.py:1208: in retained_pdf_read_only
+    return finish_retained_pdf(prepared, build)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/retained_pdf_exact_input_cache_v1.py:295: in finish_retained_pdf
+    response = build()
+               ^^^^^^^
+nico/comprehensive_api_controller.py:1191: in build
+    response = builder(validated, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:913: in pdf_response
+    response = current_response(status, report_language)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1460: in build_same_run_locale_pdf_response
+    projection = build_same_run_locale_report(status, report_language)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:901: in report_with_integrity_gate
+    return current_report(source, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_canonical_truth_hash_compat_v1.py:187: in build_locale_report
+    result = current(reconciled_status, report_language)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:1339: in build_same_run_locale_report
+    artifacts = _render_target(canonical_copy, target_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_commercial_ship_projection_v3.py:830: in localized_render_target
+    artifacts = current_render_target(projected, report_language)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/report_delivery_timing_v1.py:57: in observed
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:759: in _render_target
+    return _assemble_target(canonical, report_language)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_same_run_locale_report_v1.py:689: in _assemble_target
+    localized = rebuild_client_artifacts(
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+nico/phase17_canonical_artifact_rebuild_v1.py:619: in rebuild_client_artifacts
+    rendered = rebuild_single_pass_premium_artifacts(prepared)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_single_pass_premium_report.py:162: in rebuild_single_pass_premium_artifacts
+    result = deepcopy(rebuild_premium_client_artifacts_with_appendix(prepared))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/v2_premium_evidence_appendix.py:133: in rebuild_premium_client_artifacts_with_appendix
+    result = deepcopy(rebuild_premium_client_artifacts(package))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_rendered_ci_boundary_producer_v79.py:444: in wrapped
+    return repair_rendered_ci_boundary(current(normalized))
+                                       ^^^^^^^^^^^^^^^^^^^
+nico/comprehensive_client_surface_structure_cleanup_v1.py:339: in rebuild
+    return current(package)
+           ^^^^^^^^^^^^^^^^
+nico/v2_premium_report_renderer.py:379: in rebuild_premium_client_artifacts
+    generated_at = _canonical_generated_at(canonical)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+canonical = {'assessment': {'client_delivery_allowed': False, 'human_review_required': True, 'locale': 'en', 'report_language': 'e...customer_id': 'owned_customer', 'evidence_ledger_id': 'ledger_cache_control', 'project_id': 'owned_project', ...}, ...}
+
+    def _canonical_generated_at(canonical: Mapping[str, Any]) -> str:
+        identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+        generated_at = _text(
+            identity.get("generated_at")
+            or identity.get("generation_timestamp")
+            or canonical.get("generated_at")
+            or canonical.get("generation_timestamp")
+        )
+        if not _TIMESTAMP.fullmatch(generated_at):
+>           raise ValueError("premium report renderer requires one canonical generated_at timestamp")
+E           ValueError: premium report renderer requires one canonical generated_at timestamp
+
+nico/v2_premium_report_renderer.py:55: ValueError
+
+The above exception was the direct cause of the following exception:
+
+retained = (PosixPath('/tmp/pytest-of-agent/pytest-4/test_invalidated_warm_ticket_c0/retained.sqlite3'), 'comprun_ddddddddddddddd...txref\n1007\n%%EOF\n', [True], <nico.comprehensive_api_controller.ComprehensiveApiController object at 0x7f1fd52bf800>)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f1fd5741f10>
+
+    def test_invalidated_warm_ticket_cannot_mint_under_old_input_after_policy_aba(retained, monkeypatch):
+        from nico import retained_pdf_exact_input_cache_v1 as cache
+        database, run_id, endpoint, expected, calls, _ = retained
+>       endpoint(run_id, 'en')
+
+tests/test_retained_pdf_exact_input_cache_v1.py:276: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+run_id = 'comprun_dddddddddddddddddddddddddddddddd', report_language = 'en'
+
+    def localized_report_pdf(run_id: str, report_language: str) -> Response:
+        try:
+            with report_delivery_timing(run_id, report_language):
+                controller = getattr(target.state, "comprehensive_api_controller", None)
+                retained_reader = getattr(controller, "retained_pdf_read_only", None)
+                if callable(retained_reader):
+                    try:
+                        return retained_reader(run_id, report_language, build_same_run_locale_pdf_response)
+                    except KeyError as exc:
+                        raise HTTPException(status_code=404, detail={
+                            "status": "not_found", "reason": "comprehensive_run_not_found",
+                        }) from exc
+                status = _controller_status(target, run_id)
+                return build_same_run_locale_pdf_response(status, report_language)
+        except ValueError as exc:
+>           raise _projection_http_error(exc) from exc
+E           fastapi.exceptions.HTTPException: 409: {'status': 'blocked', 'reason': 'premium report renderer requires one canonical generated_at timestamp'}
+
+nico/comprehensive_same_run_locale_report_v1.py:1583: HTTPException
+=============================== warnings summary ===============================
+../nico-venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /workspace/nico-venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_comprehensive_operator_presentation_v1.py: 9 warnings
+tests/test_comprehensive_same_run_locale_report_v1.py: 25 warnings
+tests/test_spanish_absent_literal_fast_path.py: 11 warnings
+tests/test_scanner_status_record_retention.py: 6 warnings
+tests/test_cross_locale_pdf_repeatability_v1.py: 22 warnings
+  /workspace/nico-venv/lib/python3.12/site-packages/pypdf/_page.py:1342: DeprecationWarning: Calling `PageObject.replace_contents()` for pages not assigned to a writer is deprecated and will be removed in pypdf 7.0.0. Attach the page to the writer first or use `PdfWriter(clone_from=...)` directly. The existing approach has proved being unreliable.
+    self.replace_contents(ContentStream(new_content_array, self.pdf))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 10 durations =============================
+21.27s call     tests/test_spanish_canonical_report_parity_v87.py::test_same_canonical_package_has_exact_spanish_publication_parity
+11.77s call     tests/test_cross_locale_pdf_repeatability_v1.py::test_same_frozen_input_keeps_cross_locale_pdf_bytes[warm-None-en-es-MX]
+11.77s call     tests/test_cross_locale_pdf_repeatability_v1.py::test_same_frozen_input_keeps_cross_locale_pdf_bytes[warm-None-es-MX-en]
+10.29s call     tests/test_spanish_absent_literal_fast_path.py::test_actual_localized_pdf_bytes_match_legacy
+6.91s call     tests/test_comprehensive_same_run_locale_report_v1.py::test_real_composed_same_run_en_es_preserves_truth_literals_and_navigation
+6.79s setup    tests/test_comprehensive_operator_presentation_v1.py::test_old_approval_renders_corrected_export_without_mutating_receipt_or_source
+5.89s call     tests/test_comprehensive_same_run_locale_report_v1.py::test_real_cross_locale_markdown_runs_full_preparation_without_pdf[en-es-MX-required_headings0]
+5.43s call     tests/test_comprehensive_same_run_locale_report_v1.py::test_real_cross_locale_markdown_runs_full_preparation_without_pdf[es-MX-en-required_headings1]
+3.20s call     tests/test_comprehensive_same_run_locale_report_v1.py::test_finalized_markdown_preparation_bounds_retained_scanner_candidates
+3.03s call     tests/test_scanner_status_record_retention.py::test_unavailable_record_copy_survives_public_markdown_html_and_pdf[es-MX-registro de estado=conservado-La conservaci\xf3n del registro de estado no acredita evidencia sin procesar de la ejecuci\xf3n.]
+=========================== short test summary info ============================
+FAILED tests/test_comprehensive_approved_review_truth_v1.py::test_spanish_approved_labels_preserve_stakeholder_pending_evidence
+FAILED tests/test_comprehensive_same_run_locale_report_v1.py::test_alternate_locale_calls_full_production_assembler_and_invalidates_approval
+FAILED tests/test_comprehensive_same_run_locale_report_v1.py::test_real_composed_same_run_en_es_preserves_truth_literals_and_navigation
+FAILED tests/test_spanish_canonical_report_parity_v87.py::test_spanish_not_applicable_scanner_evidence_is_fully_localized
+FAILED tests/test_spanish_canonical_report_parity_v87.py::test_spanish_scanner_limitations_localize_the_production_truth_contract
+FAILED tests/test_spanish_canonical_report_parity_v87.py::test_spanish_localizes_reachable_unavailable_evidence_contracts
+FAILED tests/test_retained_pdf_exact_input_cache_v1.py::test_repeat_exact_retained_pdf_reuses_completed_validation_without_mutable_response
+FAILED tests/test_retained_pdf_exact_input_cache_v1.py::test_optional_numeric_observer_failure_preserves_original_validated_pdf
+FAILED tests/test_retained_pdf_exact_input_cache_v1.py::test_changed_unrelated_stage_cannot_reuse_old_pdf_proof
+FAILED tests/test_retained_pdf_exact_input_cache_v1.py::test_changed_independent_history_commitment_cannot_reuse_old_pdf_proof
+FAILED tests/test_retained_pdf_exact_input_cache_v1.py::test_changed_artifact_or_approval_reenters_original_validation[missing]
+FAILED tests/test_retained_pdf_exact_input_cache_v1.py::test_changed_artifact_or_approval_reenters_original_validation[corrupt]
+FAILED tests/test_retained_pdf_exact_input_cache_v1.py::test_changed_artifact_or_approval_reenters_original_validation[wrong_digest]
+FAILED tests/test_retained_pdf_exact_input_cache_v1.py::test_changed_artifact_or_approval_reenters_original_validation[stale_approval]
+FAILED tests/test_retained_pdf_exact_input_cache_v1.py::test_row_metadata_change_forces_fresh_validation
+FAILED tests/test_retained_pdf_exact_input_cache_v1.py::test_new_controller_and_store_do_not_inherit_old_runtime_proof
+FAILED tests/test_retained_pdf_exact_input_cache_v1.py::test_live_codec_limit_change_cannot_reuse_old_validation
+FAILED tests/test_retained_pdf_exact_input_cache_v1.py::test_live_source_gate_change_cannot_reuse_old_validation
+FAILED tests/test_retained_pdf_exact_input_cache_v1.py::test_cache_version_change_forces_fresh_validation
+FAILED tests/test_retained_pdf_exact_input_cache_v1.py::test_uncompressed_legacy_rows_remain_uncached
+FAILED tests/test_retained_pdf_exact_input_cache_v1.py::test_missing_history_commitment_takes_original_backfill_path
+FAILED tests/test_retained_pdf_exact_input_cache_v1.py::test_pdf_builder_runs_after_sql_connection_closes
+FAILED tests/test_retained_pdf_exact_input_cache_v1.py::test_invalidated_warm_ticket_cannot_mint_under_old_input_after_policy_aba
+23 failed, 175 passed, 8 deselected, 74 warnings in 116.12s (0:01:56)

@@ -1,0 +1,266 @@
+{
+  "finding_count": 37,
+  "blocking": 0,
+  "approved_public_source_hashes": 19,
+  "triage": [
+    {
+      "fingerprint": "e14c620a321c12b168d0ad2cd3c1fb78bc111a1c:scripts/native_stage_counters/specialization_groups.py:generic-api-key:15",
+      "file": "scripts/native_stage_counters/specialization_groups.py",
+      "line": 15,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_source_hash"
+    },
+    {
+      "fingerprint": "63f4e03068a386eddda4dc31c41e9f5d4b24579d:scripts/native_stage_counters/specialization_groups.py:generic-api-key:15",
+      "file": "scripts/native_stage_counters/specialization_groups.py",
+      "line": 15,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_source_hash"
+    },
+    {
+      "fingerprint": "c2b3ba6045f2b3751108a40f95677c8e9d8c50cc:docs/evidence/cpp-stage-counters-local/README.md:generic-api-key:18",
+      "file": "docs/evidence/cpp-stage-counters-local/README.md",
+      "line": 18,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_source_hash"
+    },
+    {
+      "fingerprint": "c2b3ba6045f2b3751108a40f95677c8e9d8c50cc:scripts/native_stage_counters/instrument.py:generic-api-key:16",
+      "file": "scripts/native_stage_counters/instrument.py",
+      "line": 16,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_source_hash"
+    },
+    {
+      "fingerprint": "63f4e03068a386eddda4dc31c41e9f5d4b24579d:scripts/native_stage_counters/owned_regressions.py:generic-api-key:21",
+      "file": "scripts/native_stage_counters/owned_regressions.py",
+      "line": 21,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_source_hash"
+    },
+    {
+      "fingerprint": "63f4e03068a386eddda4dc31c41e9f5d4b24579d:scripts/native_stage_counters/owned_regressions.py:generic-api-key:21",
+      "file": "scripts/native_stage_counters/owned_regressions.py",
+      "line": 21,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_source_hash"
+    },
+    {
+      "fingerprint": "63f4e03068a386eddda4dc31c41e9f5d4b24579d:scripts/native_stage_counters/owned_regressions.py:generic-api-key:21",
+      "file": "scripts/native_stage_counters/owned_regressions.py",
+      "line": 21,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_source_hash"
+    },
+    {
+      "fingerprint": "6eff8889db11a3ab31c3b04f5af053edb542d6e8:docs/evidence/cppcheck-composed-runtime-20261012/fixed-final-source-sha256.json:generic-api-key:8",
+      "file": "docs/evidence/cppcheck-composed-runtime-20261012/fixed-final-source-sha256.json",
+      "line": 8,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_source_hash"
+    },
+    {
+      "fingerprint": "6eff8889db11a3ab31c3b04f5af053edb542d6e8:docs/evidence/cppcheck-composed-runtime-20261012/fixed-final-source-sha256.json:generic-api-key:9",
+      "file": "docs/evidence/cppcheck-composed-runtime-20261012/fixed-final-source-sha256.json",
+      "line": 9,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_source_hash"
+    },
+    {
+      "fingerprint": "6eff8889db11a3ab31c3b04f5af053edb542d6e8:docs/evidence/cppcheck-composed-runtime-20261012/fixed-final-source-sha256.json:generic-api-key:10",
+      "file": "docs/evidence/cppcheck-composed-runtime-20261012/fixed-final-source-sha256.json",
+      "line": 10,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_source_hash"
+    },
+    {
+      "fingerprint": "e14c620a321c12b168d0ad2cd3c1fb78bc111a1c:scripts/native_stage_counters/owned_regressions.py:generic-api-key:21",
+      "file": "scripts/native_stage_counters/owned_regressions.py",
+      "line": 21,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_source_hash"
+    },
+    {
+      "fingerprint": "e14c620a321c12b168d0ad2cd3c1fb78bc111a1c:scripts/native_stage_counters/owned_regressions.py:generic-api-key:21",
+      "file": "scripts/native_stage_counters/owned_regressions.py",
+      "line": 21,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_source_hash"
+    },
+    {
+      "fingerprint": "e14c620a321c12b168d0ad2cd3c1fb78bc111a1c:scripts/native_stage_counters/owned_regressions.py:generic-api-key:21",
+      "file": "scripts/native_stage_counters/owned_regressions.py",
+      "line": 21,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_source_hash"
+    },
+    {
+      "fingerprint": "c2b3ba6045f2b3751108a40f95677c8e9d8c50cc:scripts/native_stage_counters/binding.py:generic-api-key:12",
+      "file": "scripts/native_stage_counters/binding.py",
+      "line": 12,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_source_hash"
+    },
+    {
+      "fingerprint": "fc9a0a75ac2cdd614304d7483eb8cbaf3b161b01:docs/evidence/cppcheck-pr1712-ast-integration-20261012/composed-source-sha256.json:generic-api-key:8",
+      "file": "docs/evidence/cppcheck-pr1712-ast-integration-20261012/composed-source-sha256.json",
+      "line": 8,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_source_hash"
+    },
+    {
+      "fingerprint": "fc9a0a75ac2cdd614304d7483eb8cbaf3b161b01:docs/evidence/cppcheck-pr1712-ast-integration-20261012/composed-source-sha256.json:generic-api-key:9",
+      "file": "docs/evidence/cppcheck-pr1712-ast-integration-20261012/composed-source-sha256.json",
+      "line": 9,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_source_hash"
+    },
+    {
+      "fingerprint": "fc9a0a75ac2cdd614304d7483eb8cbaf3b161b01:docs/evidence/cppcheck-pr1712-ast-integration-20261012/composed-source-sha256.json:generic-api-key:10",
+      "file": "docs/evidence/cppcheck-pr1712-ast-integration-20261012/composed-source-sha256.json",
+      "line": 10,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_source_hash"
+    },
+    {
+      "fingerprint": "3de83e0c61d53b3f0fbfe284c764701cbb08d506:docker/assessment-clang-header-sdk.lock.json:generic-api-key:5",
+      "file": "docker/assessment-clang-header-sdk.lock.json",
+      "line": 5,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_signing_fingerprint"
+    },
+    {
+      "fingerprint": "09b849a5edfce82e57899cfd7f1e50a4d0594a59:tests/fixtures/cpp/fileapi-native-arguments-v15/native-capture.json:generic-api-key:1",
+      "file": "tests/fixtures/cpp/fileapi-native-arguments-v15/native-capture.json",
+      "line": 1,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_test_placeholder"
+    },
+    {
+      "fingerprint": "80fa4d6f53ca34a0dd2172f8f75db422b86c573b:tests/fixtures/cpp/excluded-generated-owned/native.json:generic-api-key:1",
+      "file": "tests/fixtures/cpp/excluded-generated-owned/native.json",
+      "line": 1,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_test_placeholder"
+    },
+    {
+      "fingerprint": "09b849a5edfce82e57899cfd7f1e50a4d0594a59:tests/fixtures/cpp/fileapi-native-contexts-v15/native-capture.json:generic-api-key:1",
+      "file": "tests/fixtures/cpp/fileapi-native-contexts-v15/native-capture.json",
+      "line": 1,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_test_placeholder"
+    },
+    {
+      "fingerprint": "0f14a8dba3c0fa6d11d982e007492a7f543ccfb7:docker/assessment-llvm17.lock.json:generic-api-key:5",
+      "file": "docker/assessment-llvm17.lock.json",
+      "line": 5,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_signing_fingerprint"
+    },
+    {
+      "fingerprint": "0f14a8dba3c0fa6d11d982e007492a7f543ccfb7:docs/evidence/pr1641-placement-ast-20260924/verification.json:generic-api-key:45",
+      "file": "docs/evidence/pr1641-placement-ast-20260924/verification.json",
+      "line": 45,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_source_hash"
+    },
+    {
+      "fingerprint": "923d5b92254f73aa297bb1f00c9929236125853f:docs/evidence/pr1641-placement-ast-20260924/verification.json:generic-api-key:45",
+      "file": "docs/evidence/pr1641-placement-ast-20260924/verification.json",
+      "line": 45,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_source_hash"
+    },
+    {
+      "fingerprint": "684e5af5074c6e1c0cf4b67fa263b0d79b8beabf:docker/assessment-llvm17.lock.json:generic-api-key:5",
+      "file": "docker/assessment-llvm17.lock.json",
+      "line": 5,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_signing_fingerprint"
+    },
+    {
+      "fingerprint": "a18965df6eb32dcfb565f6dfc56ec108c193a2bf:nico/admin_security.py:generic-api-key:14",
+      "file": "nico/admin_security.py",
+      "line": 14,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_verifier_digest"
+    },
+    {
+      "fingerprint": "869fa50f47eb4b96e1a06d31f60bfcc634253b72:nico/admin_security.py:generic-api-key:14",
+      "file": "nico/admin_security.py",
+      "line": 14,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_public_verifier_digest"
+    },
+    {
+      "fingerprint": "11af26f05d408ba171df8be84d0df8dedb15fa8f:tests/test_storage_serialization_safety.py:generic-api-key:61",
+      "file": "tests/test_storage_serialization_safety.py",
+      "line": 61,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_test_placeholder"
+    },
+    {
+      "fingerprint": "baa69c5760401cc3a91ac29314da000c8f71ad0d:tests/test_scanner_redaction_safety.py:generic-api-key:15",
+      "file": "tests/test_scanner_redaction_safety.py",
+      "line": 15,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_test_placeholder"
+    },
+    {
+      "fingerprint": "baa69c5760401cc3a91ac29314da000c8f71ad0d:tests/test_scanner_redaction_safety.py:generic-api-key:29",
+      "file": "tests/test_scanner_redaction_safety.py",
+      "line": 29,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_test_placeholder"
+    },
+    {
+      "fingerprint": "baa69c5760401cc3a91ac29314da000c8f71ad0d:tests/test_scanner_redaction_safety.py:generic-api-key:68",
+      "file": "tests/test_scanner_redaction_safety.py",
+      "line": 68,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_test_placeholder"
+    },
+    {
+      "fingerprint": "5ad4eef6d7bb9b95e3c4c6b7238dad531090bf9f:tests/test_scanner_redaction_safety.py:generic-api-key:15",
+      "file": "tests/test_scanner_redaction_safety.py",
+      "line": 15,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_test_placeholder"
+    },
+    {
+      "fingerprint": "5ad4eef6d7bb9b95e3c4c6b7238dad531090bf9f:tests/test_scanner_redaction_safety.py:generic-api-key:29",
+      "file": "tests/test_scanner_redaction_safety.py",
+      "line": 29,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_test_placeholder"
+    },
+    {
+      "fingerprint": "5ad4eef6d7bb9b95e3c4c6b7238dad531090bf9f:tests/test_scanner_redaction_safety.py:generic-api-key:68",
+      "file": "tests/test_scanner_redaction_safety.py",
+      "line": 68,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_test_placeholder"
+    },
+    {
+      "fingerprint": "89e80265e0bc8e48cb3ee9170e24bbf536e4d110:tests/test_scanner_tool_runners.py:generic-api-key:20",
+      "file": "tests/test_scanner_tool_runners.py",
+      "line": 20,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_test_placeholder"
+    },
+    {
+      "fingerprint": "89e80265e0bc8e48cb3ee9170e24bbf536e4d110:tests/test_scanner_tool_runners.py:generic-api-key:30",
+      "file": "tests/test_scanner_tool_runners.py",
+      "line": 30,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_test_placeholder"
+    },
+    {
+      "fingerprint": "89e80265e0bc8e48cb3ee9170e24bbf536e4d110:tests/test_scanner_tool_runners.py:generic-api-key:117",
+      "file": "tests/test_scanner_tool_runners.py",
+      "line": 117,
+      "rule_id": "generic-api-key",
+      "disposition": "approved_test_placeholder"
+    }
+  ]
+}
