@@ -261,7 +261,7 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
   }
   const key = JSON.stringify([runId, reportLanguage, commitSha, canonicalTruthSha256,
     Boolean(binding.requiresNewApproval)]);
-  const asynchronous = asyncPreparationEnabled();
+  const asynchronous = asyncPreparationEnabled() && !binding.requiresNewApproval;
   if (resumeOnly && (!asynchronous || !savedPreparation(key))) return Promise.resolve();
   const existing = pendingReviewPromises.get(key);
   if (existing?.isCurrent()) return existing.operation;
@@ -343,13 +343,13 @@ function preparationHref(runId: string, language: ReportLanguage): string {
   return `/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/review-pdf/${language}`;
 }
 function preparationQuery(jobId: string, binding: DownloadBinding): string {
-  return new URLSearchParams({job_id: jobId, commit_sha: binding.commitSha,
+  return new URLSearchParams({...(jobId === "requested" ? {} : {job_id: jobId}), commit_sha: binding.commitSha,
     canonical_truth_sha256: binding.canonicalTruthSha256}).toString();
 }
 function savedPreparation(key: string): string {
   try {
     const value = window.sessionStorage.getItem(`nico-review-preparation:${key}`) || "";
-    return /^reviewpdfprep_[0-9a-f]{64}$/.test(value) ? value : "";
+    return value === "requested" || /^reviewpdfprep_[0-9a-f]{64}$/.test(value) ? value : "";
   } catch { return ""; }
 }
 function savePreparation(key: string, jobId: string): void {
@@ -370,6 +370,7 @@ async function prepareReviewPdf(runId: string, language: ReportLanguage, binding
     if (binding.isCurrent && !binding.isCurrent()) throw integrityError();
     const remaining = preparationDeadline - Date.now();
     if (remaining <= 0) throw stillPending();
+    if (prepare) savePreparation(key, "requested");
     const response = await fetch(preparationHref(runId, language) + (prepare ? "" : `?${preparationQuery(jobId, binding)}`), {
       method: prepare ? "POST" : "GET", cache: "no-store", credentials: "same-origin",
       headers: {Accept: "application/json", ...(prepare ? {"Content-Type": "application/json"} : {})},
@@ -384,6 +385,7 @@ async function prepareReviewPdf(runId: string, language: ReportLanguage, binding
     });
     if (!response.ok) {
       if ([404, 409, 422].includes(response.status)) savePreparation(key, "");
+      if (response.status === 503) throw stillPending();
       throw downloadError(response);
     }
     const status = await response.json();
@@ -393,7 +395,7 @@ async function prepareReviewPdf(runId: string, language: ReportLanguage, binding
       || status.canonical_truth_sha256 !== binding.canonicalTruthSha256
       || status.client_delivery_allowed !== false || status.human_review_required !== true
       || !/^reviewpdfprep_[0-9a-f]{64}$/.test(status.job_id)
-      || (jobId && status.job_id !== jobId)) throw integrityError();
+      || (jobId && jobId !== "requested" && status.job_id !== jobId)) throw integrityError();
     jobId = status.job_id;
     savePreparation(key, jobId);
     return String(status.state);

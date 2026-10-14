@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import base64
 from dataclasses import asdict
+from contextlib import contextmanager
+from threading import Event, Thread
 import hashlib
 import io
 import json
@@ -12,6 +14,8 @@ import subprocess
 import sys
 import tempfile
 import time
+
+from nico.review_pdf_preparation_deadline_v1 import DeadlineGuard
 
 from nico.comprehensive_final_report_process_worker_v1 import (
     _atomic_json, terminate_process, _PROCESS_GROUP_ATTR,
@@ -90,6 +94,25 @@ def child_build(context, *, verifying=None):
     return result
 
 
+@contextmanager
+def _owned_directory(guard, state):
+    directory = tempfile.TemporaryDirectory(prefix='nico-review-pdf-')
+    state['temporary_files_cleanup_confirmed'] = False
+    try:
+        yield directory.name
+    finally:
+        def cleanup():
+            # A bounded-call timeout is not physical file-operation completion.
+            while not guard.idle() or not state.get('physical_worker_exit_confirmed', True):
+                Event().wait(.02)
+            directory.cleanup()
+            state['temporary_files_cleanup_confirmed'] = True
+        if guard.idle() and state.get('physical_worker_exit_confirmed', True):
+            cleanup()
+        else:
+            Thread(target=cleanup, daemon=True, name='nico-review-private-file-cleanup').start()
+
+
 def run_worker(status, identity, *, stop, heartbeat, state, max_seconds):
     if not 0 < max_seconds <= 900:
         raise ValueError('review_pdf_worker_budget_invalid')
@@ -100,10 +123,13 @@ def run_worker(status, identity, *, stop, heartbeat, state, max_seconds):
                NICO_REQUIRE_DURABLE_ASSESSMENT_STORAGE='false')
     process = None
     started = time.monotonic()
-    with tempfile.TemporaryDirectory(prefix='nico-review-pdf-') as directory:
+    guard = DeadlineGuard(max_seconds, stop, clock=time.monotonic)
+    state.setdefault("pending_guards", []).append(guard)
+    with _owned_directory(guard, state) as directory:
         root = Path(directory)
-        _atomic_json(root / 'input.json', {'status': status, 'language': identity.language, 'identity': asdict(identity)})
         try:
+            guard.call(_atomic_json, root / 'input.json', {'status': status, 'language': identity.language, 'identity': asdict(identity)})
+            guard.check()
             if stop.is_set():
                 raise RuntimeError('review_pdf_cancelled')
             state['physical_worker_exit_confirmed'] = False
@@ -121,9 +147,9 @@ def run_worker(status, identity, *, stop, heartbeat, state, max_seconds):
                     phase_path = root / 'phase.json'
                     if (phase_path.exists() and phase_path.stat().st_size < 200
                             and json.loads(phase_path.read_text()) == {'phase': 'verifying'}):
-                        heartbeat(phase='verifying')
+                        guard.call(heartbeat, phase='verifying', timeout=5)
                     else:
-                        heartbeat()
+                        guard.call(heartbeat, timeout=5)
                     last_heartbeat = now
                 stop.wait(.1)
             if stop.is_set() or time.monotonic() - started >= max_seconds:
@@ -133,8 +159,9 @@ def run_worker(status, identity, *, stop, heartbeat, state, max_seconds):
             output = root / 'output.json'
             if output.stat().st_size > 65 * 1024 * 1024:
                 raise ValueError('review_pdf_result_size_invalid')
-            return json.loads(output.read_text())
+            return guard.call(lambda: json.loads(output.read_text()))
         finally:
+            guard.stop.set()
             state['physical_worker_exit_confirmed'] = False
             state['physical_worker_exit_confirmed'] = process is None or terminate_process(process)
             if not state['physical_worker_exit_confirmed']:

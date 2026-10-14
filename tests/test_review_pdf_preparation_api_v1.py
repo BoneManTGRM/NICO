@@ -238,3 +238,96 @@ def test_prepare_consumes_validated_snapshot_and_deduplicates(seam, monkeypatch,
         with pytest.raises(PreparationConflict): runtime.prepare(i.run_id, i.language, context)
     if invalid == 'commitment': restore.assert_not_called()
     worker.assert_not_called()
+
+
+def test_admission_timeout_cannot_enqueue_after_slow_validation_returns(seam, monkeypatch):
+    from threading import Event, Thread
+    from nico.review_pdf_preparation_deadline_v1 import DeadlineGuard
+    service, jobs, source, capacity, _, _, _ = seam
+    entered, release = Event(), Event()
+    ticks, errors = [1000.], []
+    def guard(seconds, stop):
+        assert seconds == 20
+        return DeadlineGuard(seconds, stop, clock=lambda: ticks[0])
+    monkeypatch.setattr(api, 'DeadlineGuard', guard)
+    source.policy.return_value = ('e'*40, 'f'*64)
+    def restore(*args):
+        entered.set()
+        assert release.wait(3)
+        return identity()
+    source.store._consume_read_snapshot.side_effect = restore
+    enqueue = Mock(wraps=jobs.enqueue)
+    monkeypatch.setattr(jobs, 'enqueue', enqueue)
+    runtime = api.PreparationRuntime(service)
+    def run():
+        try: runtime.prepare(identity().run_id, identity().language, binding())
+        except BaseException as error: errors.append(error)
+    thread = Thread(target=run, daemon=True); thread.start()
+    try:
+        assert entered.wait(1)
+        ticks[0] = 1021
+        thread.join(1)
+        assert not thread.is_alive() and errors
+        enqueue.assert_not_called()
+        assert not capacity.acquire(blocking=False)
+    finally:
+        release.set(); thread.join(1)
+    assert capacity.acquire(timeout=1)
+    capacity.release()
+    enqueue.assert_not_called()
+
+
+def test_lookup_timeout_retains_single_read_slot_without_blocking_renderer(seam, monkeypatch):
+    from threading import Event, Thread
+    from nico.review_pdf_preparation_deadline_v1 import DeadlineGuard
+    service, _, source, capacity, _, _, _ = seam
+    runtime = api.PreparationRuntime(service)
+    entered, release = Event(), Event()
+    ticks, errors = [1000.], []
+    monkeypatch.setattr(api, 'DeadlineGuard', lambda seconds, stop: DeadlineGuard(seconds, stop, clock=lambda: ticks[0]))
+    source.policy.return_value = ('e'*40, 'f'*64)
+    def connect():
+        entered.set()
+        assert release.wait(3)
+        raise RuntimeError('synthetic storage unavailable')
+    monkeypatch.setattr(runtime.jobs.adapter, '_connect', connect)
+    def run():
+        try: runtime.lookup(identity().run_id, identity().language, binding())
+        except BaseException as error: errors.append(error)
+    thread = Thread(target=run, daemon=True); thread.start()
+    try:
+        assert entered.wait(1)
+        ticks[0] = 1006; thread.join(1)
+        assert not thread.is_alive() and errors
+        with pytest.raises(api.PreparationBusy, match='capacity_busy'):
+            runtime.lookup(identity().run_id, identity().language, binding())
+        assert capacity.acquire(blocking=False)
+        capacity.release()
+    finally:
+        release.set(); thread.join(1)
+    assert runtime.read_slot.acquire(timeout=1)
+    runtime.read_slot.release()
+
+
+def test_lookup_filters_current_policy_and_source_before_limit():
+    i = identity()
+    service = MagicMock()
+    service.source.policy.return_value = (i.renderer_revision, i.policy_sha256)
+    con = service.jobs.adapter._connect.return_value.__enter__.return_value
+    con.execute.return_value.fetchall.return_value = [{'job_id':i.job_id}]
+    runtime = api.PreparationRuntime(service)
+    runtime._job = Mock(return_value=(i,dict(status='queued',job_id=i.job_id,identity=asdict(i))))
+    assert runtime.lookup(i.run_id, i.language, binding())['job_id'] == i.job_id
+    sql, params = con.execute.call_args.args
+    assert sql.index('runs.revision') < sql.index('LIMIT 2')
+    assert sql.index("'policy_sha256'") < sql.index('LIMIT 2')
+    assert params[-2:] == (i.renderer_revision, i.policy_sha256)
+
+
+def test_authenticated_get_recovers_lost_admission_response_without_post(client):
+    http, runtime, _ = client
+    runtime.lookup.return_value = {'state':'queued', 'job_id':identity().job_id}
+    response = http.get(path(), params=binding(), headers={'x-nico-admin-token':'synthetic-admin-token'})
+    assert response.status_code == 200
+    runtime.lookup.assert_called_once()
+    runtime.prepare.assert_not_called()

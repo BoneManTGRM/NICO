@@ -494,3 +494,43 @@ test('different retained preparation identities never share low-level download w
   const next=s.api.startExactRunDownload(runId,'en',{commitSha:commit,canonicalTruthSha256:truth,preparationJobId:'reviewpdfprep_'+'f'.repeat(64)});
   assert.equal(s.calls.length,2);releases[0](response());releases[1](response());await first;await next;
 });
+
+test('async rollout preserves synchronous alternate-language reapproval route',async()=>{
+  const s=setup(async()=>response('es-MX',{'x-nico-requires-new-approval':'true'}),'es-MX',undefined,{async:true});
+  s.actions.attrs['data-assessment-locale-reapproval-required']='true';
+  s.click();await s.settled();
+  assert.equal(s.calls.length,1);
+  assert.match(s.calls[0].url,/localized-report\/es-MX\/pdf/);
+  assert.equal(s.calls[0].init.method,'GET');
+  assert.equal(s.calls.some(call=>call.url.includes('/review-pdf/')),false);
+});
+test('lost admission response resumes by bound GET lookup without creating another job',async()=>{
+  const storage=new Map();
+  const first=setup(async()=>{throw new DOMException('synthetic timeout','TimeoutError');},'en',undefined,{async:true,storage});
+  first.click();await first.settled();
+  assert.equal([...storage.values()][0],'requested');
+  first.cleanUp();
+  const recovered=setup(async(url)=>url.includes('/pdf?')?response():preparation('ready'),
+    'en',undefined,{async:true,storage,recover:true});
+  await recovered.settled();
+  assert.equal(recovered.calls[0].init.method,'GET');
+  assert.equal(new URL(recovered.calls[0].url,'https://unit.invalid').searchParams.has('job_id'),false);
+  assert.equal(recovered.calls.every(call=>call.init.method==='GET'),true);
+  assert.equal(recovered.anchors.length,1);
+});
+
+for(const status of [404,409,422,503])test(`preparation HTTP ${status} preserves only recoverable request markers`,async()=>{
+  const storage=new Map();
+  const first=setup(async()=>{throw new DOMException('synthetic timeout','TimeoutError');},'en',undefined,{async:true,storage});
+  first.click();await first.settled();first.cleanUp();
+  assert.equal([...storage.values()][0],'requested');
+  const restored=setup(async()=>new Response('{}',{status}), 'en',undefined,{async:true,storage,recover:true});
+  await restored.settled();
+  assert.equal(restored.calls.length,1);assert.equal(restored.calls[0].init.method,'GET');
+  assert.equal(restored.anchors.length,0);
+  assert.equal(storage.size,status===503?1:0);
+  if(status!==503){
+    restored.click();await restored.settled();
+    assert.equal(restored.calls[1].init.method,'POST','definitive stale identity allows explicit retry');
+  }
+});

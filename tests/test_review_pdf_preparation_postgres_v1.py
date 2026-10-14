@@ -75,12 +75,12 @@ def test_mock_enqueue_dedup_and_sql_contract(ledger):
     assert jobs.enqueue(identity(), preparation_authorized=True) == first
     for con in db['connections']:
         statements = [sql for sql, _ in con.events]
-        assert statements[:3] == ['SET TRANSACTION ISOLATION LEVEL READ COMMITTED',
-            "SET LOCAL lock_timeout = '5s'", 'SELECT pg_advisory_xact_lock(%s)']
+        assert statements[:4] == ['SET TRANSACTION ISOLATION LEVEL READ COMMITTED',
+            "SET LOCAL lock_timeout = '5s'", "SET LOCAL statement_timeout = '5s'", 'SELECT pg_advisory_xact_lock(%s)']
         assert statements[-2:] == ['COMMIT', 'CLOSE']
         assert not any('CREATE ' in s or 'ALTER ' in s for s in statements)
     assert sum(sql.startswith('INSERT') for con in db['connections'] for sql, _ in con.events) == 1
-    assert 'clock_timestamp()' in db['connections'][0].events[4][0]
+    assert 'clock_timestamp()' in db['connections'][0].events[5][0]
 
 
 def test_mock_expired_owner_fenced_after_reclaim(ledger):

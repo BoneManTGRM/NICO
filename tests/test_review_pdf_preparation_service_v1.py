@@ -330,8 +330,13 @@ def test_worker_wall_deadline_terminates_before_result(monkeypatch):
     monkeypatch.setattr(worker_module.subprocess, 'Popen', lambda *a, **kw: Process())
     terminated = Mock(return_value=True)
     monkeypatch.setattr(worker_module, 'terminate_process', terminated)
-    ticks = iter([100., 102.])
-    monkeypatch.setattr(worker_module.time, 'monotonic', lambda: next(ticks))
+    from types import SimpleNamespace
+    ticks = [100.]
+    monkeypatch.setattr(worker_module, 'time', SimpleNamespace(monotonic=lambda: ticks[0]))
+    def spawn(*args, **kwargs):
+        ticks[0] = 102.
+        return Process()
+    monkeypatch.setattr(worker_module.subprocess, 'Popen', spawn)
     state = {}
     with pytest.raises(RuntimeError, match='cancelled_or_expired'):
         worker_module.run_worker({}, identity(), stop=Event(), heartbeat=Mock(), state=state, max_seconds=1)

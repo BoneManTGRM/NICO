@@ -74,12 +74,16 @@ class ReviewPdfPreparationJobs:
         self.adapter = adapter
 
     @contextmanager
-    def _transaction(self, identity):
+    def _transaction(self, identity, *, commit_guard=None):
         connection = self.adapter._connect()
         try:
             connection.execute('BEGIN IMMEDIATE')
             yield connection
+            if commit_guard is not None:
+                commit_guard.begin_commit()
             connection.commit()
+            if commit_guard is not None:
+                commit_guard.end_commit()
         except BaseException:
             connection.rollback()
             raise
@@ -124,10 +128,12 @@ class ReviewPdfPreparationJobs:
         finally:
             connection.close()
 
-    def enqueue(self, identity, *, preparation_authorized=False):
+    def enqueue(self, identity, *, preparation_authorized=False, check=None, commit_guard=None):
         if preparation_authorized is not True:
             raise PermissionError('explicit_review_pdf_preparation_required')
-        with self._transaction(identity) as connection:
+        with self._transaction(identity, commit_guard=commit_guard) as connection:
+            if check is not None:
+                check()
             prior = self._read(connection, identity)
             if prior is not None:
                 return prior
@@ -137,6 +143,8 @@ class ReviewPdfPreparationJobs:
                        deadline_epoch=now + 900, lease_id='', lease_until_epoch=0,
                        human_review_required=True, client_delivery_allowed=False)
             self._write(connection, identity, job)
+            if check is not None:
+                check()
             return job
 
     def claim(self, identity):
@@ -216,17 +224,22 @@ class PostgresReviewPdfPreparationJobs(ReviewPdfPreparationJobs):
         self.adapter = adapter
 
     @contextmanager
-    def _transaction(self, identity):
+    def _transaction(self, identity, *, commit_guard=None):
         connection = self.adapter._connect()
         try:
             # Use a fresh READ COMMITTED snapshot after a competing writer commits.
             connection.execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED')
             connection.execute("SET LOCAL lock_timeout = '5s'")
+            connection.execute("SET LOCAL statement_timeout = '5s'")
             lock_key = int.from_bytes(hashlib.sha256(identity.job_id.encode()).digest()[:8],
                                       'big', signed=True)
             connection.execute('SELECT pg_advisory_xact_lock(%s)', (lock_key,))
             yield connection
+            if commit_guard is not None:
+                commit_guard.begin_commit()
             connection.commit()
+            if commit_guard is not None:
+                commit_guard.end_commit()
         except BaseException:
             connection.rollback()
             raise

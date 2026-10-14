@@ -5,7 +5,9 @@ import base64
 from dataclasses import dataclass
 import hashlib
 import json
-from threading import Event
+from threading import Event, Thread
+
+from nico.review_pdf_preparation_deadline_v1 import CommitOutcomeUnknown, DeadlineGuard
 
 from nico.review_pdf_preparation_jobs_v1 import PreparationConflict, PostgresReviewPdfPreparationJobs
 from nico.review_pdf_preparation_worker_v1 import run_worker, validate_result
@@ -91,55 +93,100 @@ class ReviewPdfPreparationService:
         if not self.capacity.acquire(blocking=False):
             return None
         lease = None
-        state = {'physical_worker_exit_confirmed': True}
+        state = {'physical_worker_exit_confirmed': True, 'pending_guards': []}
+        guard = DeadlineGuard(900, stop)
+        state['pending_guards'].append(guard)
+        lease_done, lease_thread = None, None
         try:
             if stop.is_set():
                 return None
-            lease = self.jobs.claim(identity)
+            lease = guard.call(self.jobs.claim, identity, timeout=5)
             if lease is None:
                 return None
-            captured = self.source.capture(identity)
+            guard.deadline = min(guard.deadline, guard.clock() + lease['deadline_epoch'] - lease['updated_epoch'])
+            phase = {}
+            lease_done, lease_thread = guard.supervise_lease(
+                lambda: self.jobs.heartbeat(identity, lease['lease_id'], **phase))
+            captured = guard.call(self.source.capture, identity)
             status = captured.status
-            before = _fingerprint(status)
-            result = self.worker(status, identity, stop=stop,
-                heartbeat=lambda **kwargs: self.jobs.heartbeat(identity, lease['lease_id'], **kwargs), state=state,
-                max_seconds=min(900, lease['deadline_epoch'] - lease['updated_epoch']))
+            before = guard.call(_fingerprint, status)
+            def remaining_budget():
+                with self.jobs._transaction(identity) as connection:
+                    owned, now = self.jobs._owned(connection, identity, lease['lease_id'])
+                    return owned['deadline_epoch'] - now
+            budget_read_started = guard.clock()
+            remaining = guard.call(remaining_budget, timeout=5)
+            remaining -= guard.clock() - budget_read_started
+            guard.check()
+            result = guard.call(self.worker, status, identity, stop=guard.stop,
+                heartbeat=lambda **kwargs: (guard.check(), phase.update(kwargs)), state=state,
+                max_seconds=min(guard.remaining(), remaining))
             if not state.get('physical_worker_exit_confirmed') or stop.is_set():
                 raise PreparationConflict('preparation_worker_not_finished')
-            if _fingerprint(status) != before:
+            if guard.call(_fingerprint, status) != before:
                 raise PreparationConflict('preparation_input_mutated')
-            pdf, digest = validate_result(result, identity, parse_pdf=False)
+            pdf, digest = guard.call(validate_result, result, identity, parse_pdf=False)
             # Full authoritative restoration after rendering, before row lock/CAS.
-            refreshed = self.source.capture(identity)
-            if (_fingerprint(refreshed.status) != before
+            refreshed = guard.call(self.source.capture, identity)
+            if (guard.call(_fingerprint, refreshed.status) != before
                     or refreshed.storage_sha256 != captured.storage_sha256):
                 raise PreparationConflict('preparation_source_changed')
-            with self.jobs._transaction(identity) as connection:
-                self.source.lock_and_recheck(connection, identity,
-                    postgres=isinstance(self.jobs, PostgresReviewPdfPreparationJobs),
-                    storage_sha256=captured.storage_sha256)
-                job, now = self.jobs._owned(connection, identity, lease['lease_id'])
-                if stop.is_set():
-                    raise PreparationConflict('preparation_cancelled')
-                # Bytes and metadata become visible together in one existing row.
-                # Ready is review-artifact availability, NEVER delivery approval.
-                job.update(status='ready', updated_epoch=now, lease_id='', lease_until_epoch=0,
-                    pdf_sha256=digest, pdf_base64=base64.b64encode(pdf).decode('ascii'),
-                    result_owner=lease['lease_id'], source_snapshot_sha256=before,
-                    source_storage_sha256=captured.storage_sha256,
-                    validated_page_count=result['validated_page_count'],
-                    result_headers=dict(result['headers']), human_review_required=True,
-                    client_delivery_allowed=False)
-                self.jobs._write(connection, identity, job)
-            return job
-        except BaseException:
-            if lease is not None:
+            encoded = guard.call(lambda: base64.b64encode(pdf).decode('ascii'))
+            def publish():
+                with self.jobs._transaction(identity, commit_guard=guard) as connection:
+                    guard.check()
+                    self.source.lock_and_recheck(connection, identity,
+                        postgres=isinstance(self.jobs, PostgresReviewPdfPreparationJobs),
+                        storage_sha256=captured.storage_sha256)
+                    job, now = self.jobs._owned(connection, identity, lease['lease_id'])
+                    guard.check()
+                    lease_until, deadline = job['lease_until_epoch'], job['deadline_epoch']
+                    job.update(status='ready', updated_epoch=now, lease_id='', lease_until_epoch=0,
+                        pdf_sha256=digest, pdf_base64=encoded,
+                        result_owner=lease['lease_id'], source_snapshot_sha256=before,
+                        source_storage_sha256=captured.storage_sha256,
+                        validated_page_count=result['validated_page_count'],
+                        result_headers=dict(result['headers']), human_review_required=True,
+                        client_delivery_allowed=False)
+                    self.jobs._write(connection, identity, job)
+                    # Serialization/write time still belongs to the same budget.
+                    now = self.jobs._now(connection)
+                    guard.check()
+                    if now >= min(lease_until, deadline):
+                        raise PreparationConflict('preparation_lease_not_owned')
+                return job
+            lease_done.set()
+            guard.call(lease_thread.join, timeout=5)
+            return guard.call(publish, timeout=5)
+        except BaseException as error:
+            if lease is not None and guard.idle() and not isinstance(error, CommitOutcomeUnknown):
                 try:
-                    self.jobs.fail(identity, lease['lease_id'])
-                except PreparationConflict:
+                    cleanup = DeadlineGuard(5, Event())
+                    state['pending_guards'].append(cleanup)
+                    cleanup.call(self.jobs.fail, identity, lease['lease_id'], timeout=5)
+                except (PreparationConflict, RuntimeError):
                     pass  # A superseded owner must not change its successor.
             raise
         finally:
             # Unconfirmed physical exit quarantines capacity instead of overbooking.
-            if state.get('physical_worker_exit_confirmed'):
-                self.capacity.release()
+            guard.stop.set()
+            if lease_done is not None:
+                lease_done.set()
+                lease_thread.join(timeout=.05)
+            def release_when_finished():
+                # A timed-out Python/DB phase can still be running. Quarantine
+                # capacity until every operation and physical child has exited.
+                while (any(not item.idle() for item in state['pending_guards'])
+                       or not state.get('temporary_files_cleanup_confirmed', True)):
+                    Event().wait(.02)
+                if lease_thread is not None:
+                    lease_thread.join()
+                if state.get('physical_worker_exit_confirmed'):
+                    self.capacity.release()
+            if (all(item.idle() for item in state['pending_guards'])
+                    and state.get('temporary_files_cleanup_confirmed', True)
+                    and (lease_thread is None or not lease_thread.is_alive())):
+                if state.get('physical_worker_exit_confirmed'):
+                    self.capacity.release()
+            else:
+                Thread(target=release_when_finished, daemon=True, name='nico-review-quarantine').start()

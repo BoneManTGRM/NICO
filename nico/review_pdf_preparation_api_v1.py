@@ -8,7 +8,7 @@ import json
 import marshal
 import os
 import re
-from threading import Event, Thread
+from threading import BoundedSemaphore, Event, Thread
 
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse, Response
@@ -21,6 +21,7 @@ from nico.review_pdf_preparation_service_v1 import (
     RetainedSourceAuthority, ReviewPdfPreparationService, _fingerprint,
 )
 from nico.review_pdf_preparation_worker_v1 import validate_result
+from nico.review_pdf_preparation_deadline_v1 import CommitOutcomeUnknown, DeadlineGuard
 
 ROUTE = '/assessment/comprehensive-run/{run_id}/review-pdf/{language}'
 _HEADERS = {'Cache-Control': 'no-store, private, max-age=0'}
@@ -44,12 +45,17 @@ def runtime_policy():
     return revision, _fingerprint(['review-pdf-api.v1', revision, values])
 
 
+class PreparationBusy(RuntimeError):
+    pass
+
+
 class PreparationRuntime:
     def __init__(self, service):
         self.service = service
         self.jobs, self.source = service.jobs, service.source
         self.stop = Event()
         self.thread = None
+        self.read_slot = BoundedSemaphore(1)
 
     def start(self):
         if self.thread is not None:
@@ -90,7 +96,30 @@ class PreparationRuntime:
                 pass
             self.stop.wait(5)
 
+    def _bounded(self, seconds, operation, *, slot=None):
+        slot = self.service.capacity if slot is None else slot
+        if not slot.acquire(blocking=False):
+            raise PreparationBusy('review_pdf_capacity_busy')
+        guard = DeadlineGuard(seconds, self.stop)
+        try:
+            return operation(guard)
+        finally:
+            guard.stop.set()
+            def release():
+                while not guard.idle():
+                    Event().wait(.02)
+                slot.release()
+            if guard.idle():
+                release()
+            else:
+                Thread(target=release, daemon=True, name='nico-review-request-quarantine').start()
+
     def prepare(self, run_id, language, binding):
+        # Full admission validation is retained. It must finish before the
+        # browser's 30-second POST limit; a late restoration cannot enqueue.
+        return self._bounded(20, lambda guard: self._prepare(run_id, language, binding, guard))
+
+    def _prepare(self, run_id, language, binding, guard):
         renderer, policy = self.source.policy()
         def consume(row, restore):
             if row[1] is None or row[2] is None:
@@ -109,8 +138,8 @@ class PreparationRuntime:
                 reports['canonical_truth_sha256'], reports['pdf_sha256'], renderer, policy, language)
             self._binding(identity, binding)
             return identity
-        identity = self.source.store._consume_read_snapshot(run_id, consume)
-        job = self.jobs.enqueue(identity, preparation_authorized=True)
+        identity = guard.call(self.source.store._consume_read_snapshot, run_id, consume)
+        job = guard.call(self.jobs.enqueue, identity, preparation_authorized=True, check=guard.check, commit_guard=guard, timeout=5)
         return self.projection(job)
 
     @staticmethod
@@ -155,9 +184,38 @@ class PreparationRuntime:
             canonical_truth_sha256=job['identity']['canonical_truth_sha256'],
             human_review_required=True, client_delivery_allowed=False)
 
+    def lookup(self, run_id, language, binding):
+        # Recover a committed idempotent admission whose response was lost.
+        # No restore, enqueue, assessment or report body read on this GET.
+        def read():
+            renderer, policy = self.source.policy()
+            with self.jobs.adapter._connect() as con:
+                rows = con.execute(
+                    "SELECT jobs.job_id FROM client_jobs jobs JOIN nico_comprehensive_runs runs "
+                    "ON runs.run_id=jobs.payload->'identity'->>'run_id' "
+                    "AND runs.revision::text=jobs.payload->'identity'->>'source_revision' "
+                    "AND runs.integrity_sha256=jobs.payload->'identity'->>'source_integrity_sha256' "
+                    "WHERE jobs.payload->>'workflow'=%s "
+                    "AND jobs.payload->'identity'->>'run_id'=%s "
+                    "AND jobs.payload->'identity'->>'language'=%s "
+                    "AND jobs.payload->'identity'->>'commit_sha'=%s "
+                    "AND jobs.payload->'identity'->>'canonical_truth_sha256'=%s "
+                    "AND jobs.payload->'identity'->>'renderer_revision'=%s "
+                    "AND jobs.payload->'identity'->>'policy_sha256'=%s "
+                    "ORDER BY jobs.created_at DESC LIMIT 2",
+                    (WORKFLOW, run_id, language, binding['commit_sha'], binding['canonical_truth_sha256'], renderer, policy),
+                ).fetchall()
+            for row in rows:
+                try:
+                    return self.projection(self._job(run_id, language, row['job_id'], binding)[1])
+                except PreparationConflict:
+                    continue
+            raise KeyError('review_pdf_job_unavailable')
+        return self._bounded(5, lambda guard: guard.call(read, timeout=5), slot=self.read_slot)
+
     def status(self, run_id, language, job_id, binding):
-        _, job = self._job(run_id, language, job_id, binding)
-        return self.projection(job)
+        return self._bounded(5, lambda guard: self.projection(guard.call(
+            self._job, run_id, language, job_id, binding, timeout=5)[1]), slot=self.read_slot)
 
     def cancel(self, run_id, language, job_id, binding):
         identity, _ = self._job(run_id, language, job_id, binding)
@@ -170,6 +228,9 @@ class PreparationRuntime:
         return self.projection(job)
 
     def retrieve(self, run_id, language, job_id, binding):
+        return self._bounded(230, lambda guard: guard.call(self._retrieve, run_id, language, job_id, binding))
+
+    def _retrieve(self, run_id, language, job_id, binding):
         identity, _ = self._job(run_id, language, job_id, binding)
         captured = self.source.capture(identity)
         with self.jobs._transaction(identity) as con:
@@ -282,6 +343,8 @@ def install_review_pdf_preparation_api(app):
                     result = await run_in_threadpool(runtime.prepare, run_id, language, binding)
                 return JSONResponse(result, status_code=200 if is_cancel else 202, headers=_HEADERS)
             params = dict(request.query_params)
+            if not is_pdf and set(params) == {'commit_sha', 'canonical_truth_sha256'}:
+                return JSONResponse(await run_in_threadpool(runtime.lookup, run_id, language, params), headers=_HEADERS)
             if set(params) != {'job_id', 'commit_sha', 'canonical_truth_sha256'}:
                 raise ValueError('invalid_query')
             job_id = params.pop('job_id')
@@ -292,6 +355,10 @@ def install_review_pdf_preparation_api(app):
             raise HTTPException(404, 'review_pdf_unavailable') from None
         except PreparationConflict:
             raise HTTPException(409, 'review_pdf_binding_or_state_changed') from None
+        except CommitOutcomeUnknown:
+            raise HTTPException(503, 'review_pdf_commit_outcome_unknown') from None
+        except RuntimeError:
+            raise HTTPException(503, 'review_pdf_operation_unavailable_or_timed_out') from None
         except (ValueError, TypeError):
             raise HTTPException(422, 'review_pdf_request_or_artifact_invalid') from None
     app.add_api_route(ROUTE, endpoint, methods=['GET', 'POST'])
