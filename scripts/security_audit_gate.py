@@ -446,7 +446,11 @@ def _approved_review_pdf_service_occurrence(finding: dict[str, Any]) -> bool:
     git = data.get("Git") if isinstance(data, dict) else None
     return bool(
         isinstance(git, dict)
-        and git.get("commit") == "d1c08f7c502aefe922b65948d5e7d998a56342bb"
+        and type(git.get("commit")) is str
+        and git["commit"] in {
+            "d1c08f7c502aefe922b65948d5e7d998a56342bb",
+            "a0163677a6c1a993a9eb26707472653f656e3d53",
+        }
         and git.get("file") == "docs/evidence/review-pdf-preparation-slice1-20261014/README.md"
         and type(git.get("line")) is int and git["line"] == 15
         and finding.get("DetectorName") == "RailwayApp"
@@ -666,7 +670,7 @@ def _trufflehog(root: Path, *, require_sanitized: bool = False) -> dict[str, Any
             disposition = "approved_nonsecret_service_identifier"
             approved_nonsecret_identifiers += 1
         elif _approved_review_pdf_service_occurrence(finding):
-            # Retain the observation; approval covers only this exact occurrence.
+            # Retain the observation; approval covers only these exact occurrences.
             disposition = "approved_nonsecret_service_identifier"
             approved_nonsecret_identifiers += 1
         elif fixture_path:

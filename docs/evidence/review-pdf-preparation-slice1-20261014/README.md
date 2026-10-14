@@ -12,7 +12,7 @@ scaffold, not a production-ready durable ledger. Its SQLite adapter type check
 does not verify a persistent mount, and reopening a local test file does not
 prove survival of container replacement or sharing between replicas.
 
-The parent verified Railway service `d9d51992-d34a-4348-a83d-1f760faaa6a8`
+The parent verified the existing canonical Railway backend service (identified in retained owner-verified deployment metadata)
 through `describe_service` at 17:36 UTC on October 14, 2026: `volumes: []`, one
 replica in `europe-west4-drams3a`, no staged changes, source
 `568d5c530b9a7ecdd892d8b7f5023ba5d348e0d9`. `DATABASE_URL` and
