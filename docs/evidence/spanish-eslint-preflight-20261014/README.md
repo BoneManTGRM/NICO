@@ -21,3 +21,9 @@ checks pass in isolation. No test-order source workaround was added.
 
 This establishes the exact translation repair and synthetic source preservation,
 not a new production PDF, a full retained render, or standalone PDF detail parity.
+
+Reconciled once with main d04ac7e48a60615c07c029bfee43ee2b3c1b891e after
+PR1731 merged. The two affected Spanish regression modules and the inherited
+exact service-occurrence security tests passed: 50 tests. Existing isolated
+60-test evidence remains applicable to unchanged renderer changes. No diagnostic
+assessment or deployment was requested.
