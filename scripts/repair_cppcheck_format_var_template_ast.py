@@ -9,24 +9,21 @@ remain validated. Assessed sources and required checks are unchanged.
 """
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 
 REPAIR_ID = 'format-var-template-ast-v1'
 UPSTREAM_COMMIT = 'ac9db3069b9f90e81e126a090b99ad456e122cf8'
 
-# Exact match on the binary-operator operand check in lib/tokenlist.cpp
-# (the site that throws "binary operator '>' doesn't have two operands").
 OLD = (
     b'            if (!tok->astOperand1() || !tok->astOperand2())\n'
-    b'                throw InternalError(tok, "Syntax Error: AST broken, binary operator '"'"' + tok->str() + "'"'"' doesn\'t have two operands.", InternalError::AST);\n'
+    b'                throw InternalError(tok, "Syntax Error: AST broken, binary operator \'" + tok->str() + "\' doesn\'t have two operands.", InternalError::AST);\n'
 )
 NEW = (
     b'            // A linked ">" is a template closing bracket, not a binary operator.\n'
     b'            if (tok->str() == ">" && tok->link())\n'
     b'                continue;\n'
     b'            if (!tok->astOperand1() || !tok->astOperand2())\n'
-    b'                throw InternalError(tok, "Syntax Error: AST broken, binary operator '"'"' + tok->str() + "'"'"' doesn\'t have two operands.", InternalError::AST);\n'
+    b'                throw InternalError(tok, "Syntax Error: AST broken, binary operator \'" + tok->str() + "\' doesn\'t have two operands.", InternalError::AST);\n'
 )
 
 def apply(root: Path) -> None:
