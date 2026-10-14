@@ -96,10 +96,45 @@ _FORBIDDEN_APPROVED_PATTERNS: tuple[str, ...] = (
 )
 
 
+def _label_pattern(pattern: str) -> str:
+    return r"(?m)(?P<label_prefix>(?:^|>|&gt;)[ \t]*(?:(?:[-*+])[ \t]*|\d+[.)][ \t]+)?)" + pattern.removeprefix(r"\b")
+
+
+def _canonical_text(value: Any, path: tuple[str, ...] = ()) -> str:
+    # Validate actual JSON string values, not escaped serialization: standalone
+    # labels remain detectable without treating quoted evidence as lifecycle text.
+    if isinstance(value, str):
+        return value
+    if isinstance(value, Mapping):
+        labels = []
+        for key, item in value.items():
+            normalized = str(key).strip().casefold().replace("-", "_").replace(" ", "_")
+            label_field = normalized in {
+                "review_state", "approval_state", "reviewer_identity", "reviewer_authorization",
+            } or normalized == "decision" and any(
+                part in {"review", "human_review", "review_decision", "approval", "approval_record", "acceptance"}
+                for part in path
+            )
+            if label_field and isinstance(item, str):
+                labels.append(normalized.replace("_", " ") + ": " + item)
+            labels.append(_canonical_text(item, (*path, normalized)))
+        return "\n".join(labels)
+    if isinstance(value, (list, tuple)):
+        return "\n".join(_canonical_text(item, path) for item in value)
+    return ""
+
+
 def _replace_status_text(value: str, base: Callable[[str], str]) -> str:
     output = base(str(value or ""))
     for pattern, replacement in _STATUS_REPLACEMENTS:
-        output = re.sub(pattern, replacement, output, flags=re.IGNORECASE)
+        if r"\s*:\s*" in pattern:
+            # A lifecycle label starts a line/list item or rendered HTML text.
+            # The same words inside technical evidence are not review decisions.
+            scoped = _label_pattern(pattern)
+            output = re.sub(scoped, lambda match: match.group("label_prefix") + replacement,
+                            output, flags=re.IGNORECASE)
+        else:
+            output = re.sub(pattern, replacement, output, flags=re.IGNORECASE)
     return output
 
 
@@ -198,9 +233,15 @@ def assert_approved_lifecycle_consistency(package: Mapping[str, Any]) -> None:
         "html": str(package.get("html") or ""),
         "pdf": _pdf_text(str(package.get("pdf_base64") or "")),
     }
+    canonical_labels = _canonical_text(canonical)
     for surface, text in surfaces.items():
         for pattern in _FORBIDDEN_APPROVED_PATTERNS:
-            if re.search(pattern, text, flags=re.IGNORECASE):
+            candidate = text
+            if r"\s*:\s*" in pattern:
+                pattern = _label_pattern(pattern)
+                if surface == "json":
+                    candidate = canonical_labels
+            if re.search(pattern, candidate, flags=re.IGNORECASE):
                 raise ValueError(
                     f"comprehensive_approved_report_lifecycle_inconsistent:{surface}"
                 )

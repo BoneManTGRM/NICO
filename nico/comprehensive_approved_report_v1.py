@@ -171,7 +171,7 @@ def _replace_finality_text(value: str) -> str:
     # The review-truth appendix uses a distinct approval label in Markdown/HTML.
     # The immutable edition names the separate delivery certificate, never authorization.
     output = re.sub(
-        r"(\b(?:Final human approval|Human approval)\s*:\s*(?:</strong>\s*)?)pending\b",
+        r"(?m)((?:^|>|&gt;)[ \t]*(?:(?:[-*+])[ \t]*|\d+[.)][ \t]+)?(?:Final human approval|Human approval)\s*:\s*(?:</strong>\s*)?)pending\b",
         r"\1APPROVED",
         output,
         flags=re.IGNORECASE,
