@@ -439,6 +439,24 @@ def _trufflehog_raw_digest(finding: dict[str, Any]) -> str | None:
     return None
 
 
+def _approved_review_pdf_service_occurrence(finding: dict[str, Any]) -> bool:
+    """Owner-approved nonsecret occurrence; every provenance field is required."""
+    metadata = finding.get("SourceMetadata")
+    data = metadata.get("Data") if isinstance(metadata, dict) else None
+    git = data.get("Git") if isinstance(data, dict) else None
+    return bool(
+        isinstance(git, dict)
+        and git.get("commit") == "d1c08f7c502aefe922b65948d5e7d998a56342bb"
+        and git.get("file") == "docs/evidence/review-pdf-preparation-slice1-20261014/README.md"
+        and type(git.get("line")) is int and git["line"] == 15
+        and finding.get("DetectorName") == "RailwayApp"
+        and type(finding.get("DetectorType")) is int and finding["DetectorType"] == 999
+        and finding.get("Verified") is False
+        and _trufflehog_raw_digest(finding)
+        == "55a16aefae99e52dade482f9cecc291d6b5b5a97a92910132fcaa43f9ec8e6c5"
+    )
+
+
 def _trufflehog(root: Path, *, require_sanitized: bool = False) -> dict[str, Any]:
     findings, error = _read_json_lines(root, "trufflehog.json")
     summary, summary_error = _read_json(root, "trufflehog-summary.json")
@@ -645,6 +663,10 @@ def _trufflehog(root: Path, *, require_sanitized: bool = False) -> dict[str, Any
         ):
             # Artifact10593284621 and authenticated Railway service metadata
             # identify this exact value as the NICO service ID, not a token.
+            disposition = "approved_nonsecret_service_identifier"
+            approved_nonsecret_identifiers += 1
+        elif _approved_review_pdf_service_occurrence(finding):
+            # Retain the observation; approval covers only this exact occurrence.
             disposition = "approved_nonsecret_service_identifier"
             approved_nonsecret_identifiers += 1
         elif fixture_path:
