@@ -10,10 +10,11 @@ const STATUS_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+$/;
 const SCANNER_EVIDENCE_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/scanner-evidence$/;
 const CHECKOUT_RECOVERY_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/scanner-checkout-recovery$/;
 const CONTINUE_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/continue$/;
-const PDF_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/(?:report\/pdf|localized-report\/(?:en|es-MX)\/pdf)$/;
-const ARTIFACT_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/(?:report\/(?:markdown|html|json|pdf|evidence-package)|localized-report\/(?:en|es-MX)(?:\/(?:pdf|evidence-package))?|approved-delivery-package)$/;
+const PDF_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/(?:report\/pdf|localized-report\/(?:en|es-MX)\/pdf|review-pdf\/(?:en|es-MX)\/pdf)$/;
+const ARTIFACT_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/(?:report\/(?:markdown|html|json|pdf|evidence-package)|localized-report\/(?:en|es-MX)(?:\/(?:pdf|evidence-package))?|approved-delivery-package|review-pdf\/(?:en|es-MX)\/pdf)$/;
 const ALLOWED_PATH = /^\/assessment\/(?:comprehensive-intake|comprehensive-run(?:\/[^/?#]+(?:\/(?:continue|review-queue|review-work|review|authorize-delivery|approved-delivery-package|automated-delivery-package|report\/(?:markdown|html|json|pdf|evidence-package)|localized-report\/(?:en|es-MX)(?:\/(?:pdf|evidence-package))?))?)?)$/;
 const LOCALIZED_EDITION_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/localized-editions\/es-MX(?:\/(?:review|authorize-delivery|approved-delivery-package))?$/;
+const REVIEW_PREPARATION_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/review-pdf\/(?:en|es-MX)(?:\/(?:pdf|cancel))?$/;
 const RESPONSE_HEADERS = [
   "content-type", "content-length", "content-disposition", "retry-after",
   "x-nico-run-id", "x-nico-commit-sha", "x-nico-report-id",
@@ -59,6 +60,7 @@ function backendOrigin(): URL | null {
 }
 
 function timeoutFor(method: string, path: string): number {
+  if (method === "GET" && REVIEW_PREPARATION_PATH.test(path) && path.endsWith("/pdf")) return 240_000;
   if (method === "GET" && (ARTIFACT_PATH.test(path) || LOCALIZED_EDITION_PATH.test(path))) return 240_000;
   if (method === "GET" && STATUS_PATH.test(path)) return 60_000;
   if (method === "POST" && CONTINUE_PATH.test(path)) return 240_000;
@@ -142,9 +144,15 @@ async function proxyAssessment(
     return errorResponse(404, "nico_assessment_route_not_allowed", "The requested assessment route is unavailable.");
   }
   const path = `/assessment/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
-  if (!ALLOWED_PATH.test(path) && !LOCALIZED_EDITION_PATH.test(path) && !SCANNER_EVIDENCE_PATH.test(path) && !CHECKOUT_RECOVERY_PATH.test(path)) {
+  if (!ALLOWED_PATH.test(path) && !LOCALIZED_EDITION_PATH.test(path) && !SCANNER_EVIDENCE_PATH.test(path) && !CHECKOUT_RECOVERY_PATH.test(path) && !REVIEW_PREPARATION_PATH.test(path)) {
     return errorResponse(404, "nico_assessment_route_not_allowed", "Only bounded NICO Comprehensive lifecycle routes are available.");
   }
+
+  if (REVIEW_PREPARATION_PATH.test(path) && (
+    (path.endsWith("/pdf") && request.method !== "GET")
+    || (path.endsWith("/cancel") && request.method !== "POST")
+    || (!path.endsWith("/pdf") && !path.endsWith("/cancel") && !["GET", "POST"].includes(request.method))
+  )) return errorResponse(405, "review_pdf_method_rejected", "Use the explicit review preparation controls.");
 
   if (RETAINED_EVIDENCE_PATH.test(path) && request.method !== "GET") {
     return errorResponse(405, "retained_evidence_read_only", "Retained evidence download is read-only.");

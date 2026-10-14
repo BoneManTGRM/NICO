@@ -337,3 +337,24 @@ def test_worker_wall_deadline_terminates_before_result(monkeypatch):
         worker_module.run_worker({}, identity(), stop=Event(), heartbeat=Mock(), state=state, max_seconds=1)
     terminated.assert_called_once()
     assert state['physical_worker_exit_confirmed'] is True
+
+
+def test_worker_reports_child_verification_without_publishing_ready(monkeypatch):
+    class Process:
+        pid = 12345
+        returncode = 0
+        polls = 0
+        def poll(self):
+            self.polls += 1
+            return None if self.polls == 1 else 0
+    def spawn(command, **kwargs):
+        from pathlib import Path
+        root = Path(command[-1])
+        worker_module._atomic_json(root / 'phase.json', {'phase':'verifying'})
+        worker_module._atomic_json(root / 'output.json', artifact())
+        return Process()
+    monkeypatch.setattr(worker_module.subprocess, 'Popen', spawn)
+    monkeypatch.setattr(worker_module, 'terminate_process', Mock(return_value=True))
+    heartbeat = Mock()
+    worker_module.run_worker({}, identity(), stop=Event(), heartbeat=heartbeat, state={}, max_seconds=10)
+    heartbeat.assert_called_once_with(phase='verifying')

@@ -38,7 +38,8 @@ def validate_result(result, identity, *, parse_pdf=True):
         'x-nico-client-delivery-allowed': 'false',
         'x-nico-delivery-status': 'blocked_pending_human_approval',
     }
-    if not isinstance(headers, dict) or any(headers.get(k) != v for k, v in expected.items()):
+    if (not isinstance(headers, dict) or any(headers.get(k) != v for k, v in expected.items())
+            or headers.get('x-nico-accepted-pdf-sha256')):
         raise ValueError('review_pdf_result_binding_invalid')
     encoded = result['pdf_base64']
     if not isinstance(encoded, str) or len(encoded) > 64 * 1024 * 1024:
@@ -61,7 +62,7 @@ def validate_result(result, identity, *, parse_pdf=True):
     return pdf, digest
 
 
-def child_build(context):
+def child_build(context, *, verifying=None):
     import sqlite3
     import psycopg
     import socket
@@ -75,6 +76,8 @@ def child_build(context):
     from nico.api import specialist_ship_ready_bootstrap  # noqa: F401
     from nico.comprehensive_same_run_locale_report_v1 import build_same_run_locale_pdf_response
     response = build_same_run_locale_pdf_response(context['status'], context['language'])
+    if verifying is not None:
+        verifying()
     from pypdf import PdfReader
     from nico.review_pdf_preparation_jobs_v1 import PreparationIdentity
     pages = len(PdfReader(io.BytesIO(response.body), strict=True).pages)
@@ -115,7 +118,12 @@ def run_worker(status, identity, *, stop, heartbeat, state, max_seconds):
                 if stop.is_set() or now - started >= max_seconds:
                     raise RuntimeError('review_pdf_cancelled_or_expired')
                 if now - last_heartbeat >= 5:
-                    heartbeat()
+                    phase_path = root / 'phase.json'
+                    if (phase_path.exists() and phase_path.stat().st_size < 200
+                            and json.loads(phase_path.read_text()) == {'phase': 'verifying'}):
+                        heartbeat(phase='verifying')
+                    else:
+                        heartbeat()
                     last_heartbeat = now
                 stop.wait(.1)
             if stop.is_set() or time.monotonic() - started >= max_seconds:
@@ -135,4 +143,5 @@ def run_worker(status, identity, *, stop, heartbeat, state, max_seconds):
 
 if __name__ == '__main__':
     root = Path(sys.argv[1])
-    _atomic_json(root / 'output.json', child_build(json.loads((root / 'input.json').read_text())))
+    _atomic_json(root / 'output.json', child_build(json.loads((root / 'input.json').read_text()),
+        verifying=lambda: _atomic_json(root / 'phase.json', {'phase': 'verifying'})))

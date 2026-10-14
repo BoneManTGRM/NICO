@@ -30,7 +30,7 @@ function response(language='en', overrides={}) {
     ...overrides,
   }});
 }
-function setup(fetchImpl, language='en', digestImpl) {
+function setup(fetchImpl, language='en', digestImpl, options={}) {
   const calls=[], anchors=[], timers=[], effects=[], listeners=new Map(), statuses=[];
   let cleanUp, operationState;
   class Element {
@@ -57,16 +57,21 @@ function setup(fetchImpl, language='en', digestImpl) {
   }
   const document={
     documentElement:{lang:language==='es-MX'?'es':'en'},
-    body:{appendChild(){}},createElement:tag=>new Element(tag),querySelectorAll:()=>[],
+    body:{appendChild(){}},createElement:tag=>new Element(tag),querySelectorAll:()=>options.recover?[button]:[],
     addEventListener:(type,fn)=>listeners.set(type,fn),
     removeEventListener:(type,fn)=>{if(listeners.get(type)===fn)listeners.delete(type);},
   };
-  const window={location:new URL(language==='es-MX'?'https://unit.invalid/es/assessment':'https://unit.invalid/assessment'),
+  const storage=options.storage||new Map();
+  const window={sessionStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},location:new URL(language==='es-MX'?'https://unit.invalid/es/assessment':'https://unit.invalid/assessment'),
     setTimeout(fn,ms){const id=timers.length+1;timers.push({id,fn,ms,cleared:false});return id;},
     clearTimeout(id){const timer=timers.find(t=>t.id===id);if(timer)timer.cleared=true;}};
   const module={exports:{}};
   vm.runInNewContext(compiled,{module,exports:module.exports,document,window,
-    URL:FixtureURL,Blob,Headers,Response,AbortSignal,AbortController,DOMException,Error,
+    URL:FixtureURL,URLSearchParams,Blob,Headers,Response,AbortController,DOMException,Error,
+    Date: options.clock ? class extends Date {static now(){return options.clock.now;}} : Date,
+    AbortSignal: options.clock ? {any:AbortSignal.any.bind(AbortSignal), timeout(ms){
+      options.clock.timeouts.push(ms);return new AbortController().signal;}} : AbortSignal,
+    process:{env:{NEXT_PUBLIC_NICO_REVIEW_PDF_PREPARATION:options.async?"true":"false"}},
     Uint8Array,crypto:digestImpl?{subtle:{digest:digestImpl}}:webcrypto,Element,HTMLButtonElement,
     fetch:async(url,init)=>{calls.push({url,init});return fetchImpl(url,init);},
     require(name){
@@ -87,7 +92,7 @@ function setup(fetchImpl, language='en', digestImpl) {
     while(operationState.size && Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,5));
     assert.equal(operationState.size,0,'Download operation did not settle within the regression deadline');
   };
-  return{api:module.exports,calls,anchors,timers,button,actions,statuses,blobs,click,cleanUp,settled};
+  return{api:module.exports,calls,anchors,timers,button,actions,statuses,blobs,click,cleanUp,settled,storage};
 }
 test('slow retained PDF stays tracked and repeat clicks cannot launch another request',async()=>{
   let release;
@@ -390,4 +395,102 @@ test('old stale completion cannot remove progress owned by a new control and tru
   assert.ok(s.actions.querySelector()?.isConnected);assert.match(s.actions.querySelector().textContent,/Downloading and verifying/);
   releases[1](response('en',{'x-nico-canonical-truth-sha256':'c'.repeat(64)}));await current;await s.settled();
   assert.equal(s.anchors.length,1);assert.match(s.actions.querySelector().textContent,/verified and sent/);
+});
+
+
+const preparationJob='reviewpdfprep_'+'e'.repeat(64);
+function preparation(state, language='en', changes={}) {
+  return new Response(JSON.stringify({job_id:preparationJob,state,run_id:runId,report_language:language,
+    commit_sha:commit,canonical_truth_sha256:truth,human_review_required:true,client_delivery_allowed:false,...changes}),
+    {headers:{'content-type':'application/json'}});
+}
+async function poll(s) {
+  await flush();
+  const timer=s.timers.filter(t=>t.ms===2500&&!t.cleared).at(-1);
+  assert.ok(timer,'pending preparation poll');timer.cleared=true;timer.fn();await flush();
+}
+test('async preparation is explicit, deduplicated and downloads only verified ready bytes',async()=>{
+  let step=0;
+  const s=setup(async(url,init)=>{
+    if(url.includes('/pdf?'))return response();
+    return preparation(['queued','preparing','ready'][step++]);
+  },'en',undefined,{async:true});
+  assert.equal(s.calls.length,0);
+  s.click();await flush();
+  assert.equal(s.calls[0].init.method,'POST');
+  assert.equal(JSON.parse(s.calls[0].init.body).prepare,true);
+  s.button.disabled=false;s.click();await flush();assert.equal(s.calls.length,1);
+  assert.match(s.statuses[0].textContent,/queued/);
+  assert.equal(s.timers.some(t=>t.ms===255000),false,'download clock starts after preparation');
+  await poll(s);assert.match(s.statuses[0].textContent,/Preparing/);
+  await poll(s);await s.settled();
+  assert.equal(s.calls.filter(c=>c.init.method==='POST').length,1);
+  assert.equal(s.anchors.length,1);
+  assert.ok(s.timers.some(t=>t.ms===255000));
+  assert.equal(s.storage.size,0);
+});
+test('reload resumes saved preparation with GET and never starts another render',async()=>{
+  const storage=new Map();
+  const first=setup(async()=>preparation('preparing'),'en',undefined,{async:true,storage});
+  first.click();await flush();assert.equal(storage.size,1);
+  first.cleanUp();await flush();
+  const restored=setup(async(url)=>url.includes('/pdf?')?response():preparation('ready'),
+    'en',undefined,{async:true,storage,recover:true});
+  await restored.settled();
+  assert.ok(restored.calls.length>=2);
+  assert.equal(restored.calls.every(c=>c.init.method==='GET'),true);
+  assert.equal(restored.anchors.length,1);
+});
+for(const language of ['en','es-MX'])test(`${language} failed preparation has no PDF or approval`,async()=>{
+  const s=setup(async()=>preparation('failed',language),language,undefined,{async:true});
+  s.click();await s.settled();
+  assert.equal(s.anchors.length,0);assert.equal(s.calls.length,1);
+  assert.match(s.statuses[0].textContent,language==='en'?/failed or was cancelled/:/falló o se canceló/);
+});
+for(const change of ['locale','source','checksum','approval'])test(`async ${change} mismatch fails closed`,async()=>{
+  const s=setup(async(url)=>{
+    if(url.includes('/pdf?'))return change==='checksum'?response('en',{'x-nico-pdf-sha256':'0'.repeat(64)}):response();
+    return preparation('ready','en',change==='locale'?{report_language:'es-MX'}:
+      change==='source'?{canonical_truth_sha256:'0'.repeat(64)}:
+      change==='approval'?{client_delivery_allowed:true}:{});
+  },'en',undefined,{async:true});
+  s.click();await s.settled();assert.equal(s.anchors.length,0);
+});
+test('navigation cancels observation while retaining resumable server preparation',async()=>{
+  const s=setup(async()=>preparation('preparing'),'en',undefined,{async:true});
+  s.click();await flush();assert.equal(s.storage.size,1);s.cleanUp();await flush();
+  assert.equal(s.calls.length,1);assert.equal(s.anchors.length,0);assert.equal(s.storage.size,1);
+});
+test('late preparation response cannot download into a changed assessment',async()=>{
+  let finish;
+  const s=setup(()=>new Promise(resolve=>{finish=resolve;}),'en',undefined,{async:true});
+  s.click();s.actions.attrs['data-commit-sha']='c'.repeat(40);finish(preparation('ready'));
+  await s.settled();assert.equal(s.anchors.length,0);assert.equal(s.calls.length,1);
+});
+
+
+test('preparation sleep stops at the absolute deadline without another request',async()=>{
+  const clock={now:1000,timeouts:[]};
+  const s=setup(async()=>{clock.now=900000;return preparation('preparing');},'en',undefined,{async:true,clock});
+  s.click();await flush();
+  const timer=s.timers.find(t=>t.ms===1000&&!t.cleared);assert.ok(timer);
+  clock.now=901000;timer.fn();await s.settled();
+  assert.equal(s.calls.length,1);assert.equal(s.anchors.length,0);
+  assert.match(s.statuses.at(-1).textContent,/still pending/);assert.equal(s.storage.size,1);
+});
+test('final bounded poll consumes ready even when its response reaches the deadline',async()=>{
+  const clock={now:1000,timeouts:[]};let reads=0;
+  const s=setup(async(url)=>{
+    if(url.includes('/pdf?'))return response();
+    if(++reads===1){clock.now=897000;return preparation('verifying');}
+    clock.now=901000;return preparation('ready');
+  },'en',undefined,{async:true,clock});
+  s.click();await flush();clock.now=899500;await poll(s);await s.settled();
+  assert.deepEqual(clock.timeouts,[30000,1500]);assert.equal(s.anchors.length,1);
+});
+test('different retained preparation identities never share low-level download work',async()=>{
+  const releases=[];const s=setup(()=>new Promise(resolve=>releases.push(resolve)));
+  const first=s.api.startExactRunDownload(runId,'en',{commitSha:commit,canonicalTruthSha256:truth,preparationJobId:preparationJob});
+  const next=s.api.startExactRunDownload(runId,'en',{commitSha:commit,canonicalTruthSha256:truth,preparationJobId:'reviewpdfprep_'+'f'.repeat(64)});
+  assert.equal(s.calls.length,2);releases[0](response());releases[1](response());await first;await next;
 });

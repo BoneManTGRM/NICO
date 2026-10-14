@@ -147,3 +147,18 @@ def test_lease_and_tenant_corruption_fail_closed(jobs):
         con.execute("UPDATE nico_records SET customer_id='other' WHERE item_id=?", (identity().job_id,))
     with pytest.raises(PreparationConflict):
         ledger.claim(identity())
+
+
+def test_verification_phase_remains_owned_and_never_implies_ready(jobs):
+    ledger, clock = jobs
+    ledger.enqueue(identity(), preparation_authorized=True)
+    first = ledger.claim(identity())
+    ledger.heartbeat(identity(), first['lease_id'], phase='verifying')
+    job = ledger.get(identity())
+    assert job['phase'] == 'verifying' and job['status'] == 'rendering'
+    assert job['client_delivery_allowed'] is False
+    with pytest.raises(ValueError): ledger.heartbeat(identity(), first['lease_id'], phase='ready')
+    clock[0] += 31
+    second = ledger.claim(identity())
+    assert second['phase'] == 'preparing'
+    with pytest.raises(PreparationConflict): ledger.heartbeat(identity(), first['lease_id'], phase='verifying')

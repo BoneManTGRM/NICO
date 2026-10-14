@@ -102,7 +102,7 @@ class ReviewPdfPreparationService:
             status = captured.status
             before = _fingerprint(status)
             result = self.worker(status, identity, stop=stop,
-                heartbeat=lambda: self.jobs.heartbeat(identity, lease['lease_id']), state=state,
+                heartbeat=lambda **kwargs: self.jobs.heartbeat(identity, lease['lease_id'], **kwargs), state=state,
                 max_seconds=min(900, lease['deadline_epoch'] - lease['updated_epoch']))
             if not state.get('physical_worker_exit_confirmed') or stop.is_set():
                 raise PreparationConflict('preparation_worker_not_finished')
@@ -126,6 +126,8 @@ class ReviewPdfPreparationService:
                 job.update(status='ready', updated_epoch=now, lease_id='', lease_until_epoch=0,
                     pdf_sha256=digest, pdf_base64=base64.b64encode(pdf).decode('ascii'),
                     result_owner=lease['lease_id'], source_snapshot_sha256=before,
+                    source_storage_sha256=captured.storage_sha256,
+                    validated_page_count=result['validated_page_count'],
                     result_headers=dict(result['headers']), human_review_required=True,
                     client_delivery_allowed=False)
                 self.jobs._write(connection, identity, job)

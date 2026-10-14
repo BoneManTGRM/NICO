@@ -154,7 +154,7 @@ class ReviewPdfPreparationJobs:
                 return None
             if job['status'] == 'rendering' and now < job['lease_until_epoch']:
                 return None
-            job.update(status='rendering', attempts=job['attempts'] + 1,
+            job.update(status='rendering', phase='preparing', attempts=job['attempts'] + 1,
                        lease_id=uuid4().hex, lease_until_epoch=min(now + 30, job['deadline_epoch']),
                        updated_epoch=now)
             self._write(connection, identity, job)
@@ -169,10 +169,14 @@ class ReviewPdfPreparationJobs:
             raise PreparationConflict('preparation_lease_not_owned')
         return job, now
 
-    def heartbeat(self, identity, lease_id):
+    def heartbeat(self, identity, lease_id, *, phase=None):
+        if phase not in (None, 'verifying'):
+            raise ValueError('invalid_preparation_phase')
         with self._transaction(identity) as connection:
             job, now = self._owned(connection, identity, lease_id)
             job.update(updated_epoch=now, lease_until_epoch=min(now + 30, job['deadline_epoch']))
+            if phase is not None:
+                job['phase'] = phase
             self._write(connection, identity, job)
             return job
 

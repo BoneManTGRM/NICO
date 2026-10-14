@@ -70,6 +70,7 @@ type DownloadBinding = {
   canonicalTruthSha256: string;
   signal?: AbortSignal;
   requiresNewApproval?: boolean;
+  preparationJobId?: string;
   isCurrent?: () => boolean;
 };
 
@@ -131,7 +132,11 @@ async function retrieveExactRunPdf(
     || !/^[0-9a-f]{64}$/i.test(binding.canonicalTruthSha256)
     || (binding.isCurrent && !binding.isCurrent())) throw integrityError();
   const signal = binding.signal || AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS);
-  const response = await fetch(exactRunPdfHref(runId, reportLanguage), {
+  const prepared = binding.preparationJobId;
+  if (prepared && !/^reviewpdfprep_[0-9a-f]{64}$/.test(prepared)) throw integrityError();
+  const href = prepared ? `${preparationHref(runId, reportLanguage)}/pdf?${preparationQuery(prepared, binding)}`
+    : exactRunPdfHref(runId, reportLanguage);
+  const response = await fetch(href, {
     method: "GET", cache: "no-store", credentials: "same-origin",
     headers: {Accept: "application/pdf"}, signal,
   });
@@ -202,7 +207,7 @@ function startExactRunDownload(
     return Promise.reject(error);
   }
   const key = JSON.stringify([runId, reportLanguage, frozenBinding.commitSha,
-    frozenBinding.canonicalTruthSha256, Boolean(frozenBinding.requiresNewApproval)]);
+    frozenBinding.canonicalTruthSha256, Boolean(frozenBinding.requiresNewApproval), frozenBinding.preparationJobId]);
   const existing = inFlight.get(key);
   if (existing && existing.binding.signal === frozenBinding.signal
     && existing.binding.isCurrent === frozenBinding.isCurrent) return existing.operation;
@@ -236,7 +241,7 @@ function pendingReviewBindingMatches(
 }
 
 /** The guard and Workspace fallback share one bounded, exact pending-review path. */
-function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval = false): Promise<void> {
+function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval = false, resumeOnly = false): Promise<void> {
   const actions = button.closest(REPORT_ACTIONS_SELECTOR);
   const runId = visibleRunId(actions);
   const commitSha = String(actions?.getAttribute("data-commit-sha") || "").trim();
@@ -256,6 +261,8 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
   }
   const key = JSON.stringify([runId, reportLanguage, commitSha, canonicalTruthSha256,
     Boolean(binding.requiresNewApproval)]);
+  const asynchronous = asyncPreparationEnabled();
+  if (resumeOnly && (!asynchronous || !savedPreparation(key))) return Promise.resolve();
   const existing = pendingReviewPromises.get(key);
   if (existing?.isCurrent()) return existing.operation;
   // An explicit click on a replacement binding cancels the stale retained read.
@@ -267,17 +274,29 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
   const isCurrent = () => pendingReviewOperations.get(key) === controller
     && buttonOwners.get(button) === controller
     && pendingReviewBindingMatches(button, actions, runId, reportLanguage, binding);
-  const timeout = window.setTimeout(() => controller.abort(
-    new DOMException("PDF download deadline exceeded", "TimeoutError")), DOWNLOAD_TIMEOUT_MS);
+  let timeout: number | undefined;
+  const startDownloadDeadline = () => {timeout = window.setTimeout(() => controller.abort(
+    new DOMException("PDF download deadline exceeded", "TimeoutError")), DOWNLOAD_TIMEOUT_MS);};
+  if (!asynchronous) startDownloadDeadline();
   button.disabled = true;
   button.setAttribute("aria-busy", "true");
   statusOwners.set(actions, controller);
-  showStatus(actions, spanishUi()
+  showStatus(actions, asynchronous ? (spanishUi()
+    ? "Consultando la preparación del PDF…" : "Checking PDF preparation…") : spanishUi()
     ? "Descargando y verificando el PDF… Puedes seguir usando esta página."
     : "Downloading and verifying the PDF… You can keep using this page.");
-  const operation = startExactRunDownload(runId, reportLanguage, {
-    ...binding, signal: controller.signal, isCurrent,
-  }).then(() => {
+  const operation = (async () => {
+    let preparationJobId: string | undefined;
+    if (asynchronous) {
+      preparationJobId = await prepareReviewPdf(runId, reportLanguage, {...binding, isCurrent}, key, actions, controller);
+      startDownloadDeadline();
+      showStatus(actions, spanishUi() ? "Descargando y verificando el PDF…" : "Downloading and verifying the PDF…");
+    }
+    await startExactRunDownload(runId, reportLanguage, {
+      ...binding, preparationJobId, signal: controller.signal, isCurrent,
+    });
+    if (asynchronous) savePreparation(key, "");
+  })().then(() => {
     if (isCurrent() && !controller.signal.aborted) showStatus(actions, spanishUi()
       ? "PDF verificado y enviado a tus descargas."
       : "PDF verified and sent to your downloads.");
@@ -300,7 +319,7 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
     if (statusOwners.get(actions) === controller) statusOwners.delete(actions);
     // Dispose this fetch even when validation stopped before body consumption.
     controller.abort();
-    window.clearTimeout(timeout);
+    if (timeout !== undefined) window.clearTimeout(timeout);
     if (pendingReviewOperations.get(key) === controller) pendingReviewOperations.delete(key);
     if (pendingReviewPromises.get(key)?.operation === operation) pendingReviewPromises.delete(key);
     if (buttonOwners.get(button) === controller) {
@@ -315,6 +334,95 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
   });
   pendingReviewPromises.set(key, {operation, isCurrent, controller});
   return operation;
+}
+
+function asyncPreparationEnabled(): boolean {
+  return typeof process !== "undefined" && process.env.NEXT_PUBLIC_NICO_REVIEW_PDF_PREPARATION === "true";
+}
+function preparationHref(runId: string, language: ReportLanguage): string {
+  return `/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/review-pdf/${language}`;
+}
+function preparationQuery(jobId: string, binding: DownloadBinding): string {
+  return new URLSearchParams({job_id: jobId, commit_sha: binding.commitSha,
+    canonical_truth_sha256: binding.canonicalTruthSha256}).toString();
+}
+function savedPreparation(key: string): string {
+  try {
+    const value = window.sessionStorage.getItem(`nico-review-preparation:${key}`) || "";
+    return /^reviewpdfprep_[0-9a-f]{64}$/.test(value) ? value : "";
+  } catch { return ""; }
+}
+function savePreparation(key: string, jobId: string): void {
+  try {
+    if (jobId) window.sessionStorage.setItem(`nico-review-preparation:${key}`, jobId);
+    else window.sessionStorage.removeItem(`nico-review-preparation:${key}`);
+  } catch { /* Durable backend status remains authoritative. */ }
+}
+async function prepareReviewPdf(runId: string, language: ReportLanguage, binding: DownloadBinding,
+  key: string, actions: Element, controller: AbortController): Promise<string> {
+  let jobId = savedPreparation(key);
+  const preparationDeadline = Date.now() + 900_000;
+  const stillPending = () => new PdfDownloadFailure(spanishUi()
+    ? "La preparación sigue pendiente. Vuelve a esta página para consultar su estado."
+    : "Preparation is still pending. Return to this page to check its status.");
+  const read = async (prepare: boolean) => {
+    if (controller.signal.aborted) throw controller.signal.reason;
+    if (binding.isCurrent && !binding.isCurrent()) throw integrityError();
+    const remaining = preparationDeadline - Date.now();
+    if (remaining <= 0) throw stillPending();
+    const response = await fetch(preparationHref(runId, language) + (prepare ? "" : `?${preparationQuery(jobId, binding)}`), {
+      method: prepare ? "POST" : "GET", cache: "no-store", credentials: "same-origin",
+      headers: {Accept: "application/json", ...(prepare ? {"Content-Type": "application/json"} : {})},
+      body: prepare ? JSON.stringify({prepare: true, commit_sha: binding.commitSha,
+        canonical_truth_sha256: binding.canonicalTruthSha256}) : undefined,
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(Math.min(30_000, remaining))]),
+    }).catch((error: unknown) => {
+      if (!controller.signal.aborted && error instanceof DOMException && error.name === "TimeoutError") {
+        throw stillPending();
+      }
+      throw error;
+    });
+    if (!response.ok) {
+      if ([404, 409, 422].includes(response.status)) savePreparation(key, "");
+      throw downloadError(response);
+    }
+    const status = await response.json();
+    if (controller.signal.aborted) throw controller.signal.reason;
+    if ((binding.isCurrent && !binding.isCurrent()) || status.run_id !== runId
+      || status.report_language !== language || status.commit_sha !== binding.commitSha
+      || status.canonical_truth_sha256 !== binding.canonicalTruthSha256
+      || status.client_delivery_allowed !== false || status.human_review_required !== true
+      || !/^reviewpdfprep_[0-9a-f]{64}$/.test(status.job_id)
+      || (jobId && status.job_id !== jobId)) throw integrityError();
+    jobId = status.job_id;
+    savePreparation(key, jobId);
+    return String(status.state);
+  };
+  let state = await read(!jobId);
+  const messages: Record<string, [string, string]> = {
+    queued: ["PDF preparation is queued. You can return to this page later.", "La preparación del PDF está en cola. Puedes volver a esta página más tarde."],
+    preparing: ["Preparing the complete review PDF…", "Preparando el PDF completo para revisión…"],
+    verifying: ["Verifying the prepared PDF…", "Verificando el PDF preparado…"],
+  };
+  for (let attempt = 0; ; attempt++) {
+    if (state === "ready") return jobId;
+    if (!messages[state]) {
+      savePreparation(key, "");
+      throw new PdfDownloadFailure(spanishUi()
+        ? "La preparación del PDF falló o se canceló. La evaluación no cambió."
+        : "PDF preparation failed or was cancelled. The assessment is unchanged.");
+    }
+    const remaining = preparationDeadline - Date.now();
+    if (attempt >= 360 || remaining <= 0) throw stillPending();
+    showStatus(actions, messages[state][spanishUi() ? 1 : 0]);
+    await new Promise<void>((resolve, reject) => {
+      const abort = () => {window.clearTimeout(timer); reject(controller.signal.reason);};
+      const timer = window.setTimeout(() => {controller.signal.removeEventListener("abort", abort); resolve();}, Math.min(2500, remaining));
+      controller.signal.addEventListener("abort", abort, {once: true});
+      if (controller.signal.aborted) abort();
+    });
+    state = await read(false);
+  }
 }
 
 /** Track pending-review downloads through response validation and byte delivery. */
@@ -343,7 +451,19 @@ export default function AssessmentReviewPdfDownload() {
       });
     }
     document.addEventListener("click", handleReviewPdfClick, true);
+    const recover = () => {
+      if (!asyncPreparationEnabled()) return;
+      for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>(`${REPORT_ACTIONS_SELECTOR} button`))) {
+        if (!button.disabled && button.getAttribute("data-assessment-pdf-kind") === REVIEW_PDF_KIND) {
+          void downloadPendingReviewPdf(button, false, true).catch(() => {});
+        }
+      }
+    };
+    recover();
+    const observer = typeof MutationObserver === "undefined" ? null : new MutationObserver(recover);
+    observer?.observe(document.body, {childList: true, subtree: true});
     return () => {
+      observer?.disconnect();
       document.removeEventListener("click", handleReviewPdfClick, true);
       for (const controller of active.values()) controller.abort();
       active.clear();

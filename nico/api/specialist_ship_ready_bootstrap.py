@@ -206,3 +206,7 @@ __all__ = [
     "SPECIALIST_READINESS_ROUTE",
     "specialist_readiness",
 ]
+
+# Routes remain unavailable unless explicitly enabled and real-Postgres qualified.
+from nico.review_pdf_preparation_api_v1 import install_review_pdf_preparation_api
+install_review_pdf_preparation_api(app)
