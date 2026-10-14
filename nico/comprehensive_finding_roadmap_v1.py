@@ -334,7 +334,9 @@ def _roadmap_presentation(
     no_work = _copy("No retained finding or explicit evidence gap supports a work package; an empty planning window does not establish a clean assessment.", "Ningún hallazgo conservado ni brecha de evidencia explícita sustenta un paquete de trabajo; una ventana de planificación vacía no establece una evaluación sin hallazgos.", spanish)
     roles = sorted({item["suggested_role_type"] for item in packages})
     role_lines = [_copy("Suggested role types", "Tipos de función sugeridos", spanish) + ": " + ", ".join(_copy(*role_names[role], spanish) for role in roles)] if roles else [no_work]
-    package_line = _copy("Proposed work packages", "Paquetes de trabajo propuestos", spanish) + ": " + ", ".join(item["package_id"] for item in packages)
+    shown = packages[:7]
+    package_line = (_copy("Proposed work packages (summary)", "Paquetes de trabajo propuestos (resumen)", spanish)
+                    + f" ({len(shown)}/{len(packages)}): " + ", ".join(item["package_id"] for item in shown))
     return {"summary": boundary, "roadmap": details or [no_work], "staffing": role_lines, "executive": [package_line if packages else no_work, boundary], "roles": roles}
 
 
@@ -379,6 +381,11 @@ def localize_retained_roadmap(canonical: Mapping[str, Any], *, spanish: bool) ->
             # inputs and unknown prose are retained; no recursive text replacement.
             key = stage_keys[stage["stage_id"]]
             translations = dict(zip(source_presentation[key], target_presentation[key], strict=True))
+            if key == "executive" and packages:
+                for prior_spanish in (False, True):
+                    legacy = (_copy("Proposed work packages", "Paquetes de trabajo propuestos", prior_spanish)
+                              + ": " + ", ".join(item["package_id"] for item in packages))
+                    translations[legacy] = target_presentation[key][0]
             stage["evidence"] = [translations.get(line, line) if isinstance(line, str) else line
                                  for line in stage.get("evidence") or []]
             if stage.get("summary") == source_presentation["summary"]:
