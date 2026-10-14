@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from itertools import chain
 from typing import Any, Callable, Iterable, Mapping
 
 VERSION = "nico.comprehensive-spanish-publication-preflight.v93"
@@ -254,11 +255,24 @@ def inspect_spanish_canonical_publication_preflight(
     seen_contracts: set[tuple[str, str]] = set()
     budget = [0]
 
-    for path, key, source in _iter_report_bound_strings(
+    contracts = _iter_report_bound_strings(
         canonical_report,
         path=("canonical_report",),
         budget=budget,
-    ):
+    )
+    if canonical_report.get("scanner_execution_records"):
+        # Raw records remain excluded and byte-preserved. Publication derives
+        # unavailable scanner prose from them after canonical restoration.
+        from nico.v2_premium_report_renderer import _scanner_stages
+
+        contracts = chain(contracts, _iter_report_bound_strings(
+            [{"unavailable": stage.get("unavailable") or []}
+             for stage in _scanner_stages(canonical_report)],
+            path=("derived_scanner_stages",),
+            budget=budget,
+        ))
+
+    for path, key, source in contracts:
         contract_key = (key, source)
         if contract_key in seen_contracts:
             duplicate_contracts_skipped += 1
