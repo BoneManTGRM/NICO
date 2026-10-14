@@ -25,6 +25,7 @@ COPY project-dependencies /opt/project-dependency-inputs
 COPY llvm /opt/llvm-inputs
 COPY cppcheck /opt/tool-src
 COPY repair_cppcheck_placement_ast.py /opt/repair_cppcheck_placement_ast.py
+COPY repair_cppcheck_format_var_template_ast.py /opt/repair_cppcheck_format_var_template_ast.py
 COPY verify_cpp_runtime_toolchain.py /opt/verify_cpp_runtime_toolchain.py
 COPY cmake.whl /opt/cmake.whl
 COPY pycapnp.whl /opt/pycapnp.whl
@@ -42,6 +43,7 @@ RUN cd /opt/project-dependency-inputs && sha256sum -c SHA256SUMS \
     && cd / && rm -rf /opt/llvm-inputs \
     && test "$(g++ -dumpfullversion)" = 14.2.0 \
     && python3 /opt/repair_cppcheck_placement_ast.py /opt/tool-src/lib/tokenlist.cpp > /opt/nico-cppcheck-repair.json \
+    && python3 /opt/repair_cppcheck_format_var_template_ast.py /opt/tool-src > /opt/nico-cppcheck-format-var-template-repair.json \
     && timeout 180s make -C /opt/tool-src -j2 MATCHCOMPILER=yes FILESDIR=/opt/cppcheck 'CXXFLAGS=-O2 -DNDEBUG' \
     && cp /opt/tool-src/cppcheck /usr/local/bin/cppcheck \
     && mkdir -p /opt/cppcheck \
@@ -67,7 +69,7 @@ RUN printf '%s\n' '--gcc-toolchain=/usr/local' > /usr/lib/llvm-17/bin/clang.cfg 
     && timeout 30s python3 /opt/verify_cpp_runtime_toolchain.py > /opt/nico-cpp-runtime-toolchain.json \
        || { cat /opt/nico-cpp-runtime-toolchain.json; exit 1; }
 RUN python3 -c "import capnp; assert capnp.__version__ == '2.2.1'"
-LABEL org.nico.cppcheck.repair="placement-new-initializer-ast-v1"
+LABEL org.nico.cppcheck.repair="placement-new-initializer-ast-v1+format-var-template-ast-v1"
 USER 1000:1000
 # Standalone worker controls override ENTRYPOINT with python -I -S. Validate
 # that exact interpreter contract as the runtime user before publishing a layer.
