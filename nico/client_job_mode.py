@@ -40,12 +40,12 @@ SUPPORTED_EXPORT_FORMATS = {"json", "markdown", "html", "pdf"}
 
 def _internal_job_id(job_id: str) -> bool:
     # Shared persistence does not grant public drafts internal execution authority.
-    return str(job_id).startswith(("workerjob_", "comprehensive_stage_"))
+    return str(job_id).startswith(("workerjob_", "comprehensive_stage_", "reviewpdfprep_"))
 
 
 def _internal_job_record(package: dict[str, Any] | None) -> bool:
     return bool(package and package.get("workflow") in {
-        "assessment_worker_job.v1", "comprehensive_background_stage",
+        "assessment_worker_job.v1", "comprehensive_background_stage", "review_pdf_preparation.v1",
     })
 
 

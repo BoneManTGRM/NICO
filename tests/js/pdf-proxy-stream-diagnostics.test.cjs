@@ -25,7 +25,7 @@ function setup(fetcher, brokenLogger = false) {
   const request = {method: 'GET', nextUrl: new URL('https://app.invalid/api/nico/assessment'),
     headers: new Headers({'x-request-id': secret, authorization: secret}),
     cookies: {get: () => ({value: secret})}};
-  const invoke = (suffix = ['report', 'pdf']) => module.exports.GET(request,
+  const invoke = (suffix = ['report', 'pdf']) => module.exports[request.method](request,
     {params: Promise.resolve({path: ['comprehensive-run', secret, ...suffix]})});
   return {logs, calls, deadlines, request, invoke, clock(value) {now = value;}};
 }
@@ -148,4 +148,33 @@ test('unauthenticated and non-PDF requests produce no transfer telemetry', async
   s.request.cookies.get = () => ({value: secret});
   assert.equal((await s.invoke(['report', 'json'])).status, 200);
   assert.equal(s.logs.length, 0);
+});
+
+
+test('prepared PDF keeps authenticated streaming checksum and 240-second diagnostics',async()=>{
+  const s=setup(()=>new Response('%PDF synthetic',{headers:{'content-type':'application/pdf',
+    'x-nico-artifact-sha256':'a'.repeat(64),'x-nico-client-delivery-allowed':'false'}}));
+  const response=await s.invoke(['review-pdf','es-MX','pdf']);await response.text();
+  assert.equal(response.status,200);assert.deepEqual(s.deadlines,[240000]);
+  assert.equal(s.calls[0].init.headers.get('x-nico-operator-session'),secret);
+  assert.equal(response.headers.get('x-nico-artifact-sha256'),'a'.repeat(64));
+  assert.equal(response.headers.get('x-nico-client-delivery-allowed'),'false');
+  assert.equal(s.logs.at(-1).outcome,'upstream_complete');privacy(s.logs);
+});
+test('preparation status is authenticated with a 30-second deadline',async()=>{
+  const s=setup(()=>new Response('{}'));await s.invoke(['review-pdf','en']);
+  assert.deepEqual(s.deadlines,[30000]);assert.equal(s.calls.length,1);
+  assert.equal(s.calls[0].init.headers.get('x-nico-operator-session'),secret);
+});
+for(const suffix of [['review-pdf','en'],['review-pdf','es-MX','cancel']])test('preparation mutation preserves cookie CSRF '+suffix.join('/'),async()=>{
+  const s=setup(()=>new Response('{}'));s.request.method='POST';s.request.arrayBuffer=async()=>new ArrayBuffer(0);
+  assert.equal((await s.invoke(suffix)).status,403);assert.equal(s.calls.length,0);
+  s.request.headers.set('origin','https://app.invalid');assert.equal((await s.invoke(suffix)).status,200);
+  assert.equal(s.calls.length,1);
+});
+test('prepared PDF and cancellation reject wrong methods without upstream work',async()=>{
+  const s=setup(()=>new Response('{}'));
+  assert.equal((await s.invoke(['review-pdf','en','cancel'])).status,405);
+  s.request.method='POST';assert.equal((await s.invoke(['review-pdf','en','pdf'])).status,405);
+  assert.equal(s.calls.length,0);
 });
