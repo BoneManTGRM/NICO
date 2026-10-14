@@ -159,6 +159,31 @@ def test_actual_collectors_and_providers_use_source_bound_observations(kind, mon
     assert complexity["profile_coverage"]["analyzed_source_files"] <= complexity["profile_coverage"]["sampled_eligible_source_files"]
 
 
+@pytest.mark.parametrize("kind", ["snapshot", "hosted"])
+def test_nested_source_keeps_exact_observation_identity(kind, monkeypatch, tmp_path):
+    monkeypatch.setenv("NICO_ALLOW_PROJECT_COMMANDS", "false")
+    path = "services/custom/handler.py"
+    source = "import sqlite3\nsqlite3.connect('local.db')\n"
+    context, repository, complexity, store = collect(
+        kind, monkeypatch, tmp_path, files={path: source, "README.md": "# fixture"})
+    observation = repository["architecture_evidence"]["source_observation"]
+    assert observation["run_id"] == context["run_id"]
+    assert observation["snapshot_id"] == "snapshot_test"
+    assert observation["commit_sha"] == SHA
+    assert observation["repository"] == context["repository"]
+    assert any(row["observed_text_sha256"] == hashlib.sha256(source.encode()).hexdigest()
+               for row in observation["input_inventory"])
+    assert observation["runtime_topology_verified"] is False
+    coverage = complexity["profile_coverage"]
+    assert coverage["eligible_source_files"] == 1
+    assert coverage["sampled_eligible_source_files"] == 1
+    assert coverage["analyzed_source_files"] == 1
+    assert coverage["unsampled_eligible_source_files"] == 0
+    assert coverage["absence_of_findings_proven"] is False
+    assert store.get("evidence_items", repository["evidence_id"])["evidence"]["architecture_evidence"] == repository["architecture_evidence"]
+    assert architecture_data_flow_provider(context)["evidence"]["source_observation"] == observation
+
+
 @pytest.mark.parametrize("damage", ["run_id", "repository", "commit_sha", "snapshot_id", "observation_sha256", "input_hash"])
 def test_real_provider_rejects_wrong_identity_and_corrupt_observations(damage, monkeypatch, tmp_path):
     context, repository, _, _ = collect("snapshot", monkeypatch, tmp_path)
