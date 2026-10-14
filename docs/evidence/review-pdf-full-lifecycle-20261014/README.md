@@ -95,3 +95,23 @@ batch passed 46 checks, including all three policy regressions and failure JSON.
 These batches overlap and are not a claim of 93 distinct checks. Existing UI and
 unchanged lifecycle verification above are reused. The policy-only final run
 passed all three cases. Both reviewers performed read-only independent checks.
+
+## Exact-head CI acceptance and transport contract correction
+
+Postgres run 38626102173/job 116065538758 on 680b149e passed the full synthetic
+lifecycle, near-cap storage reload and bounded evidence verification. All 11 named
+lifecycle checks were required. Artifact 11923239143 retains the seven proof files;
+its catalog digest is be9fe6ef7bbff5a01a9310bf3d416b33a15d31cfe19f59dda643cbf44350d116.
+This is synthetic PostgreSQL acceptance, not authentic production-size PDF or
+mobile qualification; all feature flags remain OFF.
+
+General CI job 116068205678 failed the old source-contract assertion requiring
+fetch(exactRunPdfHref(...), ...). Local exact-head reproduction matched the log:
+1 failed, 8 passed. Retrieval now selects either the ordinary exact-run URL or
+prepared-job URL before fetch(href, ...); production transport behavior is intact.
+The test now checks both selection branches and the shared same-origin GET.
+Behavioral checks additionally assert the exact ordinary path and both prepared
+English/Spanish paths, job/source/truth query bindings, same-origin credentials
+and no-store. Original click ownership, hash verification and fail-closed tests
+remain. Focused results: 9 Python transport checks and 73 JavaScript download
+checks passed. No runtime, transport policy, acceptance gate or flag changed.

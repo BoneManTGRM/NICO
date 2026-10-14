@@ -114,6 +114,8 @@ test('slow retained PDF stays tracked and repeat clicks cannot launch another re
   assert.deepEqual(Buffer.from(await s.blobs.get(s.anchors[0].href).arrayBuffer()),pdf);
   assert.match(s.statuses.at(-1).textContent,/verified and sent/);
   assert.equal(s.button.disabled,false);
+  assert.equal(s.calls[0].url,`/api/nico/assessment/comprehensive-run/${runId}/localized-report/en/pdf`);
+  assert.equal(s.calls[0].init.method,'GET');
   assert.equal(s.calls[0].init.credentials,'same-origin');
   assert.equal(s.calls[0].init.cache,'no-store');
 });
@@ -409,22 +411,32 @@ async function poll(s) {
   const timer=s.timers.filter(t=>t.ms===2500&&!t.cleared).at(-1);
   assert.ok(timer,'pending preparation poll');timer.cleared=true;timer.fn();await flush();
 }
-test('async preparation is explicit, deduplicated and downloads only verified ready bytes',async()=>{
+for(const language of ['en','es-MX'])test(`${language} async preparation is explicit, deduplicated and downloads only verified ready bytes`,async()=>{
   let step=0;
   const s=setup(async(url,init)=>{
-    if(url.includes('/pdf?'))return response();
-    return preparation(['queued','preparing','ready'][step++]);
-  },'en',undefined,{async:true});
+    if(url.includes('/pdf?'))return response(language);
+    return preparation(['queued','preparing','ready'][step++],language);
+  },language,undefined,{async:true});
   assert.equal(s.calls.length,0);
   s.click();await flush();
   assert.equal(s.calls[0].init.method,'POST');
   assert.equal(JSON.parse(s.calls[0].init.body).prepare,true);
   s.button.disabled=false;s.click();await flush();assert.equal(s.calls.length,1);
-  assert.match(s.statuses[0].textContent,/queued/);
+  assert.match(s.statuses[0].textContent,language==='en'?/queued/:/cola/);
   assert.equal(s.timers.some(t=>t.ms===255000),false,'download clock starts after preparation');
-  await poll(s);assert.match(s.statuses[0].textContent,/Preparing/);
+  await poll(s);assert.match(s.statuses[0].textContent,language==='en'?/Preparing/:/Preparando/);
   await poll(s);await s.settled();
   assert.equal(s.calls.filter(c=>c.init.method==='POST').length,1);
+  const download=s.calls.find(c=>c.url.includes('/pdf?'));
+  const target=new URL(download.url,'https://synthetic.invalid');
+  assert.ok(download.url.startsWith('/api/nico/assessment/'));
+  assert.equal(target.pathname,`/api/nico/assessment/comprehensive-run/${runId}/review-pdf/${language}/pdf`);
+  assert.deepEqual(Object.fromEntries(target.searchParams),{
+    job_id:preparationJob,commit_sha:commit,canonical_truth_sha256:truth,
+  });
+  assert.equal(download.init.method,'GET');
+  assert.equal(download.init.credentials,'same-origin');
+  assert.equal(download.init.cache,'no-store');
   assert.equal(s.anchors.length,1);
   assert.ok(s.timers.some(t=>t.ms===255000));
   assert.equal(s.storage.size,0);
