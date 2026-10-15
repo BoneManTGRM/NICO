@@ -223,7 +223,7 @@ jobs:
     - name: Set up Node
       uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
       with:
-        node-version: "20"
+        node-version: "24"
 
     - name: Install test dependencies
       run: |
@@ -232,7 +232,8 @@ jobs:
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         pip install --no-deps -e .
         pip install "playwright==1.61.0"
-        cd apps/web && npm install --legacy-peer-deps
+        (cd apps/web && npm ci --ignore-scripts --no-audit --no-fund)
+        node -e "if(require('./apps/web/node_modules/typescript').version !== '6.0.3') process.exit(1)"
 
     - name: Run isolated test files
       env:

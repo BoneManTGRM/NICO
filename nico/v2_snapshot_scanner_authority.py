@@ -222,7 +222,8 @@ def canonical_snapshot_tool_runner(
         workspace = replace(workspace, node_input_inventory=inventory)
     payload = scanner_pipeline.node_inapplicability_result(spec, workspace, inventory or {}, commit_sha)
     prepared = preparation
-    if payload is None and spec.name in {"eslint", "typescript"} and prepared is None:
+    if (payload is None and spec.name in {"eslint", "typescript"} and prepared is None
+            and not (spec.name == "typescript" and scanner_pipeline._owned_nico_ci(workspace))):
         prepared = _preparation(workspace, runner)
 
     # Enforce immutable HEAD selection at the final runner boundary. This remains

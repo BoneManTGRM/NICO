@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 from collections import Counter
 from typing import Any
 
@@ -123,6 +125,13 @@ def normalize_scanner_worker_artifact(payload: dict[str, Any]) -> dict[str, Any]
             "scans_git_history": bool(tool_data.get("scans_git_history")),
             "full_history_verified": bool(tool_data.get("full_history_verified")) and completed,
         }
+
+        if tool == "typescript":
+            # These qualify the observed project check; omitting them would imply
+            # broader declaration/JavaScript or strict coverage than CI performed.
+            for key in ("effective_configuration", "configuration_limitations", "checked_project_scope"):
+                if key in tool_data:
+                    normalized_tools[tool][key] = deepcopy(tool_data[key])
 
     dependency_completed = _completed_tools(normalized_tools, DEPENDENCY_TOOLS)
     static_completed = _completed_tools(normalized_tools, STATIC_TOOLS)
