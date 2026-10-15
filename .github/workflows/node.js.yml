@@ -7,6 +7,9 @@ on:
     paths:
       - "apps/web/**"
       - ".github/workflows/node.js.yml"
+      - "scripts/run_phase9_node_scanners.py"
+      - "scripts/nico_ci_typescript_check.cjs"
+      - "nico/nico_ci_typescript_evidence_v1.py"
   push:
     branches:
       - main
@@ -14,6 +17,9 @@ on:
     paths:
       - "apps/web/**"
       - ".github/workflows/node.js.yml"
+      - "scripts/run_phase9_node_scanners.py"
+      - "scripts/nico_ci_typescript_check.cjs"
+      - "nico/nico_ci_typescript_evidence_v1.py"
   workflow_dispatch:
 
 permissions:
@@ -49,15 +55,32 @@ jobs:
           npm audit --audit-level=high --json > ../../audit-results/npm-audit-results.json || true
           test -f ../../audit-results/npm-audit-results.json || echo '{"status":"npm audit unavailable"}' > ../../audit-results/npm-audit-results.json
 
+      - name: Build frontend
+        id: build_frontend
+        working-directory: apps/web
+        timeout-minutes: 6
+        run: npm run build
+
       - name: Lint frontend
         working-directory: apps/web
         timeout-minutes: 3
         run: npm run lint
 
-      - name: Build frontend
-        working-directory: apps/web
-        timeout-minutes: 6
-        run: npm run build
+      - name: Retain post-build TypeScript evidence
+        if: always() && !cancelled() && (steps.build_frontend.outcome == 'success' || steps.build_frontend.outcome == 'failure')
+        timeout-minutes: 3
+        env:
+          NICO_BUILD_OUTCOME: ${{ steps.build_frontend.outcome }}
+        run: python scripts/run_phase9_node_scanners.py --post-build-typescript --output audit-results/typescript-evidence
+
+      - name: Upload exact-run TypeScript evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nico-typescript-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: audit-results/typescript-evidence/
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Upload frontend audit results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
