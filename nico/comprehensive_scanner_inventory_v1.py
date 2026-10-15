@@ -65,6 +65,10 @@ def _raw_metadata(record: Mapping[str, Any], *, binding: Mapping[str, Any]) -> d
         limit=MAX_SCANNER_PARSE_BYTES,
     )
     metadata = dict(read.metadata)
+    if binding.get('scanner_name') == 'typescript':
+        from nico.retained_typescript_status_v1 import BASIS, verified_retained_typescript
+        if verified_retained_typescript(record, binding, read):
+            metadata['coverage_basis'] = BASIS
     if record.get('status') == 'not_applicable':
         verified = False
         inventory = _mapping(record.get('applicability_evidence'))
@@ -127,6 +131,7 @@ def _scanner_metadata(record: Mapping[str, Any], *, scan: Mapping[str, Any], com
             "full_configuration_verified": False,
         },
         "execution_observed": observed,
+        "coverage_basis": raw.get('coverage_basis'),
         "retained_execution_observed_claim": record.get("execution_observed_for_this_report") if type(record.get("execution_observed_for_this_report")) is bool else None,
         "output_capture_complete": record.get("output_capture_complete") if type(record.get("output_capture_complete")) is bool else None,
         "output_truncated": record.get("output_truncated") if type(record.get("output_truncated")) is bool else None,
@@ -286,7 +291,9 @@ def verify_status_scanner_evidence(response: Mapping[str, Any]) -> dict[str, Any
             and item.get('applicability_observation_verified') is True
         ) or (
             item.get('execution_status') in {'complete', 'completed', 'completed_clean', 'completed_with_findings'}
-            and item.get('execution_observed') is True and item.get('output_capture_complete') is True
+            and (item.get('execution_observed') is True or (
+                name == 'typescript' and item.get('coverage_basis') == 'authenticated_retained_typescript_ci'
+            )) and item.get('output_capture_complete') is True
             and item.get('output_truncated') is not True and item.get('timed_out') is not True
             and item.get('returncode_valid') is not False and item.get('applicable') is not False
             and item.get('source_checkout_verified') is not False
@@ -309,6 +316,8 @@ def verify_status_scanner_evidence(response: Mapping[str, Any]) -> dict[str, Any
         and name not in not_applicable]
     unproven = [name for name in REQUIRED_TOOLS if name not in applicable and name not in not_applicable]
     summary.update(completed_count=len(completed), completed_tools=completed,
+                   retained_ci_tools=[item['scanner_name'] for item in records
+                       if item['scanner_name'] in completed and item.get('coverage_basis') == 'authenticated_retained_typescript_ci'],
                    not_applicable_tools=not_applicable, incomplete_tools=incomplete,
                    execution_required_count=execution_required_count,
                    applicable_count=len(applicable), applicable_tools=applicable,
