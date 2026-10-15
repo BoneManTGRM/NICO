@@ -108,3 +108,22 @@ for (const ambiguous of [false, true]) test(`sibling refresh cannot supersede a 
  assert.equal(h.calls.filter(c=>c.init.method==='POST').length,2,'only two distinct authorized actions');
  if(ambiguous)assert.ok(h.within(WORK,n=>n.props.role==='alert').some(n=>String(n.props.children).includes('outcome was not confirmed')));
 });
+
+for(const panel of [WORK,BROWSER])for(const body of ['json','empty','html','truncated'])test(`${panel} HTTP408 ${body} reconciles only by GET and preserves uncertainty`,async()=>{
+ const h=harness(call=>{
+  if(call.init.method==='POST')return body==='json'?Response.json({detail:'timeout'},{status:408}):new Response(body==='empty'?'':body==='html'?'<html>Request timeout</html>':'{"detail":',{status:408});
+  return Response.json(payload());
+ });
+ await h.load(panel);
+ if(panel===WORK)authorize(h);else {h.input(BROWSER,'Authorized reviewer','Reviewer');h.input(BROWSER,'Reviewer role','Specialist');}
+ const before=h.calls.length;
+ if(panel===WORK)await h.submit();else await h.button(BROWSER,'Configure explicit QC sample').props.onClick();
+ await h.settle();const calls=h.calls.slice(before);
+ assert.equal(calls.filter(c=>c.init.method==='POST').length,1);
+ assert.equal(calls[0].init.method,'POST');
+ assert.ok(calls.slice(1).some(c=>c.init.method==='GET'&&c.url.endsWith('/review-work')),'timeout must reconcile the saved exact-run state');
+ assert.ok(calls.slice(1).every(c=>(c.init.method||'GET')==='GET'));
+ assert.ok(calls.every(c=>c.url.includes(RUN)&&c.init.credentials==='same-origin'));
+ assert.ok(h.within(panel,n=>n.props.role==='alert').some(n=>String(n.props.children).includes('outcome was not confirmed')));
+ const action=JSON.parse(calls[0].init.body);assert.equal(action.review_authorized,true);assert.equal(action.authorization_confirmed,true);
+});

@@ -37,7 +37,7 @@ function record(value: unknown): value is Record<string, unknown> {
 export async function reviewResponse(response: Response, runId: string, locale: "en" | "es-MX"): Promise<Record<string, any>> {
   const invalid = locale === "es-MX" ? "No fue posible verificar la respuesta de revisión para esta ejecución exacta." : "The review response could not be verified for this exact run.";
   let value: unknown;
-  try {value = await response.json();} catch {throw new ReviewResponseError(invalid, response.ok || response.status >= 500);}
+  try {value = await response.json();} catch {throw new ReviewResponseError(invalid, response.ok || response.status >= 500 || response.status === 408);}
   if (!response.ok) throw new ReviewResponseError(locale === "es-MX"
     ? `No fue posible completar la solicitud protegida de revisión (HTTP ${response.status}).`
     : `The protected review request failed (HTTP ${response.status}).`, response.status >= 500 || response.status === 408);

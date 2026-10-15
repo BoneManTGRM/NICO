@@ -29,3 +29,9 @@ This is a synthetic component/hook boundary harness with real shipped TypeScript
 ## Separate release prerequisite
 
 Read-only GitHub checks confirmed main2e8b4fdb and 25 exact-SHA Actions runs, none Node.js CI. Workflow-specific runs URL was unsupported by the connector; its supported Actions-run collection succeeded. No workflow-dispatch action is exposed by the available connector. The earlier forbidden GitHub CLI route was not retried and no credentials were changed. No dispatch was attempted; parent needs another supported route to produce the exact-main receipt. This prerequisite does not affect local reviewer test results.
+
+## HTTP 408 parsing correction
+
+PR1744 head954c64c3654cb62513b002b0b510b2c1db6e45cf was verified open/draft on fix/reviewer-workspace-identity before edits. Its tree matches localaf891b4f. Non-JSON HTTP408 responses took the JSON parse-error path, which omitted the ambiguity classification already applied to parsed HTTP408. One expression now includes status408 in both paths. No other production behavior changes.
+
+Eight component regressions cover both disposition and QC-sampling writes with JSON, empty, HTML and truncated408 bodies. Baseline:2passed/6failed. Candidate:61focused JavaScript checks passed (31workspace plus30existing transport checks), Python wrapper1passed (reruns31workspace checks), and tsc --noEmit passed. Each new case requires exactly one POST, GET-only same-run reconciliation with cookie transport, persistent uncertainty notice and unchanged human authorization flags. Existing selected-run, stale response, pending-mutation, authorization-denial and approval/delivery controls remain passing. No production requests or decisions were performed.
