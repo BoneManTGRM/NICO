@@ -120,3 +120,29 @@ deadline correction. Logs: `/tmp/nico-ci-adapter-red.txt`,
 `/tmp/nico-ci-adapter-incomplete-red.txt`, `/tmp/nico-ci-adapter-deadline-red.txt`,
 and `/tmp/nico-ci-adapter-final-green.txt`. Main was rechecked at
 `86e66391af6cacb28af467d6bf35a768f0f00046`; the dormant prototype is unchanged.
+
+## PR 1740 portable-test follow-up
+
+The initial tests used a fixed executor-only compiler path and skipped when it
+was absent. Baseline portability controls recorded 2 failures and 1 skip. Tests
+now resolve TypeScript from the actual checkout, or an explicit absolute
+`NICO_TEST_TYPESCRIPT_ROOT` override validated against package metadata and the
+reviewed 6.0.3 lock pin. Missing dependencies fail clearly. The hosted test shards
+already install frontend dependencies; that step now uses lockfile-based `npm ci`
+with scripts disabled, and Node 24 matches the evidence-producing job.
+
+Using the already installed compiler via the explicit local override: **90 passed,
+0 failed, 0 skipped** in 53.61 seconds. With no override and no checkout dependency,
+the selected compiler test produced the expected **0 passed, 1 failed, 0 skipped**
+(52 deselected). No local install or real build ran. Independent read-only review
+found no portability blocker. Logs: `/tmp/nico-ci-portability-red.txt`,
+`/tmp/nico-ci-portability-green.txt`, and
+`/tmp/nico-ci-portability-missing-dependency.txt`.
+
+Production exporter diagnosis remains pending. The supported GitHub connector
+returned artifact 11940972983 for run 38666299200, but its returned file could not
+be materialized: the workspace proxy returned 403 Forbidden. No ZIP bytes,
+manifest or failure reason have been verified locally. The reported Next config
+rewrite is still a lead, not an established artifact-backed cause. No production
+exporter guard was changed, and this follow-up remains local pending artifact
+materialization and diagnosis.

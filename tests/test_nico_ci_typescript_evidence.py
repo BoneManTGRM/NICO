@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -11,7 +12,6 @@ import zipfile
 import pytest
 
 ROOT=Path(__file__).resolve().parents[1]
-COMPILER=Path('/workspace/NICO/apps/web/node_modules/typescript')
 NODE=shutil.which('node')
 
 
@@ -31,10 +31,23 @@ def project(tmp_path):
     return tmp_path
 
 
+def compiler_path():
+    override=os.environ.get('NICO_TEST_TYPESCRIPT_ROOT')
+    compiler=Path(override) if override else ROOT/'apps/web/node_modules/typescript'
+    if not compiler.is_absolute(): pytest.fail('TypeScript fixture override must be absolute')
+    return compiler
+
+
 def collect(project):
-    if not NODE or not COMPILER.exists(): pytest.skip('Existing Node/TypeScript6.0.3 required; never installed by test')
+    compiler=compiler_path()
+    if not NODE or not (compiler/'lib/typescript.js').is_file() or not (compiler/'package.json').is_file():
+        pytest.fail('Existing Node and TypeScript 6.0.3 fixture dependency required; tests never install or silently skip it')
+    metadata=json.loads((compiler/'package.json').read_text())
+    lock=json.loads((ROOT/'apps/web/package-lock.json').read_text())
+    if metadata.get('name')!='typescript' or metadata.get('version')!='6.0.3' or lock['packages']['node_modules/typescript']['version']!='6.0.3':
+        pytest.fail('TypeScript fixture dependency must match the reviewed 6.0.3 lock pin')
     harness='const x=require(process.argv[1]); process.stdout.write(JSON.stringify(x.collectProject(process.argv[2],process.argv[3])));'
-    result=subprocess.run([NODE,'-e',harness,str(ROOT/'scripts/nico_ci_typescript_check.cjs'),str(project),str(COMPILER)],capture_output=True,text=True,timeout=20,
+    result=subprocess.run([NODE,'-e',harness,str(ROOT/'scripts/nico_ci_typescript_check.cjs'),str(project),str(compiler)],capture_output=True,text=True,timeout=20,
                           env={'PATH':'/nonexistent','NODE_OPTIONS':'','NODE_PATH':''})
     assert result.returncode==0,result.stderr
     return json.loads(result.stdout)
@@ -264,3 +277,28 @@ def test_independent_source_inventory_requires_workflow(retained):
     source=dict(context.source_inventory); source.pop(module.WORKFLOW)
     with pytest.raises(ValueError,match='authenticated_source_inventory_incomplete'):
         module.import_nico_ci_evidence(archive,authenticated=replace(context,source_inventory=source),target_sha='b'*40)
+
+
+def test_compiler_defaults_to_actual_checkout(monkeypatch):
+    monkeypatch.delenv('NICO_TEST_TYPESCRIPT_ROOT',raising=False)
+    assert compiler_path()==ROOT/'apps/web/node_modules/typescript'
+
+
+def test_missing_compiler_is_failure_not_skip(project,monkeypatch):
+    monkeypatch.setitem(globals(),'COMPILER',project/'missing-compiler')
+    monkeypatch.setenv('NICO_TEST_TYPESCRIPT_ROOT',str(project/'missing-compiler'))
+    with pytest.raises(pytest.fail.Exception,match='TypeScript'):
+        collect(project)
+
+
+def test_relative_compiler_override_rejected(monkeypatch):
+    monkeypatch.setenv('NICO_TEST_TYPESCRIPT_ROOT','relative/compiler')
+    with pytest.raises(pytest.fail.Exception,match='absolute'):
+        compiler_path()
+
+
+def test_hosted_shards_provision_pinned_compiler():
+    workflow=(ROOT/'.github/workflows/nico-ci.yml').read_text().split('  test_shards:',1)[1]
+    assert 'node-version: "24"' in workflow
+    assert 'npm ci --ignore-scripts --no-audit --no-fund' in workflow
+    assert "require('./apps/web/node_modules/typescript').version" in workflow
