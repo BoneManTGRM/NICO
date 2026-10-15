@@ -320,6 +320,15 @@ export default function ComprehensiveStuckRunRecovery() {
       const path = String(detail.path || "");
       const timeoutRunId = runIdFromLifecyclePath(path) || currentRunId();
 
+      // Reset and explicit run selection outrank a timeout from an older request.
+      // Ignore that event without dismissing recovery for the currently selected run.
+      const url = new URL(window.location.href);
+      const selectedRunId = url.searchParams.get(ACTIVE_RUN_QUERY_KEY)?.trim() || "";
+      if ((!selectedRunId && url.searchParams.has("new_assessment"))
+        || (selectedRunId && timeoutRunId !== selectedRunId)) {
+        return;
+      }
+
       // Browser age is not evidence that a durable run is invalid or unrecoverable.
       // Recovery controls appear only after a bounded lifecycle request actually
       // times out, and the canonical controller then reads the exact backend run.

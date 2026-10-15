@@ -174,11 +174,14 @@ export function clearPersistedRun(preserveExplicitUrl = false): void {
   url.searchParams.set("tier", "comprehensive");
   url.searchParams.delete(ACTIVE_RUN_QUERY_KEY);
   url.searchParams.set(NEW_ASSESSMENT_QUERY_KEY, String(Date.now()));
-  window.history.replaceState(
-    window.history.state,
-    "",
-    `${url.pathname}${url.search}${url.hash}`,
-  );
+  const target = `${url.pathname}${url.search}${url.hash}`;
+  try {
+    window.history.replaceState(window.history.state, "", target);
+  } catch {
+    // A browser history failure must not strand the completed run on screen.
+    // The same-origin reset marker also suppresses saved-run restoration on load.
+    window.location.replace(url.href);
+  }
 }
 
 export function writePersistedRun(value: PersistedRun): void {
@@ -197,9 +200,13 @@ export function writePersistedRun(value: PersistedRun): void {
   url.searchParams.set("tier", "comprehensive");
   url.searchParams.set(ACTIVE_RUN_QUERY_KEY, value.runId);
   url.searchParams.delete(NEW_ASSESSMENT_QUERY_KEY);
-  window.history.replaceState(
-    window.history.state,
-    "",
-    `${url.pathname}${url.search}${url.hash}`,
-  );
+  if (url.href === window.location.href) {
+    return;
+  }
+  try {
+    window.history.replaceState(window.history.state, "", url.href);
+  } catch {
+    // Browser history can reject writes. Keep the recovered server result and
+    // stored exact-run identity usable even when the URL cannot be updated.
+  }
 }

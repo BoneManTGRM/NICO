@@ -1,0 +1,48 @@
+✔ terminal result on the last continuation is not replaced by polling timeout (669.570149ms)
+✔ poll budget performs an exact-run read to reconcile publication after the last continuation (292.870916ms)
+✔ active run has an actionable same-run recovery after poll exhaustion (en) (251.649415ms)
+✔ active run has an actionable same-run recovery after poll exhaustion (es-MX) (178.783014ms)
+✔ failed final status read preserves the last observation and permits recovery without more mutations (183.324778ms)
+✔ a superseded polling loop cannot restore a cleared run after its final read (172.767795ms)
+✔ en restore: approved message agrees with terminal phase (125.843614ms)
+✔ en restore: review_required message agrees with terminal phase (90.959274ms)
+✔ en restore: complete message agrees with terminal phase (110.719273ms)
+✔ en restore: failed message agrees with terminal phase (84.140693ms)
+✔ en restore: blocked message agrees with terminal phase (129.290269ms)
+✔ en continuation: approved message agrees with terminal phase (76.413641ms)
+✔ en continuation: review_required message agrees with terminal phase (109.737563ms)
+✔ en continuation: complete message agrees with terminal phase (82.612032ms)
+✔ en continuation: failed message agrees with terminal phase (88.5591ms)
+✔ en continuation: blocked message agrees with terminal phase (72.897388ms)
+✔ es-MX restore: approved message agrees with terminal phase (75.596459ms)
+✔ es-MX restore: review_required message agrees with terminal phase (65.413ms)
+✔ es-MX restore: complete message agrees with terminal phase (80.978791ms)
+✔ es-MX restore: failed message agrees with terminal phase (81.771606ms)
+✔ es-MX restore: blocked message agrees with terminal phase (67.123556ms)
+✔ es-MX continuation: approved message agrees with terminal phase (82.974249ms)
+✔ es-MX continuation: review_required message agrees with terminal phase (70.872675ms)
+✔ es-MX continuation: complete message agrees with terminal phase (86.908262ms)
+✔ es-MX continuation: failed message agrees with terminal phase (84.110735ms)
+✔ es-MX continuation: blocked message agrees with terminal phase (97.506577ms)
+✔ saved review remains visible with history denied=false (en) (447.724624ms)
+✔ saved review remains visible with history denied=true (en) (273.882577ms)
+✔ saved review remains visible with history denied=false (es-MX) (123.892871ms)
+✔ saved review remains visible with history denied=true (es-MX) (122.48914ms)
+✔ unchanged exact-run URL avoids redundant browser history writes (116.850324ms)
+✔ review recovery survives unavailable storage and history without a POST (142.350474ms)
+✔ Comprehensive recovery uses the existing session with backend config https://backend.test (339.909683ms)
+✔ Comprehensive recovery uses the existing session with backend config absent (188.298122ms)
+✔ denied recovery 401 cannot enable continuation (59.731456ms)
+✔ denied recovery 403 cannot enable continuation (42.187319ms)
+✔ private checkout requires explicit inspection and eligible exact identity (true) (9.729506ms)
+✔ private checkout requires explicit inspection and eligible exact identity (false) (6.914187ms)
+✔ denied or mismatched private checkout cannot offer retry (13.703419ms)
+✔ denied or mismatched private checkout cannot offer retry (25.374243ms)
+ℹ tests 40
+ℹ suites 0
+ℹ pass 40
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3758.617182
