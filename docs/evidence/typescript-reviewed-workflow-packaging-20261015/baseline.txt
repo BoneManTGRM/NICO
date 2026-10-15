@@ -1,0 +1,49 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_reviewed_workflow_survives_real_docker_context ______________
+
+tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-124/test_reviewed_workflow_survive0')
+
+    def test_reviewed_workflow_survives_real_docker_context(tmp_path):
+        context = tmp_path / "context"
+        output = tmp_path / "export"
+        context.mkdir()
+        shutil.copyfile(ROOT / ".dockerignore", context / ".dockerignore")
+        for relative in TRUSTED:
+            target = context / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / relative, target)
+        excluded = (".github/workflows/unrelated.yml", ".github/CODEOWNERS",
+                    ".github/actions/example/action.yml", ".github/workflows/nested/private.yml",
+                    ".git/config", ".env", "node_modules/example/index.js")
+        for relative in excluded:
+            target = context / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("owned excluded sentinel")
+        # Same COPY . . context boundary as production, with no base image or RUN.
+        assert "COPY . ." in (ROOT / "Dockerfile").read_text()
+        result = subprocess.run(
+            ["docker", "build", "--network=none", "--pull=false", "--output",
+             f"type=local,dest={output}", "-f", "-", str(context)],
+            input="FROM scratch\nCOPY . /\n", text=True, capture_output=True,
+            timeout=90, check=False,
+            env={**os.environ, "DOCKER_CONFIG": str(tmp_path / "docker-config")},
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        for relative in TRUSTED:
+>           assert (output / relative).is_file(), f"reviewed controller file excluded: {relative}"
+E           AssertionError: reviewed controller file excluded: .github/workflows/node.js.yml
+E           assert False
+E            +  where False = is_file()
+E            +    where is_file = (PosixPath('/tmp/pytest-of-agent/pytest-124/test_reviewed_workflow_survive0/export') / '.github/workflows/node.js.yml').is_file
+
+tests/test_nico_ci_typescript_docker_context.py:41: AssertionError
+=============================== warnings summary ===============================
+nico/express_score_assurance_export_v1.py:113
+  /workspace/nico-typescript-packaging/nico/express_score_assurance_export_v1.py:113: SyntaxWarning: invalid escape sequence '\s'
+    Horizontal whitespace is matched deliberately. A broad ``\s*`` can consume the
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_nico_ci_typescript_docker_context.py::test_reviewed_workflow_survives_real_docker_context
+1 failed, 1 warning in 0.38s
