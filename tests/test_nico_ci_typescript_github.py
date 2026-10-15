@@ -260,3 +260,28 @@ def test_valid_git_id_cannot_replace_retained_sha256_content_binding(api):
     result=invoke(api)
     assert result['status']=='incomplete' and result['clean'] is False
     assert result['reason']=='source_inventory_mismatch'
+
+
+@pytest.mark.parametrize('damage', ['missing', 'modified', 'intact'])
+def test_packaged_controller_workflow_remains_required_and_hash_bound(api, tmp_path, monkeypatch, damage):
+    from nico import nico_ci_typescript_github_v1 as adapter
+    for relative in adapter.TRUSTED_FILES:
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((ROOT / relative).read_bytes())
+    workflow = tmp_path / adapter.WORKFLOW
+    if damage == 'missing':
+        workflow.unlink()
+    elif damage == 'modified':
+        workflow.write_bytes(workflow.read_bytes() + b'\n# changed controller bytes\n')
+    monkeypatch.setattr(adapter, 'ROOT', tmp_path)
+    result = invoke(api)
+    if damage == 'intact':
+        assert result['status'] == 'completed'
+        assert result['clean'] is True
+    else:
+        assert result['status'] == 'incomplete'
+        assert result['clean'] is False
+        assert result['score_override'] is False
+        assert result['reason'] == ('provider_evidence_invalid' if damage == 'missing'
+                                    else 'workflow_or_exporter_not_reviewed')
