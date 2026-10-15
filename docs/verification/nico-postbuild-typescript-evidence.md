@@ -146,3 +146,33 @@ manifest or failure reason have been verified locally. The reported Next config
 rewrite is still a lead, not an established artifact-backed cause. No production
 exporter guard was changed, and this follow-up remains local pending artifact
 materialization and diagnosis.
+
+## Build-log-supported configuration candidate
+
+Node.js CI run 38666299200 checked out synthetic merge
+`f27fa17c97f558dd32dd3a7d4085502f968eb391`. The retained job log records a successful
+Next 16.4.0 build and subsequent `tsc --noEmit`, with Next changing tracked
+`tsconfig.json` to `jsx=react-jsx` and adding `.next/dev/types/**/*.ts`. Source-only
+inspection and real owned Git fixtures establish that the published exporter
+rejects either edit before invoking its compiler, once repository/SHA checks pass.
+The original artifact failure reason remains unverified because materialization
+was denied; no artifact-download retry was attempted.
+
+The candidate explicitly commits only those two configuration requirements.
+Strictness, `skipLibCheck`, `allowJs`, absent `checkJs`, exclusions, source identity,
+diagnostics, scores and acceptance rules are unchanged. The exporter remains
+byte-identical to published head `8adb197b4320b6ef315e39c620282270d394c06e`.
+Unexpected tracked mutations still fail. Owned tests verify each observed edit,
+the pair, unrelated source mutation rejection, and clean explicitly committed
+configuration. The configuration regression failed before the edit (1 failed,
+5 passed, 0 skipped); these are guard tests with a synthetic compiler response,
+not a real application build. Fresh automatic hosted CI must test the candidate
+against Next's actual generation behavior.
+
+Candidate validation: **96 passed, 0 failed, 0 skipped** in 54.44 seconds across
+exporter/importer, GitHub adapter, owned source-guard and existing CI-evidence
+suites. One pre-existing escape-sequence warning remains. Separate read-only
+review found no blocker in the exact configuration adjustment or the portable-test
+fix. Final logs: `/tmp/nico-ci-config-red.txt` and
+`/tmp/nico-ci-config-final-green.txt`. No local application build, dependency
+download, manual workflow dispatch or production action was performed.
