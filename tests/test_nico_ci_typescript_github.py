@@ -216,3 +216,47 @@ def test_final_provider_response_cannot_overrun_deadline(api,monkeypatch):
     api[0].get_json=delayed
     result=invoke(api)
     assert result['status']=='incomplete' and result['reason']=='provider_capture_budget'
+
+
+def test_git_object_id_compatibility_is_explicitly_nonsecurity(api,monkeypatch):
+    import subprocess
+    from nico import nico_ci_typescript_github_v1 as module
+    original=hashlib.sha1; observed=[]
+    def git_compatibility(data,*,usedforsecurity=True):
+        assert usedforsecurity is False
+        raw=data.split(b'\0',1)[1]
+        expected=subprocess.run(['git','hash-object','--stdin'],input=raw,capture_output=True,check=True).stdout.decode().strip()
+        result=original(data,usedforsecurity=False)
+        assert result.hexdigest()==expected
+        observed.append(expected)
+        return result
+    monkeypatch.setattr(module.hashlib,'sha1',git_compatibility)
+    assert invoke(api)['status']=='completed'
+    assert observed
+
+
+@pytest.mark.parametrize('damage',['metadata_length','decoded_length','git_id'])
+def test_git_blob_protocol_mismatch_still_rejected(api,damage):
+    responses=api[1]; tree=responses['/git/trees/'+'c'*40]['tree']
+    row=next(r for r in tree if r['path']=='apps/web/app.ts')
+    blob=responses['/git/blobs/'+row['sha']]
+    if damage=='metadata_length': blob['size']+=1
+    elif damage=='decoded_length': row['size']+=1; blob['size']+=1
+    else:
+        wrong='f'*40; row['sha']=wrong; blob['sha']=wrong; responses['/git/blobs/'+wrong]=blob
+    result=invoke(api)
+    assert result['status']=='incomplete' and result['clean'] is False
+    assert result['reason'] in {'blob_metadata_mismatch','blob_content_mismatch'}
+
+
+def test_valid_git_id_cannot_replace_retained_sha256_content_binding(api):
+    responses=api[1]; tree=responses['/git/trees/'+'c'*40]['tree']
+    row=next(r for r in tree if r['path']=='apps/web/app.ts')
+    old=base64.b64decode(responses['/git/blobs/'+row['sha']]['content'])
+    raw=old.replace(b'=1',b'=2'); assert raw!=old and len(raw)==len(old)
+    digest=hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw,usedforsecurity=False).hexdigest()
+    row.update(sha=digest,size=len(raw))
+    responses['/git/blobs/'+digest]={'sha':digest,'size':len(raw),'encoding':'base64','content':base64.b64encode(raw).decode()}
+    result=invoke(api)
+    assert result['status']=='incomplete' and result['clean'] is False
+    assert result['reason']=='source_inventory_mismatch'

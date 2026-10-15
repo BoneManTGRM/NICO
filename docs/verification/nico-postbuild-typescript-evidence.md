@@ -176,3 +176,34 @@ review found no blocker in the exact configuration adjustment or the portable-te
 fix. Final logs: `/tmp/nico-ci-config-red.txt` and
 `/tmp/nico-ci-config-final-green.txt`. No local application build, dependency
 download, manual workflow dispatch or production action was performed.
+
+## Git object-ID compatibility declaration
+
+Parent's independent triage identified the sole blocking B324 HIGH/HIGH finding
+in Security Audit Evidence run 38667418455 at the Git blob SHA-1 calculation.
+The reported verified artifact is 11943011434, 240,593 bytes, SHA-256
+`1cd85fbecbb24f415eaba920902295d752d7ab71b06708588cfae77f4add4b30`.
+Local targeted Bandit 1.9.4 reproduced that one finding with no scan errors.
+
+The calculation now explicitly uses `usedforsecurity=False`: it computes Git's
+canonical `blob <length>\0<bytes>` object ID for protocol compatibility. This flag
+does not strengthen SHA-1. Independent SHA-256 archive authentication, provider
+source hashes, retained inventory equality and reviewed-file hashes remain the
+content integrity checks. Git-ID, metadata length and decoded-length mismatches
+still fail. No scanner suppression, rule exception, score or acceptance gate was
+changed.
+
+Added controls compare the result with `git hash-object`, require the explicit
+compatibility flag, reject incorrect IDs/lengths, and demonstrate that changed
+content with a valid Git ID still fails retained SHA-256 inventory equality.
+Existing modified-content, archive-digest and unreviewed-file controls remain.
+The new tests recorded 1 failure and 4 passes before the declaration; targeted
+Bandit after the correction reports **0 findings, 0 errors**. Separate read-only
+review confirmed the independent SHA-256 binding and found no blocker.
+
+Final focused validation: **101 passed, 0 failed, 0 skipped** in 58.15 seconds;
+one pre-existing escape-sequence warning. `git diff --check` passed. Evidence logs:
+`/tmp/nico-ci-git-sha1-red.txt`, `/tmp/nico-ci-git-sha1-green.txt`,
+`/tmp/nico-ci-git-sha1-bandit-red.json`, and
+`/tmp/nico-ci-git-sha1-bandit-green.json`. Existing trusted tooling only; no local
+build, dependency installation, artifact retry or manual workflow dispatch.

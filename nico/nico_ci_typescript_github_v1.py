@@ -168,7 +168,10 @@ def _collect_and_import(client,archive,target_sha,run_id,run_attempt,artifact_id
             encoded=blob.get('content','')
             _require(isinstance(encoded,str) and len(encoded)<=2*MAX_BYTES,'blob_capture_budget')
             raw=base64.b64decode(''.join(encoded.split()),validate=True)
-            _require(len(raw)==length and hashlib.sha1(b'blob '+str(length).encode()+b'\0'+raw).hexdigest()==blob_sha,'blob_content_mismatch')
+            # Git-format object ID compatibility only; SHA-1 is not a security digest.
+            # Provider bytes are separately SHA-256-bound to the retained source
+            # inventory and authenticated artifact digest before import can succeed.
+            _require(len(raw)==length and hashlib.sha1(b'blob '+str(length).encode()+b'\0'+raw,usedforsecurity=False).hexdigest()==blob_sha,'blob_content_mismatch')
             blob_cache[blob_sha]=raw
         raw=blob_cache[blob_sha]; source[path]=_sha(raw)
     for path in TRUSTED_FILES:
