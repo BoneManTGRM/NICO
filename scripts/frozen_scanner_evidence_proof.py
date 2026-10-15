@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -11,6 +12,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from nico.scanner_evidence_pipeline_v1 import (
     REQUIRED_EVIDENCE_TOOLS,
@@ -37,7 +39,49 @@ def run_git(*args: str, cwd: Path | None = None) -> str:
     return completed.stdout.strip()
 
 
-def prepare_checkout(source: Path, destination: Path, target_sha: str) -> WorkerWorkspace:
+def validated_origin(source: Path, repository: str) -> str:
+    """Match the configured GitHub identity; never authenticate from a CLI label.
+
+    This is routing metadata only. Retained CI evidence still requires the
+    consumer's independent authenticated exact-main/run/digest validation.
+    """
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*/[A-Za-z0-9_.-]+", repository):
+        raise ValueError("frozen_proof_repository_invalid")
+    try:
+        origins = run_git("config", "--get-all", "remote.origin.url", cwd=source).splitlines()
+    except subprocess.CalledProcessError:
+        raise ValueError("frozen_proof_origin_unavailable") from None
+    if len(origins) != 1:
+        raise ValueError("frozen_proof_origin_ambiguous")
+    origin = origins[0]
+    if origin.startswith("git@github.com:"):
+        path = origin.removeprefix("git@github.com:")
+    else:
+        try:
+            parsed = urlsplit(origin)
+            supported = (
+                parsed.hostname == "github.com"
+                and parsed.port is None
+                and not parsed.query and not parsed.fragment
+                and (parsed.scheme == "https" or (
+                    parsed.scheme == "ssh" and parsed.username == "git" and parsed.password is None
+                ))
+            )
+        except ValueError:
+            raise ValueError("frozen_proof_origin_unsupported") from None
+        if not supported:
+            raise ValueError("frozen_proof_origin_unsupported")
+        path = parsed.path.removeprefix("/")
+    identity = path.removesuffix("/").removesuffix(".git")
+    if identity != repository:
+        raise ValueError("frozen_proof_origin_repository_mismatch")
+    return f"https://github.com/{identity}.git"
+
+
+def prepare_checkout(source: Path, destination: Path, target_sha: str, repository: str) -> WorkerWorkspace:
+    origin = validated_origin(source, repository)
+    if not re.fullmatch(r"[0-9a-f]{40}", target_sha):
+        raise ValueError("frozen_proof_target_sha_invalid")
     if destination.exists():
         shutil.rmtree(destination)
     destination.mkdir(parents=True)
@@ -61,6 +105,9 @@ def prepare_checkout(source: Path, destination: Path, target_sha: str) -> Worker
     shallow = run_git("rev-parse", "--is-shallow-repository", cwd=repo_dir)
     if shallow != "false":
         raise RuntimeError("frozen proof checkout is shallow; full-history secret evidence would be invalid")
+    # Local cloning replaces origin with source's filesystem path. Restore only
+    # the independently matched, credential-free identity in this disposable repo.
+    run_git("remote", "set-url", "origin", origin, cwd=repo_dir)
     return WorkerWorkspace(root=destination)
 
 
@@ -73,7 +120,7 @@ def run_once(
     run_number: int,
 ) -> dict[str, Any]:
     started_at = now_iso()
-    workspace = prepare_checkout(source, output_root / f"workspace-{run_number}", target_sha)
+    workspace = prepare_checkout(source, output_root / f"workspace-{run_number}", target_sha, repository)
     specs = tuple(spec for spec in TOOL_SPECS if spec.name in REQUIRED_EVIDENCE_TOOLS)
     if {spec.name for spec in specs} != set(REQUIRED_EVIDENCE_TOOLS):
         missing = sorted(set(REQUIRED_EVIDENCE_TOOLS) - {spec.name for spec in specs})
