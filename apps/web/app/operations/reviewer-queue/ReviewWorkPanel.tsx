@@ -1,6 +1,7 @@
 "use client";
 
 import {FormEvent, useEffect, useMemo, useState} from "react";
+import {savedRun, useReviewScope, reviewResponse, reviewError, ambiguousWrite, reconciliationMessage, type WorkspaceProps} from "./reviewWorkspaceState";
 import ReviewSessionNotice from "./ReviewSessionNotice";
 import EvidenceRequests from "./EvidenceRequests";
 import QualityControlRecords from "./QualityControlRecords";
@@ -160,37 +161,6 @@ function asRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
 }
 
-function errorMessage(value: unknown, locale: Locale): string {
-  const message = value instanceof Error ? value.message : String(value || "Review work request failed.");
-  if (locale === "es-MX") {
-    return message.startsWith("No fue posible")
-      ? message
-      : "No fue posible completar la solicitud protegida de trabajo de revisión.";
-  }
-  return message;
-}
-
-async function parseResponse(response: Response, locale: Locale): Promise<Projection> {
-  const payload = await response.json().catch(() => ({})) as Projection & {detail?: unknown; error?: unknown};
-  if (!response.ok) {
-    if (locale === "es-MX") {
-      const detail = payload.detail;
-      const detailRecord = detail && typeof detail === "object" ? detail as JsonRecord : {};
-      const rawCode = String(detailRecord.code || "").trim();
-      const code = /^[A-Z0-9_.-]+$/.test(rawCode) ? rawCode : "";
-      throw new Error(`No fue posible completar la solicitud protegida de trabajo de revisión (HTTP ${response.status}${code ? ` · ${code}` : ""}).`);
-    }
-    const detail = payload.detail;
-    const message = typeof detail === "string"
-      ? detail
-      : detail && typeof detail === "object"
-        ? String((detail as JsonRecord).message || (detail as JsonRecord).code || JSON.stringify(detail))
-        : String(payload.error || `HTTP ${response.status}`);
-    throw new Error(message);
-  }
-  return payload;
-}
-
 function empiricalStatus(value: unknown, locale: Locale): string {
   const status = String(value || "not_yet_measured");
   if (locale === "en") return status;
@@ -203,10 +173,10 @@ function empiricalStatus(value: unknown, locale: Locale): string {
   return label || `Estado técnico: ${status}`;
 }
 
-export default function ReviewWorkPanel() {
+export default function ReviewWorkPanel({runId, refresh = 0, isCurrent, onChanged}: WorkspaceProps = savedRun()) {
+  const scope = useReviewScope(isCurrent);
   const [locale, setLocale] = useState<Locale>("en");
   const copy = COPY[locale];
-  const [runId, setRunId] = useState("");
   const [reviewer, setReviewer] = useState("");
   const [reviewerRole, setReviewerRole] = useState("");
   const [action, setAction] = useState<Action>("disposition_candidate");
@@ -230,11 +200,11 @@ export default function ReviewWorkPanel() {
   const [evidenceReference, setEvidenceReference] = useState("");
   const [projection, setProjection] = useState<Projection | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     const params = new URL(window.location.href).searchParams;
-    setRunId(params.get("run_id") || "");
     setLocale(params.get("lang") === "es-MX" ? "es-MX" : "en");
   }, []);
 
@@ -251,23 +221,29 @@ export default function ReviewWorkPanel() {
     [runId],
   );
 
+  useEffect(() => {if (refresh > 0) void load();}, [refresh]);
+
+  async function readProjection() {
+    const response = await fetch(url, {
+      method: "GET", cache: "no-store", credentials: "same-origin", headers: {Accept: "application/json"},
+    });
+    return reviewResponse(response, runId, locale);
+  }
+
   async function load(): Promise<void> {
     if (!runId.trim()) return;
-    setBusy(true);
-    setError("");
-    setProjection(null);
+    // A sibling refresh must never supersede an in-flight write or unlock its form.
+    if (scope.mutation.current) {scope.refreshDeferred.current = true; return;}
+    const token = scope.begin();
+    setBusy(true); setError(""); setProjection(null);
     try {
-      const response = await fetch(url, {
-        method: "GET",
-        cache: "no-store",
-        credentials: "same-origin",
-        headers: {Accept: "application/json"},
-      });
-      setProjection(await parseResponse(response, locale));
+      const next = await readProjection();
+      if (scope.current(token)) setProjection(next);
     } catch (caught) {
-      setError(errorMessage(caught, locale));
+      if (scope.current(token)) setError(reviewError(caught, locale));
     } finally {
-      setBusy(false);
+      if (scope.current(token)) setBusy(false);
+      scope.finish(token);
     }
   }
 
@@ -301,7 +277,9 @@ export default function ReviewWorkPanel() {
 
   async function submit(event?: FormEvent): Promise<void> {
     event?.preventDefault();
-    if (!runId.trim() || !reviewer.trim() || !reviewerRole.trim()) return;
+    if (!runId.trim() || !projection || scope.pending.current || !reviewer.trim() || !reviewerRole.trim()) return;
+    const token = scope.begin();
+    scope.mutation.current = true;
     setBusy(true);
     setError("");
     setProjection(null);
@@ -313,11 +291,29 @@ export default function ReviewWorkPanel() {
         headers: {"Content-Type": "application/json", Accept: "application/json"},
         body: JSON.stringify(actionPayload()),
       });
-      setProjection(await parseResponse(response, locale));
+      const next = await reviewResponse(response, runId, locale);
+      if (scope.current(token)) {setProjection(next); onChanged?.(runId);}
     } catch (caught) {
-      setError(errorMessage(caught, locale));
+      if (scope.current(token)) {
+        if (ambiguousWrite(caught)) {
+          try {
+            const next = await readProjection();
+            if (scope.current(token)) {setProjection(next); onChanged?.(runId);}
+          } catch { /* Keep actions blocked when reconciliation cannot verify saved state. */ }
+          if (scope.current(token)) setNotice(reconciliationMessage(locale));
+        } else setError(reviewError(caught, locale));
+      }
     } finally {
-      setBusy(false);
+      if (scope.current(token)) {
+        setBusy(false);
+        setTargetId(""); setRationale("");
+      }
+      scope.mutation.current = false;
+      scope.finish(token);
+      if (scope.current(token) && scope.refreshDeferred.current) {
+        scope.refreshDeferred.current = false;
+        void load();
+      }
     }
   }
 
@@ -333,9 +329,10 @@ export default function ReviewWorkPanel() {
     <p>{copy.lead}</p>
     <p className={styles.boundary}>{copy.noDelivery}</p>
 
+    {notice ? <p role="alert">{notice}</p> : null}
     <ReviewSessionNotice runId={runId} locale={locale} />
     <div className={styles.identityGrid}>
-      <label>{copy.run}<input disabled={busy} value={runId} onChange={(event) => {setRunId(event.target.value); setProjection(null);}} autoComplete="off" /></label>
+      <label>{copy.run}<input disabled={busy} value={runId} readOnly autoComplete="off" /></label>
       <label>{copy.reviewer}<input value={reviewer} onChange={(event) => setReviewer(event.target.value)} autoComplete="off" /></label>
       <label>{copy.role}<input value={reviewerRole} onChange={(event) => setReviewerRole(event.target.value)} autoComplete="off" /></label>
     </div>

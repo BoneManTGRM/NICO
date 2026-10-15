@@ -48,8 +48,10 @@ def test_reviewer_workspace_exposes_bilingual_human_controls_and_no_delivery_byp
         "complete_empirical_study",
     ):
         assert f'"{action}"' in PANEL
-    assert "ReviewWorkPanel" in PAGE
-    assert "ReviewerQueue" in PAGE
+    assert "ReviewerWorkspace" in PAGE
+    workspace = Path("apps/web/app/operations/reviewer-queue/ReviewerWorkspace.tsx").read_text()
+    assert "ReviewWorkPanel" in workspace
+    assert "ReviewerQueue" in workspace
     assert "localStorage" not in PANEL
     assert "sessionStorage" not in PANEL
 
