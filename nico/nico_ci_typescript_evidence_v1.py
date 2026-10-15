@@ -200,7 +200,7 @@ def import_nico_ci_evidence(archive: bytes, *, authenticated: AuthenticatedRun, 
         raise ValueError('native_capture_incomplete')
     if (record.get('schema')!=SCHEMA or record.get('status')!='completed' or record.get('capture_complete') is not True
             or type(record.get('clean')) is not bool or record.get('native_stdout_sha256')!=_hash(contents['typescript.log'])
-            or record.get('raw_exit_code')!=(0 if record['clean'] else 1)
+            or type(record.get('raw_exit_code')) is not int or record.get('raw_exit_code')!=(0 if record['clean'] else 1)
             or a.check_outcome!=('success' if record['clean'] else 'failure')): raise ValueError('execution_incomplete_or_conflicting')
     options=record.get('effective_configuration',{})
     if options.get('noEmit') is not True or options.get('incremental') is not False or record.get('emitted_files')!=0: raise ValueError('emission_policy_mismatch')
@@ -240,6 +240,7 @@ def import_nico_ci_evidence(archive: bytes, *, authenticated: AuthenticatedRun, 
     if record['clean'] != (not any(d['category']=='Error' for d in diagnostics)): raise ValueError('diagnostics_outcome_conflict')
     return {'scanner':'typescript','status':'completed','clean':record['clean'],'source_sha':target_sha,
             'execution_source':'authenticated_nico_postbuild_ci','diagnostics':diagnostics,
+            'raw_exit_code':record['raw_exit_code'],
             'configuration_limitations':record.get('configuration_limitations'), 'effective_configuration':options,
             'checked_project_scope':{'configuration':'apps/web/tsconfig.json',
                 'root_file_count':len(record['root_inputs']), 'program_input_count':len(record['program_inputs']),

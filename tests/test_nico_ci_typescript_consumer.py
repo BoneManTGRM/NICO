@@ -250,3 +250,94 @@ def test_actual_controller_child_environment_and_timeout(monkeypatch,tmp_path):
     started=time.monotonic()
     with pytest.raises(subprocess.TimeoutExpired): consumer._capture_bounded('b'*40,0.2)
     assert time.monotonic()-started < 3
+
+
+@pytest.mark.parametrize('outcome', ['clean','errors','incomplete'])
+def test_real_persistence_assessment_binding_compaction_and_completion(api, retained, monkeypatch, tmp_path, outcome):
+    import sqlite3
+    from test_nico_ci_typescript_github import failed_check, replace_archive
+    from test_nico_ci_typescript_evidence import revise
+    from nico import scanner_raw_artifact_storage_v1 as storage
+    from nico import v2_snapshot_scanner_authority as snapshot
+    from nico.comprehensive_retained_scanner_evidence_v1 import compact_scanner_records
+    from nico.complete_assessment_gate_v1 import complete_assessment_evidence, REQUIRED_TOOLS
+    if outcome != 'clean':
+        def change(record,native):
+            for value in (record,native):
+                value.update(clean=False,diagnostics=[{'code':2322,'category':'Error','message':'owned error'}],diagnostics_text='owned error')
+            record['raw_exit_code']=1
+            if outcome == 'incomplete':
+                record.update(status='incomplete',capture_complete=False,capture_truncated=True,reason='capture_incomplete')
+                native.clear()
+        archive,_=revise(retained,change); failed_check(api); api=replace_archive(api,archive)
+    client,_=setup_capture(api,monkeypatch)
+    result,archive=consumer.collect(client,'b'*40,300,now=NOW)
+    monkeypatch.setattr(consumer,'_capture_bounded',lambda *a:(result,archive))
+    monkeypatch.setattr(pipeline,'_git_text',lambda *a:'b'*40)
+    monkeypatch.setattr(snapshot,'_commit_sha',lambda *a:'b'*40)
+    monkeypatch.setattr(snapshot,'_target_repository',lambda *a:'BoneManTGRM/NICO')
+    raw_root=tmp_path/'raw'; monkeypatch.setattr(snapshot,'DEFAULT_RAW_ROOT',raw_root)
+    workspace=WorkerWorkspace(tmp_path/'worker'); workspace.repo_dir.mkdir(parents=True)
+    monkeypatch.setattr(pipeline,'_owned_nico_ci',lambda *a:True)
+    monkeypatch.setattr(pipeline,'node_inapplicability_result',lambda *a:None)
+    monkeypatch.setattr(pipeline,'verify_source_checkout',lambda payload,*a:payload)
+    payload=snapshot.canonical_snapshot_tool_runner(SPEC,workspace,runner=bomb)
+    original_compressed=(raw_root/payload['raw_artifact']['storage_key']).read_bytes()
+    binding={'run_id':'comprun_owned_assessment','scan_id':'scan_owned','customer_id':'customer_owned',
+             'project_id':'project_owned','repository':'BoneManTGRM/NICO','commit_sha':'b'*40,'scanner_name':'typescript'}
+    database=tmp_path/'artifacts.sqlite3'
+    def reopen(): return storage.ScannerArtifactStore(lambda:sqlite3.connect(database),dialect='sqlite')
+    store=reopen(); store.ensure_schema(); monkeypatch.setattr(storage,'_default_store',lambda:store)
+    # Actual immutable store/reader, not a mocked persistence success.
+    persisted=storage.persist_scanner_result(payload,binding=binding,raw_root=raw_root)
+    assert persisted['raw_artifact_retention_complete'] is True, persisted.get('raw_artifact_durability')
+    assert all(persisted[key]==value for key,value in binding.items())
+    assert persisted['ci_run_id']=='123' and persisted['ci_run_attempt']=='2'
+    assert 'run_attempt' not in persisted
+    monkeypatch.setattr(storage,'_default_store',reopen)
+    read=storage.read_scanner_artifact(persisted,binding=binding,raw_root=raw_root)
+    assert read.metadata['availability']=='verified'
+    assert read.compressed==original_compressed
+    record,=compact_scanner_records({'scan_id':binding['scan_id'],'scanner_results':[persisted]},commit_sha='b'*40)
+    assert record['run_id']==binding['run_id'] and record['ci_run_id']=='123'
+    # Other requested tools are explicit owned controls for this gate test.
+    controls=[{'tool':name,'status':'completed','verified_complete':True,'exact_commit_match':True,
+               'commit_sha':'b'*40,'run_id':binding['run_id'],'raw_artifact_retention_complete':True,
+               'raw_artifact_sha256':'a'*64,'returncode_valid':True,'output_capture_complete':True}
+              for name in REQUIRED_TOOLS if name!='typescript']
+    gate=complete_assessment_evidence({'identity':{'run_id':binding['run_id'],'commit_sha':'b'*40},
+                                      'scanner_execution_records':controls+[record]},
+                                     expected_commit='b'*40,expected_run=binding['run_id'])
+    assert gate['passed'] is (outcome!='incomplete'), gate['failures']
+    assert gate['client_delivery_allowed'] is False and gate['human_approval_proven'] is False
+    if outcome!='incomplete':
+        assert persisted['returncode_valid'] is True
+        assert persisted['returncode']==persisted['exit_code']==(0 if outcome=='clean' else 1)
+        assert record['exit_code']==persisted['returncode']
+        assert record['finding_count']==(0 if outcome=='clean' else 1)
+        missing_exit={key:value for key,value in persisted.items() if key not in {'returncode','exit_code','returncode_valid'}}
+        rejected,=compact_scanner_records({'scanner_results':[missing_exit]},commit_sha='b'*40)
+        blocked=complete_assessment_evidence({'identity':{'run_id':binding['run_id'],'commit_sha':'b'*40},
+                                              'scanner_execution_records':controls+[rejected]},
+                                             expected_commit='b'*40,expected_run=binding['run_id'])
+        assert 'typescript:execution_failed' in blocked['failures']
+    else:
+        assert persisted['status']=='unavailable' and persisted['verified_for_this_report'] is False
+    for field in storage.BINDING_FIELDS:
+        bad=storage.persist_scanner_result({**payload,field:'wrong'},binding=binding,raw_root=raw_root)
+        assert bad['raw_artifact_durability']['reason']=='source_mismatch'
+
+
+@pytest.mark.parametrize('exit_code',[False,True,2,-1,None,'0'])
+def test_invalid_authenticated_exit_cannot_gain_completion(api,retained,monkeypatch,tmp_path,exit_code):
+    from test_nico_ci_typescript_github import replace_archive
+    from test_nico_ci_typescript_evidence import revise
+    archive,_=revise(retained,lambda record,native:record.update(raw_exit_code=exit_code))
+    client,_=setup_capture(replace_archive(api,archive),monkeypatch)
+    result,archive=consumer.collect(client,'b'*40,300,now=NOW)
+    assert result['status']=='incomplete'
+    monkeypatch.setattr(consumer,'_capture_bounded',lambda *a:(result,archive))
+    monkeypatch.setattr(pipeline,'_git_text',lambda *a:'b'*40)
+    payload=consumer.run(SPEC,WorkerWorkspace(tmp_path))
+    assert payload['status']=='unavailable' and payload['verified_for_this_report'] is False
+    assert payload.get('returncode_valid') is not True

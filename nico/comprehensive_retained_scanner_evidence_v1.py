@@ -254,7 +254,8 @@ def compact_scanner_records(
                         "applicability_evidence", "native_json_output",
                         "no_vulnerabilities_claimed",
                         "effective_configuration", "configuration_limitations", "checked_project_scope",
-                        "execution_source", "metadata_authenticated", "run_id", "run_attempt", "artifact_id", "artifact_digest",
+                        "execution_source", "metadata_authenticated", "run_id",
+                        "ci_run_id", "ci_run_attempt", "ci_artifact_id", "ci_artifact_digest", "ci_workflow_id", "ci_source_sha",
                         "worker_provenance", "cppcheck_source_coverage", "cpp_build_evidence", "scanner_tool_version",
                     )
                     if key in raw

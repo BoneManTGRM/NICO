@@ -160,6 +160,11 @@ def run(spec, workspace):
                     value = text
                 members[name] = _retention_projection(value)
         result = _retention_projection(result)
+        # Assessment identities belong to durable scanner storage. GitHub IDs
+        # must never occupy its run/customer/project/scan binding namespace.
+        ci_result = {('ci_' + key if key in {
+            'run_id', 'run_attempt', 'artifact_id', 'artifact_digest', 'workflow_id', 'source_sha'
+        } else key): value for key, value in result.items()}
         raw = workspace.root / 'scanner-raw' / 'typescript-ci.json'
         raw.parent.mkdir(parents=True, exist_ok=True)
         raw.write_text(json.dumps({'retention_projection':'Parsed and secret-redacted native members; embedded manifest hashes bind the original authenticated archive, not these projected copies', 'authenticated_import': result, 'members': members}), encoding='utf-8')
@@ -167,7 +172,8 @@ def run(spec, workspace):
         if result.get('status') != 'completed':
             payload = pipeline._unavailable(spec, 'Retained CI TypeScript capture did not complete.',
                                              source='authenticated_nico_postbuild_ci')
-            payload.update(current_run=False, ci_evidence=pipeline.redact_payload(result),
+            payload.update(current_run=False, ci_run_id=result.get('run_id'), ci_run_attempt=result.get('run_attempt'),
+                           ci_evidence=pipeline.redact_payload(result),
                            raw_artifact_capture_complete=True, raw_artifact_sha256=blob['sha256'],
                            raw_artifact_format='json', raw_artifact_bytes=blob['retained_bytes'],
                            _raw_artifact_blob=blob)
@@ -178,7 +184,8 @@ def run(spec, workspace):
                              'file_path': diagnostic.get('file'),
                              'diagnostic_scope': 'file' if diagnostic.get('file') else 'project',
                              'severity': 'high' if diagnostic['category'] == 'Error' else 'low'})
-        payload = {**result, 'tool': 'typescript', 'category': spec.category,
+        payload = {**ci_result, 'tool': 'typescript', 'category': spec.category,
+            'returncode': result['raw_exit_code'], 'exit_code': result['raw_exit_code'], 'returncode_valid': True,
             'repository': REPOSITORY, 'commit_sha': target_sha,
             'production_scanner_integrated': True, 'score_override': False,
             'findings': findings, 'findings_count': len(findings), 'finding_count': len(findings),

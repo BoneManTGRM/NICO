@@ -274,3 +274,45 @@ qualified through this consumer. Local changes to the trusted importer file also
 mean source identity cannot be accepted against an older main copy: the normal
 reviewed release/workflow/source bindings must match, not be bypassed. Parent must
 review this exact local scope before publication. C++ and database pilot remain paused.
+
+## Post-publication persistence correction (local, not published)
+
+Independent parent review found two blockers in db5e693a that the earlier local
+review missed: GitHub run_id occupied the assessment binding namespace and was
+rejected by durable storage; missing canonical returncode_valid became false in
+compact records and blocked execution completion. The prior review/suite did not
+establish this complete persistence-to-gate path.
+
+The correction namespaces CI run/attempt/artifact/workflow/source identifiers,
+retains assessment run identity, and exposes authenticated raw_exit_code only
+after complete validation. Canonical returncode, exit_code and returncode_valid
+are projected from that validated value. Boolean/noninteger or inconsistent exits
+are rejected. No storage binding or completion-gate code was changed.
+
+Owned tests traverse authenticated importer, canonical snapshot runner, actual
+SQLite ScannerArtifactStore/persist_scanner_result, reopened immutable storage,
+compact records and complete_assessment_evidence with distinct assessment and CI
+run IDs. They cover clean, completed-with-errors and incomplete captures; all
+seven mismatched storage bindings; missing exit fields; and six invalid exits.
+Original compressed bytes are verified unchanged across storage/readback.
+Approval and client-delivery flags remain false even when execution coverage passes.
+This is local SQLite verification, not PostgreSQL or production qualification.
+
+The initial regression failed3cases before repair; all3 passed after correction.
+Independent read-only review ran9focused tests successfully and found no remaining
+blockers in the correction. Logs: /tmp/nico-ci-identity-exit-{red,green}.txt,
+/tmp/nico-ci-binding-final.txt and /tmp/nico-ci-binding-bandit.json.
+Bandit medium/high threshold:0findings; existing LOW subprocess observations were
+not suppressed. Metadata pre-parse memory limits remain unqualified as documented.
+
+No correction was pushed. Read-only workflow inspection found native workflow
+38671764527 still in_progress at owned-project-integration step7, provisioning
+exact tools; later source/project qualification steps were pending. Available
+GitHub connector actions provide reads/reruns but no cancellation action. Prior
+forbidden CLI routes were not retried. No cancellation was performed, no workflow
+was dispatched, and no gate was disabled; parent owns the supported cancellation
+and scoped publication decision. A canceled native workflow must not receive
+qualification credit. Ordinary CI was not interrupted.
+Final focused importer/exporter/consumer/raw-storage/retained-publication batch:
+157passed in85.00seconds,0failed,0skipped (one pre-existing syntax warning).
+Independent9-test count overlaps this batch and is not additive.
