@@ -151,7 +151,7 @@ function harness({locale = 'en', edition = 'source', post, get, ios = false, pop
     require(name) {
       if (name === 'react') return react;
       if (name === 'react/jsx-runtime') return {jsx, jsxs: jsx, Fragment: 'fragment'};
-      if (name.endsWith('.css')) return {default: {}};
+      if (name.endsWith('.css')) return {__esModule: true, default: new Proxy({}, {get: (_, key) => String(key)})};
       throw new Error(`Unexpected import ${name}`);
     },
   };
@@ -164,7 +164,7 @@ function harness({locale = 'en', edition = 'source', post, get, ios = false, pop
       require: name => name === 'react' ? {useEffect: fn => fn()} : {},
     }).default();
   }
-  vm.runInNewContext(compiled.outputText, context, {filename});
+  vm.runInNewContext(compiled.outputText + '\nexports.testCopy = COPY;', context, {filename});
   function render() {cursor = 0; tree = context.exports.default(); return tree;}
   render(); effectMounted = true; effects.forEach(fn => fn()); render();
   function button(label) {return nodes(tree).find(n => n.type === 'button' && text(n) === label);}
@@ -198,7 +198,7 @@ function harness({locale = 'en', edition = 'source', post, get, ios = false, pop
     change(locale === 'en' ? 'I reviewed this exact' : 'Revisé este informe', true);
   }
   return {button, field, change, click, load, ready, render, requests, downloads, popups, reviewerLabel, roleLabel, reviewLabel, approveLabel,
-    text: () => text(tree), elements: () => nodes(tree)};
+    copy: context.exports.testCopy[locale], text: () => text(tree), elements: () => nodes(tree)};
 }
 
 test('pending approval remains actionable with blank reviewer metadata', async () => {
@@ -954,5 +954,71 @@ for (const locale of ['en', 'es-MX']) {
     assert.equal(h.requests[0].method, 'GET');
     assert.equal(h.downloads.length, 0);
     assert.equal(JSON.stringify(value), original);
+  });
+}
+
+// Expected presentation selections are explicit, not derived by the production
+// flags/formula. COPY is exposed only inside this VM harness to avoid duplicating
+// translations; literal source-copy preservation is also reviewed in the diff.
+const statusCases = [
+  {name: 'not loaded', make: () => null, heading: 'title', step: 'approveHeading', lead: 'approveLead',
+    review: 'review', status: ['Waiting for secure access', 'Esperando acceso seguro'], specialist: 'specialistIncomplete', allowed: false, banner: null},
+  {name: 'pending', make: () => fixture(), heading: 'title', step: 'approveHeading', lead: 'approveLead',
+    review: 'review', status: ['Human review required', 'Se requiere revisión humana'], specialist: 'specialistIncomplete', allowed: false, banner: 'blockedDelivery'},
+  {name: 'operator approved but not specialist reviewed', approveEnabled: true, make: () => fixture(true), heading: 'approvedHeading', step: 'approvedHeading', lead: 'pendingAuthorization',
+    review: 'operatorReview', status: ['Approved', 'Aprobada'], specialist: 'specialistIncomplete', allowed: false, banner: 'pendingAuthorization'},
+  {name: 'specialist approved', make: () => fixture(true, false), heading: 'approvedHeading', step: 'approvedHeading', lead: 'pendingAuthorization',
+    review: 'review', status: ['Approved', 'Aprobada'], specialist: 'specialistComplete', allowed: false, banner: 'pendingAuthorization'},
+  {name: 'authorized operator edition', make: () => authorizedFixture({body: {expected_artifact_identity: fixture(true).review_artifact_identity}}),
+    heading: 'approvedHeading', step: 'approvedHeading', lead: 'authorizationNotice', review: 'operatorReview', status: ['Approved', 'Aprobada'],
+    specialist: 'specialistIncomplete', allowed: true, banner: 'readyDelivery'},
+  {name: 'authorized specialist edition', make: () => ({...fixture(true, false), client_delivery_allowed: true}),
+    heading: 'approvedHeading', step: 'approvedHeading', lead: 'authorizationNotice', review: 'review', status: ['Approved', 'Aprobada'],
+    specialist: 'specialistComplete', allowed: true, banner: 'readyDelivery'},
+  {name: 'truthy strings are not completion or authorization', make: () => ({...fixture(), human_review_completed: 'true', client_delivery_allowed: 'true'}),
+    heading: 'title', step: 'approveHeading', lead: 'approveLead', review: 'review', status: ['Human review required', 'Se requiere revisión humana'],
+    specialist: 'specialistIncomplete', allowed: false, banner: 'blockedDelivery'},
+  {name: 'pending with independent specialist flag', make: () => ({...fixture(), human_review_completed: true}),
+    heading: 'title', step: 'approveHeading', lead: 'approveLead', review: 'review', status: ['Human review required', 'Se requiere revisión humana'],
+    specialist: 'specialistComplete', allowed: false, banner: 'blockedDelivery'},
+  {name: 'pending with independent delivery flag', make: () => ({...fixture(), client_delivery_allowed: true}),
+    heading: 'title', step: 'approveHeading', lead: 'approveLead', review: 'review', status: ['Human review required', 'Se requiere revisión humana'],
+    specialist: 'specialistIncomplete', allowed: true, banner: 'readyDelivery'},
+  {name: 'unknown review status remains visible', make: () => ({...fixture(), review_status: 'custom_pending_state'}),
+    heading: 'title', step: 'approveHeading', lead: 'approveLead', review: 'review', status: ['custom pending state', 'custom pending state'],
+    specialist: 'specialistIncomplete', allowed: false, banner: 'blockedDelivery'},
+];
+for (const locale of ['en', 'es-MX']) for (const sample of statusCases) {
+  test(`status presentation preserves ${sample.name} in ${locale}`, async () => {
+    const value = sample.make();
+    // Operator receipt source-language checks are independent of UI locale.
+    const original = JSON.stringify(value);
+    const h = harness({locale, get: async () => response(value)});
+    if (value) await h.load();
+    const elements = h.elements(), copy = h.copy;
+    assert.equal(text(elements.find(node => node.type === 'h1')), copy[sample.heading]);
+    const decisionHeading = elements.filter(node => node.props?.className === 'stepHeading')[1];
+    assert.equal(text(nodes(decisionHeading).find(node => node.type === 'h2')), copy[sample.step]);
+    const paragraphs = nodes(decisionHeading).filter(node => node.type === 'p');
+    assert.equal(text(paragraphs[0]), copy.finalDecision);
+    assert.equal(text(paragraphs[1]), copy[sample.lead]);
+    const cards = elements.filter(node => node.type === 'article').slice(0, 3);
+    assert.deepEqual(cards.map(node => Array.from(node.props.children, text)), [
+      [copy[sample.review], sample.status[locale === 'en' ? 0 : 1]],
+      [copy.specialistReview, copy[sample.specialist]],
+      [copy.delivery, copy[sample.allowed ? 'authorized' : 'blocked']],
+    ]);
+    assert.deepEqual(cards.map(node => node.props.className), ['statusCard', 'statusCard', sample.allowed ? 'statusCardReady' : 'statusCardBlocked']);
+    const banners = elements.filter(node => ['deliveryReady', 'deliveryBlocked'].includes(node.props?.className));
+    assert.equal(banners.length, sample.banner === null ? 0 : 1);
+    if (sample.banner) {
+      assert.equal(text(banners[0]), copy[sample.banner]);
+      assert.equal(banners[0].props.className, sample.allowed ? 'deliveryReady' : 'deliveryBlocked');
+    }
+    assert.equal(h.requests.length, value ? 1 : 0);
+    assert.equal(h.requests.filter(request => request.method !== 'GET').length, 0);
+    assert.equal(h.downloads.length, 0);
+    assert.equal(JSON.stringify(value), original);
+    if (value && !sample.allowed) assert.equal(h.button(h.approveLabel).props.disabled, sample.approveEnabled !== true);
   });
 }

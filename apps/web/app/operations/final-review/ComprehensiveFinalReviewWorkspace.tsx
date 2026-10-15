@@ -420,6 +420,40 @@ function reviewStatusLabel(value: string, locale: Locale): string {
     : locale === "es-MX" ? "Esperando acceso seguro" : "Waiting for secure access";
 }
 
+// Display-only mapping of already-established flags. This does not determine
+// authority, readiness, or which actions may execute.
+function reviewStatusPresentation(copy: typeof COPY[Locale], state: {
+  approvalCompleted: boolean;
+  operatorApprovalCompleted: boolean;
+  specialistReviewCompleted: boolean;
+  deliveryAllowed: boolean;
+}) {
+  const delivery = state.deliveryAllowed ? {
+    cardClass: styles.statusCardReady,
+    status: copy.authorized,
+    bannerClass: styles.deliveryReady,
+    message: copy.readyDelivery,
+    approvedLead: copy.authorizationNotice,
+  } : {
+    cardClass: styles.statusCardBlocked,
+    status: copy.blocked,
+    bannerClass: styles.deliveryBlocked,
+    message: state.approvalCompleted ? copy.pendingAuthorization : copy.blockedDelivery,
+    approvedLead: copy.pendingAuthorization,
+  };
+  const heading = state.approvalCompleted ? {
+    hero: copy.approvedHeading, decision: copy.approvedHeading, lead: delivery.approvedLead,
+  } : {
+    hero: copy.title, decision: copy.approveHeading, lead: copy.approveLead,
+  };
+  return {
+    heading,
+    delivery,
+    reviewLabel: state.operatorApprovalCompleted ? copy.operatorReview : copy.review,
+    specialistStatus: state.specialistReviewCompleted ? copy.specialistComplete : copy.specialistIncomplete,
+  };
+}
+
 export default function ComprehensiveFinalReviewWorkspace() {
   const [locale, setLocale] = useState<Locale>("en");
   const [runId, setRunId] = useState("");
@@ -944,13 +978,18 @@ export default function ComprehensiveFinalReviewWorkspace() {
     }
   }
 
+  const statusPresentation = reviewStatusPresentation(copy, {
+    approvalCompleted, operatorApprovalCompleted, deliveryAllowed,
+    specialistReviewCompleted: result?.human_review_completed === true,
+  });
+
   const reviewerQueueHref = `/operations/reviewer-queue?run_id=${encodeURIComponent(runId.trim())}&lang=${encodeURIComponent(locale)}`;
 
   return <main className={styles.shell} data-review-contract="final-report-independent-v1">
     <section className={styles.hero}>
       <div className={styles.heroGlow} aria-hidden="true" />
       <p className={styles.eyebrow}>{copy.eyebrow}</p>
-      <h1>{approvalCompleted ? copy.approvedHeading : copy.title}</h1>
+      <h1>{statusPresentation.heading.hero}</h1>
       <p className={styles.lead}>{copy.lead}</p>
       <div className={styles.identityStrip}>
         <div><span>{copy.assessment}</span><strong>{copy.comprehensive}</strong></div>
@@ -995,12 +1034,12 @@ export default function ComprehensiveFinalReviewWorkspace() {
     </section>
 
     <section className={`${styles.panel} ${result ? styles.approvalActive : styles.approvalWaiting}`}>
-      <div className={styles.stepHeading}><span className={styles.stepNumber}>2</span><div><p className={styles.kicker}>{copy.finalDecision}</p><h2>{approvalCompleted ? copy.approvedHeading : copy.approveHeading}</h2><p>{approvalCompleted ? deliveryAllowed ? copy.authorizationNotice : copy.pendingAuthorization : copy.approveLead}</p></div></div>
+      <div className={styles.stepHeading}><span className={styles.stepNumber}>2</span><div><p className={styles.kicker}>{copy.finalDecision}</p><h2>{statusPresentation.heading.decision}</h2><p>{statusPresentation.heading.lead}</p></div></div>
       <p className={styles.securityNote}>{copy.operatorDisclosure}</p>
       <div className={styles.statusGrid}>
-        <article className={styles.statusCard}><span>{operatorApprovalCompleted ? copy.operatorReview : copy.review}</span><strong>{reviewStatusLabel(rawStatus, locale)}</strong></article>
-        <article className={styles.statusCard}><span>{copy.specialistReview}</span><strong>{result?.human_review_completed === true ? copy.specialistComplete : copy.specialistIncomplete}</strong></article>
-        <article className={deliveryAllowed ? styles.statusCardReady : styles.statusCardBlocked}><span>{copy.delivery}</span><strong>{deliveryAllowed ? copy.authorized : copy.blocked}</strong></article>
+        <article className={styles.statusCard}><span>{statusPresentation.reviewLabel}</span><strong>{reviewStatusLabel(rawStatus, locale)}</strong></article>
+        <article className={styles.statusCard}><span>{copy.specialistReview}</span><strong>{statusPresentation.specialistStatus}</strong></article>
+        <article className={statusPresentation.delivery.cardClass}><span>{copy.delivery}</span><strong>{statusPresentation.delivery.status}</strong></article>
       </div>
       {result ? renderArtifactSummary([
         [copy.reportDigest, reportDigest],
@@ -1019,7 +1058,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
           {deliveryAllowed && !operatorApprovalCompleted ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadPackage}>{copy.downloadPackage}</button> : null}
         </div>
         {!deliveryAllowed ? <p id="approval-next-step" className={styles.securityNote} aria-live="polite">{approvalNextStep}</p> : null}
-        <div className={deliveryAllowed ? styles.deliveryReady : styles.deliveryBlocked}>{deliveryAllowed ? copy.readyDelivery : approvalCompleted ? copy.pendingAuthorization : copy.blockedDelivery}</div>
+        <div className={statusPresentation.delivery.bannerClass}>{statusPresentation.delivery.message}</div>
         <details className={styles.otherDecisions}><summary>{copy.otherDecision}</summary><p>{copy.otherDecisionLead}</p><div className={styles.decisionActions}><button type="button" disabled={loading || approvalCompleted} onClick={() => recordOtherDecision("request_more_evidence")}>{copy.requestEvidence}</button><button className={styles.reject} type="button" disabled={loading || approvalCompleted} onClick={() => recordOtherDecision("rejected")}>{copy.reject}</button></div></details>
       </>}
     </section>
