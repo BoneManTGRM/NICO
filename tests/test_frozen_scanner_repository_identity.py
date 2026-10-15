@@ -163,3 +163,76 @@ def test_shallow_local_source_is_rejected(source, tmp_path):
     assert git(shallow, 'rev-parse', '--is-shallow-repository') == 'true'
     with pytest.raises(RuntimeError, match='checkout is shallow'):
         prepare(shallow, tmp_path)
+
+
+@pytest.mark.parametrize('layout', [
+    'equal', 'ancestor', 'descendant', 'missing_descendant',
+    'destination_alias_equal', 'destination_alias_ancestor',
+    'destination_alias_descendant', 'source_alias',
+])
+def test_checkout_overlap_fails_before_deletion_or_clone(source, tmp_path, monkeypatch, layout):
+    target = git(source, 'rev-parse', 'HEAD')
+    marker = source / 'preserve.txt'
+    marker.write_text('source must survive')
+    config = (source / '.git/config').read_bytes()
+    source_arg = source
+    destinations = {'equal': source, 'ancestor': tmp_path, 'descendant': source / 'child',
+                    'missing_descendant': source / 'not-created' / 'child'}
+    if layout.startswith('destination_alias_'):
+        kind = layout.removeprefix('destination_alias_')
+        destination = tmp_path / 'alias'
+        referred = destinations[kind]
+        referred.mkdir(exist_ok=True)
+        destination.symlink_to(referred, target_is_directory=True)
+    elif layout == 'source_alias':
+        source_arg = tmp_path / 'source-alias'
+        source_arg.symlink_to(source, target_is_directory=True)
+        destination = source
+    else:
+        destination = destinations[layout]
+        if layout != 'missing_descendant':
+            destination.mkdir(exist_ok=True)
+    remove = Mock(side_effect=AssertionError('must not delete overlapping paths'))
+    execute = Mock(side_effect=AssertionError('must reject overlap before Git operations'))
+    monkeypatch.setattr(proof.shutil, 'rmtree', remove)
+    monkeypatch.setattr(proof.subprocess, 'run', execute)
+    with pytest.raises(ValueError, match='frozen_proof_checkout_paths_overlap'):
+        proof.prepare_checkout(source_arg, destination, target, REPOSITORY)
+    remove.assert_not_called()
+    execute.assert_not_called()
+    assert marker.read_text() == 'source must survive'
+    assert (source / '.git/config').read_bytes() == config
+    assert not (source / 'not-created').exists()
+
+
+@pytest.mark.parametrize('kind', ['directory', 'empty_directory', 'file', 'symlink', 'broken_symlink'])
+def test_existing_destination_is_not_assumed_owned(source, tmp_path, monkeypatch, kind):
+    destination = tmp_path / 'existing'
+    marker = tmp_path / 'unrelated.txt'
+    marker.write_text('unrelated data')
+    if kind == 'directory':
+        destination.mkdir()
+        (destination / 'keep.txt').write_text('pre-existing output')
+    elif kind == 'empty_directory':
+        destination.mkdir()
+    elif kind == 'file':
+        destination.write_text('pre-existing file')
+    elif kind == 'symlink':
+        destination.symlink_to(marker)
+    else:
+        destination.symlink_to(tmp_path / 'absent')
+    target = git(source, 'rev-parse', 'HEAD')
+    config = (source / '.git/config').read_bytes()
+    remove = Mock(side_effect=AssertionError('unowned destination must not be deleted'))
+    monkeypatch.setattr(proof.shutil, 'rmtree', remove)
+    with pytest.raises(ValueError, match='frozen_proof_destination_exists'):
+        proof.prepare_checkout(source, destination, target, REPOSITORY)
+    remove.assert_not_called()
+    assert marker.read_text() == 'unrelated data'
+    assert (source / '.git/config').read_bytes() == config
+    assert destination.exists() or destination.is_symlink()
+    assert not (tmp_path / 'absent').exists()
+    if kind == 'directory':
+        assert (destination / 'keep.txt').read_text() == 'pre-existing output'
+    if kind == 'file':
+        assert destination.read_text() == 'pre-existing file'

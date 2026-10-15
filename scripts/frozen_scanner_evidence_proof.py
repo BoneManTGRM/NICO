@@ -79,11 +79,18 @@ def validated_origin(source: Path, repository: str) -> str:
 
 
 def prepare_checkout(source: Path, destination: Path, target_sha: str, repository: str) -> WorkerWorkspace:
+    requested_destination = destination
+    source = source.resolve()
+    destination = destination.resolve()
+    if source == destination or source in destination.parents or destination in source.parents:
+        raise ValueError("frozen_proof_checkout_paths_overlap")
     origin = validated_origin(source, repository)
     if not re.fullmatch(r"[0-9a-f]{40}", target_sha):
         raise ValueError("frozen_proof_target_sha_invalid")
-    if destination.exists():
-        shutil.rmtree(destination)
+    # Existing paths have no proven ownership, even if named workspace-N. Do not
+    # erase leftovers or follow an existing symlink into somebody else's data.
+    if requested_destination.exists() or requested_destination.is_symlink() or destination.exists():
+        raise ValueError("frozen_proof_destination_exists")
     destination.mkdir(parents=True)
     repo_dir = destination / "repo"
     subprocess.run(
