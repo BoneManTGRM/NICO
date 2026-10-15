@@ -105,7 +105,7 @@ def retained(project,tmp_path,monkeypatch):
     from nico import nico_ci_typescript_evidence_v1 as module
     native=collect(project)
     source={str(p.relative_to(project)):sha(p.read_bytes()) for p in (project/'apps/web').rglob('*') if p.is_file() and '.next' not in p.parts}
-    source.update({module.WORKFLOW:'d'*64,'scripts/run_phase9_node_scanners.py':'e'*64,'scripts/nico_ci_typescript_check.cjs':'f'*64,'nico/nico_ci_typescript_evidence_v1.py':'a'*64})
+    source.update({p:sha((ROOT/p).read_bytes()) for p in (module.WORKFLOW,'scripts/run_phase9_node_scanners.py','scripts/nico_ci_typescript_check.cjs','nico/nico_ci_typescript_evidence_v1.py')})
     monkeypatch.setattr(module,'_git',lambda root,*args: 'b'*40 if args[0]=='rev-parse' else '')
     monkeypatch.setattr(module,'_source_inventory',lambda root:dict(source))
     env={'GITHUB_REPOSITORY':module.REPOSITORY,'GITHUB_SHA':'b'*40,'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'2',

@@ -91,6 +91,10 @@ def export_post_build(root: Path,out: Path,*,env=None,runner=_capture):
         if sha!=env.get('GITHUB_SHA') or not re.fullmatch('[a-f0-9]{40}',sha): raise ValueError('source_sha_mismatch')
         if _git(root,'status','--porcelain','--untracked-files=no'): raise ValueError('tracked_source_modified')
         before=_source_inventory(root)
+        record.update(source_sha=sha,source_inventory=before,repository=REPOSITORY,
+                      run_id=env.get('GITHUB_RUN_ID'),run_attempt=env.get('GITHUB_RUN_ATTEMPT'),
+                      workflow_ref=env.get('GITHUB_WORKFLOW_REF'),workflow_sha=env.get('GITHUB_WORKFLOW_SHA'),
+                      event=env.get('GITHUB_EVENT_NAME'),build_outcome=env.get('NICO_BUILD_OUTCOME'))
         code,raw,stderr,timed_out,truncated=runner(['node','--max-old-space-size=2048',str(root/'scripts/nico_ci_typescript_check.cjs')],root,out)
         record.update(raw_exit_code=code,capture_timed_out=timed_out,capture_truncated=truncated,
                       native_stderr_base64=base64.b64encode(stderr).decode('ascii'),native_stderr_sha256=_hash(stderr))
@@ -103,10 +107,6 @@ def export_post_build(root: Path,out: Path,*,env=None,runner=_capture):
             raise ValueError(record.get('reason') or 'native_result_incomplete')
         if _source_inventory(root)!=before or _git(root,'rev-parse','HEAD')!=sha or _git(root,'status','--porcelain','--untracked-files=no'):
             raise ValueError('source_changed_during_check')
-        record.update(source_sha=sha,source_inventory=before,repository=REPOSITORY,
-                      run_id=env.get('GITHUB_RUN_ID'),run_attempt=env.get('GITHUB_RUN_ATTEMPT'),
-                      workflow_ref=env.get('GITHUB_WORKFLOW_REF'),workflow_sha=env.get('GITHUB_WORKFLOW_SHA'),
-                      event=env.get('GITHUB_EVENT_NAME'),build_outcome=env.get('NICO_BUILD_OUTCOME'))
     except (ValueError,KeyError,TypeError,OSError,subprocess.SubprocessError) as exc:
         record.update(status='incomplete',clean=False,capture_complete=False,reason=str(exc))
     (out/'typescript.log').write_bytes(raw)
@@ -122,7 +122,7 @@ def export_post_build(root: Path,out: Path,*,env=None,runner=_capture):
 class AuthenticatedRun:
     """Controller-only authenticated API observations, NEVER parsed from artifact data.
 
-    The future adapter must fetch run/jobs/workflow-at-ref/artifact metadata through
+    The GitHub adapter fetches run/jobs/workflow-at-ref/artifact metadata through
     GitHub authorization. Merely constructing this object is not authentication.
     """
     repository: str
@@ -171,12 +171,25 @@ def import_nico_ci_evidence(archive: bytes, *, authenticated: AuthenticatedRun, 
                 if len(raw)>MAX_BYTES or len(raw)!=item.file_size: raise ValueError('artifact_member_capture')
                 contents[item.filename]=raw
     except (zipfile.BadZipFile,RuntimeError) as exc: raise ValueError('artifact_archive_invalid') from exc
-    manifest=_json(contents['manifest.json']); record=_json(contents['typescript.json']); native=_json(contents['typescript.log'])
+    manifest=_json(contents['manifest.json']); record=_json(contents['typescript.json'])
     if manifest!={'schema':SCHEMA,'files':{p:_hash(contents[p]) for p in ('typescript.log','typescript.json')}}: raise ValueError('artifact_manifest_mismatch')
     if not isinstance(record,dict): raise ValueError('record_schema_invalid')
     for field in ('repository','source_sha','workflow_sha','workflow_ref','run_id','run_attempt','event','build_outcome'):
         if record.get(field)!=getattr(a,field): raise ValueError('record_'+field+'_mismatch')
     if record.get('source_inventory')!=a.source_inventory: raise ValueError('source_inventory_mismatch')
+    if record.get('native_stdout_sha256')!=_hash(contents['typescript.log']): raise ValueError('native_stdout_digest_mismatch')
+    if record.get('status')=='incomplete':
+        if (record.get('schema')!=SCHEMA or record.get('clean') is not False
+                or record.get('capture_complete') is not False or a.check_outcome!='failure'):
+            raise ValueError('incomplete_outcome_conflict')
+        # Authenticated failure evidence is retained, never promoted to checked/clean.
+        return {'scanner':'typescript','status':'incomplete','clean':False,'source_sha':target_sha,
+                'execution_source':'authenticated_nico_postbuild_ci','reason':'retained_check_incomplete',
+                'retained_failure':{k:record[k] for k in ('reason','diagnostics','diagnostics_text','raw_exit_code',
+                    'capture_timed_out','capture_truncated','native_stdout_sha256','native_stderr_base64','native_stderr_sha256') if k in record},
+                'artifact_digest':a.artifact_digest,'run_id':a.run_id,'run_attempt':a.run_attempt,
+                'production_scanner_integrated':False,'score_override':False}
+    native=_json(contents['typescript.log'])
     native_fields={'schema','status','clean','diagnostics','diagnostics_text','compiler','lockfile_sha256',
                    'generated_inputs','configuration_sha256','raw_configuration','effective_configuration',
                    'configuration_limitations','program_inputs','read_inputs','root_inputs','capture_complete','emitted_files'}
