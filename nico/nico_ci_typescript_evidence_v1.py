@@ -241,5 +241,8 @@ def import_nico_ci_evidence(archive: bytes, *, authenticated: AuthenticatedRun, 
     return {'scanner':'typescript','status':'completed','clean':record['clean'],'source_sha':target_sha,
             'execution_source':'authenticated_nico_postbuild_ci','diagnostics':diagnostics,
             'configuration_limitations':record.get('configuration_limitations'), 'effective_configuration':options,
+            'checked_project_scope':{'configuration':'apps/web/tsconfig.json',
+                'root_file_count':len(record['root_inputs']), 'program_input_count':len(record['program_inputs']),
+                'coverage':'Retained TypeScript project configuration only; not full-repository, runtime or ESLint coverage'},
             'artifact_digest':a.artifact_digest,'run_id':a.run_id,'run_attempt':a.run_attempt,
             'production_scanner_integrated':False,'score_override':False}

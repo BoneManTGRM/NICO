@@ -1,9 +1,10 @@
 # NICO post-build TypeScript evidence
 
-This change is local preparation for NICO's existing Node CI. It runs the pinned
+The initial change prepared NICO's existing Node CI. The local consumer addition
+is described in the final section below. It runs the pinned
 TypeScript 6.0.3 compiler after the existing Next build attempt and retains a
-separate exact-run artifact. It does not activate a production scanner or change
-scores, approval, or delivery decisions. The legacy exporter mode is unchanged.
+separate exact-run artifact. The initial exporter alone did not activate a
+production scanner. No scoring rules, approval, or delivery decisions are overridden. The legacy exporter mode is unchanged.
 
 The explicit check disables emission and incremental reuse. It retains the actual
 project configuration: `skipLibCheck=true`, `strict=false`, `allowJs=true`, with
@@ -32,8 +33,9 @@ input inventories. Compiler hashes record identity; they are not a second packag
 signature verification service. Trust remains in the reviewed NICO workflow,
 pinned lock, `npm ci`, and independently authenticated GitHub provenance.
 
-The metadata adapter is implemented; no production scanner consumer is wired in
-this patch. Pull-request
+At the published b1cd5b49 checkpoint the metadata adapter was implemented but
+no production consumer was wired in. The proposed local connection below closes
+that code-path gap; live acceptance is still unqualified. Pull-request
 artifacts can be produced for review but cannot qualify as trusted main evidence.
 A completed result with compiler errors is retained as completed and not clean.
 Build outcome remains an independent field and must not be inferred from clean
@@ -207,3 +209,68 @@ one pre-existing escape-sequence warning. `git diff --check` passed. Evidence lo
 `/tmp/nico-ci-git-sha1-bandit-red.json`, and
 `/tmp/nico-ci-git-sha1-bandit-green.json`. Existing trusted tooling only; no local
 build, dependency installation, artifact retry or manual workflow dispatch.
+
+## Local canonical consumer proposal (not published)
+
+Base: b1cd5b49e7b4a854bce8306924c2f9645d84e2ea. Read-only live refs remained
+that published PR1740 head and main86e66391af6cacb28af467d6bf35a768f0f00046.
+
+The canonical TypeScript dispatch now selects this importer only for the owned
+BoneManTGRM/NICO repository. Both aggregate and snapshot entry points skip
+TypeScript project preparation for that path, even when project commands are
+allowed. Other repositories keep their existing behavior. Historical NICO SHA,
+missing/invalid/incomplete evidence, superseded attempts and changed main fail
+closed. No local fallback runs project code for owned NICO.
+
+Acquisition uses the existing authenticated client and fixed GitHub API endpoints,
+one exact-main latest workflow run and one exact-name artifact. It permits only
+an HTTPS Azure blob redirect from the artifact endpoint, drops GitHub headers on
+that storage request, follows no further redirects, and caps bytes at24MiB.
+Discovery, download and authentication share at most1500requests and300seconds
+(or the smaller scanner timeout). A trusted controller subprocess enforces the
+wall limit even for slow-drip network reads and inherits normal server auth;
+no credential is placed in arguments, output or assessed project execution.
+No new settings, credentials, permissions, workflow or service was introduced.
+Existing metadata JSON parsing remains buffered and lacks a hard pre-parse
+memory cap; this patch does not claim a total process-memory bound.
+
+The unchanged authority validates the full manifest/native evidence before the
+consumer projects it. Every top-level structured diagnostic becomes a canonical
+finding preserving category, offsets, related diagnostics, multiline message and
+file/project scope. Completed-with-errors remains completed-with-findings, never
+zero-error evidence. No local compiler receipt is fabricated. CI run/attempt,
+artifact digest, checked project, effective configuration and coverage limitations
+survive compact records; the small normalized TypeScript view also preserves the
+three configuration/scope fields. No full-repository, all-library, all-JavaScript,
+runtime or ESLint coverage is inferred. Scoring rules and approval/delivery gates
+are unchanged; ordinary coverage credit becomes possible only for accepted evidence.
+
+Native members are retained through existing secret-redacted scanner storage.
+Encoded stderr is decoded before redaction. The projection explicitly distinguishes
+original archive/manifest hashes from parsed, redacted member copies. Authenticated
+incomplete capture retains failure evidence while remaining unavailable/unverified.
+
+Verification (overlapping counts, not additive):
+- Full importer/exporter/source-guard/consumer batch:122passed in79.40seconds.
+- Final consumer/canonical-fallback/retained-publication batch:39passed in17.66seconds.
+- Existing scanner normalization and scoring tests:11passed in0.29seconds.
+- Regression for missing scope/config in normalized tools failed before the final
+  TypeScript-only preservation fix; the final consumer batch includes its pass.
+- Owned actual controller child proves inherited environment and a0.2second timeout;
+  no real credentials or network are used by these tests.
+- Independent read-only review:27consumer tests passed, then2focused final-delta
+  tests passed; no remaining source blockers reported. git diff --check passed.
+- Bandit on consumer and exporter:8LOW observations (2new subprocess-use notes,
+  6pre-existing),0MEDIUM/HIGH,0errors. No suppressions or scanner policy changes.
+
+Logs: /tmp/nico-ci-consumer-{full,final,scoring,limits-red}.txt and
+/tmp/nico-ci-consumer-bandit.json. Existing compiler override:
+NICO_TEST_TYPESCRIPT_ROOT=/workspace/NICO/apps/web/node_modules/typescript;
+pytest uses the existing /workspace/nico-venv interpreter and no cache provider.
+
+No real current-main capture, production scanner execution, assessment, publication,
+merge, deployment or workflow dispatch was performed. Current main has not yet
+qualified through this consumer. Local changes to the trusted importer file also
+mean source identity cannot be accepted against an older main copy: the normal
+reviewed release/workflow/source bindings must match, not be bypassed. Parent must
+review this exact local scope before publication. C++ and database pilot remain paused.
