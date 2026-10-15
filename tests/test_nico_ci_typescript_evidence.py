@@ -8,8 +8,10 @@ from pathlib import Path
 import shutil
 import subprocess
 import zipfile
+from fnmatch import fnmatchcase
 
 import pytest
+import yaml
 
 ROOT=Path(__file__).resolve().parents[1]
 NODE=shutil.which('node')
@@ -109,8 +111,44 @@ def test_workflow_checks_after_build_and_always_retains():
     assert 'steps.build_frontend.outcome' in text
     assert 'name: nico-typescript-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}' in text
     assert text.count('if: always()')>=2
-    assert text.count('- "scripts/nico_ci_typescript_check.cjs"')==2
-    assert text.count('- "nico/nico_ci_typescript_evidence_v1.py"')==2
+    assert text.count('- "scripts/nico_ci_typescript_check.cjs"')==1
+    assert text.count('- "nico/nico_ci_typescript_evidence_v1.py"')==1
+
+
+@pytest.mark.parametrize('event,branch,changed_path,eligible', [
+    ('push', 'main', 'nico/specialist_access_v1.py', True),
+    ('push', 'main', 'scripts/github_actions_nico_proof_auth_v1.py', True),
+    ('push', 'main', 'README.md', True),
+    ('push', 'feature/backend-fix', 'nico/specialist_access_v1.py', False),
+    ('push', 'feature/frontend-fix', 'apps/web/app/page.tsx', False),
+    ('push', 'upgrade/repair-first-foundation', 'nico/specialist_access_v1.py', True),
+    ('pull_request', 'main', 'nico/specialist_access_v1.py', False),
+    ('pull_request', 'main', 'apps/web/app/page.tsx', True),
+    ('pull_request', 'main', '.github/workflows/node.js.yml', True),
+    ('pull_request', 'main', 'scripts/run_phase9_node_scanners.py', True),
+    ('pull_request', 'main', 'scripts/nico_ci_typescript_check.cjs', True),
+    ('pull_request', 'main', 'nico/nico_ci_typescript_evidence_v1.py', True),
+    ('pull_request', 'feature/other-base', 'apps/web/app/page.tsx', False),
+])
+def test_node_workflow_exact_main_receipt_trigger(event, branch, changed_path, eligible):
+    # BaseLoader keeps the Actions `on` key as text (YAML 1.1 treats it as True).
+    triggers = yaml.load((ROOT/'.github/workflows/node.js.yml').read_text(), Loader=yaml.BaseLoader)['on']
+    assert set(triggers) == {'push', 'pull_request', 'workflow_dispatch'}
+    assert triggers['push'] == {'branches': ['main', 'upgrade/repair-first-foundation']}
+    assert triggers['pull_request'] == {
+        'branches': ['main'],
+        'paths': ['apps/web/**', '.github/workflows/node.js.yml',
+                  'scripts/run_phase9_node_scanners.py', 'scripts/nico_ci_typescript_check.cjs',
+                  'nico/nico_ci_typescript_evidence_v1.py'],
+    }
+    assert triggers['workflow_dispatch'] == ''
+    # The verified schema uses only positive branch/path filters. For PR events,
+    # branch means the target branch. Both filters must match when paths exist.
+    trigger = triggers[event]
+    matches = branch in trigger['branches'] and (
+        'paths' not in trigger or any(fnmatchcase(changed_path, pattern) for pattern in trigger['paths'])
+    )
+    assert matches is eligible
 
 
 @pytest.fixture
