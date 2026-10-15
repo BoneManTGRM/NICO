@@ -150,8 +150,9 @@ def test_review_work_empirical_copy_and_states_are_localized() -> None:
 def test_review_work_es_mx_errors_do_not_surface_arbitrary_english_backend_detail() -> None:
     panel = source(WORK_PANEL)
 
-    assert "parseResponse(response, locale)" in panel
-    assert "errorMessage(caught, locale)" in panel
-    assert "No fue posible completar la solicitud protegida de trabajo de revisión" in panel
-    assert '/^[A-Z0-9_.-]+$/' in panel
-    assert 'if (locale === "es-MX")' in panel
+    boundary = source(ROOT / "apps/web/app/operations/reviewer-queue/reviewWorkspaceState.ts")
+    assert "reviewResponse(response, runId, locale)" in panel
+    assert "reviewError(caught, locale)" in panel
+    assert "No fue posible completar la solicitud protegida de revisión" in boundary
+    assert "JSON.stringify(detail)" not in boundary
+    assert "payload.error" not in boundary

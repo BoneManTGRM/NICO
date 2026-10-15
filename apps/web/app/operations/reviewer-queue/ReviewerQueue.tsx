@@ -1,7 +1,8 @@
 "use client";
 
 import {useEffect, useState} from "react";
-import type {ChangeEvent, FormEvent, SyntheticEvent} from "react";
+import type {FormEvent, SyntheticEvent} from "react";
+import {savedRun, useReviewScope, type WorkspaceProps} from "./reviewWorkspaceState";
 import ReviewSessionNotice from "./ReviewSessionNotice";
 import styles from "./reviewer-queue.module.css";
 
@@ -348,9 +349,9 @@ function RetainedUnitDisclosure({unit, locale}: {unit: QueueUnit; locale: Locale
     : <CandidateDisclosure candidate={unit.representative} locale={locale} />;
 }
 
-export default function ReviewerQueue() {
+export default function ReviewerQueue({runId, refresh = 0, isCurrent, onChanged}: WorkspaceProps = savedRun()) {
+  const scope = useReviewScope(isCurrent);
   const [locale, setLocale] = useState<Locale>("en");
-  const [runId, setRunId] = useState("");
   const [payload, setPayload] = useState<ReviewQueuePayload | null>(null);
   const [model, setModel] = useState<QueueModel | null>(null);
   const [loading, setLoading] = useState(false);
@@ -359,7 +360,6 @@ export default function ReviewerQueue() {
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
     const requestedLocale: Locale = query.get("lang") === "es-MX" ? "es-MX" : "en";
-    setRunId(query.get("run_id") || "");
     setLocale(requestedLocale);
     document.documentElement.lang = requestedLocale;
     document.title = tr(requestedLocale, "Human review workspace | NICO", "Espacio de revisión humana | NICO");
@@ -373,12 +373,15 @@ export default function ReviewerQueue() {
     window.location.assign(`${target.pathname}${target.search}${target.hash}`);
   }
 
-  async function loadQueue(event: FormEvent): Promise<void> {
-    event.preventDefault();
+  useEffect(() => {if (refresh > 0) void loadQueue();}, [refresh]);
+
+  async function loadQueue(event?: FormEvent): Promise<void> {
+    event?.preventDefault();
     if (!runId.trim()) {
       setError(tr(locale, "Enter the exact Comprehensive run ID.", "Ingresa el ID exacto de la ejecución Comprehensive."));
       return;
     }
+    const token = scope.begin();
     setLoading(true); setError(""); setPayload(null); setModel(null);
     try {
       const requestedRunId = runId.trim();
@@ -395,11 +398,12 @@ export default function ReviewerQueue() {
       if (text(next.source) !== "canonical_terminal_comprehensive_report_json") throw new Error(tr(locale, "The reviewer queue is not bound to the terminal canonical Comprehensive report.", "La cola de revisión no está vinculada al informe Comprehensive canónico terminal."));
       if (next.human_review_required !== true || next.client_delivery_allowed === true) throw new Error(tr(locale, "The exact run does not preserve the mandatory pre-approval human-review boundary.", "La ejecución exacta no conserva el límite obligatorio de revisión humana previa a la aprobación."));
       const queue = buildQueue(next, locale);
-      setPayload(next); setModel(queue);
+      if (scope.current(token)) {setPayload(next); setModel(queue);}
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : tr(locale, "Unable to load the exact review queue.", "No fue posible cargar la cola de revisión exacta."));
+      if (scope.current(token)) setError(caught instanceof Error ? caught.message : tr(locale, "Unable to load the exact review queue.", "No fue posible cargar la cola de revisión exacta."));
     } finally {
-      setLoading(false);
+      if (scope.current(token)) setLoading(false);
+      scope.finish(token);
     }
   }
 
@@ -417,7 +421,7 @@ export default function ReviewerQueue() {
       <h2>{tr(locale, "Open an exact terminal run", "Abrir una ejecución terminal exacta")}</h2>
       <ReviewSessionNotice runId={runId} locale={locale} />
       <form className={styles.form} onSubmit={loadQueue}>
-        <label>{tr(locale, "Exact Comprehensive run ID", "ID exacto de la ejecución Comprehensive")}<input disabled={loading} value={runId} onChange={(event: ChangeEvent<HTMLInputElement>) => {setRunId(event.target.value); setPayload(null); setModel(null);}} placeholder="comprun_…" autoCapitalize="none" autoCorrect="off" spellCheck={false} /></label>
+        <label>{tr(locale, "Exact Comprehensive run ID", "ID exacto de la ejecución Comprehensive")}<input disabled={loading} value={runId} readOnly placeholder="comprun_…" autoCapitalize="none" autoCorrect="off" spellCheck={false} /></label>
         <button type="submit" disabled={loading || !runId.trim()}>{loading ? tr(locale, "Loading exact queue…", "Cargando la cola exacta…") : tr(locale, "Load reviewer queue", "Cargar cola de revisión")}</button>
       </form>
       {error ? <div className={styles.error} role="alert">{error}</div> : null}

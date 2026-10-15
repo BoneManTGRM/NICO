@@ -1,0 +1,228 @@
+✖ all panels share the selected exact run and discard old target selection (283.486397ms)
+✖ data-phase2-review-work rejects invalid-json without empty success or crash (145.019677ms)
+✖ data-phase2-review-work rejects wrong-run without empty success or crash (95.137948ms)
+✖ data-phase2-review-work rejects non-array without empty success or crash (87.200252ms)
+✖ data-phase2-review-work rejects empty without empty success or crash (92.385704ms)
+✖ data-review-browser rejects invalid-json without empty success or crash (86.944923ms)
+✖ data-review-browser rejects wrong-run without empty success or crash (80.538038ms)
+✖ data-review-browser rejects non-array without empty success or crash (83.095192ms)
+✖ data-review-browser rejects empty without empty success or crash (87.796326ms)
+✖ late old-run read cannot populate newly selected run (95.252933ms)
+✖ write refreshes siblings by GET; ambiguous=false never repeats POST (121.197457ms)
+✖ write refreshes siblings by GET; ambiguous=true never repeats POST (96.802797ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 0
+ℹ fail 12
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1599.550339
+
+✖ failing tests:
+
+test at tests/js/reviewer-workspace.test.cjs:42:1
+✖ all panels share the selected exact run and discard old target selection (283.486397ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'comprun_saved'
+  - 'comprun_other'
+             ^
+
+      at TestContext.<anonymous> (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:44:42)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.start (node:internal/test_runner/test:1242:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'comprun_saved',
+    expected: 'comprun_other',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/js/reviewer-workspace.test.cjs:48:100
+✖ data-phase2-review-work rejects invalid-json without empty success or crash (145.019677ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  0 !== 1
+
+      at TestContext.<anonymous> (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:50:28)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/js/reviewer-workspace.test.cjs:48:100
+✖ data-phase2-review-work rejects wrong-run without empty success or crash (95.137948ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  0 !== 1
+
+      at TestContext.<anonymous> (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:50:28)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/js/reviewer-workspace.test.cjs:48:100
+✖ data-phase2-review-work rejects non-array without empty success or crash (87.200252ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  0 !== 1
+
+      at TestContext.<anonymous> (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:50:28)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/js/reviewer-workspace.test.cjs:48:100
+✖ data-phase2-review-work rejects empty without empty success or crash (92.385704ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  0 !== 1
+
+      at TestContext.<anonymous> (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:50:28)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/js/reviewer-workspace.test.cjs:48:100
+✖ data-review-browser rejects invalid-json without empty success or crash (86.944923ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  0 !== 1
+
+      at TestContext.<anonymous> (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:50:28)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/js/reviewer-workspace.test.cjs:48:100
+✖ data-review-browser rejects wrong-run without empty success or crash (80.538038ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  0 !== 1
+
+      at TestContext.<anonymous> (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:50:28)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/js/reviewer-workspace.test.cjs:48:100
+✖ data-review-browser rejects non-array without empty success or crash (83.095192ms)
+  TypeError: ((intermediate value) || []).filter is not a function
+      at /workspace/nico-reviewer-workspace/apps/web/app/operations/reviewer-queue/ReviewQueueBrowser.tsx:157:82
+      at useMemo (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:18:21)
+      at Object.ReviewQueueBrowser [as type] (/workspace/nico-reviewer-workspace/apps/web/app/operations/reviewer-queue/ReviewQueueBrowser.tsx:157:44)
+      at walk (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:27:182)
+      at /workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:28:95
+      at Array.map (<anonymous>)
+      at walk (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:28:84)
+      at walk (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:27:175)
+      at render (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:29:99)
+      at Object.load (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:36:181)
+
+test at tests/js/reviewer-workspace.test.cjs:48:100
+✖ data-review-browser rejects empty without empty success or crash (87.796326ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  0 !== 1
+
+      at TestContext.<anonymous> (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:50:28)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/js/reviewer-workspace.test.cjs:53:1
+✖ late old-run read cannot populate newly selected run (95.252933ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  1 !== 0
+
+      at TestContext.<anonymous> (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:54:9)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/js/reviewer-workspace.test.cjs:56:37
+✖ write refreshes siblings by GET; ambiguous=false never repeats POST (121.197457ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+
+    assert.ok(calls.filter(c=>(c.init.method||'GET')==='GET'&&c.url.endsWith('/review-work')).length>=2)
+
+      at TestContext.<anonymous> (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:61:9)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at tests/js/reviewer-workspace.test.cjs:56:37
+✖ write refreshes siblings by GET; ambiguous=true never repeats POST (96.802797ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+
+    assert.ok(calls.filter(c=>(c.init.method||'GET')==='GET'&&c.url.endsWith('/review-work')).length>=2)
+
+      at TestContext.<anonymous> (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:61:9)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
