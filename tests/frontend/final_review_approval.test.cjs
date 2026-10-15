@@ -890,3 +890,69 @@ for (const locale of ['en', 'es-MX']) test(`retained digest without final PDF st
   assert.equal(h.downloads.length, 0);
   assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
 });
+
+// Characterize the active workspace's artifact summary before consolidating its
+// repeated cards. These are display values, never approval or delivery evidence.
+const summaryLabels = {
+  en: ['Report artifact digest', 'Approval certificate', 'Accepted-edition manifest',
+    'Delivery package digest', 'Delivery authorization certificate', 'PDF'],
+  'es-MX': ['Hash de artefactos del informe', 'Certificado de aprobación', 'Manifiesto de edición aceptada',
+    'Hash del paquete de entrega', 'Certificado de autorización de entrega', 'PDF'],
+};
+const summaryCases = [
+  {name: 'missing fields', values: [], displays: [], pdf: undefined, pdfDisplay: null},
+  {name: 'distinct ordered identities', values: ['report-1', 'certificate-2', 'manifest-3', 'package-4', 'delivery-5'],
+    displays: ['report-1', 'certificate-2', 'manifest-3', 'package-4', 'delivery-5'], pdf: 'report.pdf', pdfDisplay: 'report.pdf'},
+  {name: 'format boundaries and raw titles',
+    values: ['1234567890123456789012', '12345678901234567890123', '  short  ', '   ', 'abcdef'.repeat(12)],
+    displays: ['1234567890123456789012', '123456789012…67890123', 'short', '', 'abcdefabcdef…efabcdef'],
+    pdf: '  exact-name.pdf  ', pdfDisplay: '  exact-name.pdf  '},
+  {name: 'empty and non-string source fields', values: ['', null, false, 0, 12345],
+    displays: [null, null, null, null, '12345'], pdf: 42, pdfDisplay: '42'},
+  {name: 'zero filename is absent', values: [], displays: [], pdf: 0, pdfDisplay: null},
+  {name: 'text remains text', values: ['<script>private</script>', '"quoted"', '&', 'same', 'same'],
+    displays: ['<script>priv…/script>', '"quoted"', '&', 'same', 'same'], pdf: '<report>.pdf', pdfDisplay: '<report>.pdf'},
+];
+function summaryCards(h) {
+  // The three review/delivery status cards precede the six artifact cards.
+  return h.elements().filter(node => node.type === 'article').slice(3).map(node => {
+    assert.equal(node.props.dangerouslySetInnerHTML, undefined);
+    const children = node.props.children;
+    assert.deepEqual(Array.from(children, child => child.type), ['span', 'strong']);
+    return {label: text(children[0]), value: text(children[1]), title: children[1].props.title};
+  });
+}
+for (const locale of ['en', 'es-MX']) {
+  test(`artifact summary is absent before load in ${locale}`, () => {
+    const h = harness({locale});
+    assert.deepEqual(summaryCards(h), []);
+    assert.equal(h.requests.length, 0);
+  });
+  for (const sample of summaryCases) test(`artifact summary preserves ${sample.name} in ${locale}`, async () => {
+    const [report, certificate, manifest, packageDigest, delivery] = sample.values;
+    const value = {
+      status: 'review_required', human_review_completed: false, client_delivery_allowed: false,
+      accepted_edition: {report_artifact_digest: report, accepted_edition_manifest_sha256: manifest,
+        review: {approval_certificate_sha256: certificate}},
+      approved_delivery_package: {zip_sha256: packageDigest},
+      delivery_authorization: {delivery_authorization_certificate_sha256: delivery},
+      reports: {pdf_filename: sample.pdf},
+    };
+    const original = JSON.stringify(value);
+    const h = harness({locale, get: async () => response(value)});
+    await h.load();
+    const fallback = locale === 'en' ? 'Not issued' : 'No emitido';
+    const expected = summaryLabels[locale].map((label, index) => index === 5
+      ? {label, value: sample.pdfDisplay ?? fallback, title: undefined}
+      : {label, value: sample.displays[index] ?? fallback, title: String(sample.values[index] || '')});
+    assert.deepEqual(summaryCards(h), expected);
+    // Populating display identities must not manufacture a usable PDF, enable
+    // approval, mutate retained data, or perform any decision/authorization POST.
+    assert.equal(h.button(h.reviewLabel).props.disabled, true);
+    assert.equal(h.button(h.approveLabel).props.disabled, true);
+    assert.equal(h.requests.length, 1);
+    assert.equal(h.requests[0].method, 'GET');
+    assert.equal(h.downloads.length, 0);
+    assert.equal(JSON.stringify(value), original);
+  });
+}
