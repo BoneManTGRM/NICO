@@ -1,8 +1,10 @@
 # Trusted TypeScript local prototype — 2026-10-15
 
 Base: 86e66391af6cacb28af467d6bf35a768f0f00046 (live main checked before work).
-Local branch: prototype/trusted-typescript-offline. No production integration,
-flag changes, score changes, publication, deployment, assessments or downloads.
+Branch: prototype/trusted-typescript-offline. No production integration,
+flag changes, score changes, deployment, assessments or downloads. This document
+records the initial local prototype; the subsequent dormant draft scope is in
+OFFLINE-BUNDLE-AND-ISOLATION.md. Draft publication grants no execution authority.
 
 ## Implemented boundary
 
