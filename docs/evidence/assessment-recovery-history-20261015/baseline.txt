@@ -1,0 +1,52 @@
+✔ saved review remains visible with history denied=false (en) (376.950357ms)
+✖ saved review remains visible with history denied=true (en) (172.717937ms)
+✔ saved review remains visible with history denied=false (es-MX) (152.786474ms)
+✖ saved review remains visible with history denied=true (es-MX) (151.657029ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 2
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1186.922135
+
+✖ failing tests:
+
+test at tests/js/assessment-recovery-history.test.cjs:58:5
+✖ saved review remains visible with history denied=true (en) (172.717937ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'unavailable'
+  - 'review_required'
+
+      at TestContext.<anonymous> (/workspace/nico-recovery-history/tests/js/assessment-recovery-history.test.cjs:66:14)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'unavailable',
+    expected: 'review_required',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/js/assessment-recovery-history.test.cjs:58:5
+✖ saved review remains visible with history denied=true (es-MX) (151.657029ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'unavailable'
+  - 'review_required'
+
+      at TestContext.<anonymous> (/workspace/nico-recovery-history/tests/js/assessment-recovery-history.test.cjs:66:14)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'unavailable',
+    expected: 'review_required',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

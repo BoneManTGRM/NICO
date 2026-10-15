@@ -1,0 +1,14 @@
+✔ late old-run timeout after Start new cannot restore its URL or resume it (335.627168ms)
+✔ legitimate same-run timeout retains exact recovery and completed report (129.829619ms)
+✔ late old-run timeout cannot replace a newer explicitly selected run (147.08714ms)
+✔ history failure stays on origin for /assessment (108.306443ms)
+✔ history failure stays on origin for //other.example/assessment (121.012154ms)
+✔ ignoring an old timeout does not dismiss recovery for the newly selected run (119.422762ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1198.785196
