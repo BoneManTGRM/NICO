@@ -390,6 +390,19 @@ function compactDigest(value: unknown): string {
   return `${normalized.slice(0, 12)}…${normalized.slice(-8)}`;
 }
 
+function renderArtifactSummary(
+  digests: ReadonlyArray<readonly [label: string, digest: string]>,
+  pdfFilename: unknown,
+  notIssued: string,
+) {
+  return <div className={styles.statusGrid}>
+    {digests.map(([label, digest]) => <article className={styles.statusCard} key={label}>
+      <span>{label}</span><strong title={digest}>{digest ? compactDigest(digest) : notIssued}</strong>
+    </article>)}
+    <article className={styles.statusCard}><span>PDF</span><strong>{pdfFilename ? String(pdfFilename) : notIssued}</strong></article>
+  </div>;
+}
+
 function reviewStatusLabel(value: string, locale: Locale): string {
   const normalized = value.trim().toLowerCase();
   const labels: Record<string, [string, string]> = {
@@ -989,14 +1002,13 @@ export default function ComprehensiveFinalReviewWorkspace() {
         <article className={styles.statusCard}><span>{copy.specialistReview}</span><strong>{result?.human_review_completed === true ? copy.specialistComplete : copy.specialistIncomplete}</strong></article>
         <article className={deliveryAllowed ? styles.statusCardReady : styles.statusCardBlocked}><span>{copy.delivery}</span><strong>{deliveryAllowed ? copy.authorized : copy.blocked}</strong></article>
       </div>
-      {result ? <div className={styles.statusGrid}>
-        <article className={styles.statusCard}><span>{copy.reportDigest}</span><strong title={reportDigest}>{reportDigest ? compactDigest(reportDigest) : copy.notIssued}</strong></article>
-        <article className={styles.statusCard}><span>{copy.certificateDigest}</span><strong title={certificateDigest}>{certificateDigest ? compactDigest(certificateDigest) : copy.notIssued}</strong></article>
-        <article className={styles.statusCard}><span>{copy.manifestDigest}</span><strong title={manifestDigest}>{manifestDigest ? compactDigest(manifestDigest) : copy.notIssued}</strong></article>
-        <article className={styles.statusCard}><span>{copy.packageDigest}</span><strong title={packageDigest}>{packageDigest ? compactDigest(packageDigest) : copy.notIssued}</strong></article>
-        <article className={styles.statusCard}><span>{copy.deliveryCertificateDigest}</span><strong title={deliveryCertificateDigest}>{deliveryCertificateDigest ? compactDigest(deliveryCertificateDigest) : copy.notIssued}</strong></article>
-        <article className={styles.statusCard}><span>PDF</span><strong>{report.pdf_filename ? String(report.pdf_filename) : copy.notIssued}</strong></article>
-      </div> : null}
+      {result ? renderArtifactSummary([
+        [copy.reportDigest, reportDigest],
+        [copy.certificateDigest, certificateDigest],
+        [copy.manifestDigest, manifestDigest],
+        [copy.packageDigest, packageDigest],
+        [copy.deliveryCertificateDigest, deliveryCertificateDigest],
+      ], report.pdf_filename, copy.notIssued) : null}
       {!result ? <div className={styles.emptyState}><strong>{copy.emptyTitle}</strong><span>{copy.emptyBody}</span></div> : <>
         {!approvalCompleted ? <label className={styles.confirmRow}><input type="checkbox" checked={confirmed} disabled={!exactEditionDownloaded || loading} onChange={(event) => setConfirmed(event.target.checked)} /><span><strong>{copy.reviewedExact}</strong><small>{copy.reviewedDetail}</small></span></label> : null}
         <details className={styles.noteDetails}><summary>{copy.approvalNote}</summary><label>{copy.approvalNoteLabel}<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder={copy.approvalPlaceholder} /></label></details>
