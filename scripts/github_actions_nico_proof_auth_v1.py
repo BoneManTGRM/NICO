@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import stat
@@ -88,6 +89,7 @@ def _open_oidc_response(request: urllib.request.Request, deadline: float) -> Any
     """Retry only temporary HTTP gateway/service failures before token parsing.
 
     Three attempts share a 30-second monotonic budget, with 1/2-second backoff.
+    Each socket timeout is capped at 10 seconds (previously 30 for the single GET).
     urllib's timeout bounds socket operations, not total wall time; callers must
     also reject a response that finishes after the deadline before exchanging it.
     """
@@ -104,7 +106,7 @@ def _open_oidc_response(request: urllib.request.Request, deadline: float) -> Any
                 raise RuntimeError("github_actions_oidc_get_http_failure") from None
             if attempt == 2:
                 raise RuntimeError("github_actions_oidc_get_temporary_failure_exhausted") from None
-        except (urllib.error.URLError, OSError):
+        except (urllib.error.URLError, OSError, http.client.HTTPException):
             raise RuntimeError("github_actions_oidc_get_transport_failure") from None
         delay = attempt + 1
         if deadline - time.monotonic() <= delay:
@@ -145,7 +147,7 @@ def acquire_production_proof_session(frontend_url: str) -> tuple[str, dict[str, 
             oidc_payload = _read_json(response)
         except (ValueError, UnicodeError):
             raise ValueError("github_actions_oidc_response_invalid") from None
-        except (urllib.error.URLError, OSError):
+        except (urllib.error.URLError, OSError, http.client.HTTPException):
             raise RuntimeError("github_actions_oidc_get_transport_failure") from None
     if time.monotonic() >= deadline:
         raise RuntimeError("github_actions_oidc_get_deadline_exceeded")

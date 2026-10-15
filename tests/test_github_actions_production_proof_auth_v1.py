@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import http.client
 import io
 import json
 from pathlib import Path
@@ -504,6 +505,28 @@ def test_oidc_body_transport_failure_is_not_retried(acquisition, capsys):
     assert acquisition.opener.call_count == 1
     assert response.closed
     _assert_safe_failure(caught, capsys)
+
+
+@pytest.mark.parametrize("boundary", ["open", "read"])
+def test_oidc_http_protocol_failure_is_sanitized_without_retry(acquisition, capsys, boundary):
+    error = http.client.BadStatusLine(_PRIVATE + " " + _OIDC_URL)
+    response = acquisition.token()
+    if boundary == "open":
+        acquisition.opener.side_effect = error
+    else:
+        response.read = Mock(side_effect=error)
+        acquisition.opener.side_effect = [response]
+    try:
+        with pytest.raises(RuntimeError, match="get_transport_failure") as caught:
+            proof_auth.acquire_production_proof_session(_FRONTEND)
+        assert acquisition.opener.call_count == 1
+        assert acquisition.opener.call_args.args[0].get_method() == "GET"
+        assert acquisition.clock.sleeps == []
+        if boundary == "read":
+            assert response.closed
+        _assert_safe_failure(caught, capsys)
+    finally:
+        response.close()
 
 
 def test_oidc_retry_uses_remaining_budget_as_socket_timeout(acquisition):
