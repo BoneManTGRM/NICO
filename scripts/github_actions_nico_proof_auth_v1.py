@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import stat
 import sys
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
@@ -82,6 +85,36 @@ def _read_json(response: Any) -> dict[str, Any]:
     return value
 
 
+def _open_oidc_response(request: urllib.request.Request, deadline: float) -> Any:
+    """Retry only temporary HTTP gateway/service failures before token parsing.
+
+    Three attempts share a 30-second monotonic budget, with 1/2-second backoff.
+    Each socket timeout is capped at 10 seconds (previously 30 for the single GET).
+    urllib's timeout bounds socket operations, not total wall time; callers must
+    also reject a response that finishes after the deadline before exchanging it.
+    """
+    for attempt in range(3):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("github_actions_oidc_get_deadline_exceeded")
+        try:
+            return urllib.request.urlopen(request, timeout=min(10.0, remaining))
+        except urllib.error.HTTPError as exc:
+            status = exc.code
+            exc.close()
+            if status not in {502, 503, 504}:
+                raise RuntimeError("github_actions_oidc_get_http_failure") from None
+            if attempt == 2:
+                raise RuntimeError("github_actions_oidc_get_temporary_failure_exhausted") from None
+        except (urllib.error.URLError, OSError, http.client.HTTPException):
+            raise RuntimeError("github_actions_oidc_get_transport_failure") from None
+        delay = attempt + 1
+        if deadline - time.monotonic() <= delay:
+            raise RuntimeError("github_actions_oidc_get_deadline_exceeded")
+        time.sleep(delay)
+    raise AssertionError("unreachable")
+
+
 def acquire_production_proof_session(frontend_url: str) -> tuple[str, dict[str, str]]:
     """Exchange the current GitHub Actions OIDC identity for a restricted NICO session.
 
@@ -108,11 +141,20 @@ def acquire_production_proof_session(frontend_url: str) -> tuple[str, dict[str, 
             "User-Agent": "nico-production-proof-auth",
         },
     )
-    with urllib.request.urlopen(oidc_request, timeout=30) as response:
-        oidc_payload = _read_json(response)
-    oidc_token = str(oidc_payload.get("value") or "").strip()
-    if not oidc_token:
+    deadline = time.monotonic() + 30.0
+    with _open_oidc_response(oidc_request, deadline) as response:
+        try:
+            oidc_payload = _read_json(response)
+        except (ValueError, UnicodeError):
+            raise ValueError("github_actions_oidc_response_invalid") from None
+        except (urllib.error.URLError, OSError, http.client.HTTPException):
+            raise RuntimeError("github_actions_oidc_get_transport_failure") from None
+    if time.monotonic() >= deadline:
+        raise RuntimeError("github_actions_oidc_get_deadline_exceeded")
+    oidc_token = oidc_payload.get("value")
+    if not isinstance(oidc_token, str) or not oidc_token.strip():
         raise ValueError("github_actions_oidc_token_unavailable")
+    oidc_token = oidc_token.strip()
 
     _register_proof_secret(oidc_token)
     exchange_request = urllib.request.Request(
