@@ -461,61 +461,73 @@ def _approved_review_pdf_service_occurrence(finding: dict[str, Any]) -> bool:
     )
 
 
+def _valid_sanitized_trufflehog_finding(finding: dict[str, Any]) -> bool:
+    """Validate the retained field allowlist without changing dispositions."""
+    allowed = {"SanitizationSchema", "DetectorName", "DetectorType", "Verified", "RawSHA256", "SourceMetadata"}
+    metadata = finding.get("SourceMetadata")
+    data = metadata.get("Data") if isinstance(metadata, dict) else None
+    git = data.get("Git") if isinstance(data, dict) else None
+    return (
+        set(finding) <= allowed
+        and finding.get("SanitizationSchema") == "nico.security-audit.trufflehog.finding.v1"
+        and isinstance(finding.get("DetectorName"), str)
+        and isinstance(finding.get("Verified"), bool)
+        and ("DetectorType" not in finding or type(finding["DetectorType"]) is int)
+        and _trufflehog_raw_digest(finding) is not None
+        and isinstance(metadata, dict) and set(metadata) == {"Data"}
+        and isinstance(data, dict) and set(data) == {"Git"}
+        and isinstance(git, dict) and set(git) <= {"file", "commit", "line"}
+        and all(isinstance(git[key], str) for key in ("file", "commit") if key in git)
+        and ("line" not in git or type(git["line"]) is int)
+    )
+
+
+def _valid_sanitized_trufflehog_capture(
+    root: Path, findings: list[dict[str, Any]] | None, summary: Any,
+) -> bool:
+    """Check capture integrity; completed captures have additional requirements."""
+    sanitized = isinstance(summary, dict) and summary.get("schema") == "nico.security-audit.trufflehog.capture.v1"
+    summary_allowed = {
+        "schema", "scanner", "status", "finding_count", "artifact_present", "history_depth",
+        "exit_code", "invalid_json_lines", "live_credential_verification", "raw_capture_sha256",
+        "sanitized_artifact_sha256", "raw_candidate_bodies_retained",
+    }
+    valid = (
+        sanitized and isinstance(findings, list)
+        and set(summary) == summary_allowed and summary.get("scanner") == "trufflehog"
+        and summary.get("sanitized_artifact_sha256") == _digest(root, "trufflehog.json")
+        and type(summary.get("finding_count")) is int
+        and summary["finding_count"] == len(findings)
+        and summary.get("live_credential_verification") is False
+        and summary.get("raw_candidate_bodies_retained") is False
+        and summary.get("history_depth") == "full"
+        and type(summary.get("invalid_json_lines")) is int
+        and summary["invalid_json_lines"] >= 0
+        and type(summary.get("exit_code")) is int
+    )
+    if not valid:
+        return False
+    for finding in findings:
+        if not _valid_sanitized_trufflehog_finding(finding):
+            return False
+    if summary.get("status") == "completed":
+        raw_digest = summary.get("raw_capture_sha256")
+        return (
+            summary["invalid_json_lines"] == 0 and summary["exit_code"] in {0, 183}
+            and summary.get("artifact_present") is True
+            and isinstance(raw_digest, str) and len(raw_digest) == 64
+            and all(c in "0123456789abcdef" for c in raw_digest)
+        )
+    return True
+
+
 def _trufflehog(root: Path, *, require_sanitized: bool = False) -> dict[str, Any]:
     findings, error = _read_json_lines(root, "trufflehog.json")
     summary, summary_error = _read_json(root, "trufflehog-summary.json")
-    sanitized = isinstance(summary, dict) and summary.get("schema") == "nico.security-audit.trufflehog.capture.v1"
     sanitized_rows = isinstance(findings, list) and any("SanitizationSchema" in finding for finding in findings)
     capture_claimed = isinstance(summary, dict) and "schema" in summary
     if require_sanitized or capture_claimed or sanitized_rows:
-        allowed = {"SanitizationSchema", "DetectorName", "DetectorType", "Verified", "RawSHA256", "SourceMetadata"}
-        summary_allowed = {
-            "schema", "scanner", "status", "finding_count", "artifact_present", "history_depth",
-            "exit_code", "invalid_json_lines", "live_credential_verification", "raw_capture_sha256",
-            "sanitized_artifact_sha256", "raw_candidate_bodies_retained",
-        }
-        valid = (
-            sanitized and isinstance(findings, list)
-            and set(summary) == summary_allowed and summary.get("scanner") == "trufflehog"
-            and summary.get("sanitized_artifact_sha256") == _digest(root, "trufflehog.json")
-            and type(summary.get("finding_count")) is int
-            and summary["finding_count"] == len(findings)
-            and summary.get("live_credential_verification") is False
-            and summary.get("raw_candidate_bodies_retained") is False
-            and summary.get("history_depth") == "full"
-            and type(summary.get("invalid_json_lines")) is int
-            and summary["invalid_json_lines"] >= 0
-            and type(summary.get("exit_code")) is int
-        )
-        if valid:
-            for finding in findings:
-                metadata = finding.get("SourceMetadata")
-                data = metadata.get("Data") if isinstance(metadata, dict) else None
-                git = data.get("Git") if isinstance(data, dict) else None
-                if not (
-                    set(finding) <= allowed
-                    and finding.get("SanitizationSchema") == "nico.security-audit.trufflehog.finding.v1"
-                    and isinstance(finding.get("DetectorName"), str)
-                    and isinstance(finding.get("Verified"), bool)
-                    and ("DetectorType" not in finding or type(finding["DetectorType"]) is int)
-                    and _trufflehog_raw_digest(finding) is not None
-                    and isinstance(metadata, dict) and set(metadata) == {"Data"}
-                    and isinstance(data, dict) and set(data) == {"Git"}
-                    and isinstance(git, dict) and set(git) <= {"file", "commit", "line"}
-                    and all(isinstance(git[key], str) for key in ("file", "commit") if key in git)
-                    and ("line" not in git or type(git["line"]) is int)
-                ):
-                    valid = False
-                    break
-        if valid and summary.get("status") == "completed":
-            raw_digest = summary.get("raw_capture_sha256")
-            valid = (
-                summary["invalid_json_lines"] == 0 and summary["exit_code"] in {0, 183}
-                and summary.get("artifact_present") is True
-                and isinstance(raw_digest, str) and len(raw_digest) == 64
-                and all(c in "0123456789abcdef" for c in raw_digest)
-            )
-        if not valid:
+        if not _valid_sanitized_trufflehog_capture(root, findings, summary):
             return _record(root, "trufflehog.json", "unavailable", len(findings or []),
                            reason="invalid_sanitized_capture", capture_complete=False)
     if (
