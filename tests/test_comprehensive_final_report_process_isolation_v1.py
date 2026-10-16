@@ -76,8 +76,12 @@ def test_deadline_path_waits_for_physical_worker_exit_before_recovery() -> None:
     assert stop_method.index("_wait_for_invoke_shutdown(state)") < stop_method.index(
         "background._release_local_task_capacity(state)"
     )
-    assert "self._expire_publication" in watchdog
-    assert "self._recover_after_deadline" in watchdog
+    recovery = source.split("def recover_deadline(", 1)[1].split("def watchdog()", 1)[0]
+    assert "recover_deadline(current" in watchdog
+    assert "self._expire_publication" in recovery
+    assert recovery.index("_wait_for_invoke_shutdown(state)") < recovery.index(
+        "self._recover_after_deadline"
+    )
 
 
 def test_spanish_bootstrap_enforces_process_isolation_last() -> None:

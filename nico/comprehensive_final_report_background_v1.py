@@ -413,6 +413,9 @@ class FinalReportPublicationCoordinator:
             if bool(deadline.get("overdue")):
                 with _LOCAL_TASKS_LOCK:
                     state = _LOCAL_TASKS.get(lease_id)
+                isolated_recovery = state.get("recover_deadline") if isinstance(state, dict) else None
+                if callable(isolated_recovery):
+                    return isolated_recovery(record, executor=executor, context=context)
                 supervised = isinstance(state, dict) and "watchdog_stop" in state
                 # Serialize request-driven expiry/recovery with the local
                 # supervisor and renderer cleanup. Both callers retain one plan.
