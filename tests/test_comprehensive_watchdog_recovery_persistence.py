@@ -35,11 +35,16 @@ def test_watchdog_reconciles_recovery_persistence(tmp_path, monkeypatch, fault_a
     supervisor_stopped_during_save = []
     advance_finished = threading.Event()
     watchdog_snapshot_loaded = threading.Event()
+    expiry_update_pending = threading.Event()
+    allow_expiry_update = threading.Event()
+    expiry_update_committed = threading.Event()
+    expiry_target_lease = None
     expired = set()
     lock = threading.Lock()
     calls, faults, threads, leases = [], [], [], []
     real_deadline = background._job_deadline_state
     real_save = store.save
+    real_job_update = store.update_final_report_job
     real_load = store.load
     real_start = coordinator._start_worker
     real_recover = coordinator._recover_after_deadline
@@ -100,6 +105,17 @@ def test_watchdog_reconciles_recovery_persistence(tmp_path, monkeypatch, fault_a
             assert advance_finished.wait(5)
         return snapshot
 
+    def update_job_with_barrier(lease_id, **kwargs):
+        second_expiry = (lease_id == expiry_target_lease
+                         and kwargs.get('status') == 'expired')
+        if second_expiry:
+            expiry_update_pending.set()
+            assert allow_expiry_update.wait(5), 'test must release the durable expiry update'
+        result = real_job_update(lease_id, **kwargs)
+        if second_expiry:
+            expiry_update_committed.set()
+        return result
+
     def track_cleanup(state):
         if threading.current_thread().name.startswith('nico-final-report-publication-'):
             renderer_cleanup.set()
@@ -116,6 +132,10 @@ def test_watchdog_reconciles_recovery_persistence(tmp_path, monkeypatch, fault_a
         with background._LOCAL_TASKS_LOCK:
             state = background._LOCAL_TASKS[kwargs['lease_id']]
             threads.extend(value for value in state.values() if isinstance(value, threading.Thread))
+        if (second_outcome == 'expire' and expiry_origin == 'watchdog'
+            and fault_at == 'after_claim' and len(leases) == 1):
+            # Force expiry before track_start records the second launched lease.
+            assert expiry_update_pending.wait(3), 'expiry must reach the barrier before append'
         leases.append(kwargs['lease_id'])
 
     def executor(context):
@@ -129,6 +149,7 @@ def test_watchdog_reconciles_recovery_persistence(tmp_path, monkeypatch, fault_a
 
     monkeypatch.setattr(background, '_job_deadline_state', controlled_deadline)
     monkeypatch.setattr(store, 'save', save_with_fault)
+    monkeypatch.setattr(store, 'update_final_report_job', update_job_with_barrier)
     monkeypatch.setattr(store, 'load', load_with_outage)
     monkeypatch.setattr(background, '_release_local_task_capacity', track_cleanup)
     monkeypatch.setattr(coordinator, '_start_worker', track_start)
@@ -174,8 +195,14 @@ def test_watchdog_reconciles_recovery_persistence(tmp_path, monkeypatch, fault_a
         assert len(current['recovery_history']) == 1
         if second_outcome == 'expire':
             with lock:
+                expiry_target_lease = second
                 expired.add(second)
             terminal = _wait_for_exhausted_failure(store, run_id)
+            assert expiry_update_pending.wait(1.5)
+            # Canonical exhaustion commits before the separate durable job update.
+            assert store.load_final_report_job(second)['status'] == 'rendering'
+            allow_expiry_update.set()
+            assert expiry_update_committed.wait(2), 'durable expired update did not commit'
             assert store.load_final_report_job(second)['status'] == 'expired'
             release[1].set()
         else:
@@ -210,6 +237,7 @@ def test_watchdog_reconciles_recovery_persistence(tmp_path, monkeypatch, fault_a
         assert background._PUBLICATION_SLOT.acquire(blocking=False)
         background._PUBLICATION_SLOT.release()
     finally:
+        allow_expiry_update.set()
         advance_finished.set()
         for event in release:
             event.set()
