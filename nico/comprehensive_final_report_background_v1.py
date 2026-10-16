@@ -4,6 +4,7 @@ import os
 import threading
 import time
 import uuid
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from typing import Any, Mapping
 
@@ -410,16 +411,19 @@ class FinalReportPublicationCoordinator:
             now_epoch = time.time()
             deadline = _job_deadline_state(job, now_epoch=now_epoch)
             if bool(deadline.get("overdue")):
-                expired = self._expire_publication(
-                    record,
-                    lease_id=lease_id,
-                    context=context,
-                )
-                return self._recover_after_deadline(
-                    expired,
-                    executor=executor,
-                    context=context,
-                )
+                with _LOCAL_TASKS_LOCK:
+                    state = _LOCAL_TASKS.get(lease_id)
+                supervised = isinstance(state, dict) and "watchdog_stop" in state
+                # Serialize request-driven expiry/recovery with the local
+                # supervisor and renderer cleanup. Both callers retain one plan.
+                with state["state_lock"] if supervised else nullcontext():
+                    expired = self._expire_publication(
+                        record, lease_id=lease_id, context=context,
+                    )
+                    return self._recover_after_deadline(
+                        expired, executor=executor, context=context,
+                        recovery_state=state["recovery_state"] if supervised else None,
+                    )
             if _local_task_active(lease_id):
                 return record
             if _job_fresh(job, now_epoch=now_epoch):
@@ -466,6 +470,13 @@ class FinalReportPublicationCoordinator:
             persisted = self._store.save(updated, expected_revision=expected_revision)
         except ComprehensiveRunConflict:
             return self._store.load(run_id)
+        # Renderer cancellation must not cancel supervision of the persisted
+        # deadline's recovery. Keep this task registered until reconciliation.
+        with _LOCAL_TASKS_LOCK:
+            state = _LOCAL_TASKS.get(lease_id)
+        if isinstance(state, dict) and "watchdog_stop" in state:
+            with state["state_lock"]:
+                state["recovery_record"] = persisted
         self._stop_local_task(lease_id)
         self._safe_job_update(lease_id, status="expired")
         return persisted
@@ -476,6 +487,7 @@ class FinalReportPublicationCoordinator:
         *,
         executor,
         context: Mapping[str, Any],
+        recovery_state: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Consume the existing one-attempt recovery budget and relaunch immediately.
 
@@ -488,53 +500,86 @@ class FinalReportPublicationCoordinator:
         run_id = _text(context.get("run_id"))
         if record.get("terminal") is not True:
             return record
-        try:
-            recovered = rewind_blocked_run_for_final_artifact_recovery(record)
-        except Exception:
-            return record
+        recovery_state = recovery_state if recovery_state is not None else {}
+        recovered = recovery_state.get("rewound")
+        if recovered is None:
+            try:
+                recovered = rewind_blocked_run_for_final_artifact_recovery(record)
+            except Exception:
+                return record
+            recovery_state["rewound"] = recovered
         if recovered == record:
             return record
-        try:
-            persisted = self._store.save(
-                recovered,
-                expected_revision=int(record["revision"]),
-            )
-        except ComprehensiveRunConflict:
-            return self._store.load(run_id)
+        # A failed save may have committed the rewind. Reconcile the exact
+        # planned record before retrying, never consume another recovery budget
+        # or overwrite a concurrent claimant's marker/result.
+        latest = self._store.load(run_id)
+        if latest == recovered:
+            persisted = latest
+        elif latest == record:
+            try:
+                persisted = self._store.save(
+                    recovered,
+                    expected_revision=int(record["revision"]),
+                )
+            except ComprehensiveRunConflict:
+                return self._store.load(run_id)
+        else:
+            claim = recovery_state.get("claim")
+            if not isinstance(claim, dict) or latest != claim["record"]:
+                if isinstance(claim, dict) and _marker_lease(latest) != claim["lease_id"]:
+                    self._safe_job_update(claim["lease_id"], status="superseded")
+                return latest
+            persisted = recovered
         retry_context = dict(context)
         retry_context["recovery_history"] = list(persisted.get("recovery_history") or [])
-        return self._claim_and_launch(persisted, executor, retry_context)
+        return self._claim_and_launch(
+            persisted, executor, retry_context, claim_state=recovery_state,
+        )
 
     def _claim_and_launch(
         self,
         record: dict[str, Any],
         executor,
         context: Mapping[str, Any],
+        *,
+        claim_state: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         run_id = _text(context.get("run_id"))
-        lease_id = f"frpub_{uuid.uuid4().hex}"
-        started_epoch = time.time()
-        started_at = _now_iso()
-
-        self._store.create_final_report_job(
-            lease_id=lease_id,
-            run_id=run_id,
-            started_epoch=started_epoch,
-            heartbeat_epoch=started_epoch,
-            updated_at=started_at,
-            status="queued",
-        )
-        marker = _running_result(
-            context,
-            lease_id=lease_id,
-            started_epoch=started_epoch,
-        )
+        claim = claim_state.get("claim") if claim_state is not None else None
+        if claim is None:
+            lease_id = f"frpub_{uuid.uuid4().hex}"
+            started_epoch = time.time()
+            marker = _running_result(context, lease_id=lease_id, started_epoch=started_epoch)
+            claim = {
+                "lease_id": lease_id, "started_epoch": started_epoch, "started_at": _now_iso(),
+                "record": apply_comprehensive_stage_result(
+                    record, stage_id=FINAL_REPORT_STAGE_ID, result=marker,
+                ),
+            }
+            if claim_state is not None:
+                claim_state["claim"] = claim
+        lease_id = claim["lease_id"]
+        started_epoch = claim["started_epoch"]
+        updated = claim["record"]
+        if claim_state is not None:
+            latest = self._store.load(run_id)
+            if latest == updated:
+                # Save committed but its caller observed an error. This exact
+                # pending claim has not launched yet; do not allocate a new lease.
+                if not _local_task_active(lease_id):
+                    self._start_worker(lease_id=lease_id, executor=executor, context=dict(context))
+                return latest
+            if latest != record:
+                if _marker_lease(latest) != lease_id:
+                    self._safe_job_update(lease_id, status="superseded")
+                return latest
+        if claim_state is None or self._store.load_final_report_job(lease_id) is None:
+            self._store.create_final_report_job(
+                lease_id=lease_id, run_id=run_id, started_epoch=started_epoch,
+                heartbeat_epoch=started_epoch, updated_at=claim["started_at"], status="queued",
+            )
         expected_revision = int(record["revision"])
-        updated = apply_comprehensive_stage_result(
-            record,
-            stage_id=FINAL_REPORT_STAGE_ID,
-            result=marker,
-        )
         try:
             claimed = self._store.save(updated, expected_revision=expected_revision)
         except ComprehensiveRunConflict:
@@ -556,9 +601,12 @@ class FinalReportPublicationCoordinator:
         context: Mapping[str, Any],
     ) -> None:
         stop = threading.Event()
+        watchdog_stop = threading.Event()
         state_lock = threading.RLock()
         state: dict[str, Any] = {
             "stop": stop,
+            "watchdog_stop": watchdog_stop,
+            "recovery_state": {},
             "phase": "queued",
             "state_lock": state_lock,
             "slot_acquired": False,
@@ -578,38 +626,44 @@ class FinalReportPublicationCoordinator:
         def watchdog() -> None:
             interval = max(0.05, min(_heartbeat_seconds(), 5.0))
             run_id = _text(context.get("run_id"))
-            while not stop.wait(interval):
-                try:
-                    job = self._store.load_final_report_job(lease_id)
-                    deadline = _job_deadline_state(job, now_epoch=time.time())
-                except Exception:
-                    continue
-                if not bool(deadline.get("overdue")):
-                    continue
-
-                try:
-                    current = self._store.load(run_id)
-                    with state_lock:
-                        expired = self._expire_publication(
-                            current,
-                            lease_id=lease_id,
-                            context=context,
-                        )
-                        if _marker_lease(expired) == lease_id:
-                            continue
-                        release_slot_once()
-                    self._recover_after_deadline(
-                        expired,
-                        executor=executor,
-                        context=context,
-                    )
-                except Exception:
-                    # A transient canonical-store failure must not permanently
-                    # abandon an active lease. Recheck on the existing interval;
-                    # a stopped/fenced task still exits at the loop condition.
-                    continue
-                stop.set()
-                return
+            try:
+                while not watchdog_stop.wait(interval):
+                    try:
+                        expired = state.get("recovery_record")
+                        if expired is None:
+                            job = self._store.load_final_report_job(lease_id)
+                            deadline = _job_deadline_state(job, now_epoch=time.time())
+                            if not bool(deadline.get("overdue")):
+                                continue
+                            current = self._store.load(run_id)
+                            with state_lock:
+                                # advance() may have persisted recovery while this
+                                # watchdog was loading the pre-expiry record.
+                                expired = state.get("recovery_record")
+                                if expired is None:
+                                    expired = self._expire_publication(
+                                        current, lease_id=lease_id, context=context,
+                                    )
+                                    if _marker_lease(expired) == lease_id:
+                                        continue
+                                    state["recovery_record"] = expired
+                                    release_slot_once()
+                        with state_lock:
+                            self._recover_after_deadline(
+                                expired, executor=executor, context=context,
+                                recovery_state=state["recovery_state"],
+                            )
+                    except Exception:
+                        # Retry canonical reconciliation on the existing interval
+                        # even after the expired renderer has stopped/exited.
+                        continue
+                    stop.set()
+                    return
+            finally:
+                watchdog_stop.set()
+                with _LOCAL_TASKS_LOCK:
+                    if _LOCAL_TASKS.get(lease_id) is state:
+                        _LOCAL_TASKS.pop(lease_id, None)
 
         def invoke() -> None:
             outcome = "failed"
@@ -656,9 +710,9 @@ class FinalReportPublicationCoordinator:
                     release_slot_once()
                 stop.set()
                 self._safe_job_update(lease_id, status=outcome)
-                with _LOCAL_TASKS_LOCK:
-                    if _LOCAL_TASKS.get(lease_id) is state:
-                        _LOCAL_TASKS.pop(lease_id, None)
+                with state_lock:
+                    if state.get("recovery_record") is None:
+                        watchdog_stop.set()
 
         heartbeat_thread = threading.Thread(
             target=heartbeat,
@@ -691,6 +745,7 @@ class FinalReportPublicationCoordinator:
             invoke_thread.start()
         except BaseException:
             stop.set()
+            watchdog_stop.set()
             release_slot_once()
             self._safe_job_update(lease_id, status="failed")
             with _LOCAL_TASKS_LOCK:
@@ -716,7 +771,9 @@ class FinalReportPublicationCoordinator:
 
     def _stop_local_task(self, lease_id: str) -> None:
         with _LOCAL_TASKS_LOCK:
-            state = _LOCAL_TASKS.pop(lease_id, None)
+            state = _LOCAL_TASKS.get(lease_id)
+            if isinstance(state, dict) and state.get("recovery_record") is None:
+                _LOCAL_TASKS.pop(lease_id, None)
         if not isinstance(state, dict):
             return
         stop = state.get("stop")
@@ -790,6 +847,9 @@ def reset_final_report_publication_tasks_for_tests() -> None:
         states = list(_LOCAL_TASKS.values())
         _LOCAL_TASKS.clear()
     for state in states:
+        watchdog_stop = state.get("watchdog_stop") if isinstance(state, Mapping) else None
+        if isinstance(watchdog_stop, threading.Event):
+            watchdog_stop.set()
         stop = state.get("stop") if isinstance(state, Mapping) else None
         if isinstance(stop, threading.Event):
             stop.set()
