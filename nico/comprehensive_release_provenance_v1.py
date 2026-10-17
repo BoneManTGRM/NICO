@@ -140,7 +140,7 @@ def _provenance_lines(provenance: dict[str, Any]) -> list[tuple[str, str]]:
         config = row.get("configuration") or {}
         lines.extend([
             ("Actual scanner version", f"{name}: {row.get('scanner_version') or 'unavailable'}"),
-            ("Scanner execution status", f"{name}: {row.get('execution_status') or 'unknown'}; execution evidence verified={row.get('execution_evidence_verified') is True}; inapplicability evidence verified={row.get('inapplicability_evidence_verified') is True}"),
+            ("Scanner execution status", f"{name}: {row.get('execution_status') or 'unknown'}; execution evidence verified={row.get('execution_evidence_verified') is True}; retained CI evidence verified={row.get('retained_ci_evidence_verified') is True}; execution observed for this report={row.get('execution_observed') is True}; inapplicability evidence verified={row.get('inapplicability_evidence_verified') is True}"),
             ("Raw artifact SHA-256", f"{name}: {raw.get('sha256') or 'unavailable'}; availability={raw.get('availability') or 'unavailable'}"),
             ("Execution receipt SHA-256", f"{name}: {receipt.get('receipt_sha256') or 'unavailable'}; status={str(receipt.get('status') or 'not_recorded').replace('_', ' ')}"),
             ("Configuration SHA-256", f"{name}: {config.get('generated_config_sha256') or 'unavailable'}; full configuration verified=False"),
@@ -199,6 +199,8 @@ def _presentation_localizer(localize: Callable[[str], str] | None) -> Callable[[
             return _ES_LABELS[value]
         # Only constructed provenance values pass this formatter; retained records stay literal.
         for original, translated in (
+            ("retained CI evidence verified", "evidencia de CI conservada verificada"),
+            ("execution observed for this report", "ejecución observada para este informe"),
             ("inapplicability evidence verified", "evidencia de no aplicabilidad verificada"),
             ("execution evidence verified", "evidencia de ejecución verificada"),
             ("full configuration verified", "configuración completa verificada"),

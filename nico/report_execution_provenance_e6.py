@@ -285,13 +285,25 @@ def scanner_execution_evidence(identity: Mapping[str, Any], stages: Mapping[str,
             and invocations_verified
             and row.get("execution_observed") is True
             and receipt.get("status") == "retained_receipt_integrity_verified")
+        # Inventory derives this basis only after validating the authenticated
+        # import against immutable, identity-bound bytes. It is not a native receipt.
+        row["retained_ci_evidence_verified"] = bool(bytes_verified
+            and invocations_verified
+            and row.get("scanner_name") == "typescript"
+            and row.get("coverage_basis") == "authenticated_retained_typescript_ci"
+            and row.get("execution_observed") is False
+            and row.get("execution_status") in {"complete", "completed", "completed_clean", "completed_with_findings"}
+            and row.get("output_capture_complete") is True
+            and row.get("output_truncated") is not True and row.get("timed_out") is not True
+            and row.get("returncode_valid") is True and row.get("applicable") is not False)
         row["inapplicability_evidence_verified"] = bool(bytes_verified
             and row.get("execution_status") == "not_applicable" and row.get("applicable") is False
             and row.get("applicability_observation_verified") is True)
         result["scanner_records"].append(row)
     rows = result["scanner_records"]
     if rows and all(row["declared_invocation_status"] != "unverified"
-            and (row["execution_evidence_verified"] or row["inapplicability_evidence_verified"]) for row in rows):
+            and (row["execution_evidence_verified"] or row["retained_ci_evidence_verified"]
+                 or row["inapplicability_evidence_verified"]) for row in rows):
         result["verification_status"] = "verified"
     return result
 

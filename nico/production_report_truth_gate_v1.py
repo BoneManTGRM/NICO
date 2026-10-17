@@ -56,6 +56,29 @@ def _record_rank(record: Mapping[str, Any]) -> tuple[int, ...]:
     )
 
 
+def _retained_ci_verified(record: Mapping[str, Any], canonical: Mapping[str, Any]) -> bool:
+    """Recheck protected bytes; a report-supplied coverage label is not proof."""
+    from nico.report_execution_provenance_e6 import scanner_execution_evidence
+
+    identity = canonical.get("identity")
+    if (not isinstance(identity, Mapping) or not record.get("scan_id")
+        or record.get("run_id") != identity.get("run_id")
+        or record.get("commit_sha") != identity.get("commit_sha")
+        or record.get("current_run") is not False
+        or record.get("execution_observed_for_this_report") is not False):
+        return False
+    evidence = scanner_execution_evidence(identity, {
+        "dependency_security_static_analysis": {"scan_id": record["scan_id"]},
+    })
+    return any(
+        row.get("scanner_name") == "typescript"
+        and row.get("retained_ci_evidence_verified") is True
+        and record.get("raw_artifact_sha256")
+        == (row.get("raw_artifact") or {}).get("sha256")
+        for row in evidence.get("scanner_records", [])
+    )
+
+
 def _canonical_scanners(
     canonical: Mapping[str, Any],
     assessment: Mapping[str, Any],
@@ -120,16 +143,31 @@ def _canonical_scanners(
             and history_ok
         )
 
+        retained_ci = bool(
+            scanner == "typescript" and status.startswith("completed")
+            and exact and capture and history_ok
+            and not record.get("timed_out") and not record.get("output_truncated")
+            and _retained_ci_verified(record, canonical)
+        )
+        # This is ordinary report coverage, never native execution acceptance.
+        # Keep ordinary record projections byte-stable; discard unverified labels.
+        if retained_ci:
+            record["retained_ci_evidence_verified"] = True
+            record["coverage_basis"] = "authenticated_retained_typescript_ci"
+        else:
+            record.pop("retained_ci_evidence_verified", None)
+            record.pop("coverage_basis", None)
+
         deficits: list[str] = []
         if not status.startswith("completed"):
             deficits.append(f"status={status}")
-        if not current:
+        if not current and not retained_ci:
             deficits.append("current_run_not_proven")
-        if not observed:
+        if not observed and not retained_ci:
             deficits.append("execution_not_observed_for_this_report")
         if not exact:
             deficits.append("exact_commit_match_not_proven")
-        if not verified_signal:
+        if not verified_signal and not retained_ci:
             deficits.append("scanner_verification_not_proven")
         if not capture:
             deficits.append("complete_artifact_capture_not_proven")
@@ -204,7 +242,7 @@ def _scanner_line(record: Mapping[str, Any]) -> str:
         f"{name}: status={status}; current_run={record.get('current_run') is True}; "
         f"exact_commit_match={record.get('exact_commit_match') is True}; "
         f"verified_complete={record.get('verified_complete') is True}; "
-        f"findings={len(record.get('findings') or [])}; "
+        f"findings={record.get('finding_count', len(record.get('findings') or []))}; "
         f"artifact_hash={_text(record.get('artifact_hash')) or 'unavailable'}"
     )
 
@@ -459,7 +497,9 @@ def reconcile_production_report_truth(package: Mapping[str, Any]) -> dict[str, A
         relevant = [record for category in categories for record in by_category.get(category, [])]
         section.setdefault("evidence", [])
         section["evidence"].extend(_scanner_line(record) for record in relevant)
-        incomplete = [record for record in relevant if record.get("verified_complete") is not True]
+        incomplete = [record for record in relevant
+                      if record.get("verified_complete") is not True
+                      and record.get("retained_ci_evidence_verified") is not True]
         section["unavailable"].extend(
             f"{_name(record.get('scanner_name'))} exact-SHA evidence remains {_status(record)}: "
             f"{'; '.join(record.get('verification_deficits') or []) or _text(record.get('reason') or record.get('failure_or_unavailable_reason')) or 'completion requirements were not met'}"
