@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
-from nico.report_json_copy import deepcopy
+from nico.report_json_copy import deepcopy, copy_with_tree_ownership
 from nico.report_pdf_text import pdf_text_cache_scope
 from nico.report_delivery_timing_v1 import report_delivery_phase, report_delivery_phase_scope
 from collections.abc import Mapping
@@ -318,9 +318,9 @@ def _populate_premium_stage_summaries(package: Mapping[str, Any]) -> dict[str, A
 
     from nico import v2_premium_report_renderer as premium
 
-    result = deepcopy(dict(package))
+    result, owned_tree = copy_with_tree_ownership(dict(package))
     canonical = (
-        deepcopy(dict(result.get("json") or {}))
+        (result["json"] if owned_tree else deepcopy(dict(result.get("json") or {})))
         if isinstance(result.get("json"), Mapping)
         else {}
     )
