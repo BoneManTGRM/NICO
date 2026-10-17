@@ -13,12 +13,14 @@ import {AssessmentApiError, scopeId, terminal, wait} from "./assessmentModel";
 import {preserveRunIdentity, type RunIdentityFallback} from "./assessmentRunIdentity";
 import {
   clearPersistedRun,
+  discardRejectedIntake,
   readPersistedRun,
   writePersistedRun,
   type PersistedRun,
 } from "./assessmentRunPersistence";
 import {
   isAmbiguousIntakeOutcome,
+  isDefiniteIntakeRejection,
   issueFor,
   requestWithRetry,
   type AssessmentRunIssue,
@@ -226,6 +228,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
   const sequence = useRef(0);
   const bootstrapped = useRef(false);
   const recoveryInFlight = useRef(false);
+  const intakeInFlight = useRef(false);
   const activeContinuationRunId = useRef("");
   const latestResult = useRef<Result | null>(null);
 
@@ -269,32 +272,38 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       }
     }
 
-    const restoreAfterPageResume = () => {
+    const restoreAfterPageResume = (restoreTerminalUrl = false) => {
       // The exact URL-bound run is authoritative. A different tab may update the
       // shared active-run pointer, but it must never replace this page's run.
-      const persisted = readPersistedRun();
+      const persisted = readPersistedRun(restoreTerminalUrl);
       const visibleRunId = exactRunId(latestResult.current);
       if (
         !persisted ||
         recoveryInFlight.current ||
+        intakeInFlight.current ||
         activeContinuationRunId.current === persisted.runId
       ) {
         return;
       }
       if (visibleRunId && visibleRunId !== persisted.runId) {
+        offerSelectedRunRecovery(visibleRunId);
         return;
       }
       void resumePersistedRun(persisted);
     };
-    window.addEventListener("pageshow", restoreAfterPageResume);
-    window.addEventListener("online", restoreAfterPageResume);
+    const restorePage = () => restoreAfterPageResume();
+    const restoreHistory = () => restoreAfterPageResume(true);
+    window.addEventListener("pageshow", restorePage);
+    window.addEventListener("popstate", restoreHistory);
+    window.addEventListener("online", restorePage);
     const restoreAfterForeground = () => {
       if (document.visibilityState === "visible") restoreAfterPageResume();
     };
     document.addEventListener("visibilitychange", restoreAfterForeground);
     return () => {
-      window.removeEventListener("pageshow", restoreAfterPageResume);
-      window.removeEventListener("online", restoreAfterPageResume);
+      window.removeEventListener("pageshow", restorePage);
+      window.removeEventListener("popstate", restoreHistory);
+      window.removeEventListener("online", restorePage);
       document.removeEventListener("visibilitychange", restoreAfterForeground);
       sequence.current += 1;
     };
@@ -425,6 +434,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       : fallback?.engagementFieldStates ?? engagementFieldStates;
     writePersistedRun({
       version: 1,
+      intakeState: "accepted",
       runId,
       repository: String(runResult.repository || fallback?.repository || repository || ""),
       client: clientValue,
@@ -506,6 +516,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         {method: "GET"},
         copy,
       );
+      if (exactRunId(recovered) !== runId) return null;
       return preserveRunIdentity(recovered, {
         runId,
         repository: fallback.repository,
@@ -551,6 +562,10 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       // continuation. A terminal result at the budget boundary is still authoritative.
       for (let count = 1; count <= MAX_POLL_ATTEMPTS + 1; count += 1) {
         if (token !== sequence.current) {
+          return;
+        }
+        if (selectedRunId() !== continuationRunId) {
+          offerSelectedRunRecovery(continuationRunId);
           return;
         }
         persistExactRun(current, scope, startedAt);
@@ -676,6 +691,33 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     setMessage("");
   }
 
+  function selectedRunId(): string {
+    return new URL(window.location.href).searchParams.get("run_id")?.trim()
+      || readPersistedRun()?.runId || "";
+  }
+
+  function offerSelectedRunRecovery(previousRunId: string): void {
+    const selectedId = selectedRunId();
+    if (selectedId === previousRunId) return;
+    // Release stale visible state without clearing either run's retained identity.
+    publishResult(null);
+    setProtectedRunId(selectedId);
+    setStarted(null);
+    setMessage("");
+    setError("");
+    if (!selectedId) {
+      setPhase("idle");
+      setIssue(null);
+      return;
+    }
+    const persisted = readPersistedRun(true);
+    const error = new AssessmentApiError(copy.serviceUnavailableMessage, {
+      status: 0, code: "assessment_selected_run_recovery_required", retryable: true,
+    });
+    if (persisted?.intakeState === "accepted") applyIssue(error, true);
+    else applyPendingIntakeIssue(error);
+  }
+
   async function resumePersistedRun(persisted: PersistedRun): Promise<void> {
     const visibleRunId = exactRunId(latestResult.current);
     if (activeContinuationRunId.current === persisted.runId) {
@@ -684,7 +726,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     if (visibleRunId && visibleRunId !== persisted.runId) {
       return;
     }
-    if (recoveryInFlight.current) {
+    if (recoveryInFlight.current || intakeInFlight.current) {
       return;
     }
     recoveryInFlight.current = true;
@@ -702,13 +744,18 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         {method: "GET"},
         copy,
       );
+      if (exactRunId(recoveredResponse) !== persisted.runId) {
+        throw new AssessmentApiError(copy.serviceUnavailableMessage, {
+          status: 0, code: "assessment_intake_outcome_unknown", retryable: false,
+        });
+      }
       const recovered = preserveRunIdentity(recoveredResponse, {
         runId: persisted.runId,
         repository: persisted.repository,
         customerId: persisted.customerId,
         projectId: persisted.projectId,
       });
-      if (token !== sequence.current) {
+      if (token !== sequence.current || selectedRunId() !== persisted.runId) {
         return;
       }
       persistExactRun(recovered, scope, persisted.startedAt, persisted);
@@ -727,16 +774,45 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       }
       await continueRun(recovered, scope, token, persisted.startedAt);
     } catch (caught) {
-      if (token !== sequence.current) {
+      if (token !== sequence.current || selectedRunId() !== persisted.runId) {
         return;
       }
-      applyIssue(caught, true);
+      if (persisted.intakeState === "accepted") {
+        applyIssue(caught, true);
+      } else {
+        applyPendingIntakeIssue(caught);
+      }
     } finally {
       recoveryInFlight.current = false;
+      if (token === sequence.current) offerSelectedRunRecovery(persisted.runId);
     }
   }
 
+  function applyPendingIntakeIssue(caught: unknown): void {
+    const original = issueFor(caught, copy, false);
+    const pending = issueFor(new AssessmentApiError(copy.serviceUnavailableMessage, {
+      status: 0, code: "assessment_intake_outcome_unknown", retryable: false,
+      requestId: original.requestId,
+    }), copy, false);
+    setPhase("unavailable");
+    setStarted(null);
+    setMessage("");
+    setError("");
+    // Keep the actual diagnostic code; uncertainty is conveyed separately by copy.
+    setIssue({...pending, code: original.code, retryable: true});
+  }
+
   async function run(): Promise<void> {
+    if (intakeInFlight.current || recoveryInFlight.current) return;
+    intakeInFlight.current = true;
+    try {
+      await startIntake();
+    } finally {
+      intakeInFlight.current = false;
+    }
+  }
+
+  async function startIntake(): Promise<void> {
     if (
       issue &&
       !issue.runCreated &&
@@ -749,7 +825,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       );
       return;
     }
-    if (exactRunId(latestResult.current) || readPersistedRun()?.runId) {
+    if (exactRunId(latestResult.current) || selectedRunId()) {
       setError(
         locale === "es-MX"
           ? "La ejecución exacta está protegida. Usa «Iniciar una nueva evaluación» antes de crear otra."
@@ -827,15 +903,22 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     }
 
     let acceptedRun: Result | null = null;
+    let intakeDispatched = false;
+    let rejectedIntakeCleared = false;
     const startedAt = Date.now();
     try {
       await verifyRuntimePersistence();
       if (token !== sequence.current) {
         return;
       }
+      if (selectedRunId()) {
+        offerSelectedRunRecovery("");
+        return;
+      }
       const stakeholder = humanEvidence.stakeholder_context?.evidence || {};
       writePersistedRun({
         version: 1,
+        intakeState: "pending",
         runId: reservedRunId,
         repository: normalizedRepository.repository,
         client,
@@ -849,10 +932,16 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         startedAt,
         locale,
       });
+      if (readPersistedRun()?.runId !== reservedRunId) {
+        throw new AssessmentApiError(copy.serviceUnavailableMessage, {
+          status: 0, code: "assessment_intake_recovery_unavailable", retryable: true,
+        });
+      }
       setProtectedRunId(reservedRunId);
       setPhase("starting");
       setMessage(`${copy.phases.starting}: ${copy.service.label}`);
       setStarted(startedAt);
+      intakeDispatched = true;
       const data = await requestWithRetry(
         "/assessment/comprehensive-intake",
         {
@@ -862,8 +951,13 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         },
         copy,
       );
+      if (exactRunId(data) !== reservedRunId) {
+        throw new AssessmentApiError(copy.serviceUnavailableMessage, {
+          status: 0, code: "assessment_intake_outcome_unknown", retryable: false,
+        });
+      }
       acceptedRun = data;
-      if (token !== sequence.current) {
+      if (token !== sequence.current || readPersistedRun()?.runId !== reservedRunId) {
         return;
       }
       persistExactRun(data, scope, startedAt);
@@ -873,17 +967,28 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       if (token !== sequence.current) {
         return;
       }
-      if (!acceptedRun) {
+      if (intakeDispatched && readPersistedRun()?.runId !== reservedRunId) return;
+      if (!acceptedRun && intakeDispatched) {
         const recovered = await recoverRun(reservedRunId, {
           repository: normalizedRepository.repository,
           customerId: scope.customerId,
           projectId: scope.projectId,
         });
+        if (token !== sequence.current || readPersistedRun()?.runId !== reservedRunId) return;
         if (recovered) {
           persistExactRun(recovered, scope, startedAt);
           hydrateEngagementMetadata(recovered);
           publishResult(recovered);
           await continueRun(recovered, scope, token, startedAt);
+          return;
+        }
+      }
+      if (!acceptedRun && readPersistedRun()?.runId === reservedRunId) {
+        if (isDefiniteIntakeRejection(caught) && discardRejectedIntake(reservedRunId)) {
+          rejectedIntakeCleared = true;
+          setProtectedRunId("");
+        } else {
+          applyPendingIntakeIssue(caught);
           return;
         }
       }
@@ -893,10 +998,15 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         persistExactRun(acceptedRun, scope, startedAt);
         publishResult(acceptedRun);
       }
+    } finally {
+      if (intakeDispatched && !rejectedIntakeCleared && token === sequence.current) {
+        offerSelectedRunRecovery(reservedRunId);
+      }
     }
   }
 
   function startNew(): void {
+    if (intakeInFlight.current) return;
     sequence.current += 1;
     recoveryInFlight.current = false;
     activeContinuationRunId.current = "";
@@ -922,8 +1032,13 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
   }
 
   async function retry(): Promise<void> {
-    const persisted = readPersistedRun();
-    const runId = String(result?.run_id || persisted?.runId || "").trim();
+    if (intakeInFlight.current || recoveryInFlight.current) return;
+    const persisted = readPersistedRun(true);
+    const visibleRunId = exactRunId(latestResult.current);
+    if (persisted && visibleRunId && visibleRunId !== persisted.runId) {
+      offerSelectedRunRecovery(visibleRunId);
+    }
+    const runId = String(persisted?.runId || result?.run_id || "").trim();
     if (!runId) {
       if (issue && isAmbiguousIntakeOutcome(issue.code)) {
         return;

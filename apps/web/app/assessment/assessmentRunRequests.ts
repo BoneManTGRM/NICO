@@ -100,6 +100,18 @@ export function isAmbiguousIntakeOutcome(code: unknown): boolean {
   return AMBIGUOUS_INTAKE_OUTCOME_CODES.has(String(code || "").trim());
 }
 
+// Only codes whose producers reject before intake dispatch/reservation. A generic
+// 4xx (or a later status GET404) is not proof that paid work was never accepted.
+export function isDefiniteIntakeRejection(caught: unknown): boolean {
+  if (!(caught instanceof AssessmentApiError)) return false;
+  return (caught.status === 401 && [
+    "specialist_authentication_required", "specialist_session_invalid_or_expired",
+  ].includes(caught.code)) || (caught.status === 422 && [
+    "invalid_explicit_commit_sha", "assessment_intake_body_unavailable",
+    "assessment_intake_body_invalid_json", "assessment_intake_body_invalid",
+  ].includes(caught.code));
+}
+
 function browserHeaders(init?: HeadersInit): Headers {
   const headers = new Headers(init);
   if (!headers.has("Accept")) {
@@ -423,6 +435,11 @@ function preRunIssueMessage(
 ): string {
   const spanish = spanishCopy(copy);
 
+  if (code === "specialist_authentication_required" || code === "specialist_session_invalid_or_expired") {
+    return spanish
+      ? "Inicia sesión de nuevo antes de enviar la evaluación. Esta solicitud fue rechazada antes de crear una ejecución."
+      : "Sign in again before submitting the assessment. This request was rejected before creating a run.";
+  }
   if (code === "authorized_nico_operator_required") {
     return spanish
       ? "Ingresa un token de operador NICO válido para usar GitLab, Bitbucket o Azure DevOps."

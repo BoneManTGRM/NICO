@@ -53,8 +53,8 @@ def test_retry_resumes_exact_run_instead_of_creating_duplicate() -> None:
     normalized = " ".join(controller.split())
 
     assert "async function retry()" in controller
-    assert "const persisted = readPersistedRun()" in controller
-    assert 'const runId = String(result?.run_id || persisted?.runId || "").trim()' in controller
+    assert "const persisted = readPersistedRun(true)" in controller
+    assert 'const runId = String(persisted?.runId || result?.run_id || "").trim()' in controller
     assert "await resumePersistedRun( persisted ||" in normalized
     assert '`/assessment/comprehensive-run/${encodeURIComponent(persisted.runId)}`' in controller
     assert "await continueRun(recovered, scope, token, persisted.startedAt)" in controller
