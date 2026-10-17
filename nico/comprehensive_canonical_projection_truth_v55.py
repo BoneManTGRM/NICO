@@ -53,7 +53,7 @@ _COMPLETED_STATES = {
     "succeeded",
 }
 _SOURCE_RE = re.compile(
-    r"([A-Za-z0-9_.\-/]+\.(?:py|pyi|ts|tsx|js|jsx|mjs|cjs|java|kt|swift|go|rs|rb|php|cs|c|cc|cpp|h|hpp|sh|yml|yaml|toml|json))",
+    r"([A-Za-z0-9_.\-/\[\]]+\.(?:py|pyi|ts|tsx|js|jsx|mjs|cjs|java|kt|swift|go|rs|rb|php|cs|c|cc|cpp|h|hpp|sh|yml|yaml|toml|json))",
     re.IGNORECASE,
 )
 
