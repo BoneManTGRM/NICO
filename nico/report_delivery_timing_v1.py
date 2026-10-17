@@ -84,7 +84,10 @@ def report_delivery_timing(run_id: str, report_language: str):
         "report_language": report_language if report_language in {"en", "es-MX"} else "unsupported",
         "request_id": uuid4().hex,
     }
-    state: dict[str, Any] = {"phases": {}, "identity": identity,
+    # Preserve the internal binding consumed by the retained-metadata observer.
+    # Only the separately sanitized identity is serialized into timing logs.
+    state: dict[str, Any] = {"phases": {}, "run_id": run_id,
+                             "report_language": report_language, "identity": identity,
                              "progress_records": 0, "progress_suppressed": 0,
                              "reported_phases": set()}
     token = _ACTIVE.set(state)
