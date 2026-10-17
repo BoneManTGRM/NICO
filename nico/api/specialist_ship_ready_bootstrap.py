@@ -102,6 +102,39 @@ def _positive_authentication_self_test(credentials: dict[str, str]) -> dict[str,
             "positive_authentication_verified_server_side": credential_ok and session_ok}
 
 
+def _readiness_release_provenance() -> dict[str, Any]:
+    """Resolve configured frontend pins through a fresh, independent observation."""
+    release = comprehensive_release_provenance()
+    if release.get("frontend_identity_established") is True:
+        return release
+
+    from nico.report_execution_provenance_e6 import (
+        observed_frontend_source,
+        observed_native_frontend_source,
+        verify_frontend_release,
+    )
+    from nico.readiness_frontend_observation_v1 import capture_readiness_frontend_release
+
+    expected_sha = str(release.get("frontend_build_commit") or "")
+    expected_deployment = str(release.get("frontend_deployment_id") or "")
+    # Capture only from the fixed trusted adapters. Caller/config supplied
+    # observations and historical report receipts cannot establish readiness.
+    observation = capture_readiness_frontend_release(expected_sha, expected_deployment)
+    verified = verify_frontend_release(observation, expected_sha, expected_deployment)
+    release["frontend_runtime_observation"] = observation
+    release["frontend_deployment_identity_verified"] = verified
+    release["frontend_observed_source_revision"] = observed_frontend_source(observation)
+    if verified:
+        release["frontend_configured_identity_source"] = release.get("frontend_identity_source")
+        release["frontend_identity_established"] = True
+        release["frontend_identity_source"] = (
+            "retained_native_endpoint_claim"
+            if observed_native_frontend_source(observation)
+            else "retained_native_deployment_id_and_platform_source_mapping"
+        )
+    return release
+
+
 def specialist_readiness() -> dict[str, Any]:
     credentials = _configured_credentials()
     self_test = _positive_authentication_self_test(credentials)
@@ -113,7 +146,7 @@ def specialist_readiness() -> dict[str, Any]:
             credentials["session_signing"],
         ]
     )
-    release = comprehensive_release_provenance()
+    release = _readiness_release_provenance()
     runtime = dict(getattr(app.state, "nico_comprehensive_production_runtime", {}) or {})
     runtime_ready = (
         runtime.get("status") == "ready"
