@@ -400,33 +400,14 @@ def build_approved_delivery_package(
     }
 
 
-def validate_approved_delivery_package(
+def _validate_approval_bindings(
     record: Mapping[str, Any],
-    package: Any,
-) -> dict[str, Any]:
-    try:
-        result = dict(validate_v3(record, package))
-    except ValueError as exc:
-        result = {
-            "status": "invalid",
-            "validation_errors": [
-                "phase4_inherited_validation_failed:"
-                + _bounded_validation_error_code(exc)
-            ],
-            "client_delivery_allowed": False,
-        }
-    errors = set(str(item) for item in result.get("validation_errors") or [])
-    if not isinstance(package, Mapping):
-        errors.add("phase4_delivery_package_must_be_mapping")
-        return {
-            **result,
-            "status": "invalid",
-            "validation_errors": sorted(errors),
-            "client_delivery_allowed": False,
-        }
-    manifest = record.get("accepted_edition")
-    receipt = package.get("phase4_approval_receipt")
-    delivery_authorization = record.get("delivery_authorization")
+    package: Mapping[str, Any],
+    manifest: Any,
+    receipt: Any,
+    delivery_authorization: Any,
+    errors: set[str],
+) -> None:
     if not isinstance(manifest, Mapping):
         errors.add("phase4_accepted_edition_missing")
     if not isinstance(receipt, Mapping):
@@ -447,6 +428,12 @@ def validate_approved_delivery_package(
         receipt_hash = _text(receipt.get("approval_receipt_sha256"))
         if receipt_hash != _text(package.get("phase4_approval_receipt_sha256")):
             errors.add("phase4_receipt_package_hash_mismatch")
+
+
+def _validate_package_boundaries(
+    package: Mapping[str, Any],
+    errors: set[str],
+) -> None:
     if _text(package.get("product_name")) != PRODUCT_NAME:
         errors.add("phase4_wrong_product")
     if _text(package.get("package_classification")) != CLIENT_FINAL_CLASSIFICATION:
@@ -472,193 +459,151 @@ def validate_approved_delivery_package(
     if package.get("approval_certificate_separate_json") is not True:
         errors.add("phase4_separate_approval_certificate_missing")
 
-    archive_manifest: Mapping[str, Any] | None = None
-    archive_manifest_sha = ""
-    archive_sha = ""
-    try:
-        archive_bytes = base64.b64decode(_text(package.get("zip_base64")), validate=True)
-        archive_sha = _sha256(archive_bytes)
-        if archive_sha != _text(package.get("zip_sha256")):
-            errors.add("phase4_delivery_archive_hash_mismatch")
-        if len(archive_bytes) != int(package.get("zip_size_bytes") or -1):
-            errors.add("phase4_delivery_archive_size_mismatch")
-        with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as archive:
-            names = archive.namelist()
-            if len(names) != len(set(names)):
-                errors.add("phase4_delivery_archive_duplicate_path")
-            pdfs = [name for name in names if name.casefold().endswith(".pdf")]
-            if len(pdfs) != 1:
-                errors.add("phase4_one_report_rule_violated")
-            elif isinstance(manifest, Mapping) and isinstance(receipt, Mapping):
-                delivered_pdf_sha = _sha256(archive.read(pdfs[0]))
-                if delivered_pdf_sha != _text(package.get("authorized_edition_pdf_sha256")):
-                    errors.add("phase4_authorized_edition_pdf_mismatch")
-                if pdfs[0] != _REPORT_PATH:
-                    errors.add("phase4_client_report_path_mismatch")
-                if _text(package.get("approved_source_pdf_sha256")) != _text(
-                    receipt.get("pdf_sha256")
-                ):
-                    errors.add("phase4_approved_source_pdf_receipt_mismatch")
-            if _APPROVAL_RECORD_PATH not in names:
-                errors.add("phase4_approval_record_missing")
-            elif isinstance(manifest, Mapping) and archive.read(
-                _APPROVAL_RECORD_PATH
-            ) != _json_bytes(manifest):
-                errors.add("phase4_approval_record_accepted_edition_mismatch")
-            if _DELIVERY_AUTHORIZATION_PATH not in names:
-                errors.add("phase4_delivery_authorization_receipt_missing")
-            elif isinstance(delivery_authorization, Mapping) and archive.read(
-                _DELIVERY_AUTHORIZATION_PATH
-            ) != _json_bytes(delivery_authorization):
-                errors.add("phase4_delivery_authorization_receipt_mismatch")
-            if _RECEIPT_PATH not in names:
-                errors.add("phase4_receipt_not_in_immutable_package")
-            elif isinstance(receipt, Mapping):
-                if archive.read(_RECEIPT_PATH) != _json_bytes(receipt):
-                    errors.add("phase4_receipt_archive_mismatch")
-            if _MANIFEST_PATH not in names:
-                errors.add("phase4_evidence_manifest_missing")
-            else:
-                manifest_bytes = archive.read(_MANIFEST_PATH)
-                archive_manifest_sha = _sha256(manifest_bytes)
-                try:
-                    parsed_manifest = json.loads(manifest_bytes.decode("utf-8"))
-                    if isinstance(parsed_manifest, Mapping):
-                        archive_manifest = parsed_manifest
-                    else:
-                        errors.add("phase4_evidence_manifest_invalid")
-                except (UnicodeDecodeError, ValueError):
-                    errors.add("phase4_evidence_manifest_invalid")
-                in_memory_manifest = package.get("manifest")
-                if not isinstance(in_memory_manifest, Mapping) or _json_bytes(
-                    in_memory_manifest
-                ) != manifest_bytes:
-                    errors.add("phase4_evidence_manifest_archive_mismatch")
-                certificate = package.get("certificate")
-                if not isinstance(certificate, Mapping) or _text(
-                    certificate.get("evidence_manifest_sha256")
-                ) != archive_manifest_sha:
-                    errors.add("phase4_evidence_manifest_hash_mismatch")
-            if isinstance(archive_manifest, Mapping):
-                identity = (
-                    record.get("identity")
-                    if isinstance(record.get("identity"), Mapping)
-                    else {}
-                )
-                expected_manifest_values = {
-                    "product_name": PRODUCT_NAME,
-                    "package_classification": CLIENT_FINAL_CLASSIFICATION,
-                    "repository": receipt.get("repository")
-                    if isinstance(receipt, Mapping)
-                    else "",
-                    "run_id": receipt.get("assessment_run_id")
-                    if isinstance(receipt, Mapping)
-                    else "",
-                    "assessed_repository_commit": receipt.get(
-                        "assessed_repository_commit"
-                    )
-                    if isinstance(receipt, Mapping)
-                    else "",
-                    "evidence_ledger_id": receipt.get("evidence_ledger_id")
-                    if isinstance(receipt, Mapping)
-                    else "",
-                    "client_identity": receipt.get("client_identity")
-                    if isinstance(receipt, Mapping)
-                    else "",
-                    "project_identity": receipt.get("project_identity")
-                    if isinstance(receipt, Mapping)
-                    else "",
-                    "customer_id": receipt.get("customer_id")
-                    if isinstance(receipt, Mapping)
-                    else "",
-                    "client_id": receipt.get("client_id")
-                    if isinstance(receipt, Mapping)
-                    else "",
-                    "project_id": receipt.get("project_id")
-                    if isinstance(receipt, Mapping)
-                    else "",
-                    "accepted_edition_manifest_sha256": receipt.get(
-                        "accepted_edition_manifest_sha256"
-                    )
-                    if isinstance(receipt, Mapping)
-                    else "",
-                    "report_language": identity.get("report_language"),
-                }
-                for key, expected in expected_manifest_values.items():
-                    if _text(archive_manifest.get(key)) != _text(expected):
-                        errors.add(f"phase4_evidence_manifest_{key}_mismatch")
-                if _text(archive_manifest.get("delivery_status")) != "approved_for_delivery":
-                    errors.add("phase4_evidence_manifest_delivery_status_invalid")
-                if _text(archive_manifest.get("client_facing_status")) != "authorized":
-                    errors.add("phase4_evidence_manifest_client_status_invalid")
-                if _text(archive_manifest.get("approved_source_pdf_sha256")) != _text(
-                    package.get("approved_source_pdf_sha256")
-                ):
-                    errors.add("phase4_evidence_manifest_source_pdf_hash_mismatch")
-                if _text(archive_manifest.get("authorized_edition_pdf_sha256")) != _text(
-                    package.get("authorized_edition_pdf_sha256")
-                ):
-                    errors.add("phase4_evidence_manifest_authorized_pdf_hash_mismatch")
-                if archive_manifest.get("human_review_required") is not True:
-                    errors.add("phase4_evidence_manifest_human_review_boundary_missing")
-                if archive_manifest.get("client_delivery_allowed") is not True:
-                    errors.add("phase4_evidence_manifest_delivery_authorization_missing")
-                if archive_manifest.get("one_client_report") is not True or int(
-                    archive_manifest.get("client_pdf_count") or 0
-                ) != 1:
-                    errors.add("phase4_evidence_manifest_one_report_rule_violated")
-                artifact_rows = [
-                    item
-                    for item in archive_manifest.get("artifacts") or []
-                    if isinstance(item, Mapping)
-                ]
-                declared_paths = [_text(item.get("path")) for item in artifact_rows]
-                archived_paths = sorted(name for name in names if name != _MANIFEST_PATH)
-                if sorted(declared_paths) != archived_paths:
-                    errors.add("phase4_evidence_manifest_artifact_set_mismatch")
-                if len(declared_paths) != len(set(declared_paths)):
-                    errors.add("phase4_evidence_manifest_duplicate_path")
-                for item in artifact_rows:
-                    path = _text(item.get("path"))
-                    if path not in names:
-                        continue
-                    content = archive.read(path)
-                    if _text(item.get("sha256")) != _sha256(content):
-                        errors.add("phase4_evidence_manifest_artifact_hash_mismatch")
-                    if item.get("size_bytes") != len(content):
-                        errors.add("phase4_evidence_manifest_artifact_size_mismatch")
-                declared_count = int(archive_manifest.get("artifact_count") or -1)
-                if declared_count != len(artifact_rows) or int(
-                    package.get("artifact_count") or -1
-                ) != len(artifact_rows):
-                    errors.add("phase4_evidence_manifest_artifact_count_mismatch")
-                if _text(archive_manifest.get("phase4_approval_receipt_path")) != _RECEIPT_PATH:
-                    errors.add("phase4_evidence_manifest_receipt_path_mismatch")
-                receipt_bytes = archive.read(_RECEIPT_PATH) if _RECEIPT_PATH in names else b""
-                if _text(archive_manifest.get("phase4_approval_receipt_sha256")) != _sha256(
-                    receipt_bytes
-                ):
-                    errors.add("phase4_evidence_manifest_receipt_hash_mismatch")
-                if _text(archive_manifest.get("delivery_authorization_path")) != (
-                    _DELIVERY_AUTHORIZATION_PATH
-                ):
-                    errors.add(
-                        "phase4_evidence_manifest_delivery_authorization_path_mismatch"
-                    )
-                expected_authorization_sha = (
-                    _text(delivery_authorization.get("delivery_authorization_sha256"))
-                    if isinstance(delivery_authorization, Mapping)
-                    else ""
-                )
-                if _text(
-                    archive_manifest.get("delivery_authorization_sha256")
-                ) != expected_authorization_sha:
-                    errors.add(
-                        "phase4_evidence_manifest_delivery_authorization_hash_mismatch"
-                    )
-    except Exception:
-        errors.add("phase4_delivery_archive_invalid")
 
+def _validate_evidence_manifest_identity(
+    record: Mapping[str, Any],
+    package: Mapping[str, Any],
+    receipt: Any,
+    archive_manifest: Mapping[str, Any],
+    errors: set[str],
+) -> None:
+    identity = (
+        record.get("identity")
+        if isinstance(record.get("identity"), Mapping)
+        else {}
+    )
+    expected_manifest_values = {
+        "product_name": PRODUCT_NAME,
+        "package_classification": CLIENT_FINAL_CLASSIFICATION,
+        "repository": receipt.get("repository")
+        if isinstance(receipt, Mapping)
+        else "",
+        "run_id": receipt.get("assessment_run_id")
+        if isinstance(receipt, Mapping)
+        else "",
+        "assessed_repository_commit": receipt.get(
+            "assessed_repository_commit"
+        )
+        if isinstance(receipt, Mapping)
+        else "",
+        "evidence_ledger_id": receipt.get("evidence_ledger_id")
+        if isinstance(receipt, Mapping)
+        else "",
+        "client_identity": receipt.get("client_identity")
+        if isinstance(receipt, Mapping)
+        else "",
+        "project_identity": receipt.get("project_identity")
+        if isinstance(receipt, Mapping)
+        else "",
+        "customer_id": receipt.get("customer_id")
+        if isinstance(receipt, Mapping)
+        else "",
+        "client_id": receipt.get("client_id")
+        if isinstance(receipt, Mapping)
+        else "",
+        "project_id": receipt.get("project_id")
+        if isinstance(receipt, Mapping)
+        else "",
+        "accepted_edition_manifest_sha256": receipt.get(
+            "accepted_edition_manifest_sha256"
+        )
+        if isinstance(receipt, Mapping)
+        else "",
+        "report_language": identity.get("report_language"),
+    }
+    for key, expected in expected_manifest_values.items():
+        if _text(archive_manifest.get(key)) != _text(expected):
+            errors.add(f"phase4_evidence_manifest_{key}_mismatch")
+    if _text(archive_manifest.get("delivery_status")) != "approved_for_delivery":
+        errors.add("phase4_evidence_manifest_delivery_status_invalid")
+    if _text(archive_manifest.get("client_facing_status")) != "authorized":
+        errors.add("phase4_evidence_manifest_client_status_invalid")
+    if _text(archive_manifest.get("approved_source_pdf_sha256")) != _text(
+        package.get("approved_source_pdf_sha256")
+    ):
+        errors.add("phase4_evidence_manifest_source_pdf_hash_mismatch")
+    if _text(archive_manifest.get("authorized_edition_pdf_sha256")) != _text(
+        package.get("authorized_edition_pdf_sha256")
+    ):
+        errors.add("phase4_evidence_manifest_authorized_pdf_hash_mismatch")
+    if archive_manifest.get("human_review_required") is not True:
+        errors.add("phase4_evidence_manifest_human_review_boundary_missing")
+    if archive_manifest.get("client_delivery_allowed") is not True:
+        errors.add("phase4_evidence_manifest_delivery_authorization_missing")
+    if archive_manifest.get("one_client_report") is not True or int(
+        archive_manifest.get("client_pdf_count") or 0
+    ) != 1:
+        errors.add("phase4_evidence_manifest_one_report_rule_violated")
+
+
+def _validate_evidence_manifest_artifacts(
+    package: Mapping[str, Any],
+    archive_manifest: Mapping[str, Any],
+    delivery_authorization: Any,
+    archive: zipfile.ZipFile,
+    names: list[str],
+    errors: set[str],
+) -> None:
+    artifact_rows = [
+        item
+        for item in archive_manifest.get("artifacts") or []
+        if isinstance(item, Mapping)
+    ]
+    declared_paths = [_text(item.get("path")) for item in artifact_rows]
+    archived_paths = sorted(name for name in names if name != _MANIFEST_PATH)
+    if sorted(declared_paths) != archived_paths:
+        errors.add("phase4_evidence_manifest_artifact_set_mismatch")
+    if len(declared_paths) != len(set(declared_paths)):
+        errors.add("phase4_evidence_manifest_duplicate_path")
+    for item in artifact_rows:
+        path = _text(item.get("path"))
+        if path not in names:
+            continue
+        content = archive.read(path)
+        if _text(item.get("sha256")) != _sha256(content):
+            errors.add("phase4_evidence_manifest_artifact_hash_mismatch")
+        if item.get("size_bytes") != len(content):
+            errors.add("phase4_evidence_manifest_artifact_size_mismatch")
+    declared_count = int(archive_manifest.get("artifact_count") or -1)
+    if declared_count != len(artifact_rows) or int(
+        package.get("artifact_count") or -1
+    ) != len(artifact_rows):
+        errors.add("phase4_evidence_manifest_artifact_count_mismatch")
+    if _text(archive_manifest.get("phase4_approval_receipt_path")) != _RECEIPT_PATH:
+        errors.add("phase4_evidence_manifest_receipt_path_mismatch")
+    receipt_bytes = archive.read(_RECEIPT_PATH) if _RECEIPT_PATH in names else b""
+    if _text(archive_manifest.get("phase4_approval_receipt_sha256")) != _sha256(
+        receipt_bytes
+    ):
+        errors.add("phase4_evidence_manifest_receipt_hash_mismatch")
+    if _text(archive_manifest.get("delivery_authorization_path")) != (
+        _DELIVERY_AUTHORIZATION_PATH
+    ):
+        errors.add(
+            "phase4_evidence_manifest_delivery_authorization_path_mismatch"
+        )
+    expected_authorization_sha = (
+        _text(delivery_authorization.get("delivery_authorization_sha256"))
+        if isinstance(delivery_authorization, Mapping)
+        else ""
+    )
+    if _text(
+        archive_manifest.get("delivery_authorization_sha256")
+    ) != expected_authorization_sha:
+        errors.add(
+            "phase4_evidence_manifest_delivery_authorization_hash_mismatch"
+        )
+
+
+def _validate_delivery_certificate(
+    record: Mapping[str, Any],
+    package: Mapping[str, Any],
+    manifest: Any,
+    receipt: Any,
+    archive_manifest_sha: str,
+    archive_sha: str,
+    errors: set[str],
+) -> None:
     certificate = package.get("certificate")
     binding = engagement_binding(record)
     if not isinstance(certificate, Mapping):
@@ -788,6 +733,134 @@ def validate_approved_delivery_package(
             errors.add("phase4_delivery_certificate_hash_mismatch")
         if _text(certificate.get("delivery_package_sha256")) != _text(package.get("zip_sha256")):
             errors.add("phase4_certificate_archive_binding_mismatch")
+
+
+def _validate_archive_approval_artifacts(
+    package: Mapping[str, Any],
+    manifest: Any,
+    receipt: Any,
+    delivery_authorization: Any,
+    archive: zipfile.ZipFile,
+    names: list[str],
+    errors: set[str],
+) -> None:
+    pdfs = [name for name in names if name.casefold().endswith(".pdf")]
+    if len(pdfs) != 1:
+        errors.add("phase4_one_report_rule_violated")
+    elif isinstance(manifest, Mapping) and isinstance(receipt, Mapping):
+        delivered_pdf_sha = _sha256(archive.read(pdfs[0]))
+        if delivered_pdf_sha != _text(package.get("authorized_edition_pdf_sha256")):
+            errors.add("phase4_authorized_edition_pdf_mismatch")
+        if pdfs[0] != _REPORT_PATH:
+            errors.add("phase4_client_report_path_mismatch")
+        if _text(package.get("approved_source_pdf_sha256")) != _text(
+            receipt.get("pdf_sha256")
+        ):
+            errors.add("phase4_approved_source_pdf_receipt_mismatch")
+    if _APPROVAL_RECORD_PATH not in names:
+        errors.add("phase4_approval_record_missing")
+    elif isinstance(manifest, Mapping) and archive.read(
+        _APPROVAL_RECORD_PATH
+    ) != _json_bytes(manifest):
+        errors.add("phase4_approval_record_accepted_edition_mismatch")
+    if _DELIVERY_AUTHORIZATION_PATH not in names:
+        errors.add("phase4_delivery_authorization_receipt_missing")
+    elif isinstance(delivery_authorization, Mapping) and archive.read(
+        _DELIVERY_AUTHORIZATION_PATH
+    ) != _json_bytes(delivery_authorization):
+        errors.add("phase4_delivery_authorization_receipt_mismatch")
+    if _RECEIPT_PATH not in names:
+        errors.add("phase4_receipt_not_in_immutable_package")
+    elif isinstance(receipt, Mapping):
+        if archive.read(_RECEIPT_PATH) != _json_bytes(receipt):
+            errors.add("phase4_receipt_archive_mismatch")
+
+
+def validate_approved_delivery_package(
+    record: Mapping[str, Any],
+    package: Any,
+) -> dict[str, Any]:
+    try:
+        result = dict(validate_v3(record, package))
+    except ValueError as exc:
+        result = {
+            "status": "invalid",
+            "validation_errors": [
+                "phase4_inherited_validation_failed:"
+                + _bounded_validation_error_code(exc)
+            ],
+            "client_delivery_allowed": False,
+        }
+    errors = set(str(item) for item in result.get("validation_errors") or [])
+    if not isinstance(package, Mapping):
+        errors.add("phase4_delivery_package_must_be_mapping")
+        return {
+            **result,
+            "status": "invalid",
+            "validation_errors": sorted(errors),
+            "client_delivery_allowed": False,
+        }
+    manifest = record.get("accepted_edition")
+    receipt = package.get("phase4_approval_receipt")
+    delivery_authorization = record.get("delivery_authorization")
+    _validate_approval_bindings(
+        record, package, manifest, receipt, delivery_authorization, errors
+    )
+    _validate_package_boundaries(package, errors)
+
+    archive_manifest: Mapping[str, Any] | None = None
+    archive_manifest_sha = ""
+    archive_sha = ""
+    try:
+        archive_bytes = base64.b64decode(_text(package.get("zip_base64")), validate=True)
+        archive_sha = _sha256(archive_bytes)
+        if archive_sha != _text(package.get("zip_sha256")):
+            errors.add("phase4_delivery_archive_hash_mismatch")
+        if len(archive_bytes) != int(package.get("zip_size_bytes") or -1):
+            errors.add("phase4_delivery_archive_size_mismatch")
+        with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as archive:
+            names = archive.namelist()
+            if len(names) != len(set(names)):
+                errors.add("phase4_delivery_archive_duplicate_path")
+            _validate_archive_approval_artifacts(
+                package, manifest, receipt, delivery_authorization, archive, names, errors
+            )
+            if _MANIFEST_PATH not in names:
+                errors.add("phase4_evidence_manifest_missing")
+            else:
+                manifest_bytes = archive.read(_MANIFEST_PATH)
+                archive_manifest_sha = _sha256(manifest_bytes)
+                try:
+                    parsed_manifest = json.loads(manifest_bytes.decode("utf-8"))
+                    if isinstance(parsed_manifest, Mapping):
+                        archive_manifest = parsed_manifest
+                    else:
+                        errors.add("phase4_evidence_manifest_invalid")
+                except (UnicodeDecodeError, ValueError):
+                    errors.add("phase4_evidence_manifest_invalid")
+                in_memory_manifest = package.get("manifest")
+                if not isinstance(in_memory_manifest, Mapping) or _json_bytes(
+                    in_memory_manifest
+                ) != manifest_bytes:
+                    errors.add("phase4_evidence_manifest_archive_mismatch")
+                certificate = package.get("certificate")
+                if not isinstance(certificate, Mapping) or _text(
+                    certificate.get("evidence_manifest_sha256")
+                ) != archive_manifest_sha:
+                    errors.add("phase4_evidence_manifest_hash_mismatch")
+            if isinstance(archive_manifest, Mapping):
+                _validate_evidence_manifest_identity(
+                    record, package, receipt, archive_manifest, errors
+                )
+                _validate_evidence_manifest_artifacts(
+                    package, archive_manifest, delivery_authorization, archive, names, errors
+                )
+    except Exception:
+        errors.add("phase4_delivery_archive_invalid")
+
+    _validate_delivery_certificate(
+        record, package, manifest, receipt, archive_manifest_sha, archive_sha, errors
+    )
 
     return {
         **result,
