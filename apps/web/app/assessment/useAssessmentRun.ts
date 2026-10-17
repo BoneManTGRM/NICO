@@ -13,12 +13,14 @@ import {AssessmentApiError, scopeId, terminal, wait} from "./assessmentModel";
 import {preserveRunIdentity, type RunIdentityFallback} from "./assessmentRunIdentity";
 import {
   clearPersistedRun,
+  discardRejectedIntake,
   readPersistedRun,
   writePersistedRun,
   type PersistedRun,
 } from "./assessmentRunPersistence";
 import {
   isAmbiguousIntakeOutcome,
+  isDefiniteIntakeRejection,
   issueFor,
   requestWithRetry,
   type AssessmentRunIssue,
@@ -226,6 +228,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
   const sequence = useRef(0);
   const bootstrapped = useRef(false);
   const recoveryInFlight = useRef(false);
+  const intakeInFlight = useRef(false);
   const activeContinuationRunId = useRef("");
   const latestResult = useRef<Result | null>(null);
 
@@ -277,6 +280,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       if (
         !persisted ||
         recoveryInFlight.current ||
+        intakeInFlight.current ||
         activeContinuationRunId.current === persisted.runId
       ) {
         return;
@@ -287,6 +291,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       void resumePersistedRun(persisted);
     };
     window.addEventListener("pageshow", restoreAfterPageResume);
+    window.addEventListener("popstate", restoreAfterPageResume);
     window.addEventListener("online", restoreAfterPageResume);
     const restoreAfterForeground = () => {
       if (document.visibilityState === "visible") restoreAfterPageResume();
@@ -294,6 +299,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     document.addEventListener("visibilitychange", restoreAfterForeground);
     return () => {
       window.removeEventListener("pageshow", restoreAfterPageResume);
+      window.removeEventListener("popstate", restoreAfterPageResume);
       window.removeEventListener("online", restoreAfterPageResume);
       document.removeEventListener("visibilitychange", restoreAfterForeground);
       sequence.current += 1;
@@ -425,6 +431,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       : fallback?.engagementFieldStates ?? engagementFieldStates;
     writePersistedRun({
       version: 1,
+      intakeState: "accepted",
       runId,
       repository: String(runResult.repository || fallback?.repository || repository || ""),
       client: clientValue,
@@ -506,6 +513,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         {method: "GET"},
         copy,
       );
+      if (exactRunId(recovered) !== runId) return null;
       return preserveRunIdentity(recovered, {
         runId,
         repository: fallback.repository,
@@ -684,7 +692,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     if (visibleRunId && visibleRunId !== persisted.runId) {
       return;
     }
-    if (recoveryInFlight.current) {
+    if (recoveryInFlight.current || intakeInFlight.current) {
       return;
     }
     recoveryInFlight.current = true;
@@ -702,13 +710,18 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         {method: "GET"},
         copy,
       );
+      if (exactRunId(recoveredResponse) !== persisted.runId) {
+        throw new AssessmentApiError(copy.serviceUnavailableMessage, {
+          status: 0, code: "assessment_intake_outcome_unknown", retryable: false,
+        });
+      }
       const recovered = preserveRunIdentity(recoveredResponse, {
         runId: persisted.runId,
         repository: persisted.repository,
         customerId: persisted.customerId,
         projectId: persisted.projectId,
       });
-      if (token !== sequence.current) {
+      if (token !== sequence.current || readPersistedRun()?.runId !== persisted.runId) {
         return;
       }
       persistExactRun(recovered, scope, persisted.startedAt, persisted);
@@ -727,16 +740,44 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       }
       await continueRun(recovered, scope, token, persisted.startedAt);
     } catch (caught) {
-      if (token !== sequence.current) {
+      if (token !== sequence.current || readPersistedRun()?.runId !== persisted.runId) {
         return;
       }
-      applyIssue(caught, true);
+      if (persisted.intakeState === "accepted") {
+        applyIssue(caught, true);
+      } else {
+        applyPendingIntakeIssue(caught);
+      }
     } finally {
       recoveryInFlight.current = false;
     }
   }
 
+  function applyPendingIntakeIssue(caught: unknown): void {
+    const original = issueFor(caught, copy, false);
+    const pending = issueFor(new AssessmentApiError(copy.serviceUnavailableMessage, {
+      status: 0, code: "assessment_intake_outcome_unknown", retryable: false,
+      requestId: original.requestId,
+    }), copy, false);
+    setPhase("unavailable");
+    setStarted(null);
+    setMessage("");
+    setError("");
+    // Keep the actual diagnostic code; uncertainty is conveyed separately by copy.
+    setIssue({...pending, code: original.code, retryable: true});
+  }
+
   async function run(): Promise<void> {
+    if (intakeInFlight.current || recoveryInFlight.current) return;
+    intakeInFlight.current = true;
+    try {
+      await startIntake();
+    } finally {
+      intakeInFlight.current = false;
+    }
+  }
+
+  async function startIntake(): Promise<void> {
     if (
       issue &&
       !issue.runCreated &&
@@ -827,6 +868,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     }
 
     let acceptedRun: Result | null = null;
+    let intakeDispatched = false;
     const startedAt = Date.now();
     try {
       await verifyRuntimePersistence();
@@ -836,6 +878,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       const stakeholder = humanEvidence.stakeholder_context?.evidence || {};
       writePersistedRun({
         version: 1,
+        intakeState: "pending",
         runId: reservedRunId,
         repository: normalizedRepository.repository,
         client,
@@ -849,10 +892,16 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         startedAt,
         locale,
       });
+      if (readPersistedRun()?.runId !== reservedRunId) {
+        throw new AssessmentApiError(copy.serviceUnavailableMessage, {
+          status: 0, code: "assessment_intake_recovery_unavailable", retryable: true,
+        });
+      }
       setProtectedRunId(reservedRunId);
       setPhase("starting");
       setMessage(`${copy.phases.starting}: ${copy.service.label}`);
       setStarted(startedAt);
+      intakeDispatched = true;
       const data = await requestWithRetry(
         "/assessment/comprehensive-intake",
         {
@@ -862,8 +911,13 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         },
         copy,
       );
+      if (exactRunId(data) !== reservedRunId) {
+        throw new AssessmentApiError(copy.serviceUnavailableMessage, {
+          status: 0, code: "assessment_intake_outcome_unknown", retryable: false,
+        });
+      }
       acceptedRun = data;
-      if (token !== sequence.current) {
+      if (token !== sequence.current || readPersistedRun()?.runId !== reservedRunId) {
         return;
       }
       persistExactRun(data, scope, startedAt);
@@ -873,17 +927,27 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       if (token !== sequence.current) {
         return;
       }
-      if (!acceptedRun) {
+      if (intakeDispatched && readPersistedRun()?.runId !== reservedRunId) return;
+      if (!acceptedRun && intakeDispatched) {
         const recovered = await recoverRun(reservedRunId, {
           repository: normalizedRepository.repository,
           customerId: scope.customerId,
           projectId: scope.projectId,
         });
+        if (token !== sequence.current || readPersistedRun()?.runId !== reservedRunId) return;
         if (recovered) {
           persistExactRun(recovered, scope, startedAt);
           hydrateEngagementMetadata(recovered);
           publishResult(recovered);
           await continueRun(recovered, scope, token, startedAt);
+          return;
+        }
+      }
+      if (!acceptedRun && readPersistedRun()?.runId === reservedRunId) {
+        if (isDefiniteIntakeRejection(caught) && discardRejectedIntake(reservedRunId)) {
+          setProtectedRunId("");
+        } else {
+          applyPendingIntakeIssue(caught);
           return;
         }
       }
@@ -897,6 +961,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
   }
 
   function startNew(): void {
+    if (intakeInFlight.current) return;
     sequence.current += 1;
     recoveryInFlight.current = false;
     activeContinuationRunId.current = "";
