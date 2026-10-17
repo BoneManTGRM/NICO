@@ -6,7 +6,7 @@ import {reportLanguageForRequest} from "./assessment/assessmentLocale";
 const REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]';
 const COPY_MARKDOWN_LABEL = /(?:copy\s+markdown|copiar\s+markdown)/i;
 const STATUS_ATTR = "data-nico-markdown-action-status";
-const PREPARATION_TIMEOUT_MS = 120_000;
+const SLOW_PREPARATION_NOTICE_MS = 120_000;
 
 type CacheEntry = {
   runId: string;
@@ -14,8 +14,7 @@ type CacheEntry = {
   reportLanguage: ReportLanguage;
   markdown: string;
   promise: Promise<string> | null;
-  timedOut?: boolean;
-  feedback?: Promise<string>;
+  slowNotice?: Promise<void>;
 };
 
 type ReportLanguage = "en" | "es-MX";
@@ -108,24 +107,17 @@ async function copyText(text: string): Promise<boolean> {
 
 async function loadMarkdown(entry: CacheEntry): Promise<string> {
   if (entry.markdown) return entry.markdown;
-  if (entry.promise) return entry.feedback || entry.promise;
+  if (entry.promise) return entry.promise;
 
-  const controller = new AbortController();
-  entry.timedOut = false;
-  let timeoutId: number;
-  const timeout = new Promise<never>((_, reject) => {
-    timeoutId = window.setTimeout(() => {
-      entry.timedOut = true;
-      controller.abort();
-      reject(new Error("markdown_preparation_timeout"));
-    }, PREPARATION_TIMEOUT_MS);
+  let noticeId: number;
+  entry.slowNotice = new Promise<void>(resolve => {
+    noticeId = window.setTimeout(resolve, SLOW_PREPARATION_NOTICE_MS);
   });
   entry.promise = (async () => {
     const response = await fetch(markdownHref(entry.runId, entry.reportLanguage), {
       method: "GET",
       cache: "no-store",
       headers: {Accept: "application/json"},
-      signal: controller.signal,
     });
     if (!response.ok) {
       const failure = await response.json().catch(() => ({})) as {detail?: {reason?: unknown; code?: unknown}};
@@ -153,17 +145,15 @@ async function loadMarkdown(entry: CacheEntry): Promise<string> {
     if (payload.assessment_rerun !== false) throw new Error("markdown_assessment_rerun_not_proven_false");
     const markdown = String(payload.report?.markdown || "");
     if (!markdown.trim()) throw new Error("markdown_empty");
-    if (controller.signal.aborted) throw new Error("markdown_preparation_timeout");
     entry.markdown = markdown;
     return markdown;
   })().finally(() => {
     entry.promise = null;
-    window.clearTimeout(timeoutId);
+    window.clearTimeout(noticeId);
   });
-  // Keep the in-flight lock until transport/body settlement, even if a wrapper
-  // ignores cancellation. A late result can neither grant readiness nor race a retry.
-  entry.feedback = Promise.race([entry.promise, timeout]);
-  return await entry.feedback;
+  // A slow notice does not abort a valid response or release the in-flight lock.
+  // The existing proxy owns the upstream deadline; browser silence is not cancellation.
+  return await entry.promise;
 }
 
 function enabledCopyButton(actions: Element): HTMLButtonElement | null {
@@ -184,7 +174,7 @@ function enabledCopyButton(actions: Element): HTMLButtonElement | null {
  * remains available instead of presenting a dead button.
  */
 export default function AssessmentMarkdownCopyBridge() {
-  const cache = useRef<CacheEntry | null>(null);
+  const cache = useRef(new Map<string, CacheEntry>());
   const guardedUntil = useRef(0);
 
   useEffect(() => {
@@ -193,15 +183,26 @@ export default function AssessmentMarkdownCopyBridge() {
       if (!runId) return null;
       const commitSha = visibleCommitSha(actions);
       const reportLanguage = activeReportLanguage();
-      if (
-        !cache.current
-        || cache.current.runId !== runId
-        || cache.current.commitSha !== commitSha
-        || cache.current.reportLanguage !== reportLanguage
-      ) {
-        cache.current = {runId, commitSha, reportLanguage, markdown: "", promise: null};
+      const key = JSON.stringify([runId, commitSha, reportLanguage]);
+      // Keep all pending identities, but do not retain completed report bodies
+      // after switching away. A->B->A must reuse A even while it is slow.
+      for (const [otherKey, other] of cache.current) {
+        if (otherKey !== key && !other.promise) cache.current.delete(otherKey);
       }
-      return cache.current;
+      let entry = cache.current.get(key);
+      if (!entry) {
+        entry = {runId, commitSha, reportLanguage, markdown: "", promise: null};
+        cache.current.set(key, entry);
+      }
+      return entry;
+    }
+
+    function isVisibleEntry(actions: Element, entry: CacheEntry): boolean {
+      return actions.isConnected
+        && actions.getAttribute("data-assessment-report-ready") === "true"
+        && visibleRunId(actions) === entry.runId
+        && visibleCommitSha(actions) === entry.commitSha
+        && activeReportLanguage() === entry.reportLanguage;
     }
 
     async function handleCopyMarkdownClick(event: MouseEvent): Promise<void> {
@@ -232,12 +233,6 @@ export default function AssessmentMarkdownCopyBridge() {
       event.stopImmediatePropagation();
 
       if (!entry.markdown) {
-        if (entry.promise && entry.timedOut) {
-          showStatus(actions, spanish()
-            ? "La preparación agotó el tiempo de espera. Esperando la cancelación antes de permitir otro intento."
-            : "Preparation timed out. Waiting for cancellation before allowing another attempt.", true);
-          return;
-        }
         showStatus(
           actions,
           spanish()
@@ -248,7 +243,7 @@ export default function AssessmentMarkdownCopyBridge() {
         // Subscribe this container to the same bounded result after a rerender.
         void loadMarkdown(entry)
           .then(() => {
-            if (cache.current !== entry || !actions.isConnected) return;
+            if (!isVisibleEntry(actions, entry)) return;
             guardedUntil.current = 0;
             showStatus(
               actions,
@@ -256,14 +251,8 @@ export default function AssessmentMarkdownCopyBridge() {
             );
           })
           .catch((failure: unknown) => {
-            if (cache.current !== entry || !actions.isConnected) return;
+            if (!isVisibleEntry(actions, entry)) return;
             guardedUntil.current = 0;
-            if (entry.timedOut) {
-              showStatus(actions, spanish()
-                ? "La preparación agotó el tiempo de espera. Se solicitó la cancelación en el navegador; el servidor podría seguir trabajando. Pulsa Copiar Markdown para volver a intentarlo cuando termine la cancelación."
-                : "Preparation timed out. Browser cancellation was requested; server work may still finish. Click Copy Markdown to retry once cancellation finishes.", true);
-              return;
-            }
             const message = failure instanceof Error ? failure.message : "";
             const code = /^HTTP [0-9]{3}(?: · [a-z][a-z0-9_]{0,119})?$/.test(message) ? ` (${message})` : "";
             showStatus(
@@ -271,18 +260,25 @@ export default function AssessmentMarkdownCopyBridge() {
               (spanish()
                 ? "No se pudo preparar Markdown"
                 : "Markdown could not be prepared") + code + (spanish()
-                  ? ". Pulsa Copiar Markdown para volver a intentarlo."
-                  : ". Click Copy Markdown to retry."),
+                  ? ". El servidor podría seguir trabajando. Pulsa Copiar Markdown para volver a intentarlo."
+                  : ". Server work may still continue. Click Copy Markdown to retry."),
               true,
             );
           });
+        void entry.slowNotice?.then(() => {
+          if (!entry.promise || !isVisibleEntry(actions, entry)) return;
+          showStatus(actions, spanish()
+            ? "La preparación está tardando más de lo esperado. La misma solicitud sigue pendiente; el servidor podría seguir trabajando. No es necesario volver a pulsar."
+            : "Preparation is taking longer than expected. The same request is still pending; the server may still be working. No additional click is needed.", false, true);
+        });
         return;
       }
 
       try {
         if (!await copyText(entry.markdown)) throw new Error("clipboard_write_failed");
-        showStatus(actions, spanish() ? "Markdown copiado." : "Markdown copied.");
+        if (isVisibleEntry(actions, entry)) showStatus(actions, spanish() ? "Markdown copiado." : "Markdown copied.");
       } catch {
+        if (!isVisibleEntry(actions, entry)) return;
         showStatus(
           actions,
           spanish()
