@@ -7,6 +7,7 @@ from copy import deepcopy
 from typing import Any
 
 from fastapi import Response
+from nico.report_delivery_timing_v1 import report_delivery_phase_scope
 
 from nico.comprehensive_exact_artifact_hash_binding_v1 import _validate_exact_artifact_hashes
 from nico.comprehensive_retained_report_export_v1 import retained_report_zip
@@ -27,7 +28,8 @@ def localized_evidence_package(status: Mapping[str, Any], language: str) -> Resp
     else:
         family = deepcopy(dict(status["reports"]))
     _validate_exact_artifact_hashes(family)
-    content = retained_report_zip(family)
+    with report_delivery_phase_scope("zip_encoding"):
+        content = retained_report_zip(family)
     lifecycle = projection["localized_artifact_lifecycle"]
     # Regenerated files retain pending approval even when the source was approved.
     # This read-only download never confers delivery authority.

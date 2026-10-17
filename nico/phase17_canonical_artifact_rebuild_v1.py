@@ -5,6 +5,7 @@ import hashlib
 import io
 from nico.report_json_copy import deepcopy
 from nico.report_pdf_text import pdf_text_cache_scope
+from nico.report_delivery_timing_v1 import report_delivery_phase, report_delivery_phase_scope
 from collections.abc import Mapping
 from typing import Any
 
@@ -340,6 +341,7 @@ def _populate_premium_stage_summaries(package: Mapping[str, Any]) -> dict[str, A
     return result
 
 
+@report_delivery_phase("artifact_preparation")
 def _prepare_client_artifact_package(
     package: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -451,6 +453,7 @@ def _bounded_localized_preparation_input(
     return render_package, register, compact_register
 
 
+@report_delivery_phase("markdown_render")
 def build_localized_markdown_projection(
     package: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -616,7 +619,8 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     try:
         source_tables = capture_source_table_evidence(package.get("json") or {})
         prepared = _prepare_client_artifact_package(package)
-        rendered = rebuild_single_pass_premium_artifacts(prepared)
+        with report_delivery_phase_scope("artifact_render"):
+            rendered = rebuild_single_pass_premium_artifacts(prepared)
 
         canonical = rendered.get("json") if isinstance(rendered.get("json"), Mapping) else {}
         repaired = (
@@ -634,7 +638,8 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
         # preparation/rendering. Reassert the terminal language producer and validator at
         # the exact last mutable boundary, immediately before client-report finalization.
         _reassert_terminal_report_language_authority()
-        finalized = completion.finalize_client_report_package(sanitized)
+        with report_delivery_phase_scope("artifact_finalize"):
+            finalized = completion.finalize_client_report_package(sanitized)
         final_canonical = (
             finalized.get("json")
             if isinstance(finalized.get("json"), Mapping)

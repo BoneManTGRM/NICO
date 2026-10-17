@@ -574,6 +574,7 @@ def _truth_records(canonical: Mapping[str, Any], identity_field: str) -> tuple[A
     return tuple(sorted(output))
 
 
+@report_delivery_phase("truth_parity_projection")
 def _assessment_truth_projection(canonical: Mapping[str, Any]) -> dict[str, Any]:
     identity = (
         canonical.get("identity")
@@ -1547,11 +1548,12 @@ def install_same_run_locale_report(target: FastAPI) -> dict[str, Any]:
 
         def localized_report(run_id: str, report_language: str) -> dict[str, Any]:
             try:
-                status = _controller_status(target, run_id)
-                return build_same_run_locale_markdown_projection(
-                    status,
-                    report_language,
-                )
+                with report_delivery_timing(run_id, report_language):
+                    status = _controller_status(target, run_id)
+                    return build_same_run_locale_markdown_projection(
+                        status,
+                        report_language,
+                    )
             except ValueError as exc:
                 raise _projection_http_error(exc) from exc
 
@@ -1595,7 +1597,8 @@ def install_same_run_locale_report(target: FastAPI) -> dict[str, Any]:
         def localized_evidence_package(run_id: str, report_language: str) -> Response:
             from nico.comprehensive_localized_export_v1 import localized_evidence_package as download
             try:
-                return download(_controller_status(target, run_id), report_language)
+                with report_delivery_timing(run_id, report_language):
+                    return download(_controller_status(target, run_id), report_language)
             except ValueError as exc:
                 raise _projection_http_error(exc) from exc
 

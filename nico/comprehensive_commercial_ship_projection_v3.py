@@ -549,6 +549,29 @@ def _finalize_artifact_navigation(
     return output
 
 
+def _cross_language_regeneration_required(status: Mapping[str, Any], report_language: str) -> bool:
+    """Only skip presentation inspection when identity already requires a new locale.
+
+    The assembler still validates canonical hashes, source artifacts and lifecycle.
+    A source-PDF presentation defect cannot change this regeneration decision.
+    """
+    from nico.comprehensive_same_run_locale_report_v1 import (
+        _normalize_report_language, _validate_status_canonical_identity,
+    )
+
+    reports = status.get("reports")
+    canonical = reports.get("json") if isinstance(reports, Mapping) else None
+    if not isinstance(canonical, Mapping):
+        return False
+    try:
+        target = _normalize_report_language(report_language)
+        identity = _validate_status_canonical_identity(status, canonical)
+    except ValueError:
+        # Preserve the original path and downstream fail-closed error behavior.
+        return False
+    return identity["report_language"] != target
+
+
 @report_delivery_phase("source_pdf_projection_check")
 def _source_pdf_requires_integrity_reprojection(
     status: Mapping[str, Any],
@@ -873,7 +896,7 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
         @wraps(current_markdown_report)
         def markdown_with_integrity_gate(status: Mapping[str, Any], report_language: str) -> dict[str, Any]:
             source = status
-            if _source_pdf_requires_integrity_reprojection(status, report_language):
+            if not _cross_language_regeneration_required(status, report_language) and _source_pdf_requires_integrity_reprojection(status, report_language):
                 source = dict(status)
                 source["_nico_force_pending_draft_artifact_regeneration"] = True
             return current_markdown_report(source, report_language)
@@ -890,7 +913,7 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
             status: Mapping[str, Any],
             report_language: str,
         ) -> dict[str, Any]:
-            if _source_pdf_requires_integrity_reprojection(
+            if not _cross_language_regeneration_required(status, report_language) and _source_pdf_requires_integrity_reprojection(
                 status,
                 report_language,
             ):
