@@ -149,9 +149,14 @@ def _canonical_scanners(
             and not record.get("timed_out") and not record.get("output_truncated")
             and _retained_ci_verified(record, canonical)
         )
-        record["retained_ci_evidence_verified"] = retained_ci
         # This is ordinary report coverage, never native execution acceptance.
-        record["coverage_basis"] = "authenticated_retained_typescript_ci" if retained_ci else None
+        # Keep ordinary record projections byte-stable; discard unverified labels.
+        if retained_ci:
+            record["retained_ci_evidence_verified"] = True
+            record["coverage_basis"] = "authenticated_retained_typescript_ci"
+        else:
+            record.pop("retained_ci_evidence_verified", None)
+            record.pop("coverage_basis", None)
 
         deficits: list[str] = []
         if not status.startswith("completed"):
