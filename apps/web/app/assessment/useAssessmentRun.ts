@@ -272,10 +272,10 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       }
     }
 
-    const restoreAfterPageResume = () => {
+    const restoreAfterPageResume = (restoreTerminalUrl = false) => {
       // The exact URL-bound run is authoritative. A different tab may update the
       // shared active-run pointer, but it must never replace this page's run.
-      const persisted = readPersistedRun();
+      const persisted = readPersistedRun(restoreTerminalUrl);
       const visibleRunId = exactRunId(latestResult.current);
       if (
         !persisted ||
@@ -286,21 +286,24 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         return;
       }
       if (visibleRunId && visibleRunId !== persisted.runId) {
+        offerSelectedRunRecovery(visibleRunId);
         return;
       }
       void resumePersistedRun(persisted);
     };
-    window.addEventListener("pageshow", restoreAfterPageResume);
-    window.addEventListener("popstate", restoreAfterPageResume);
-    window.addEventListener("online", restoreAfterPageResume);
+    const restorePage = () => restoreAfterPageResume();
+    const restoreHistory = () => restoreAfterPageResume(true);
+    window.addEventListener("pageshow", restorePage);
+    window.addEventListener("popstate", restoreHistory);
+    window.addEventListener("online", restorePage);
     const restoreAfterForeground = () => {
       if (document.visibilityState === "visible") restoreAfterPageResume();
     };
     document.addEventListener("visibilitychange", restoreAfterForeground);
     return () => {
-      window.removeEventListener("pageshow", restoreAfterPageResume);
-      window.removeEventListener("popstate", restoreAfterPageResume);
-      window.removeEventListener("online", restoreAfterPageResume);
+      window.removeEventListener("pageshow", restorePage);
+      window.removeEventListener("popstate", restoreHistory);
+      window.removeEventListener("online", restorePage);
       document.removeEventListener("visibilitychange", restoreAfterForeground);
       sequence.current += 1;
     };
@@ -561,6 +564,10 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         if (token !== sequence.current) {
           return;
         }
+        if (selectedRunId() !== continuationRunId) {
+          offerSelectedRunRecovery(continuationRunId);
+          return;
+        }
         persistExactRun(current, scope, startedAt);
         hydrateEngagementMetadata(current);
         publishResult(current);
@@ -684,6 +691,33 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
     setMessage("");
   }
 
+  function selectedRunId(): string {
+    return new URL(window.location.href).searchParams.get("run_id")?.trim()
+      || readPersistedRun()?.runId || "";
+  }
+
+  function offerSelectedRunRecovery(previousRunId: string): void {
+    const selectedId = selectedRunId();
+    if (selectedId === previousRunId) return;
+    // Release stale visible state without clearing either run's retained identity.
+    publishResult(null);
+    setProtectedRunId(selectedId);
+    setStarted(null);
+    setMessage("");
+    setError("");
+    if (!selectedId) {
+      setPhase("idle");
+      setIssue(null);
+      return;
+    }
+    const persisted = readPersistedRun(true);
+    const error = new AssessmentApiError(copy.serviceUnavailableMessage, {
+      status: 0, code: "assessment_selected_run_recovery_required", retryable: true,
+    });
+    if (persisted?.intakeState === "accepted") applyIssue(error, true);
+    else applyPendingIntakeIssue(error);
+  }
+
   async function resumePersistedRun(persisted: PersistedRun): Promise<void> {
     const visibleRunId = exactRunId(latestResult.current);
     if (activeContinuationRunId.current === persisted.runId) {
@@ -721,7 +755,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         customerId: persisted.customerId,
         projectId: persisted.projectId,
       });
-      if (token !== sequence.current || readPersistedRun()?.runId !== persisted.runId) {
+      if (token !== sequence.current || selectedRunId() !== persisted.runId) {
         return;
       }
       persistExactRun(recovered, scope, persisted.startedAt, persisted);
@@ -740,7 +774,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       }
       await continueRun(recovered, scope, token, persisted.startedAt);
     } catch (caught) {
-      if (token !== sequence.current || readPersistedRun()?.runId !== persisted.runId) {
+      if (token !== sequence.current || selectedRunId() !== persisted.runId) {
         return;
       }
       if (persisted.intakeState === "accepted") {
@@ -750,6 +784,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       }
     } finally {
       recoveryInFlight.current = false;
+      if (token === sequence.current) offerSelectedRunRecovery(persisted.runId);
     }
   }
 
@@ -790,7 +825,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       );
       return;
     }
-    if (exactRunId(latestResult.current) || readPersistedRun()?.runId) {
+    if (exactRunId(latestResult.current) || selectedRunId()) {
       setError(
         locale === "es-MX"
           ? "La ejecución exacta está protegida. Usa «Iniciar una nueva evaluación» antes de crear otra."
@@ -869,10 +904,15 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
 
     let acceptedRun: Result | null = null;
     let intakeDispatched = false;
+    let rejectedIntakeCleared = false;
     const startedAt = Date.now();
     try {
       await verifyRuntimePersistence();
       if (token !== sequence.current) {
+        return;
+      }
+      if (selectedRunId()) {
+        offerSelectedRunRecovery("");
         return;
       }
       const stakeholder = humanEvidence.stakeholder_context?.evidence || {};
@@ -945,6 +985,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       }
       if (!acceptedRun && readPersistedRun()?.runId === reservedRunId) {
         if (isDefiniteIntakeRejection(caught) && discardRejectedIntake(reservedRunId)) {
+          rejectedIntakeCleared = true;
           setProtectedRunId("");
         } else {
           applyPendingIntakeIssue(caught);
@@ -956,6 +997,10 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       if (acceptedRun) {
         persistExactRun(acceptedRun, scope, startedAt);
         publishResult(acceptedRun);
+      }
+    } finally {
+      if (intakeDispatched && !rejectedIntakeCleared && token === sequence.current) {
+        offerSelectedRunRecovery(reservedRunId);
       }
     }
   }
@@ -987,8 +1032,8 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
   }
 
   async function retry(): Promise<void> {
-    const persisted = readPersistedRun();
-    const runId = String(result?.run_id || persisted?.runId || "").trim();
+    const persisted = readPersistedRun(true);
+    const runId = String(persisted?.runId || result?.run_id || "").trim();
     if (!runId) {
       if (issue && isAmbiguousIntakeOutcome(issue.code)) {
         return;

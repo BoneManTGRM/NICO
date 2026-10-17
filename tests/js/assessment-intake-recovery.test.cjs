@@ -32,7 +32,7 @@ function harness(respond, locale='en') {
     vm.runInNewContext(js,{module,exports:module.exports,window,document,URL,URLSearchParams,Headers,Response,AbortController,crypto:webcrypto,
       setTimeout:window.setTimeout,clearTimeout(){},process:{env:{}},console,
       fetch:async(url,init)=>{const call={url,method:init.method,body:init.body?JSON.parse(init.body):null};calls.push(call);
-        if(url.endsWith('/diagnostics/comprehensive-runtime'))return Response.json({status:'ready',survives_container_replacement_verified:true});
+        if(url.endsWith('/diagnostics/comprehensive-runtime'))return respond.readiness ? respond.readiness() : Response.json({status:'ready',survives_container_replacement_verified:true});
         return respond(call,{window,storage,calls});},
       require(name){if(name==='react')return {
         useState(initial){const i=cursor++;if(!(i in state))state[i]=typeof initial==='function'?initial():initial;return[state[i],v=>{state[i]=typeof v==='function'?v(state[i]):v;}];},
@@ -141,4 +141,60 @@ test('URL-only pending reservation survives lost response with storage unavailab
 test('proven rejection clears this URL-only reservation when storage is unavailable',async()=>{
   const h=harness(c=>c.method==='POST'?denied('specialist_authentication_required'):missing());h.window.localStorage.setItem=()=>{throw Error('storage denied');};
   await h.configure().run();assert.equal(h.window.location.searchParams.get('run_id'),null);assert.equal(h.render().protectedRunId,'');
+});
+
+for (const failure of [false,true]) test(`navigation while status GET pending offers enabled recovery after settlement (failure=${failure})`,async()=>{
+  let finish, hold=true;const h=harness(c=>hold?new Promise(r=>{finish=r;}):Response.json(accepted(c.url.split('/').at(-1))));
+  h.window.location.searchParams.set('run_id','comprun_A');h.reload();await settle();
+  h.window.location.searchParams.set('run_id','comprun_B');h.dispatch('popstate');
+  finish(failure?missing():Response.json(accepted('comprun_A')));await settle();
+  const recovery=h.render();assert.equal(recovery.phase,'unavailable');assert.equal(recovery.running,false);
+  assert.equal(recovery.issue.retryable,true);assert.equal(recovery.issue.code,'assessment_selected_run_recovery_required');assert.equal(recovery.protectedRunId,'comprun_B');
+  assert.equal(recovery.result,null);hold=false;const before=h.calls.length;
+  await Promise.all([recovery.retry(),recovery.retry(),recovery.retry()]);
+  assert.equal(h.calls.length,before+1);assert.equal(h.render().result.run_id,'comprun_B');assert.equal(h.render().phase,'review_required');
+  h.reload();await settle();assert.equal(h.render().result.run_id,'comprun_B');
+  h.window.location.searchParams.set('run_id','comprun_A');h.reload();await settle();assert.equal(h.render().result.run_id,'comprun_A');
+  assert.equal(h.calls.filter(c=>c.method==='POST').length,0);
+});
+test('selected-run recovery failure keeps visible retry and never POSTs',async()=>{
+  let finish, hold=true;const h=harness(()=>hold?new Promise(r=>{finish=r;}):missing());
+  h.window.location.searchParams.set('run_id','comprun_A');h.reload();await settle();h.window.location.searchParams.set('run_id','comprun_B');h.dispatch('popstate');
+  finish(Response.json(accepted('comprun_A')));await settle();hold=false;await h.render().retry();
+  assert.equal(h.render().running,false);assert.equal(h.render().issue.retryable,true);assert.equal(h.render().protectedRunId,'comprun_B');
+  await Promise.all([h.render().retry(),h.render().retry()]);assert.equal(h.calls.filter(c=>c.method==='POST').length,0);
+});
+test('navigation while intake response pending offers recovery without another intake',async()=>{
+  let finish,id;const h=harness(c=>{if(c.method==='POST'){id=c.body.run_id;return new Promise(r=>{finish=r;});}return Response.json(accepted(c.url.split('/').at(-1)));});
+  const pending=h.configure().run();await settle();h.window.location.searchParams.set('run_id','comprun_B');h.dispatch('popstate');
+  finish(Response.json(accepted(id)));await pending;assert.equal(h.render().running,false);assert.equal(h.render().issue.retryable,true);
+  await h.render().retry();assert.equal(h.render().result.run_id,'comprun_B');
+  h.window.location.searchParams.set('run_id',id);h.reload();await settle();assert.equal(h.render().result.run_id,id);
+  assert.equal(h.calls.filter(c=>c.method==='POST').length,1);
+});
+test('navigation during readiness preflight does not overwrite selection or POST',async()=>{
+  let finish;const respond=c=>Response.json(accepted(c.url.split('/').at(-1)));respond.readiness=()=>new Promise(r=>{finish=r;});
+  const h=harness(respond);const pending=h.configure().run();await settle();h.window.location.searchParams.set('run_id','comprun_B');h.dispatch('popstate');
+  finish(Response.json({status:'ready',survives_container_replacement_verified:true}));await pending;
+  assert.equal(h.window.location.searchParams.get('run_id'),'comprun_B');assert.equal(h.render().running,false);assert.equal(h.render().issue.retryable,true);
+  await h.render().retry();assert.equal(h.render().result.run_id,'comprun_B');assert.equal(h.calls.filter(c=>c.method==='POST').length,0);
+});
+test('navigation away from an accepted continuation never replays old continuation',async()=>{
+  let finish;const h=harness(c=>{if(c.method==='POST')return new Promise(r=>{finish=r;});const id=c.url.split('/').at(-1);
+    return Response.json(id==='comprun_A'?{...accepted(id),status:'running',terminal:false,progress_percent:25}:accepted(id));});
+  h.window.location.searchParams.set('run_id','comprun_A');h.reload();await settle();
+  assert.equal(h.calls.filter(c=>c.method==='POST').length,1);h.window.location.searchParams.set('run_id','comprun_B');h.dispatch('popstate');
+  finish(Response.json(accepted('comprun_A')));await settle();assert.equal(h.render().running,false);assert.equal(h.render().issue.retryable,true);
+  await h.render().retry();assert.equal(h.render().result.run_id,'comprun_B');
+  assert.equal(h.calls.filter(c=>c.method==='POST').length,1);assert.equal(h.calls.filter(c=>c.url.endsWith('/comprehensive-intake')).length,0);
+});
+test('Back and Forward between previously completed identities recover without intake',async()=>{
+  const h=harness(c=>Response.json(accepted(c.url.split('/').at(-1))));h.window.location.searchParams.set('run_id','comprun_A');h.reload();await settle();
+  assert.equal(h.render().result.run_id,'comprun_A');
+  for(const id of ['comprun_B','comprun_A','comprun_B']) {
+    h.window.location.searchParams.set('run_id',id);h.dispatch('popstate');await settle();
+    assert.equal(h.render().running,false);assert.equal(h.render().issue.retryable,true);
+    await h.render().retry();assert.equal(h.render().result.run_id,id);assert.equal(h.render().phase,'review_required');
+  }
+  assert.equal(h.calls.filter(c=>c.method==='POST').length,0);
 });

@@ -102,7 +102,7 @@ function readExactStoredRun(runId: string): PersistedRun | null {
   return active?.runId === runId ? active : null;
 }
 
-export function readPersistedRun(): PersistedRun | null {
+export function readPersistedRun(restoreTerminalUrl = false): PersistedRun | null {
   if (typeof window === "undefined") {
     return null;
   }
@@ -118,7 +118,7 @@ export function readPersistedRun(): PersistedRun | null {
   // A terminal exact run keeps its URL so a real reload can restore it. Within
   // the current document, however, pageshow/online events must not synthesize
   // that URL back into an active run and temporarily demote the terminal UI.
-  if (TERMINAL_URL_RUNS_IN_CURRENT_DOCUMENT.has(urlRunId)) {
+  if (!restoreTerminalUrl && TERMINAL_URL_RUNS_IN_CURRENT_DOCUMENT.has(urlRunId)) {
     return null;
   }
 

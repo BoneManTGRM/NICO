@@ -32,9 +32,12 @@ def test_mobile_page_resume_recovers_and_continues_the_same_run() -> None:
     source = HOOK.read_text(encoding="utf-8")
 
     assert "resumePersistedRun(persisted)" in source
-    assert 'window.addEventListener("pageshow", restoreAfterPageResume)' in source
-    assert 'window.addEventListener("online", restoreAfterPageResume)' in source
-    assert "const persisted = readPersistedRun();" in source
+    assert 'window.addEventListener("pageshow", restorePage)' in source
+    assert 'window.addEventListener("online", restorePage)' in source
+    assert "const restorePage = () => restoreAfterPageResume();" in source
+    assert "const restoreHistory = () => restoreAfterPageResume(true);" in source
+    assert 'window.addEventListener("popstate", restoreHistory)' in source
+    assert "const persisted = readPersistedRun(restoreTerminalUrl);" in source
     assert "activeContinuationRunId.current === persisted.runId" in source
     assert "visibleRunId && visibleRunId !== persisted.runId" in source
     assert '`/assessment/comprehensive-run/${encodeURIComponent(persisted.runId)}`' in source
