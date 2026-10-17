@@ -138,3 +138,46 @@ def test_bracketed_scan_matches_unoptimized_parser_spans(prefix):
     expected = list(producer._HOTSPOT_LINE.finditer(raw))
     assert [(m.span(), m.groupdict()) for m in actual] == [(m.span(), m.groupdict()) for m in expected]
     assert [m.group('path') for m in actual] == [ROUTES[0][0], 'apps/web/[[...path]]/route.ts']
+
+
+@pytest.mark.parametrize('path', ['src/plain.ts', 'apps/[id]/route.ts',
+                                  '[...path]/route.ts', '[[...path]]/route.ts'])
+@pytest.mark.parametrize('reference', ['[{path}]', '[{path}:138]',
+                                       '[{path}:138](https://example.test/source)',
+                                       'Source: `[{path}:138]`'])
+def test_projection_wrapped_references_merge_with_exact_path(path, reference):
+    wrapped = reference.format(path=path)
+    assert projection._source_path(wrapped) == path.casefold()
+    common = {'symbol': 'handler', 'finding_family': 'complexity_hotspot'}
+    records = [{**common, 'finding_id': 'canonical', 'path': path,
+                'recommendation': 'Retain the richer canonical record.'},
+               {**common, 'finding_id': 'wrapped', 'exact_source': wrapped}]
+    before = deepcopy(records)
+    findings = projection.canonicalize_final_findings(records)
+    assert len(findings) == 1
+    assert findings[0]['finding_id'] == 'canonical'
+    assert 'wrapped' in findings[0]['finding_aliases']
+    assert records == before
+
+
+@pytest.mark.parametrize('prefix', ['[', 'a[', 'a/'])
+def test_projection_failed_source_token_has_bounded_scan(prefix):
+    from time import perf_counter
+    raw = prefix * 30000 + 'nonsourcetext'
+    started = perf_counter()
+    assert projection._SOURCE_RE.search(raw) is None
+    elapsed = perf_counter() - started
+    # Generous wall-clock guard: a single token must not retry every suffix.
+    assert elapsed < 1.0, elapsed
+    assert projection._source_path(raw + ' src/plain.ts:138') == 'src/plain.ts'
+
+
+@pytest.mark.parametrize('value', ['src/plain.ts', 'src/view.tsx', 'a/module.jsx',
+                                    'C:/src/plain.py:10', 'file.py prose next.ts',
+                                    'text: src/module.yaml', 'src/a.cpp'])
+def test_projection_preserves_ordinary_extension_matching(value):
+    import re
+    legacy = re.compile(
+        r'([A-Za-z0-9_.\-/]+\.(?:py|pyi|ts|tsx|js|jsx|mjs|cjs|java|kt|swift|go|rs|rb|php|cs|c|cc|cpp|h|hpp|sh|yml|yaml|toml|json))',
+        re.IGNORECASE)
+    assert projection._source_path(value) == legacy.search(value).group(1).casefold()
