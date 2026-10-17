@@ -109,17 +109,17 @@ def _readiness_release_provenance() -> dict[str, Any]:
         return release
 
     from nico.report_execution_provenance_e6 import (
-        capture_frontend_release,
         observed_frontend_source,
         observed_native_frontend_source,
         verify_frontend_release,
     )
+    from nico.readiness_frontend_observation_v1 import capture_readiness_frontend_release
 
     expected_sha = str(release.get("frontend_build_commit") or "")
     expected_deployment = str(release.get("frontend_deployment_id") or "")
     # Capture only from the fixed trusted adapters. Caller/config supplied
     # observations and historical report receipts cannot establish readiness.
-    observation = capture_frontend_release(expected_sha, expected_deployment)
+    observation = capture_readiness_frontend_release(expected_sha, expected_deployment)
     verified = verify_frontend_release(observation, expected_sha, expected_deployment)
     release["frontend_runtime_observation"] = observation
     release["frontend_deployment_identity_verified"] = verified
