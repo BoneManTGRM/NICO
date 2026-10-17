@@ -164,6 +164,97 @@ def delivery_lifecycle_text(value: str) -> str:
     return value
 
 
+def _review_truth_text(updated: str, normalized: str, previous: str,
+                       client_delivery_authorized: bool) -> str:
+    if previous in {"Final human approval", "Aprobación humana final"} and normalized.upper() in {"PENDING", "PENDIENTE"}:
+        updated = "APPROVED" if previous == "Final human approval" else "APROBADA"
+    if client_delivery_authorized and previous in {"Client-delivery authorization", "Autorización de entrega al cliente"} and normalized.upper() in {"BLOCKED", "BLOQUEADA", "PENDING_AUTHORIZATION"}:
+        updated = "AUTHORIZED" if previous == "Client-delivery authorization" else "AUTORIZADA"
+    return updated
+
+
+def _cover_approval_text(updated: str, normalized: str, previous: str) -> str:
+    if normalized in {"HUMAN REVIEW", "REVISIÓN HUMANA"}:
+        updated = "OPERATOR APPROVAL" if normalized == "HUMAN REVIEW" else "APROBACIÓN OPERADOR"
+    elif previous == "HUMAN REVIEW" and normalized == "Pending":
+        updated = "Approved"
+    elif previous == "REVISIÓN HUMANA" and normalized == "Pendiente":
+        updated = "Aprobado"
+    return updated
+
+
+def _approval_record_text(updated: str, normalized: str, previous: str) -> str:
+    if normalized.casefold() == "pending":
+        if previous == "Decision":
+            updated = "Approved"
+        elif previous in {"Reviewer identity", "Reviewer role", "Reviewer authorization", "Review timestamp", "Approval record ID"}:
+            updated = "See certificate"
+        elif previous == "Reviewer notes":
+            updated = "Optional"
+        # Residual-risk acceptance remains pending, with no fabricated work.
+    if normalized.casefold() == "pendiente":
+        if previous == "Decisión":
+            updated = "Aprobado"
+        elif previous in {"Identidad del revisor", "Rol del revisor", "Autorización del revisor",
+                          "Fecha y hora de revisión", "Marca de tiempo de la revisión", "ID del registro de aprobación"}:
+            updated = "Ver certificado"
+        elif previous == "Notas del revisor":
+            updated = "Opcionales"
+    if normalized == "Residual-risk acceptance":
+        updated = "Specialist risk acceptance"
+    for old, new in (
+        ("Approved PDF SHA-256", "Original certified PDF SHA-256"),
+        ("Recorded in detached approval receipt after decision", "Retained in original approval receipt"),
+        ("digests. Any regeneration, score change, finding change, candidate disposition change, evidence change, or artifact replacement",
+         "digests. Any score, finding, candidate disposition or evidence change invalidates this approval."),
+        ("creates a new draft and invalidates prior approval.",
+         "Lifecycle-only presentation corrections retain the original decision and a separate artifact binding."),
+    ):
+        updated = updated.replace(old, new)
+    return updated
+
+
+def _rewrite_source_text(original: str, normalized: str, previous: str, phase_approval: bool,
+                         *, review_truth: bool, cover: bool, approval_record: bool,
+                         client_delivery_authorized: bool, resolve_approval_references: bool,
+                         approval_page: int | None) -> tuple[str, bool]:
+    """Apply the ordered lifecycle text rules, retaining split-label state."""
+    updated = lifecycle_text(original)
+    if resolve_approval_references:
+        updated = updated.replace("Recorded; see certificate.", f"Approved; record: report p. {approval_page}.")
+        updated = updated.replace("Registrada; ver certificado.", f"Aprobada; registro: pág. {approval_page} del informe.")
+    if review_truth:
+        updated = _review_truth_text(updated, normalized, previous, client_delivery_authorized)
+    if cover:
+        updated = _cover_approval_text(updated, normalized, previous)
+    if normalized == "BLOCKED - AUTHORIZED HUMAN APPROVAL":
+        updated, phase_approval = "APPROVED - DELIVERY BLOCKED", True
+    elif phase_approval and normalized == "REQUIRED":
+        updated, phase_approval = "SEPARATE AUTHORIZATION", False
+    if approval_record:
+        updated = _approval_record_text(updated, normalized, previous)
+    if client_delivery_authorized:
+        updated = delivery_lifecycle_text(updated)
+        if cover and previous == "CLIENT DELIVERY" and normalized == "Blocked":
+            updated = "Authorized"
+        elif cover and previous == "ENTREGA AL CLIENTE" and normalized == "Bloqueada":
+            updated = "Autorizada"
+    return updated, phase_approval
+
+
+def _approval_reference_page(writer: PdfWriter) -> int:
+    approval_page = None
+    for index, candidate in enumerate(writer.pages):
+        lines = (candidate.extract_text() or "").splitlines()
+        if any(title in " ".join(lines[:6]) for title in (
+                "Human Review and Exact-Artifact Approval", "Operator Report Approval Record",
+                "Registro de revisión humana y aprobación de artefactos exactos", "Registro de aprobación del operador")):
+            approval_page = index + 1
+    if approval_page is None:
+        raise ValueError("operator_approval_reference_target_missing")
+    return approval_page
+
+
 @lru_cache(maxsize=4)
 def _render_source(pdf: bytes, *, client_delivery_authorized: bool = False,
                    repair_current_truth: bool = False,
@@ -171,16 +262,7 @@ def _render_source(pdf: bytes, *, client_delivery_authorized: bool = False,
                    approval_receipt_json: str = "") -> tuple[bytes, tuple[tuple[int, str, str], ...]]:
     writer = PdfWriter(clone_from=io.BytesIO(pdf))
     changes: list[tuple[int, str, str]] = []
-    approval_page = None
-    if resolve_approval_references:
-        for index, candidate in enumerate(writer.pages):
-            lines = (candidate.extract_text() or "").splitlines()
-            if any(title in " ".join(lines[:6]) for title in (
-                    "Human Review and Exact-Artifact Approval", "Operator Report Approval Record",
-                    "Registro de revisión humana y aprobación de artefactos exactos", "Registro de aprobación del operador")):
-                approval_page = index + 1
-        if approval_page is None:
-            raise ValueError("operator_approval_reference_target_missing")
+    approval_page = _approval_reference_page(writer) if resolve_approval_references else None
     from nico.comprehensive_human_evidence_appendix import is_literal_evidence_page
     for page_index, page in enumerate(writer.pages):
         text = page.extract_text() or ""
@@ -219,61 +301,14 @@ def _render_source(pdf: bytes, *, client_delivery_authorized: bool = False,
                 if not isinstance(operand, (TextStringObject, ByteStringObject)):
                     continue
                 original = str(operand) if isinstance(operand, TextStringObject) else bytes(operand).decode("latin-1")
-                updated = lifecycle_text(original)
-                if resolve_approval_references:
-                    updated = updated.replace("Recorded; see certificate.", f"Approved; record: report p. {approval_page}.")
-                    updated = updated.replace("Registrada; ver certificado.", f"Aprobada; registro: pág. {approval_page} del informe.")
                 normalized = original.strip()
-                if review_truth:
-                    if previous in {"Final human approval", "Aprobación humana final"} and normalized.upper() in {"PENDING", "PENDIENTE"}:
-                        updated = "APPROVED" if previous == "Final human approval" else "APROBADA"
-                    if client_delivery_authorized and previous in {"Client-delivery authorization", "Autorización de entrega al cliente"} and normalized.upper() in {"BLOCKED", "BLOQUEADA", "PENDING_AUTHORIZATION"}:
-                        updated = "AUTHORIZED" if previous == "Client-delivery authorization" else "AUTORIZADA"
-                if cover:
-                    if normalized in {"HUMAN REVIEW", "REVISIÓN HUMANA"}:
-                        updated = "OPERATOR APPROVAL" if normalized == "HUMAN REVIEW" else "APROBACIÓN OPERADOR"
-                    elif previous == "HUMAN REVIEW" and normalized == "Pending":
-                        updated = "Approved"
-                    elif previous == "REVISIÓN HUMANA" and normalized == "Pendiente":
-                        updated = "Aprobado"
-                if normalized == "BLOCKED - AUTHORIZED HUMAN APPROVAL":
-                    updated, phase_approval = "APPROVED - DELIVERY BLOCKED", True
-                elif phase_approval and normalized == "REQUIRED":
-                    updated, phase_approval = "SEPARATE AUTHORIZATION", False
-                if approval_record and normalized.casefold() == "pending":
-                    if previous == "Decision":
-                        updated = "Approved"
-                    elif previous in {"Reviewer identity", "Reviewer role", "Reviewer authorization", "Review timestamp", "Approval record ID"}:
-                        updated = "See certificate"
-                    elif previous == "Reviewer notes":
-                        updated = "Optional"
-                    # Residual-risk acceptance remains pending, with no fabricated work.
-                if approval_record and normalized.casefold() == "pendiente":
-                    if previous == "Decisión":
-                        updated = "Aprobado"
-                    elif previous in {"Identidad del revisor", "Rol del revisor", "Autorización del revisor",
-                                      "Fecha y hora de revisión", "Marca de tiempo de la revisión", "ID del registro de aprobación"}:
-                        updated = "Ver certificado"
-                    elif previous == "Notas del revisor":
-                        updated = "Opcionales"
-                if approval_record and normalized == "Residual-risk acceptance":
-                    updated = "Specialist risk acceptance"
-                if approval_record:
-                    for old, new in (
-                        ("Approved PDF SHA-256", "Original certified PDF SHA-256"),
-                        ("Recorded in detached approval receipt after decision", "Retained in original approval receipt"),
-                        ("digests. Any regeneration, score change, finding change, candidate disposition change, evidence change, or artifact replacement",
-                         "digests. Any score, finding, candidate disposition or evidence change invalidates this approval."),
-                        ("creates a new draft and invalidates prior approval.",
-                         "Lifecycle-only presentation corrections retain the original decision and a separate artifact binding."),
-                    ):
-                        updated = updated.replace(old, new)
-                if client_delivery_authorized:
-                    updated = delivery_lifecycle_text(updated)
-                    if cover and previous == "CLIENT DELIVERY" and normalized == "Blocked":
-                        updated = "Authorized"
-                    elif cover and previous == "ENTREGA AL CLIENTE" and normalized == "Bloqueada":
-                        updated = "Autorizada"
+                updated, phase_approval = _rewrite_source_text(
+                    original, normalized, previous, phase_approval,
+                    review_truth=review_truth, cover=cover, approval_record=approval_record,
+                    client_delivery_authorized=client_delivery_authorized,
+                    resolve_approval_references=resolve_approval_references,
+                    approval_page=approval_page,
+                )
                 if updated != original:
                     targets[index] = (TextStringObject(updated) if isinstance(operand, TextStringObject)
                                       else ByteStringObject(updated.encode("latin-1")))
