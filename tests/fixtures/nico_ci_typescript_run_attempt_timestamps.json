@@ -1,0 +1,51 @@
+{
+  "repository": "BoneManTGRM/NICO",
+  "source_sha": "89666b923a944f621bd88baf17bb6dbe834d6697",
+  "run": {
+    "id": 38902143048,
+    "run_attempt": 1,
+    "head_sha": "89666b923a944f621bd88baf17bb6dbe834d6697",
+    "head_branch": "main",
+    "event": "push",
+    "status": "completed",
+    "conclusion": "success",
+    "workflow_id": 303403371,
+    "path": ".github/workflows/node.js.yml",
+    "run_started_at": "2026-10-16T12:40:10Z",
+    "updated_at": "2026-10-16T12:41:04Z",
+    "repository": {
+      "id": 1282576027,
+      "full_name": "BoneManTGRM/NICO"
+    },
+    "head_repository": {
+      "id": 1282576027,
+      "full_name": "BoneManTGRM/NICO"
+    }
+  },
+  "attempt": {
+    "id": 38902143048,
+    "run_attempt": 1,
+    "head_sha": "89666b923a944f621bd88baf17bb6dbe834d6697",
+    "head_branch": "main",
+    "event": "push",
+    "status": "completed",
+    "conclusion": "success",
+    "workflow_id": 303403371,
+    "path": ".github/workflows/node.js.yml",
+    "run_started_at": "2026-10-16T12:40:10Z",
+    "updated_at": "2026-10-16T12:41:05Z",
+    "repository": {
+      "id": 1282576027,
+      "full_name": "BoneManTGRM/NICO"
+    },
+    "head_repository": {
+      "id": 1282576027,
+      "full_name": "BoneManTGRM/NICO"
+    }
+  },
+  "sources": [
+    "https://api.github.com/repos/BoneManTGRM/NICO/actions/runs/38902143048",
+    "https://api.github.com/repos/BoneManTGRM/NICO/actions/runs/38902143048/attempts/1"
+  ],
+  "note": "Read-only connector observations; identity projection, not credential material. Production rejection not directly observed."
+}
