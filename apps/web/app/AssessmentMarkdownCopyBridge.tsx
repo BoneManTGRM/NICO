@@ -6,6 +6,7 @@ import {reportLanguageForRequest} from "./assessment/assessmentLocale";
 const REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]';
 const COPY_MARKDOWN_LABEL = /(?:copy\s+markdown|copiar\s+markdown)/i;
 const STATUS_ATTR = "data-nico-markdown-action-status";
+const PREPARATION_TIMEOUT_MS = 120_000;
 
 type CacheEntry = {
   runId: string;
@@ -13,6 +14,8 @@ type CacheEntry = {
   reportLanguage: ReportLanguage;
   markdown: string;
   promise: Promise<string> | null;
+  timedOut?: boolean;
+  feedback?: Promise<string>;
 };
 
 type ReportLanguage = "en" | "es-MX";
@@ -60,7 +63,7 @@ function markdownHref(runId: string, reportLanguage: ReportLanguage): string {
   return `/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/localized-report/${encodeURIComponent(reportLanguage)}`;
 }
 
-function showStatus(container: Element | null, message: string, failure = false): void {
+function showStatus(container: Element | null, message: string, failure = false, pending = false): void {
   if (!container) return;
   let status = container.querySelector<HTMLElement>(`[${STATUS_ATTR}]`);
   if (!status) {
@@ -72,9 +75,7 @@ function showStatus(container: Element | null, message: string, failure = false)
   }
   status.setAttribute("role", failure ? "alert" : "status");
   status.textContent = message;
-  window.setTimeout(() => {
-    if (status?.isConnected && status.textContent === message) status.remove();
-  }, failure ? 8_000 : 3_500);
+  status.setAttribute("aria-busy", String(pending));
 }
 
 async function copyText(text: string): Promise<boolean> {
@@ -107,13 +108,24 @@ async function copyText(text: string): Promise<boolean> {
 
 async function loadMarkdown(entry: CacheEntry): Promise<string> {
   if (entry.markdown) return entry.markdown;
-  if (entry.promise) return entry.promise;
+  if (entry.promise) return entry.feedback || entry.promise;
 
+  const controller = new AbortController();
+  entry.timedOut = false;
+  let timeoutId: number;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = window.setTimeout(() => {
+      entry.timedOut = true;
+      controller.abort();
+      reject(new Error("markdown_preparation_timeout"));
+    }, PREPARATION_TIMEOUT_MS);
+  });
   entry.promise = (async () => {
     const response = await fetch(markdownHref(entry.runId, entry.reportLanguage), {
       method: "GET",
       cache: "no-store",
       headers: {Accept: "application/json"},
+      signal: controller.signal,
     });
     if (!response.ok) {
       const failure = await response.json().catch(() => ({})) as {detail?: {reason?: unknown; code?: unknown}};
@@ -141,15 +153,17 @@ async function loadMarkdown(entry: CacheEntry): Promise<string> {
     if (payload.assessment_rerun !== false) throw new Error("markdown_assessment_rerun_not_proven_false");
     const markdown = String(payload.report?.markdown || "");
     if (!markdown.trim()) throw new Error("markdown_empty");
+    if (controller.signal.aborted) throw new Error("markdown_preparation_timeout");
     entry.markdown = markdown;
     return markdown;
-  })();
-
-  try {
-    return await entry.promise;
-  } finally {
+  })().finally(() => {
     entry.promise = null;
-  }
+    window.clearTimeout(timeoutId);
+  });
+  // Keep the in-flight lock until transport/body settlement, even if a wrapper
+  // ignores cancellation. A late result can neither grant readiness nor race a retry.
+  entry.feedback = Promise.race([entry.promise, timeout]);
+  return await entry.feedback;
 }
 
 function enabledCopyButton(actions: Element): HTMLButtonElement | null {
@@ -218,14 +232,23 @@ export default function AssessmentMarkdownCopyBridge() {
       event.stopImmediatePropagation();
 
       if (!entry.markdown) {
+        if (entry.promise && entry.timedOut) {
+          showStatus(actions, spanish()
+            ? "La preparación agotó el tiempo de espera. Esperando la cancelación antes de permitir otro intento."
+            : "Preparation timed out. Waiting for cancellation before allowing another attempt.", true);
+          return;
+        }
         showStatus(
           actions,
           spanish()
             ? "Preparando Markdown. Cuando indique que está listo, pulsa Copiar Markdown otra vez."
             : "Preparing Markdown. When it is ready, click Copy Markdown again.",
+          false, true,
         );
+        // Subscribe this container to the same bounded result after a rerender.
         void loadMarkdown(entry)
           .then(() => {
+            if (cache.current !== entry || !actions.isConnected) return;
             guardedUntil.current = 0;
             showStatus(
               actions,
@@ -233,14 +256,23 @@ export default function AssessmentMarkdownCopyBridge() {
             );
           })
           .catch((failure: unknown) => {
+            if (cache.current !== entry || !actions.isConnected) return;
             guardedUntil.current = 0;
+            if (entry.timedOut) {
+              showStatus(actions, spanish()
+                ? "La preparación agotó el tiempo de espera. Se solicitó la cancelación en el navegador; el servidor podría seguir trabajando. Pulsa Copiar Markdown para volver a intentarlo cuando termine la cancelación."
+                : "Preparation timed out. Browser cancellation was requested; server work may still finish. Click Copy Markdown to retry once cancellation finishes.", true);
+              return;
+            }
             const message = failure instanceof Error ? failure.message : "";
             const code = /^HTTP [0-9]{3}(?: · [a-z][a-z0-9_]{0,119})?$/.test(message) ? ` (${message})` : "";
             showStatus(
               actions,
               (spanish()
                 ? "No se pudo preparar Markdown"
-                : "Markdown could not be prepared") + code + ".",
+                : "Markdown could not be prepared") + code + (spanish()
+                  ? ". Pulsa Copiar Markdown para volver a intentarlo."
+                  : ". Click Copy Markdown to retry."),
               true,
             );
           });
