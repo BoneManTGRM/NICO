@@ -45,20 +45,28 @@ def report_delivery_timing(run_id: str, report_language: str):
             pass
 
 
+@contextmanager
+def report_delivery_phase_scope(name: str):
+    """Measure a fixed, code-owned phase name without retaining arguments or results."""
+    state = _ACTIVE.get()
+    if state is None:
+        yield
+        return
+    started, cpu = time.perf_counter(), time.thread_time()
+    try:
+        yield
+    finally:
+        phase = state["phases"].setdefault(name, {"calls": 0, "elapsed_ms": 0.0, "thread_cpu_ms": 0.0})
+        phase["calls"] += 1
+        phase["elapsed_ms"] = round(phase["elapsed_ms"] + (time.perf_counter() - started) * 1000, 3)
+        phase["thread_cpu_ms"] = round(phase["thread_cpu_ms"] + (time.thread_time() - cpu) * 1000, 3)
+
+
 def report_delivery_phase(name: str):
     def decorate(function):
         @wraps(function)
         def observed(*args, **kwargs):
-            state = _ACTIVE.get()
-            if state is None:
+            with report_delivery_phase_scope(name):
                 return function(*args, **kwargs)
-            started, cpu = time.perf_counter(), time.thread_time()
-            try:
-                return function(*args, **kwargs)
-            finally:
-                phase = state["phases"].setdefault(name, {"calls": 0, "elapsed_ms": 0.0, "thread_cpu_ms": 0.0})
-                phase["calls"] += 1
-                phase["elapsed_ms"] = round(phase["elapsed_ms"] + (time.perf_counter() - started) * 1000, 3)
-                phase["thread_cpu_ms"] = round(phase["thread_cpu_ms"] + (time.thread_time() - cpu) * 1000, 3)
         return observed
     return decorate
