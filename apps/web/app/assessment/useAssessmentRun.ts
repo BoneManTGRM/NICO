@@ -1032,7 +1032,12 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
   }
 
   async function retry(): Promise<void> {
+    if (intakeInFlight.current || recoveryInFlight.current) return;
     const persisted = readPersistedRun(true);
+    const visibleRunId = exactRunId(latestResult.current);
+    if (persisted && visibleRunId && visibleRunId !== persisted.runId) {
+      offerSelectedRunRecovery(visibleRunId);
+    }
     const runId = String(persisted?.runId || result?.run_id || "").trim();
     if (!runId) {
       if (issue && isAmbiguousIntakeOutcome(issue.code)) {

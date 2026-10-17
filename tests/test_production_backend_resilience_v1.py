@@ -57,8 +57,13 @@ def test_frontend_retries_and_recovers_existing_run_state() -> None:
     assert "preferMonotonicVisibleResult" in hook
     assert "incomingProgress < previousProgress" in hook
     assert "await continueRun(recovered, scope, token, persisted.startedAt)" in hook
-    assert 'window.addEventListener("pageshow", restoreAfterPageResume)' in hook
-    assert 'window.addEventListener("online", restoreAfterPageResume)' in hook
+    assert 'window.addEventListener("pageshow", restorePage)' in hook
+    assert 'window.addEventListener("online", restorePage)' in hook
+    assert "const restorePage = () => restoreAfterPageResume();" in hook
+    assert "const restoreHistory = () => restoreAfterPageResume(true);" in hook
+    assert 'window.addEventListener("popstate", restoreHistory)' in hook
+    assert 'window.removeEventListener("pageshow", restorePage)' in hook
+    assert 'window.removeEventListener("online", restorePage)' in hook
     assert "runStatusUnavailableMessage" in requests
 
 

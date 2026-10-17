@@ -198,3 +198,39 @@ test('Back and Forward between previously completed identities recover without i
   }
   assert.equal(h.calls.filter(c=>c.method==='POST').length,0);
 });
+test('explicit retry honors selected URL over stale visible result before history event',async()=>{
+  const h=harness(c=>Response.json(accepted(c.url.split('/').at(-1))));h.window.location.searchParams.set('run_id','comprun_A');h.reload();await settle();
+  const stale=h.render();assert.equal(stale.result.run_id,'comprun_A');h.window.location.searchParams.set('run_id','comprun_B');
+  const before=h.calls.length;await stale.retry();assert.equal(h.calls.length,before+1);assert.equal(h.calls.at(-1).method,'GET');
+  assert.ok(h.calls.at(-1).url.endsWith('/comprun_B'));assert.equal(h.render().result.run_id,'comprun_B');assert.equal(h.calls.filter(c=>c.method==='POST').length,0);
+});
+test('terminal pageshow online and foreground preserve completed view without requests',async()=>{
+  const h=harness(c=>Response.json(accepted(c.url.split('/').at(-1))));h.window.location.searchParams.set('run_id','comprun_A');h.reload();await settle();
+  const before=h.calls.length;for(const event of ['pageshow','online','visibilitychange'])h.dispatch(event);await settle();
+  assert.equal(h.calls.length,before);assert.equal(h.render().phase,'review_required');assert.equal(h.render().result.run_id,'comprun_A');
+  assert.equal(h.storage.has(KEY),false);
+});
+test('ordinary page resume does not cancel or duplicate an accepted continuation',async()=>{
+  let finish,posts=0;const active={...accepted('comprun_A'),status:'running',terminal:false,progress_percent:25};
+  const h=harness(c=>{if(c.method==='POST'){posts++;return posts===1?new Promise(r=>{finish=r;}):Response.json(accepted('comprun_A'));}
+    return Response.json(posts>=2?accepted('comprun_A'):active);});
+  h.window.location.searchParams.set('run_id','comprun_A');h.reload();await settle();const before=h.calls.length;
+  for(const event of ['pageshow','online','visibilitychange'])h.dispatch(event);await settle();assert.equal(h.calls.length,before);
+  finish(Response.json({...active,progress_percent:50}));await settle();assert.equal(posts,2);assert.equal(h.render().phase,'review_required');
+  assert.equal(h.render().result.commit_sha,'a'.repeat(40));assert.equal(h.calls.filter(c=>c.url.endsWith('/comprehensive-intake')).length,0);
+});
+test('terminal URL stays protected without visible result until explicit Start new reset',async()=>{
+  const h=harness(c=>Response.json(accepted(c.url.split('/').at(-1))));h.window.location.searchParams.set('run_id','comprun_A');h.reload();await settle();
+  h.window.location.searchParams.set('run_id','comprun_B');h.dispatch('popstate');await settle();assert.equal(h.render().result,null);
+  // A is suppressed as terminal in same-document ordinary persistence reads.
+  h.window.location.searchParams.set('run_id','comprun_A');const before=h.calls.length;await h.render().run();
+  assert.equal(h.calls.length,before);assert.equal(h.window.location.searchParams.get('run_id'),'comprun_A');
+  h.render().startNew();assert.equal(h.render().result,null);assert.equal(h.render().protectedRunId,'');assert.equal(h.render().authorized,false);
+  assert.equal(h.window.location.searchParams.get('run_id'),null);assert.ok(h.window.location.searchParams.has('new_assessment'));
+  for(const event of ['pageshow','online'])h.dispatch(event);await settle();assert.equal(h.calls.length,before);assert.equal(h.render().phase,'idle');
+});
+test('transient exact status failure retries GET and preserves canonical identity',async()=>{
+  let gets=0;const h=harness(c=>{assert.equal(c.method,'GET');return ++gets===1?Response.json({detail:{code:'temporarily_unavailable'}},{status:503}):Response.json(accepted('comprun_A'));});
+  h.window.location.searchParams.set('run_id','comprun_A');h.reload();await settle();assert.equal(gets,2);assert.equal(h.render().phase,'review_required');
+  assert.equal(h.render().result.run_id,'comprun_A');assert.equal(h.render().result.commit_sha,'a'.repeat(40));assert.equal(h.render().result.client_delivery_allowed,false);
+});
