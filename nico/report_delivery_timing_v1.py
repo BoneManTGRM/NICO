@@ -8,18 +8,89 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
 from typing import Any
+from uuid import uuid4
 
 _ACTIVE: ContextVar[dict[str, Any] | None] = ContextVar("nico_report_delivery_timing", default=None)
 _LOGGER = logging.getLogger("uvicorn.error")
+
+# Reserve one of the 32 records for the existing final aggregate. Emit each
+# code-owned phase at most once so frequent PDF lookups cannot consume the budget.
+_MAX_RECORDS_PER_REQUEST = 32
+_PHASE_NAMES = frozenset({
+    'artifact_finalize',
+    'artifact_preparation',
+    'artifact_render',
+    'canonical_integrity',
+    'client_pdf_status_sanitizer',
+    'combined_compaction',
+    'compact_design_validation',
+    'controller_status',
+    'final_navigation',
+    'four_phase_pdf',
+    'frozen_pdf',
+    'installed_render_target',
+    'limitation_compaction',
+    'manifest_refresh',
+    'markdown_render',
+    'package_integrity',
+    'pdf_text_lookup',
+    'pdf_text_parse',
+    'record_decompress_decode',
+    'record_integrity_hash',
+    'render_target',
+    'report_accuracy',
+    'report_authority',
+    'report_clarity_text',
+    'repository_delivery_section',
+    'retained_pdf_cache_probe',
+    'retained_pdf_exact_input',
+    'retained_pdf_input_fingerprint',
+    'retired_appendix_validation',
+    'semantic_navigation',
+    'source_pdf_projection_check',
+    'stage_reflow',
+    'truth_parity_projection',
+    'zip_encoding',
+})
+
+
+def _emit(prefix: str, payload: dict[str, Any]) -> None:
+    try:
+        _LOGGER.info("%s=%s", prefix, json.dumps(payload, separators=(",", ":"), sort_keys=True))
+    except Exception:
+        # Diagnostics must not change delivery or hide its original exception.
+        pass
+
+
+def _progress(state: dict[str, Any], event: str, **fields: Any) -> None:
+    if state["progress_records"] >= _MAX_RECORDS_PER_REQUEST - 1:
+        state["progress_suppressed"] += 1
+        return
+    state["progress_records"] += 1
+    _emit("NICO_REPORT_PROGRESS", {
+        "schema": "nico.report-delivery-progress.v1",
+        **state["identity"], "event": event,
+        "sequence": state["progress_records"],
+        "http_transfer_completion_inferred": False,
+        **fields,
+    })
 
 
 @contextmanager
 def report_delivery_timing(run_id: str, report_language: str):
     """Observe one authenticated route; never retain input bodies or credentials."""
-    state: dict[str, Any] = {"phases": {}, "run_id": run_id, "report_language": report_language}
+    identity = {
+        "run_id": run_id if re.fullmatch(r"comprun_[0-9a-f]{32}", run_id) else "invalid_or_fixture_run_id",
+        "report_language": report_language if report_language in {"en", "es-MX"} else "unsupported",
+        "request_id": uuid4().hex,
+    }
+    state: dict[str, Any] = {"phases": {}, "identity": identity,
+                             "progress_records": 0, "progress_suppressed": 0,
+                             "reported_phases": set()}
     token = _ACTIVE.set(state)
     started = time.perf_counter()
     outcome, error_type = "completed", ""
+    _progress(state, "route_started")
     try:
         yield
     except BaseException as exc:
@@ -29,8 +100,9 @@ def report_delivery_timing(run_id: str, report_language: str):
         _ACTIVE.reset(token)
         payload = {
             "schema": "nico.report-delivery-timing.v1",
-            "run_id": run_id if re.fullmatch(r"comprun_[0-9a-f]{32}", run_id) else "invalid_or_fixture_run_id",
-            "report_language": report_language if report_language in {"en", "es-MX"} else "unsupported",
+            **identity,
+            "progress_records": state["progress_records"],
+            "progress_suppressed": state["progress_suppressed"],
             "outcome": outcome,
             "error_type": error_type,
             "response_preparation_ms": round((time.perf_counter() - started) * 1000, 3),
@@ -38,11 +110,7 @@ def report_delivery_timing(run_id: str, report_language: str):
             "http_transfer_completion_inferred": False,
             "phases": state["phases"],
         }
-        try:
-            _LOGGER.info("NICO_REPORT_TIMING=%s", json.dumps(payload, separators=(",", ":"), sort_keys=True))
-        except Exception:
-            # Observability must never change report delivery or hide its error.
-            pass
+        _emit("NICO_REPORT_TIMING", payload)
 
 
 @contextmanager
@@ -52,14 +120,25 @@ def report_delivery_phase_scope(name: str):
     if state is None:
         yield
         return
+    name = name if name in _PHASE_NAMES else "unknown_phase"
     started, cpu = time.perf_counter(), time.thread_time()
+    outcome, error_type = "completed", ""
     try:
         yield
+    except BaseException as exc:
+        outcome, error_type = "failed", type(exc).__name__
+        raise
     finally:
         phase = state["phases"].setdefault(name, {"calls": 0, "elapsed_ms": 0.0, "thread_cpu_ms": 0.0})
         phase["calls"] += 1
         phase["elapsed_ms"] = round(phase["elapsed_ms"] + (time.perf_counter() - started) * 1000, 3)
         phase["thread_cpu_ms"] = round(phase["thread_cpu_ms"] + (time.thread_time() - cpu) * 1000, 3)
+        if name in state["reported_phases"]:
+            state["progress_suppressed"] += 1
+        else:
+            state["reported_phases"].add(name)
+            _progress(state, "phase_completed", phase=name, outcome=outcome,
+                      error_type=error_type, phase_times_are_inclusive=True, **phase)
 
 
 def report_delivery_phase(name: str):
