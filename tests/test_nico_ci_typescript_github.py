@@ -63,6 +63,53 @@ def test_independently_authenticated_fixture_import(api):
     assert len(api[0].calls)>10
 
 
+def test_observed_run_attempt_timestamps_are_not_shared_identity(api):
+    import json
+    from nico import nico_ci_typescript_github_v1 as module
+    observed=json.loads((ROOT/'tests/fixtures/nico_ci_typescript_run_attempt_timestamps.json').read_text())
+    client,responses,archive,_=api
+    # Replay real endpoint timestamps within the owned synthetic archive fixture.
+    # This is not an authentication claim for the production archive.
+    for path,key in [('/actions/runs/123','run'),('/actions/runs/123/attempts/2','attempt')]:
+        for field in ('run_started_at','updated_at'):
+            responses[path][field]=observed[key][field]
+    responses['/actions/artifacts/7']['created_at']='2026-10-16T12:41:00Z'
+    result=module._import_with_client(client,archive,target_sha='b'*40,run_id='123',
+        run_attempt='2',artifact_id='7',now=datetime(2026,10,17,tzinfo=timezone.utc))
+    assert result['status']=='completed', result
+    assert result['metadata_authenticated'] is True and result['score_override'] is False
+
+
+@pytest.mark.parametrize('updated',['2026-10-15T10:09:59Z','2026-10-15T10:10:01Z'])
+def test_attempt_has_independent_update_timestamp(api,updated):
+    api[1]['/actions/runs/123/attempts/2']['updated_at']=updated
+    assert invoke(api)['status']=='completed'
+
+
+@pytest.mark.parametrize('updated',[None,'invalid','2026-10-15T10:10:01',
+    '2026-10-15T09:59:59Z','2026-10-15T11:00:01Z','2026-10-01T10:10:00Z'])
+def test_invalid_attempt_timestamp_rejected(api,updated):
+    api[1]['/actions/runs/123/attempts/2']['updated_at']=updated
+    assert invoke(api)['status']=='incomplete'
+
+
+@pytest.mark.parametrize('endpoint,reason',[
+    ('/actions/runs/123','run_changed_during_capture'),
+    ('/actions/runs/123/attempts/2','attempt_changed_during_capture')])
+def test_same_endpoint_update_changes_during_capture_rejected(api,endpoint,reason):
+    client=api[0]; original=client.get_json; reads=0
+    def changing(url,params=None):
+        nonlocal reads
+        value,error=original(url,params)
+        if url.endswith(endpoint):
+            reads+=1
+            if reads==2: value['updated_at']='2026-10-15T10:10:01Z'
+        return value,error
+    client.get_json=changing
+    result=invoke(api)
+    assert result['status']=='incomplete' and result['reason']==reason
+
+
 @pytest.mark.parametrize('damage',['repository','main_sha','run_sha','workflow','workflow_revision','attempt','latest_run',
     'artifact_digest','artifact_repo','artifact_run','artifact_sha','artifact_name','artifact_expired',
     'stale_time','artifact_old_attempt','jobs_truncated','checkout_failure','tree_truncated','blob_corrupt','untrusted_client'])

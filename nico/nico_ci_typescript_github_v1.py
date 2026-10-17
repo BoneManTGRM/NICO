@@ -110,7 +110,11 @@ def _collect_and_import(client,archive,target_sha,run_id,run_attempt,artifact_id
     _require(started<=updated<=now and now-updated<=timedelta(days=7),'run_stale_or_future')
     attempt=get(run_path+f'/attempts/{run_attempt}'); validate_run(attempt)
     identity=('id','run_attempt','head_sha','head_branch','event','status','conclusion','workflow_id','path','run_started_at','updated_at')
-    _require(all(attempt.get(k)==run.get(k) for k in identity),'attempt_snapshot_mismatch')
+    # GitHub updates the run and attempt resources independently. Their update
+    # timestamps need not match; each must be fresh and stable on its own endpoint.
+    attempt_updated=_time(attempt.get('updated_at'))
+    _require(started<=attempt_updated<=now and now-attempt_updated<=timedelta(days=7),'attempt_stale_or_future')
+    _require(all(attempt.get(k)==run.get(k) for k in identity if k!='updated_at'),'attempt_snapshot_mismatch')
     workflow_id=run.get('workflow_id')
     _require(type(workflow_id) is int and workflow_id>0,'workflow_identifier_missing')
     workflow=get(f'/actions/workflows/{workflow_id}')
@@ -180,6 +184,8 @@ def _collect_and_import(client,archive,target_sha,run_id,run_attempt,artifact_id
     _require(main_head()==target_sha,'main_changed_during_capture')
     fresh=get(run_path); validate_run(fresh)
     _require(all(fresh.get(k)==run.get(k) for k in identity),'run_changed_during_capture')
+    fresh_attempt=get(run_path+f'/attempts/{run_attempt}'); validate_run(fresh_attempt)
+    _require(all(fresh_attempt.get(k)==attempt.get(k) for k in identity),'attempt_changed_during_capture')
     latest_run()
     _require(get(artifact_path)==artifact,'artifact_changed_during_capture')
     authenticated=AuthenticatedRun(repository=REPOSITORY,source_sha=target_sha,workflow_sha=target_sha,
