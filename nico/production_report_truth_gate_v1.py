@@ -69,7 +69,7 @@ def _retained_ci_verified(record: Mapping[str, Any], canonical: Mapping[str, Any
         return False
     evidence = scanner_execution_evidence(identity, {
         "dependency_security_static_analysis": {"scan_id": record["scan_id"]},
-    })
+    }, scanner_name="typescript")
     return any(
         row.get("scanner_name") == "typescript"
         and row.get("retained_ci_evidence_verified") is True

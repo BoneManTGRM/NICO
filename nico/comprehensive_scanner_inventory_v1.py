@@ -148,13 +148,20 @@ def _scanner_metadata(record: Mapping[str, Any], *, scan: Mapping[str, Any], com
     }
 
 
-def inventory_for_record(record: Mapping[str, Any], *, run_id: str) -> JSONResponse:
+def inventory_for_record(
+    record: Mapping[str, Any], *, run_id: str, scanner_name: str | None = None,
+) -> JSONResponse:
     """Verify stored run-selected scanner bytes without granting route authority.
 
     Callers must supply an integrity-validated run record or its integrity-bound
     status projection. No caller-supplied scanner ID or storage path is accepted.
+    Internal consumers may select one scanner to avoid reading unrelated blobs;
+    identity and population checks still cover the entire retained scan. Routes
+    always use the full inventory, and a selection never claims full completion.
     """
     try:
+        if scanner_name is not None and scanner_name not in KNOWN_SCANNERS:
+            return _error(409, "scanner_evidence_selection_invalid")
         identity = _mapping(record.get("identity"))
         commit = identity.get("commit_sha")
         if identity.get("run_id") != run_id or not isinstance(commit, str) or not _COMMIT.fullmatch(commit):
@@ -183,8 +190,11 @@ def inventory_for_record(record: Mapping[str, Any], *, run_id: str) -> JSONRespo
         requested = scan.get("tools_requested")
         requested = requested if isinstance(requested, list) else []
         requested_names = {name for name in requested if isinstance(name, str) and name in KNOWN_SCANNERS}
-        metadata = [_scanner_metadata(item, scan=scan, commit=commit.lower()) for item in known]
-        for name in requested_names - names.keys():
+        metadata = [_scanner_metadata(item, scan=scan, commit=commit.lower()) for item in known
+                    if scanner_name is None or _scanner_name(item) == scanner_name]
+        for name in (requested_names | ({scanner_name} if scanner_name else set())) - names.keys():
+            if scanner_name is not None and name != scanner_name:
+                continue
             metadata.append({"scanner_name": name, "execution_status": "unknown", "coverage_status": "not_evaluated_by_inventory", "raw_artifact": {"availability": "scanner_record_missing"}})
         metadata.sort(key=lambda item: item["scanner_name"])
         unknown_records = len(raw_records) - len(known)
@@ -193,7 +203,9 @@ def inventory_for_record(record: Mapping[str, Any], *, run_id: str) -> JSONRespo
         complete = bool(metadata) and not (unknown_records or unknown_requested or duplicates) and all(item["raw_artifact"]["availability"] == "verified" for item in metadata)
         return JSONResponse({
             "artifact_schema": VERSION,
-            "status": "inventory_complete" if complete else "inventory_incomplete",
+            "status": ("inventory_complete" if complete else "inventory_incomplete") if scanner_name is None
+                      else ("selected_scanner_complete" if complete else "selected_scanner_incomplete"),
+            **({"selected_scanner": scanner_name} if scanner_name is not None else {}),
             "authenticated_authority": "nico_admin",
             "read_only": True,
             "run_id": run_id,

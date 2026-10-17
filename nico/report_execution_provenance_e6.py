@@ -237,13 +237,15 @@ def verify_frontend_release(value: Any, expected_sha: str, expected_deployment_i
         return False
 
 
-def scanner_execution_evidence(identity: Mapping[str, Any], stages: Mapping[str, Any]) -> dict[str, Any]:
+def scanner_execution_evidence(
+    identity: Mapping[str, Any], stages: Mapping[str, Any], *, scanner_name: str | None = None,
+) -> dict[str, Any]:
     from nico.comprehensive_scanner_inventory_v1 import inventory_for_record
 
     # Called only by the trusted report builder on the stored run context. The
     # existing inventory authority independently verifies the scan identity and bytes.
     record = {"identity": dict(identity), "stage_results": dict(stages)}
-    inspected = inventory_for_record(record, run_id=str(identity.get("run_id") or ""))
+    inspected = inventory_for_record(record, run_id=str(identity.get("run_id") or ""), scanner_name=scanner_name)
     inventory = json.loads(inspected.body)
     result: dict[str, Any] = {"artifact_schema": VERSION,
         "run_id": identity.get("run_id"), "repository": identity.get("repository"),
@@ -251,6 +253,8 @@ def scanner_execution_evidence(identity: Mapping[str, Any], stages: Mapping[str,
         "verification_status": "unverified", "scanner_records": [],
         "coverage_status": "not_evaluated_by_inventory", "assessment_mutated": False,
         "approval_or_delivery_action_performed": False}
+    if scanner_name is not None:
+        result["selected_scanner"] = scanner_name
     if inspected.status_code != 200:
         return {**result, "reason": _mapping(inventory.get("detail")).get("code") or "scanner_evidence_unavailable"}
     result.update(scan_id=inventory.get("scan_id"), inventory_status=inventory.get("status"),
@@ -304,7 +308,7 @@ def scanner_execution_evidence(identity: Mapping[str, Any], stages: Mapping[str,
     if rows and all(row["declared_invocation_status"] != "unverified"
             and (row["execution_evidence_verified"] or row["retained_ci_evidence_verified"]
                  or row["inapplicability_evidence_verified"]) for row in rows):
-        result["verification_status"] = "verified"
+        result["verification_status"] = "verified" if scanner_name is None else "selected_scanner_verified"
     return result
 
 
