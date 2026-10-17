@@ -5,7 +5,7 @@ import hashlib
 import html
 import io
 import re
-from nico.report_json_copy import deepcopy
+from nico.report_json_copy import deepcopy, copy_with_tree_ownership
 from typing import Any, Mapping
 
 VERSION = "nico.v2.report-quality-repairs.v2"
@@ -103,9 +103,12 @@ def _positive_limitation(value: Any) -> bool:
 
 def repair_canonical_truth(package: Mapping[str, Any]) -> dict[str, Any]:
     """Remove stale presentation contradictions without inventing evidence or scores."""
-    result = deepcopy(dict(package))
-    canonical = deepcopy(dict(result.get("json") or {}))
-    assessment = deepcopy(dict(canonical.get("assessment") or {}))
+    result, owned_tree = copy_with_tree_ownership(dict(package))
+    owned_canonical = owned_tree and type(result.get("json")) is dict and bool(result["json"])
+    canonical = (result["json"] if owned_canonical else deepcopy(dict(result.get("json") or {})))
+    assessment = (canonical["assessment"] if owned_canonical
+                  and type(canonical.get("assessment")) is dict
+                  else deepcopy(dict(canonical.get("assessment") or {})))
     records = [
         deepcopy(dict(item))
         for item in canonical.get("scanner_execution_records")
