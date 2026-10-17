@@ -187,9 +187,12 @@ def test_markdown_copy_uses_same_run_locale_projection_and_locale_keyed_cache() 
     assert "payload.assessment_rerun !== false" in workspace
 
     assert "reportLanguage: ReportLanguage" in bridge
-    assert "cache.current.reportLanguage !== reportLanguage" in bridge
-    assert "cache.current.runId !== runId" in bridge
-    assert "cache.current.commitSha !== commitSha" in bridge
+    assert "JSON.stringify([runId, commitSha, reportLanguage])" in bridge
+    assert "cache.current.get(key)" in bridge
+    assert "otherKey !== key && !other.promise" in bridge
+    assert "activeReportLanguage() === entry.reportLanguage" in bridge
+    assert "visibleRunId(actions) === entry.runId" in bridge
+    assert "visibleCommitSha(actions) === entry.commitSha" in bridge
     assert "markdownHref(entry.runId, entry.reportLanguage)" in bridge
     assert "payload.report?.markdown" in bridge
     assert "markdown_report_language_mismatch" in bridge
