@@ -46,7 +46,7 @@ def proof():
     jobs = PostgresReviewPdfPreparationJobs(adapter)
     identity = PreparationIdentity('review-pdf-proof-' + uuid4().hex, 'synthetic-project',
         'synthetic-run', 'synthetic-repo', 'a' * 40, 66, 'b' * 64, 'c' * 64,
-        'd' * 64, 'e' * 40, 'f' * 64, 'es-MX')
+        'd' * 64, 'e' * 40, 'f' * 64, 'es-MX', 'pending-source-localized-draft')
     with ThreadPoolExecutor(max_workers=8) as pool:
         rows = list(pool.map(lambda _: jobs.enqueue(identity, preparation_authorized=True), range(8)))
     assert all(row == rows[0] for row in rows)

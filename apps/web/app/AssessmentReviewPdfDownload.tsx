@@ -65,12 +65,15 @@ function exactRunPdfHref(runId: string, reportLanguage: ReportLanguage = "en"): 
   return `/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/localized-report/${encodeURIComponent(reportLanguage)}/pdf`;
 }
 
+type ArtifactMode = "pending-source-frozen" | "pending-source-localized-draft";
+
 type DownloadBinding = {
   commitSha: string;
   canonicalTruthSha256: string;
   signal?: AbortSignal;
   requiresNewApproval?: boolean;
   preparationJobId?: string;
+  artifactMode?: ArtifactMode;
   isCurrent?: () => boolean;
 };
 
@@ -161,6 +164,18 @@ async function retrieveExactRunPdf(
     || !/^[0-9a-f]{64}$/.test(truthSha)
     || truthSha !== binding.canonicalTruthSha256.toLowerCase()
     || (binding.requiresNewApproval && header("x-nico-localized-artifact-requires-new-approval") !== "true")
+    || (prepared && (Array.from(response.headers.entries()).some(([name, value]) => name.startsWith("x-nico-accepted-") && value !== "")
+      || header("x-nico-human-review-completed") === "true" || header("x-nico-human-reviewed") === "true"))
+    || (prepared && (!binding.artifactMode || header("x-nico-review-pdf-artifact-mode") !== binding.artifactMode))
+    || (prepared && binding.artifactMode === "pending-source-localized-draft" && (
+      header("x-nico-localized-artifact-requires-new-approval") !== "true"
+      || header("x-nico-localized-artifact-approval-invalidated") !== "true"
+      || header("x-nico-artifact-finality") !== "automated_draft"
+      || !["", "false"].includes(header("x-nico-frozen-source-artifact"))))
+    || (prepared && binding.artifactMode === "pending-source-frozen" && (
+      header("x-nico-frozen-source-artifact") !== "true"
+      || header("x-nico-localized-artifact-requires-new-approval") !== "false"
+      || header("x-nico-localized-artifact-approval-invalidated") !== "false"))
   ) throw integrityError();
 
   const bytes = new Uint8Array(await response.arrayBuffer());
@@ -207,7 +222,7 @@ function startExactRunDownload(
     return Promise.reject(error);
   }
   const key = JSON.stringify([runId, reportLanguage, frozenBinding.commitSha,
-    frozenBinding.canonicalTruthSha256, Boolean(frozenBinding.requiresNewApproval), frozenBinding.preparationJobId]);
+    frozenBinding.canonicalTruthSha256, Boolean(frozenBinding.requiresNewApproval), frozenBinding.preparationJobId, frozenBinding.artifactMode]);
   const existing = inFlight.get(key);
   if (existing && existing.binding.signal === frozenBinding.signal
     && existing.binding.isCurrent === frozenBinding.isCurrent) return existing.operation;
@@ -261,7 +276,7 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
   }
   const key = JSON.stringify([runId, reportLanguage, commitSha, canonicalTruthSha256,
     Boolean(binding.requiresNewApproval)]);
-  const asynchronous = asyncPreparationEnabled() && !binding.requiresNewApproval;
+  const asynchronous = asyncPreparationEnabled();
   if (resumeOnly && (!asynchronous || !savedPreparation(key))) return Promise.resolve();
   const existing = pendingReviewPromises.get(key);
   if (existing?.isCurrent()) return existing.operation;
@@ -287,13 +302,14 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
     : "Downloading and verifying the PDF… You can keep using this page.");
   const operation = (async () => {
     let preparationJobId: string | undefined;
+    let artifactMode: ArtifactMode | undefined;
     if (asynchronous) {
-      preparationJobId = await prepareReviewPdf(runId, reportLanguage, {...binding, isCurrent}, key, actions, controller, resumeOnly);
+      ({jobId: preparationJobId, artifactMode} = await prepareReviewPdf(runId, reportLanguage, {...binding, isCurrent}, key, actions, controller, resumeOnly));
       startDownloadDeadline();
       showStatus(actions, spanishUi() ? "Descargando y verificando el PDF…" : "Downloading and verifying the PDF…");
     }
     await startExactRunDownload(runId, reportLanguage, {
-      ...binding, preparationJobId, signal: controller.signal, isCurrent,
+      ...binding, preparationJobId, artifactMode, signal: controller.signal, isCurrent,
     });
     if (asynchronous) savePreparation(key, "");
   })().then(() => {
@@ -366,8 +382,10 @@ function savePreparation(key: string, jobId: string): void {
   } catch { /* Durable backend status remains authoritative. */ }
 }
 async function prepareReviewPdf(runId: string, language: ReportLanguage, binding: DownloadBinding,
-  key: string, actions: Element, controller: AbortController, resumeOnly = false): Promise<string> {
+  key: string, actions: Element, controller: AbortController, resumeOnly = false): Promise<{jobId: string; artifactMode: ArtifactMode}> {
   let jobId = savedPreparation(key);
+  let artifactMode: ArtifactMode | undefined;
+  let qualifiedJobId: string | undefined;
   const admissionDeadline = savedAdmissionDeadline(key) || Date.now() + 900_000;
   if (jobId === "requested") savePreparation(key, `requested:v1:${admissionDeadline}`);
   const singleStatusCheck = jobId === "requested" && admissionDeadline <= Date.now() && !resumeOnly;
@@ -376,13 +394,13 @@ async function prepareReviewPdf(runId: string, language: ReportLanguage, binding
   const stillPending = () => new PdfDownloadFailure(spanishUi()
     ? "La preparación sigue pendiente. Selecciona descargar de nuevo para consultar su estado."
     : "Preparation is still pending. Select download again to check its status.");
-  const read = async (prepare: boolean) => {
+  const read = async (prepare: boolean, qualify = false) => {
     if (controller.signal.aborted) throw controller.signal.reason;
     if (binding.isCurrent && !binding.isCurrent()) throw integrityError();
     const remaining = preparationDeadline - Date.now();
     if (remaining <= 0) throw stillPending();
     if (prepare) savePreparation(key, `requested:v1:${preparationDeadline}`);
-    const response = await fetch(preparationHref(runId, language) + (prepare ? "" : `?${preparationQuery(jobId, binding)}`), {
+    const response = await fetch(preparationHref(runId, language) + (prepare ? "" : `?${preparationQuery(qualify ? "requested" : jobId, binding)}${qualify ? "&qualify=true" : ""}`), {
       method: prepare ? "POST" : "GET", cache: "no-store", credentials: "same-origin",
       headers: {Accept: "application/json", ...(prepare ? {"Content-Type": "application/json"} : {})},
       body: prepare ? JSON.stringify({prepare: true, commit_sha: binding.commitSha,
@@ -409,10 +427,23 @@ async function prepareReviewPdf(runId: string, language: ReportLanguage, binding
       || status.client_delivery_allowed !== false || status.human_review_required !== true
       || !/^reviewpdfprep_[0-9a-f]{64}$/.test(status.job_id)
       || (jobId && jobId !== "requested" && status.job_id !== jobId)) throw integrityError();
+    if (!["pending-source-frozen", "pending-source-localized-draft"].includes(status.artifact_mode)
+      || (binding.requiresNewApproval && status.artifact_mode !== "pending-source-localized-draft")
+      || (artifactMode && artifactMode !== status.artifact_mode)
+      || (qualifiedJobId && qualifiedJobId !== status.job_id)) throw integrityError();
+    artifactMode = status.artifact_mode;
+    if (qualify) {
+      if (status.state !== "eligible") throw integrityError();
+      qualifiedJobId = status.job_id;
+      return "eligible";
+    }
     jobId = status.job_id;
     savePreparation(key, jobId);
     return String(status.state);
   };
+  // A derivative is admitted only after the server proves a pending source.
+  // Resume uses the already admitted, source-bound job; it never posts again.
+  if (binding.requiresNewApproval && !jobId) await read(false, true);
   let state = await read(!jobId);
   const messages: Record<string, [string, string]> = {
     admission_unknown: ["Checking whether PDF preparation was accepted…", "Comprobando si se aceptó la preparación del PDF…"],
@@ -421,7 +452,7 @@ async function prepareReviewPdf(runId: string, language: ReportLanguage, binding
     verifying: ["Verifying the prepared PDF…", "Verificando el PDF preparado…"],
   };
   for (let attempt = 0; ; attempt++) {
-    if (state === "ready") return jobId;
+    if (state === "ready" && artifactMode) return {jobId, artifactMode};
     if (!messages[state]) {
       savePreparation(key, "");
       throw new PdfDownloadFailure(spanishUi()

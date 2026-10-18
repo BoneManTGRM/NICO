@@ -41,6 +41,7 @@ class PreparationIdentity:
     renderer_revision: str
     policy_sha256: str
     language: str
+    artifact_mode: str
 
     def __post_init__(self):
         for key, value in asdict(self).items():
@@ -56,6 +57,8 @@ class PreparationIdentity:
         for key in ('commit_sha', 'renderer_revision'):
             if not re.fullmatch('[0-9a-f]{40}|[0-9a-f]{64}', getattr(self, key)):
                 raise ValueError('invalid_preparation_revision')
+        if self.artifact_mode not in ('pending-source-frozen', 'pending-source-localized-draft'):
+            raise ValueError('invalid_preparation_artifact_mode')
         if self.language not in ('en', 'es-MX'):
             raise ValueError('invalid_preparation_language')
 

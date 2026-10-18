@@ -257,7 +257,7 @@ async function proxyNico(
         "x-nico-client-delivery-allowed",
         "x-nico-localized-artifact-requires-new-approval",
         "x-nico-localized-artifact-approval-invalidated",
-        "x-nico-artifact-finality",
+        "x-nico-artifact-finality", "x-nico-review-pdf-artifact-mode",
         "x-nico-frozen-source-artifact",
         "x-nico-delivery-package-sha256",
         "x-nico-certified-package-sha256",

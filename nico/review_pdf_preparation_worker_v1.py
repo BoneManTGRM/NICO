@@ -16,6 +16,7 @@ import tempfile
 import time
 
 from nico.review_pdf_preparation_deadline_v1 import DeadlineGuard
+from nico.review_pdf_artifact_policy_v1 import artifact_mode, validate_headers, SOURCE
 
 from nico.comprehensive_final_report_process_worker_v1 import (
     _atomic_json, terminate_process, _PROCESS_GROUP_ATTR,
@@ -45,6 +46,7 @@ def validate_result(result, identity, *, parse_pdf=True):
     if (not isinstance(headers, dict) or any(headers.get(k) != v for k, v in expected.items())
             or headers.get('x-nico-accepted-pdf-sha256')):
         raise ValueError('review_pdf_result_binding_invalid')
+    validate_headers(headers, identity.artifact_mode)
     encoded = result['pdf_base64']
     if not isinstance(encoded, str) or len(encoded) > 64 * 1024 * 1024:
         raise ValueError('review_pdf_result_size_invalid')
@@ -53,6 +55,8 @@ def validate_result(result, identity, *, parse_pdf=True):
     if (not pdf.startswith(b'%PDF') or headers.get('x-nico-pdf-sha256') != digest
             or headers.get('x-nico-artifact-sha256') != digest):
         raise ValueError('review_pdf_checksum_invalid')
+    if identity.artifact_mode == SOURCE and digest != identity.source_artifact_sha256:
+        raise ValueError('review_pdf_frozen_source_checksum_invalid')
     if type(result['validated_page_count']) is not int or result['validated_page_count'] < 1:
         raise ValueError('review_pdf_validation_missing')
     if not parse_pdf:
@@ -79,7 +83,13 @@ def child_build(context, *, verifying=None):
     # Parent strips database configuration before this fresh interpreter starts.
     from nico.api import specialist_ship_ready_bootstrap  # noqa: F401
     from nico.comprehensive_same_run_locale_report_v1 import build_same_run_locale_pdf_response
+    mode = artifact_mode(context['status'], context['language'])
+    if mode != context['identity']['artifact_mode']:
+        raise ValueError('review_pdf_worker_artifact_mode_changed')
     response = build_same_run_locale_pdf_response(context['status'], context['language'])
+    response.headers['x-nico-review-pdf-artifact-mode'] = mode
+    if mode == SOURCE and 'x-nico-localized-artifact-approval-invalidated' not in response.headers:
+        response.headers['x-nico-localized-artifact-approval-invalidated'] = 'false'
     if verifying is not None:
         verifying()
     from pypdf import PdfReader
