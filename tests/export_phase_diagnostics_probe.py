@@ -1,3 +1,4 @@
+import logging
 import pytest
 from tests.test_export_phase_diagnostics import DETAILS, records, timing, install_production_chain
 
