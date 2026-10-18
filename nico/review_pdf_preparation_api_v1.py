@@ -20,6 +20,7 @@ from nico.review_pdf_preparation_jobs_v1 import (
 from nico.review_pdf_preparation_service_v1 import (
     RetainedSourceAuthority, ReviewPdfPreparationService, _fingerprint,
 )
+from nico.review_pdf_artifact_policy_v1 import artifact_mode, VERSION as ARTIFACT_POLICY
 from nico.review_pdf_preparation_worker_v1 import validate_result
 from nico.review_pdf_preparation_deadline_v1 import CommitOutcomeUnknown, DeadlineGuard
 
@@ -45,7 +46,7 @@ def runtime_policy():
                 hashlib.sha256(marshal.dumps(value.__code__, 0)).hexdigest()])
         else:
             values.append(value)
-    return revision, _fingerprint(['review-pdf-api.v2', revision, values])
+    return revision, _fingerprint(['review-pdf-api.v3', ARTIFACT_POLICY, revision, values])
 
 
 class PreparationBusy(RuntimeError):
@@ -122,7 +123,10 @@ class PreparationRuntime:
         # browser's 30-second POST limit; a late restoration cannot enqueue.
         return self._bounded(20, lambda guard: self._prepare(run_id, language, binding, guard))
 
-    def _prepare(self, run_id, language, binding, guard):
+    def qualify(self, run_id, language, binding):
+        return self._bounded(20, lambda guard: self._prepare(run_id, language, binding, guard, qualify_only=True))
+
+    def _prepare(self, run_id, language, binding, guard, *, qualify_only=False):
         renderer, policy = self.source.policy()
         def consume(row, restore):
             if row[1] is None or row[2] is None:
@@ -138,10 +142,13 @@ class PreparationRuntime:
             ident = record['identity']
             identity = PreparationIdentity(ident['customer_id'], ident['project_id'], run_id,
                 ident['repository'], ident['commit_sha'], record['revision'], record['integrity_sha256'],
-                reports['canonical_truth_sha256'], reports['pdf_sha256'], renderer, policy, language)
+                reports['canonical_truth_sha256'], reports['pdf_sha256'], renderer, policy, language,
+                artifact_mode(status, language))
             self._binding(identity, binding)
             return identity
         identity = guard.call(self.source.store._consume_read_snapshot, run_id, consume)
+        if qualify_only:
+            return self.projection(dict(identity=asdict(identity), job_id=identity.job_id, status='eligible'))
         job = guard.call(self.jobs.enqueue, identity, preparation_authorized=True, check=guard.check, commit_guard=guard, timeout=5)
         return self.projection(job)
 
@@ -185,6 +192,7 @@ class PreparationRuntime:
         return dict(job_id=job['job_id'], state=state, run_id=job['identity']['run_id'],
             report_language=job['identity']['language'], commit_sha=job['identity']['commit_sha'],
             canonical_truth_sha256=job['identity']['canonical_truth_sha256'],
+            artifact_mode=job['identity']['artifact_mode'],
             human_review_required=True, client_delivery_allowed=False)
 
     def lookup(self, run_id, language, binding):
@@ -346,6 +354,10 @@ def install_review_pdf_preparation_api(app):
                     result = await run_in_threadpool(runtime.prepare, run_id, language, binding)
                 return JSONResponse(result, status_code=200 if is_cancel else 202, headers=_HEADERS)
             params = dict(request.query_params)
+            if not is_pdf and set(params) == {'qualify', 'commit_sha', 'canonical_truth_sha256'}:
+                if params.pop('qualify') != 'true':
+                    raise ValueError('invalid_qualification')
+                return JSONResponse(await run_in_threadpool(runtime.qualify, run_id, language, params), headers=_HEADERS)
             if not is_pdf and set(params) == {'commit_sha', 'canonical_truth_sha256'}:
                 return JSONResponse(await run_in_threadpool(runtime.lookup, run_id, language, params), headers=_HEADERS)
             if set(params) != {'job_id', 'commit_sha', 'canonical_truth_sha256'}:

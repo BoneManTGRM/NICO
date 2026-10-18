@@ -31,7 +31,11 @@ def artifact():
         'x-nico-assessment-rerun': 'false', 'x-nico-approval-status': 'pending_human_approval',
         'x-nico-delivery-status': 'blocked_pending_human_approval',
         'x-nico-client-delivery-allowed': 'false', 'x-nico-pdf-sha256': sha,
-        'x-nico-artifact-sha256': sha})
+        'x-nico-artifact-sha256': sha,
+        'x-nico-review-pdf-artifact-mode': i.artifact_mode,
+        'x-nico-localized-artifact-requires-new-approval': 'true',
+        'x-nico-localized-artifact-approval-invalidated': 'true',
+        'x-nico-artifact-finality': 'automated_draft'})
 
 
 @pytest.fixture
@@ -249,10 +253,11 @@ def deny(*args, **kwargs):
     raise AssertionError('connection attempted')
 sqlite3.connect = psycopg.connect = socket.create_connection = deny
 from nico.review_pdf_preparation_worker_v1 import child_build
+from nico.review_pdf_preparation_jobs_v1 import PreparationConflict
 try:
     child_build({'status': {}, 'language': 'es-MX', 'identity': {}})
-except ValueError as exc:
-    assert str(exc) == 'terminal_report_required', str(exc)
+except PreparationConflict as exc:
+    assert str(exc) == 'pending_review_draft_required', str(exc)
 else:
     raise AssertionError('invalid source accepted')
 from nico import review_pdf_preparation_worker_v1 as worker

@@ -24,7 +24,7 @@ const RESPONSE_HEADERS = [
   "x-nico-canonical-truth-sha256", "x-nico-human-review-required", "x-nico-human-review-completed",
   "x-nico-approval-status", "x-nico-delivery-status",
   "x-nico-client-delivery-allowed", "x-nico-localized-artifact-requires-new-approval",
-  "x-nico-localized-artifact-approval-invalidated", "x-nico-artifact-finality",
+  "x-nico-localized-artifact-approval-invalidated", "x-nico-artifact-finality", "x-nico-review-pdf-artifact-mode",
   "x-nico-frozen-source-artifact", "x-nico-delivery-package-sha256",
   "x-nico-certified-package-sha256", "x-nico-authorization-mode",
   "x-nico-human-reviewed", "x-nico-accepted-edition-sha256",

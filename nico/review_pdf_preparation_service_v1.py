@@ -11,6 +11,7 @@ from nico.review_pdf_preparation_deadline_v1 import CommitOutcomeUnknown, Deadli
 
 from nico.review_pdf_preparation_jobs_v1 import PreparationConflict, PostgresReviewPdfPreparationJobs
 from nico.review_pdf_preparation_worker_v1 import run_worker, validate_result
+from nico.review_pdf_artifact_policy_v1 import artifact_mode
 
 
 def _fingerprint(value):
@@ -53,6 +54,8 @@ class RetainedSourceAuthority:
                     or record.get('integrity_sha256') != identity.source_integrity_sha256
                     or record.get('terminal') is not True):
                 raise PreparationConflict('preparation_source_changed')
+            if artifact_mode(status, identity.language) != identity.artifact_mode:
+                raise PreparationConflict('preparation_artifact_mode_changed')
             reports = status.get('reports') or {}
             if (reports.get('canonical_truth_sha256') != identity.canonical_truth_sha256
                     or reports.get('pdf_sha256') != identity.source_artifact_sha256):

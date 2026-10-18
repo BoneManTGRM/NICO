@@ -27,6 +27,10 @@ function response(language='en', overrides={}) {
     'x-nico-delivery-status':'blocked_pending_human_approval',
     'x-nico-client-delivery-allowed':'false', 'x-nico-pdf-sha256':digest,
     'x-nico-artifact-sha256':digest, 'x-nico-canonical-truth-sha256':truth,
+    'x-nico-review-pdf-artifact-mode':'pending-source-frozen',
+    'x-nico-frozen-source-artifact':'true',
+    'x-nico-localized-artifact-requires-new-approval':'false',
+    'x-nico-localized-artifact-approval-invalidated':'false',
     ...overrides,
   }});
 }
@@ -403,7 +407,7 @@ test('old stale completion cannot remove progress owned by a new control and tru
 const preparationJob='reviewpdfprep_'+'e'.repeat(64);
 function preparation(state, language='en', changes={}) {
   return new Response(JSON.stringify({job_id:preparationJob,state,run_id:runId,report_language:language,
-    commit_sha:commit,canonical_truth_sha256:truth,human_review_required:true,client_delivery_allowed:false,...changes}),
+    commit_sha:commit,canonical_truth_sha256:truth,human_review_required:true,client_delivery_allowed:false,artifact_mode:'pending-source-frozen',...changes}),
     {headers:{'content-type':'application/json'}});
 }
 async function poll(s) {
@@ -502,19 +506,18 @@ test('final bounded poll consumes ready even when its response reaches the deadl
 });
 test('different retained preparation identities never share low-level download work',async()=>{
   const releases=[];const s=setup(()=>new Promise(resolve=>releases.push(resolve)));
-  const first=s.api.startExactRunDownload(runId,'en',{commitSha:commit,canonicalTruthSha256:truth,preparationJobId:preparationJob});
-  const next=s.api.startExactRunDownload(runId,'en',{commitSha:commit,canonicalTruthSha256:truth,preparationJobId:'reviewpdfprep_'+'f'.repeat(64)});
+  const first=s.api.startExactRunDownload(runId,'en',{commitSha:commit,canonicalTruthSha256:truth,preparationJobId:preparationJob,artifactMode:'pending-source-frozen'});
+  const next=s.api.startExactRunDownload(runId,'en',{commitSha:commit,canonicalTruthSha256:truth,preparationJobId:'reviewpdfprep_'+'f'.repeat(64),artifactMode:'pending-source-frozen'});
   assert.equal(s.calls.length,2);releases[0](response());releases[1](response());await first;await next;
 });
 
-test('async rollout preserves synchronous alternate-language reapproval route',async()=>{
-  const s=setup(async()=>response('es-MX',{'x-nico-requires-new-approval':'true'}),'es-MX',undefined,{async:true});
+test('unqualified alternate-language source cannot enqueue or fall back to synchronous rendering',async()=>{
+  const s=setup(async()=>new Response('',{status:409}),'es-MX',undefined,{async:true});
   s.actions.attrs['data-assessment-locale-reapproval-required']='true';
   s.click();await s.settled();
-  assert.equal(s.calls.length,1);
-  assert.match(s.calls[0].url,/localized-report\/es-MX\/pdf/);
-  assert.equal(s.calls[0].init.method,'GET');
-  assert.equal(s.calls.some(call=>call.url.includes('/review-pdf/')),false);
+  assert.equal(s.calls.length,1);assert.equal(s.calls[0].init.method,'GET');
+  assert.match(s.calls[0].url,/review-pdf\/es-MX\?.*qualify=true/);
+  assert.equal(s.anchors.length,0);assert.equal(s.storage.size,0);
 });
 test('lost admission response resumes by bound GET lookup without creating another job',async()=>{
   const storage=new Map();
@@ -579,4 +582,60 @@ test('uncertain admission recovery retains original deadline across reload and p
   again.click();await again.settled();
   assert.equal(again.calls.length,1);assert.equal(again.calls[0].init.method,'GET');
   assert.equal([...storage.values()][0],'requested:v1:901000');
+});
+
+function derivativeResponse(changes={}) {
+  return response('es-MX', {
+    'x-nico-review-pdf-artifact-mode':'pending-source-localized-draft',
+    'x-nico-frozen-source-artifact':'false',
+    'x-nico-localized-artifact-requires-new-approval':'true',
+    'x-nico-localized-artifact-approval-invalidated':'true',
+    'x-nico-artifact-finality':'automated_draft', ...changes,
+  });
+}
+function derivativePreparation(state, changes={}) {
+  return preparation(state,'es-MX',{artifact_mode:'pending-source-localized-draft',...changes});
+}
+test('pending-source derivative qualifies before deduplicated admission and verifies draft bytes',async()=>{
+  const s=setup(async url=>url.includes('qualify=true')?derivativePreparation('eligible'):
+    url.includes('/pdf?')?derivativeResponse():derivativePreparation('ready'),'es-MX',undefined,{async:true});
+  s.actions.attrs['data-assessment-locale-reapproval-required']='true';
+  s.click();s.button.disabled=false;s.click();await s.settled();
+  assert.deepEqual(s.calls.map(c=>c.init.method),['GET','POST','GET']);
+  assert.match(s.calls[0].url,/qualify=true/);assert.equal(s.anchors.length,1);
+  assert.equal(s.calls.some(c=>c.url.includes('/localized-report/')),false);
+});
+for(const change of ['mode','source','locale','job','reapproval','invalidation','finality','frozen','accepted','human','mode_header'])
+test(`pending derivative ${change} mismatch cannot download`,async()=>{
+  const s=setup(async url=>{
+    if(url.includes('qualify=true'))return derivativePreparation('eligible');
+    if(url.includes('/pdf?'))return derivativeResponse(change==='reapproval'?{'x-nico-localized-artifact-requires-new-approval':''}:
+      change==='invalidation'?{'x-nico-localized-artifact-approval-invalidated':'false'}:
+      change==='finality'?{'x-nico-artifact-finality':'approved'}:
+      change==='frozen'?{'x-nico-frozen-source-artifact':'true'}:
+      change==='accepted'?{'x-nico-accepted-edition-language':'en'}:
+      change==='human'?{'x-nico-human-review-completed':'true'}:
+      change==='mode_header'?{'x-nico-review-pdf-artifact-mode':''}:{});
+    return derivativePreparation('ready',change==='mode'?{artifact_mode:'pending-source-frozen'}:
+      change==='source'?{canonical_truth_sha256:'0'.repeat(64)}:
+      change==='locale'?{report_language:'en'}:
+      change==='job'?{job_id:'reviewpdfprep_'+'f'.repeat(64)}:{});
+  },'es-MX',undefined,{async:true});
+  s.actions.attrs['data-assessment-locale-reapproval-required']='true';
+  s.click();await s.settled();assert.equal(s.anchors.length,0);
+});
+test('lost derivative admission response resumes with GET only and retains stricter approval checks',async()=>{
+  const storage=new Map();
+  const first=setup(async(url,init)=>{
+    if(url.includes('qualify=true'))return derivativePreparation('eligible');
+    throw new DOMException('synthetic timeout','TimeoutError');
+  },'es-MX',undefined,{async:true,storage});
+  first.actions.attrs['data-assessment-locale-reapproval-required']='true';
+  first.click();await first.settled();first.cleanUp();
+  assert.equal(first.calls.filter(c=>c.init.method==='POST').length,1);
+  const next=setup(async url=>url.includes('/pdf?')?derivativeResponse():derivativePreparation('ready'),
+    'es-MX',undefined,{async:true,storage});
+  next.actions.attrs['data-assessment-locale-reapproval-required']='true';
+  next.click();await next.settled();
+  assert.equal(next.calls.every(c=>c.init.method==='GET'),true);assert.equal(next.anchors.length,1);
 });

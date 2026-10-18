@@ -217,7 +217,8 @@ def test_prepare_consumes_validated_snapshot_and_deduplicates(seam, monkeypatch,
     i = identity()
     record = dict(identity={key: getattr(i, key) for key in ('customer_id','project_id','repository','commit_sha')},
         terminal=True, revision=i.source_revision, integrity_sha256=i.source_integrity_sha256)
-    status = {'reports': {'canonical_truth_sha256':i.canonical_truth_sha256, 'pdf_sha256':i.source_artifact_sha256}}
+    status = {'terminal': True, 'reports': {'canonical_truth_sha256':i.canonical_truth_sha256, 'pdf_sha256':i.source_artifact_sha256}}
+    monkeypatch.setattr(api, 'artifact_mode', lambda *args: 'pending-source-localized-draft')
     source.policy.return_value = (i.renderer_revision, i.policy_sha256)
     source.controller._status_artifact_from_record.return_value = status
     restore = Mock(return_value=record)
@@ -230,6 +231,12 @@ def test_prepare_consumes_validated_snapshot_and_deduplicates(seam, monkeypatch,
     runtime = api.PreparationRuntime(service)
     context = binding() if invalid != 'binding' else {**binding(), 'commit_sha':'0'*40}
     if invalid == 'none':
+        enqueue = Mock(wraps=jobs.enqueue)
+        monkeypatch.setattr(jobs, 'enqueue', enqueue)
+        qualified = runtime.qualify(i.run_id, i.language, context)
+        assert qualified['state'] == 'eligible'
+        assert qualified['artifact_mode'] == i.artifact_mode
+        enqueue.assert_not_called()
         first = runtime.prepare(i.run_id, i.language, context)
         assert first == runtime.prepare(i.run_id, i.language, context)
         assert first['state'] == 'queued' and first['client_delivery_allowed'] is False
@@ -331,3 +338,17 @@ def test_authenticated_get_recovers_lost_admission_response_without_post(client)
     assert response.status_code == 200
     runtime.lookup.assert_called_once()
     runtime.prepare.assert_not_called()
+
+
+def test_qualification_is_authenticated_read_only_and_cannot_accept_client_mode(client):
+    http, runtime, _ = client
+    runtime.qualify.return_value = dict(state='eligible', artifact_mode='pending-source-localized-draft')
+    params = {'qualify': 'true', **binding()}
+    assert http.get(path(), params=params).status_code == 401
+    headers = {'x-nico-admin-token': 'synthetic-admin-token'}
+    response = http.get(path(), params=params, headers=headers)
+    assert response.status_code == 200 and response.json()['state'] == 'eligible'
+    runtime.qualify.assert_called_once_with('comprun_fixture', 'es-MX', binding())
+    runtime.prepare.assert_not_called()
+    assert http.post(path(), headers=headers, json={
+        'prepare': True, 'artifact_mode': 'pending-source-localized-draft', **binding()}).status_code == 422

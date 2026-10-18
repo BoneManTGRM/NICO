@@ -12,7 +12,7 @@ from nico.storage import MemoryAdapter
 
 def identity():
     return PreparationIdentity('tenant', 'project', 'comprun_fixture', 'repo', 'a' * 40,
-                               66, 'b' * 64, 'c' * 64, 'd' * 64, 'e' * 40, 'f' * 64, 'es-MX')
+                               66, 'b' * 64, 'c' * 64, 'd' * 64, 'e' * 40, 'f' * 64, 'es-MX', 'pending-source-localized-draft')
 
 
 @pytest.fixture
@@ -28,6 +28,9 @@ def jobs(tmp_path, monkeypatch):
 def test_every_binding_dimension_changes_identity(field):
     before = identity()
     value = getattr(before, field)
+    if field == 'artifact_mode':
+        assert replace(before, artifact_mode='pending-source-frozen').job_id != before.job_id
+        return
     changed = 67 if field == 'source_revision' else 'en' if field == 'language' else '1' * len(value)
     assert replace(before, **{field: changed}).job_id != before.job_id
 
