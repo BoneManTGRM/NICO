@@ -408,8 +408,7 @@ def compose_compact_client_pdf(
     return pdf
 
 
-def compose_review_bundle(
-    identity: dict[str, str],
+def review_bundle_sections(
     base_pdf: bytes,
     register_pdf: bytes,
     gate_pdf: bytes,
@@ -417,12 +416,8 @@ def compose_review_bundle(
     review_pdf: bytes,
     ci_boundary_pdf: bytes,
     human_evidence_pdf: bytes | None = None,
-) -> dict[str, Any]:
-    """Explicit v2 composition; never used as an implicit v1 error fallback.
-
-    The installed assembler must still validate final surfaces collectively and
-    freeze its structured artifact family before exposing this review bundle.
-    """
+) -> list[tuple[str, bytes]]:
+    """Bound and select required client pages before any family construction."""
     from nico import ordinary_review_bundle_v2 as bundle
 
     components = [("primary", base_pdf), ("ci_boundary", ci_boundary_pdf),
@@ -443,7 +438,19 @@ def compose_review_bundle(
         writer.add_page(page)
     output = io.BytesIO()
     writer.write(output)
-    return bundle.build_review_bundle(identity, [("primary", output.getvalue()), *components[1:]])
+    return [("primary", output.getvalue()), *components[1:]]
+
+
+def compose_review_bundle(
+    identity: dict[str, str], base_pdf: bytes, register_pdf: bytes, gate_pdf: bytes,
+    *, review_pdf: bytes, ci_boundary_pdf: bytes, human_evidence_pdf: bytes | None = None,
+) -> dict[str, Any]:
+    """Explicit v2 composition; never an implicit v1 error fallback."""
+    from nico import ordinary_review_bundle_v2 as bundle
+    sections = review_bundle_sections(base_pdf, register_pdf, gate_pdf,
+        review_pdf=review_pdf, ci_boundary_pdf=ci_boundary_pdf,
+        human_evidence_pdf=human_evidence_pdf)
+    return bundle.build_review_bundle(identity, sections)
 
 
 __all__ = [
