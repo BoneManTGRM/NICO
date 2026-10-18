@@ -195,6 +195,49 @@ def _outline_titles(items: Any) -> list[str]:
     return output
 
 
+def _professional_section_target(reader: Any, page_texts: Any, target_index: int,
+                                 candidates: tuple[str, ...], fallback: int) -> int:
+    """Use canonical section navigation, never an incidental summary mention."""
+    titles = ("Broader Professional Assessment", "Evaluación profesional ampliada", *candidates)
+    lines = [[_text(line, 240).casefold() for line in str(raw).splitlines()
+              if _text(line, 240)] for raw in page_texts]
+
+    def eligible(index: Any) -> bool:
+        if type(index) is not int or not 0 <= index < len(lines) or index == target_index:
+            return False
+        first = lines[index][0] if lines[index] else ""
+        return not any(first == toc or first.startswith(toc + " ")
+                       for toc in ("table of contents", "índice", "tabla de contenido"))
+
+    title_keys = {value.casefold() for value in titles}
+    targets: dict[str, int] = {}
+    def visit(items: Any) -> None:
+        for item in items or []:
+            if isinstance(item, list):
+                visit(item)
+            else:
+                title = _text(getattr(item, "title", ""), 240).casefold()
+                if title not in title_keys:
+                    continue
+                try:
+                    index = reader.get_destination_page_number(item)
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if eligible(index):
+                    targets.setdefault(title, index)
+    visit(reader.outline)
+    for title in titles:
+        if title.casefold() in targets:
+            return targets[title.casefold()]
+    # With no section outline, require a standalone heading, preferring the
+    # dedicated professional section. Keep the established bounded fallback.
+    for title in titles:
+        for index, page_lines in enumerate(lines):
+            if eligible(index) and title.casefold() in page_lines:
+                return index
+    return fallback
+
+
 def _program(canonical: Mapping[str, Any]) -> Mapping[str, Any]:
     value = canonical.get("four_phase_program")
     return value if isinstance(value, Mapping) else build_four_phase_program(canonical)
@@ -363,7 +406,8 @@ def apply_four_phase_pdf(
         parent = writer.add_outline_item(marker, target_index)
         # Page content is stable after the overlay. Extract only pages actually
         # reached by the original left-to-right search, once for all candidates
-        # and phases. Keep its first-match order, fallback and TOC exclusion.
+        # and phases. Phases 1, 2 and 4 retain first-match order and exclusions;
+        # phase 3 uses canonical section navigation before a heading fallback.
         search_pages: dict[int, str | None] = {}
 
         def searchable_text(index: int, page: Any) -> str | None:
@@ -378,20 +422,25 @@ def apply_four_phase_pdf(
                     else _text(raw, 30_000).casefold()
                 )
             return search_pages[index]
-        for phase, (candidates, fallback) in zip(
+        for phase_index, (phase, (candidates, fallback)) in enumerate(zip(
             program.get("phases") or [],
             _phase_bookmark_targets(len(reader.pages)),
-        ):
-            page_index = next(
-                (
-                    index
-                    for index, page in enumerate(reader.pages)
-                    if index != target_index
-                    and (text := searchable_text(index, page)) is not None
-                    and any(value.casefold() in text for value in candidates)
-                ),
-                fallback,
-            )
+        )):
+            if phase_index == 2:
+                page_index = _professional_section_target(
+                    reader, page_texts, target_index, candidates, fallback,
+                )
+            else:
+                page_index = next(
+                    (
+                        index
+                        for index, page in enumerate(reader.pages)
+                        if index != target_index
+                        and (text := searchable_text(index, page)) is not None
+                        and any(value.casefold() in text for value in candidates)
+                    ),
+                    fallback,
+                )
             writer.add_outline_item(
                 _text(phase.get("title_es" if spanish else "title_en")),
                 page_index,
