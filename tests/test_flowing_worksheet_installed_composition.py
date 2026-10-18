@@ -8,7 +8,7 @@ import pytest
 @pytest.mark.parametrize('language',['en','es-MX'])
 def test_installed_composition_preserves_complete_projected_worksheets(language):
     script = r'''
-import base64,copy,io,math
+import base64,copy,io,math,re
 from pypdf import PdfReader
 from tests.test_cross_locale_pdf_repeatability_v1 import _install_production_wrappers
 _install_production_wrappers()
@@ -59,8 +59,17 @@ for page in reader.pages:
 compact=lambda value: ''.join(str(value).split())
 text=compact(' '.join(lines))
 assert observed and len(observed[-1])==8
+destinations={}
+def visit_outline(items):
+    for item in items:
+        if isinstance(item,list): visit_outline(item)
+        else: destinations.setdefault(item.title,[]).append(reader.get_destination_page_number(item))
+visit_outline(reader.outline)
 cursor=0
 for index,section in enumerate(observed[-1]):
+    starts=[i for i,page in enumerate(reader.pages)
+            if re.search(r'^ID: '+re.escape(section['id'])+r' \|',page.extract_text() or '',re.M)]
+    assert len(starts)==1 and destinations.get(section['title'])==starts
     for item in range(3):
         marker=f'WORKSHEET_{index}_EVIDENCE_{item}'
         position=text.find(marker,cursor)
