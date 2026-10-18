@@ -1158,7 +1158,7 @@ class ComprehensiveApiController:
         call. The cache contains no authorization/session decision or run tree.
         """
 
-        from nico.retained_pdf_exact_input_cache_v1 import prepare_retained_pdf, finish_retained_pdf
+        from nico.retained_pdf_exact_input_cache_v1 import prepare_retained_pdf, finish_retained_pdf, RetainedPdfComputation
 
         normalized = self._required(run_id, "run_id")
 
@@ -1174,39 +1174,43 @@ class ComprehensiveApiController:
             )
             if prepared.cached is not None:
                 return prepared, None
+            computation.acquire()
             record = restore()
             # Check decoder-side mutation while the captured row is still here.
             # The compressed payload and SQL connection do not escape this callback.
             prepared = prepared.after_restore(row, record)
             return prepared, record
 
-        snapshot_reader = getattr(self._service, "_consume_read_only_snapshot", None)
-        if callable(snapshot_reader):
-            prepared, record = snapshot_reader(normalized, consume)
-            # The store has closed its connection and released the compressed row
-            # before any controller projection or installed PDF builder runs.
-            def build() -> Any:
-                current = record if record is not None else self._service.load_read_only(normalized)
-                validated = self._status_artifact_from_record(current)
-                response = builder(validated, report_language)
-                try:
-                    from nico.current_retained_metadata_observer_v13 import observe_validated_retained_pdf
-                    observe_validated_retained_pdf(current, validated.get("reports"), report_language, response)
-                except Exception:
-                    # Optional diagnostics start only after the original builder
-                    # succeeds. They cannot change its response or its failures.
+        with RetainedPdfComputation() as computation:
+            snapshot_reader = getattr(self._service, "_consume_read_only_snapshot", None)
+            if callable(snapshot_reader):
+                prepared, record = snapshot_reader(normalized, consume)
+                # The store has closed its connection and released the compressed row
+                # before any controller projection or installed PDF builder runs.
+                def build() -> Any:
+                    computation.acquire()
+                    current = record if record is not None else self._service.load_read_only(normalized)
+                    validated = self._status_artifact_from_record(current)
+                    response = builder(validated, report_language)
                     try:
-                        import logging
-                        logging.getLogger("uvicorn.error").info(
-                            'NICO_CURRENT_RETAINED_METADATA={"schema":"nico.current-retained-metadata.v13",'
-                            '"outcome":"observation_unavailable","reason_code":"optional_observer_unavailable"}'
-                        )
+                        from nico.current_retained_metadata_observer_v13 import observe_validated_retained_pdf
+                        observe_validated_retained_pdf(current, validated.get("reports"), report_language, response)
                     except Exception:
-                        pass
-                return response
+                        # Optional diagnostics start only after the original builder
+                        # succeeds. They cannot change its response or its failures.
+                        try:
+                            import logging
+                            logging.getLogger("uvicorn.error").info(
+                                'NICO_CURRENT_RETAINED_METADATA={"schema":"nico.current-retained-metadata.v13",'
+                                '"outcome":"observation_unavailable","reason_code":"optional_observer_unavailable"}'
+                            )
+                        except Exception:
+                            pass
+                    return response
 
-            return finish_retained_pdf(prepared, build)
-        return builder(self.status_artifact_read_only(normalized), report_language)
+                return finish_retained_pdf(prepared, build)
+            computation.acquire()
+            return builder(self.status_artifact_read_only(normalized), report_language)
 
     def continue_run(
         self,

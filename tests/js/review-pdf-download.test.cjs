@@ -639,3 +639,39 @@ test('lost derivative admission response resumes with GET only and retains stric
   next.click();await next.settled();
   assert.equal(next.calls.every(c=>c.init.method==='GET'),true);assert.equal(next.anchors.length,1);
 });
+
+for (const language of ['en','es-MX']) {
+  test(language+' qualified busy PDF gives manual retry guidance without claiming this run', async()=>{
+    let attempts=0;
+    const s=setup(async()=>++attempts===1
+      ? Response.json({detail:{reason:'retained_pdf_preparing'}},{status:503,headers:{'Retry-After':'5'}})
+      : response(language),language);
+    s.click();await s.settled();
+    assert.equal(s.statuses.at(-1).textContent,language==='en'
+      ? 'NICO is still preparing a PDF. Retry this download in at least 5 seconds; do not start another assessment.'
+      : 'NICO todavía está preparando un PDF. Reintenta esta descarga dentro de al menos 5 segundos; no inicies otra evaluación.');
+    assert.equal(s.calls.length,1);assert.equal(s.anchors.length,0);assert.equal(s.button.disabled,false);
+    for(const timer of s.timers.filter(t=>!t.cleared))timer.fn();
+    await flush();assert.equal(s.calls.length,1,'no automatic retry');
+    s.click();await s.settled();
+    assert.equal(s.calls.length,2);assert.equal(s.anchors.length,1);
+  });
+  for (const [label,status,body,delay] of [
+    ['other status',502,'{"detail":{"reason":"retained_pdf_preparing"}}','5'],
+    ['missing reason',503,'{}','5'],
+    ['wrong reason',503,'{"detail":{"reason":"other"}}','5'],
+    ['malformed JSON',503,'{','5'],
+    ['null JSON',503,'null','5'],
+    ...[null,'0','-1','1.5','61','9999999999999999999','05','5 seconds','Thu, 01 Jan 2026 00:00:00 GMT'].map(delay=>
+      ['invalid delay '+delay,503,'{"detail":{"reason":"retained_pdf_preparing"}}',delay]),
+  ]) test(language+' busy download keeps generic error for '+label,async()=>{
+    const headers={'x-request-id':'owned-request'};
+    if(delay!==null)headers['Retry-After']=delay;
+    const s=setup(async()=>new Response(body,{status,headers}),language);
+    s.click();await s.settled();
+    assert.equal(s.statuses.at(-1).textContent,(language==='en'
+      ? 'The PDF could not be downloaded. Retry this download.'
+      : 'No se pudo descargar el PDF. Vuelve a intentarlo.')+' (owned-request)');
+    assert.equal(s.calls.length,1);assert.equal(s.anchors.length,0);
+  });
+}
