@@ -412,7 +412,10 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
         pdf_base64 = base64.b64encode(pdf_bytes).decode("ascii")
         pdf_error = None
     else:
-        markdown = _markdown(dict(identity), dict(assessment), stages, generated_at).replace(
+        # Full populations are available to renderer-local preview labels without
+        # adding presentation metadata to the canonical assessment.
+        presentation_assessment = {**assessment, "_preview_context": canonical}
+        markdown = _markdown(dict(identity), presentation_assessment, stages, generated_at).replace(
             "DRAFT — HUMAN REVIEW REQUIRED — CLIENT DELIVERY NOT AUTHORIZED",
             f"{EN_BOUNDARY} — CLIENT DELIVERY NOT AUTHORIZED",
         )
@@ -420,7 +423,7 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
         markdown = markdown.replace(marker, f"{score_summary}\n{marker}", 1) if marker in markdown else f"{score_summary}\n{markdown}"
         title = f"NICO Comprehensive Technical Assessment — {_text(identity.get('repository'))}"
         rendered_html = _semantic_html(markdown, title)
-        pdf_base64, pdf_error, original_page_count = _pdf(dict(identity), dict(assessment), pdf_stages, generated_at)
+        pdf_base64, pdf_error, original_page_count = _pdf(dict(identity), presentation_assessment, pdf_stages, generated_at)
         pdf_bytes = base64.b64decode(pdf_base64) if pdf_base64 else b""
         if pdf_bytes.startswith(b"%PDF"):
             pdf_bytes = _prepend_score_summary_pdf(pdf_bytes, identity=identity, assessment=assessment, spanish=False)
