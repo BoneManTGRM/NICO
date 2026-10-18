@@ -137,7 +137,7 @@ def _render_polished_sparse_group(texts: list[str]) -> bytes:
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import inch
-    from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
     from nico import comprehensive_pdf_reflow_v1 as reflow
 
     buffer = io.BytesIO()
@@ -200,11 +200,10 @@ def _render_polished_sparse_group(texts: list[str]) -> bytes:
             else:
                 section_story.append(Paragraph(escaped, body))
         if section_story:
-            # Each source section already fit on its original physical page. Keeping the
-            # section together prevents a title or final evidence bullets from being
-            # stranded on the next compacted page while still allowing an oversized
-            # section to split if ReportLab determines it cannot fit on a blank page.
-            story.append(KeepTogether(section_story))
+            # The heading keeps its first paragraph; body paragraphs retain
+            # widow/orphan controls. Let later evidence flow into remaining space
+            # instead of moving the entire source page to a fresh physical page.
+            story.extend(section_story)
 
     document = SimpleDocTemplate(
         buffer,
@@ -442,7 +441,8 @@ def install_comprehensive_pdf_layout_polish_v1() -> dict[str, Any]:
         "toc_rows_per_page": _TOC_ROWS_PER_PAGE,
         "toc_single_page_capacity_above_four_phase_matrix": True,
         "toc_last_row_baseline": _toc_last_row_baseline(),
-        "sparse_section_keep_together": True,
+        "sparse_section_keep_together": False,
+        "sparse_heading_keep_with_next": True,
         "review_companion_pages": "content_dependent",
         "review_section_count": v5.SECTION_COUNT,
         "review_continuation_pages": True,

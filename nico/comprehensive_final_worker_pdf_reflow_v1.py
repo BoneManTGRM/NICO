@@ -93,7 +93,7 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
                 is True
             ),
             "sparse_section_orphans_prevented": (
-                layout_polish.get("sparse_section_keep_together") is True
+                layout_polish.get("sparse_heading_keep_with_next") is True
             ),
             "review_companion_typography_polished": (
                 float(layout_polish.get("review_small_font_size") or 0) >= 6.8
@@ -136,7 +136,7 @@ def install_comprehensive_final_worker_pdf_reflow_v1() -> dict[str, Any]:
             layout_polish.get("toc_single_page_capacity_above_four_phase_matrix") is True
         ),
         "sparse_section_orphans_prevented": (
-            layout_polish.get("sparse_section_keep_together") is True
+            layout_polish.get("sparse_heading_keep_with_next") is True
         ),
         "review_companion_typography_polished": (
             float(layout_polish.get("review_small_font_size") or 0) >= 6.8

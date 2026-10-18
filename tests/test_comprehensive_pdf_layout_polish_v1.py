@@ -120,7 +120,8 @@ def test_layout_polish_binds_presentation_only_contracts() -> None:
     assert state["bound"] is True
     assert state["toc_rows_per_page"] == 28
     assert state["toc_single_page_capacity_above_four_phase_matrix"] is True
-    assert state["sparse_section_keep_together"] is True
+    assert state["sparse_section_keep_together"] is False
+    assert state["sparse_heading_keep_with_next"] is True
     assert state["review_companion_pages"] == "content_dependent"
     assert state["review_section_count"] == 8
     assert state["review_continuation_pages"] is True
