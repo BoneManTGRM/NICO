@@ -43,31 +43,35 @@ _HASH_NATIVE_NODE_LIMIT = 8192
 _HASH_NATIVE_BYTES_LIMIT = 1024 * 1024
 
 
-def _bounded_native_json(value: Any) -> bool:
+def _bounded_native_json(value: Any, *, max_depth: int = 64) -> bool:
     """Limit native encoding to small plain-JSON subtrees, including escaped bytes."""
 
-    pending = [value]
+    pending = [(value, 0)]
     nodes_left = _HASH_NATIVE_NODE_LIMIT
     bytes_left = _HASH_NATIVE_BYTES_LIMIT
     while pending:
-        item = pending.pop()
+        item, depth = pending.pop()
         nodes_left -= 1
         if nodes_left < 0:
             return False
         kind = type(item)
+        # Native encoding must not bypass the outer traversal's deep-input
+        # fallback: its recursion behavior differs from standard iterencode.
+        if kind in (dict, list, tuple) and depth >= max_depth:
+            return False
         if kind is dict:
             if len(pending) + 2 * len(item) > nodes_left:
                 return False
             if any(type(key) is not str for key in item):
                 return False
             bytes_left -= 2 + 2 * len(item)
-            pending.extend(item.keys())
-            pending.extend(item.values())
+            pending.extend((key, depth + 1) for key in item.keys())
+            pending.extend((child, depth + 1) for child in item.values())
         elif kind in (list, tuple):
             if len(pending) + len(item) > nodes_left:
                 return False
             bytes_left -= 2 + len(item)
-            pending.extend(item)
+            pending.extend((child, depth + 1) for child in item)
         elif kind is str:
             bytes_left -= 2 + 6 * len(item)
         elif kind is int:
@@ -131,7 +135,7 @@ def _canonical_hash_chunks(value: Any, encoder: json.JSONEncoder, ancestors: set
             kind is dict and any(type(key) is not str for key in current)
         ) or len(ancestors) >= 64:
             raise _LegacyHashEncodingRequired
-        if _bounded_native_json(current):
+        if _bounded_native_json(current, max_depth=64 - len(ancestors)):
             yield from encoder.iterencode(current, _one_shot=True)
             continue
         identity = id(current)

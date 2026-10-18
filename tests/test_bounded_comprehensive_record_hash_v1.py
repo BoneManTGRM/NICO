@@ -186,3 +186,28 @@ def test_near_recursion_limit_keeps_standard_stream_failure(depth):
             records._canonical_hash(payload)
     else:
         assert records._canonical_hash(payload) == expected.hexdigest()
+
+
+@pytest.mark.parametrize("container", ["dict", "list", "tuple"])
+def test_deep_native_probe_cannot_bypass_standard_stream_fallback(monkeypatch, container):
+    payload = {"leaf": "retained"}
+    for _ in range(70):
+        if container == "dict":
+            payload = {"evidence": payload}
+        elif container == "list":
+            payload = [payload]
+        else:
+            payload = (payload,)
+    assert records._bounded_native_json(payload) is False
+    expected = _reference(payload)
+    calls = []
+    original = records.json.JSONEncoder.iterencode
+
+    def observed(self, value, _one_shot=False):
+        calls.append((value is payload, _one_shot))
+        return original(self, value, _one_shot=_one_shot)
+
+    monkeypatch.setattr(records.json.JSONEncoder, "iterencode", observed)
+    assert records._canonical_hash(payload) == expected
+    assert (True, False) in calls
+    assert (True, True) not in calls
