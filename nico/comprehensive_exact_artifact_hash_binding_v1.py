@@ -200,17 +200,9 @@ def _validate_exact_artifact_hashes(result: Mapping[str, Any]) -> None:
     }
 
     observed_artifact_hashes: dict[str, str] = {}
-    # Reuse only invocation-local observations of unchanged ordinary strings.
-    # Custom mappings retain their original read/decode behavior.
-    observed_sources: dict[str, str] = {}
-    reusable_fields = {"comprehensive_pdf": "pdf_base64", "canonical_json": "canonical_json"}
     for item in artifacts:
         artifact_type = _text(item.get("artifact_type"), 100)
-        field = reusable_fields.get(artifact_type)
-        source = result.get(field) if field and type(result) is dict else None
         content = _artifact_bytes(result, artifact_type)
-        if type(source) is str and result.get(field) is source:
-            observed_sources[artifact_type] = source
         expected_sha = _text(item.get("sha256"), 100).lower()
         expected_size = item.get("size_bytes")
         actual_sha = _sha256(content)
@@ -247,8 +239,7 @@ def _validate_exact_artifact_hashes(result: Mapping[str, Any]) -> None:
     manifest_text = str(result.get("evidence_manifest_json") or "")
     manifest_json = manifest_text.encode("utf-8")
     expected_manifest_sha = _text(result.get("evidence_manifest_sha256"), 100).lower()
-    observed_manifest_sha = _sha256(manifest_json) if manifest_json else ""
-    if not manifest_json or observed_manifest_sha != expected_manifest_sha:
+    if not manifest_json or _sha256(manifest_json) != expected_manifest_sha:
         raise ValueError("detached evidence manifest SHA-256 does not match retained bytes")
     try:
         retained_manifest = json.loads(manifest_text)
@@ -257,12 +248,8 @@ def _validate_exact_artifact_hashes(result: Mapping[str, Any]) -> None:
     if retained_manifest != manifest:
         raise ValueError("detached evidence manifest bytes do not match retained manifest object")
 
-    canonical_source = str(result.get("canonical_json") or "")
-    reuse_canonical = canonical_source is observed_sources.get("canonical_json")
-    canonical_json = None if reuse_canonical else canonical_source.encode("utf-8")
-    reuse_pdf = (type(result) is dict and "comprehensive_pdf" in observed_sources
-                 and result.get("pdf_base64") is observed_sources["comprehensive_pdf"])
-    pdf = None if reuse_pdf else _artifact_bytes(result, "comprehensive_pdf")
+    canonical_json = str(result.get("canonical_json") or "").encode("utf-8")
+    pdf = _artifact_bytes(result, "comprehensive_pdf")
     identity = result.get("draft_artifact_identity")
     if not isinstance(identity, Mapping):
         raise ValueError("Exact draft artifact identity is missing")
@@ -452,9 +439,9 @@ def _validate_exact_artifact_hashes(result: Mapping[str, Any]) -> None:
     if canonical_manifest.get("identity") != manifest_identity:
         raise ValueError("detached and canonical artifact manifest identity mismatch")
     checks = {
-        "pdf_sha256": observed_artifact_hashes["comprehensive_pdf"] if reuse_pdf else _sha256(pdf),
-        "canonical_json_sha256": observed_artifact_hashes["canonical_json"] if reuse_canonical else _sha256(canonical_json),
-        "evidence_manifest_sha256": observed_manifest_sha,
+        "pdf_sha256": _sha256(pdf),
+        "canonical_json_sha256": _sha256(canonical_json),
+        "evidence_manifest_sha256": _sha256(manifest_json),
     }
     for field, actual in checks.items():
         if _text(identity.get(field), 100).lower() != actual:

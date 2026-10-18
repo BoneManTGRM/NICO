@@ -1,4 +1,4 @@
-"""Invocation-local reuse against a frozen independent validator oracle."""
+"""Integrity parity and shared-dictionary mutation regression controls."""
 from collections import Counter, UserDict
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -78,11 +78,13 @@ def test_valid_bytes_and_rejection_contract_match_baseline(package):
     assert package==before
 
 
-def test_one_materialization_and_hash_per_artifact(package, monkeypatch):
+def test_baseline_revalidation_operations_are_preserved(package, monkeypatch):
     reads=Counter(); hashes=Counter(); decodes=[]
     read=subject._artifact_bytes; sha=subject._sha256; decode=subject.base64.b64decode
     expected=Counter(read(package,entry['artifact_type']) for entry in package['artifact_manifest']['artifacts'])
-    expected[package['evidence_manifest_json'].encode()]+=1
+    expected[package['evidence_manifest_json'].encode()]+=2
+    for kind in ('comprehensive_pdf', 'canonical_json'):
+        expected[read(package, kind)]+=1
     def observe_read(result,kind):
         reads[kind]+=1
         return read(result,kind)
@@ -110,10 +112,12 @@ def test_one_materialization_and_hash_per_artifact(package, monkeypatch):
             subject._validate_exact_artifact_hashes(package)
         finally:
             sys.setprofile(previous)
-        assert encodings == {'canonical_json': 1, 'evidence_manifest_json': 1}
-        assert reads==Counter({key:1 for key in subject._REQUIRED_DETACHED_ARTIFACT_TYPES})
+        assert encodings == {'canonical_json': 2, 'evidence_manifest_json': 1}
+        expected_reads=Counter({key:1 for key in subject._REQUIRED_DETACHED_ARTIFACT_TYPES})
+        expected_reads['comprehensive_pdf']+=1
+        assert reads==expected_reads
         assert hashes==expected
-        assert len(decodes)==1
+        assert len(decodes)==2
 
 
 def test_later_tampering_and_custom_mapping_keep_original_rejections(package):
@@ -156,3 +160,57 @@ def test_concurrent_calls_have_no_shared_observations(package):
     with ThreadPoolExecutor(max_workers=8) as pool:
         for expected,actual in pool.map(validate,range(8)):
             assert actual==expected
+
+
+@pytest.mark.parametrize('field,kind', [
+    ('pdf_base64', 'comprehensive_pdf'), ('canonical_json', 'canonical_json'),
+])
+def test_same_dictionary_aba_rejects_mismatched_retained_bytes(package, field, kind):
+    """A source identity cannot authenticate bytes read while the field held B."""
+    real_read = subject._artifact_bytes
+
+    def run(validate):
+        item = deepcopy(package)
+        valid_b = item[field]
+        invalid_a = (subject.base64.b64encode(subject.base64.b64decode(valid_b) + b'\n').decode('ascii')
+                     if field == 'pdf_base64' else valid_b + ' ')
+        item[field] = invalid_a
+        gate = Barrier(2)
+        first = True
+
+        def read(result, artifact_type):
+            nonlocal first
+            if artifact_type != kind or not first:
+                return real_read(result, artifact_type)
+            first = False
+            gate.wait(timeout=10)  # Source capture finished; install B.
+            gate.wait(timeout=10)
+            content = real_read(result, artifact_type)
+            gate.wait(timeout=10)  # Real decoder read B; restore identical A.
+            gate.wait(timeout=10)
+            return content
+
+        def mutate():
+            gate.wait(timeout=10)
+            item[field] = valid_b
+            gate.wait(timeout=10)
+            gate.wait(timeout=10)
+            item[field] = invalid_a
+            gate.wait(timeout=10)
+
+        scope = validate.__globals__
+        original = scope['_artifact_bytes']
+        scope['_artifact_bytes'] = read
+        try:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                mutation = pool.submit(mutate)
+                result = outcome(validate, item)
+                mutation.result(timeout=10)
+            assert item[field] is invalid_a
+            return result
+        finally:
+            scope['_artifact_bytes'] = original
+
+    expected = run(baseline())
+    assert expected[0] == 'ValueError'
+    assert run(subject._validate_exact_artifact_hashes) == expected
