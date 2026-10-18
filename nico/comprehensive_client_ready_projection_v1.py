@@ -411,7 +411,10 @@ def render_compact_finding_register_pdf(register: Mapping[str, Any], *, spanish:
                 criterion_paragraphs.append(p(f"{index}. {criterion}", body, limit=len(criterion) + 32))
             # Keep ordinary criterion sets with their ID; over-page paragraphs
             # still split using ReportLab's normal KeepTogether fallback.
-            story.append(KeepTogether(criterion_paragraphs))
+            if sum(len(criterion) for criterion in criteria) <= 3000:
+                story.append(KeepTogether(criterion_paragraphs))
+            else:
+                story.extend(criterion_paragraphs)
         story.append(Spacer(1, .1 * inch))
 
     story.extend([PageBreak(), p("Índice completo de fuentes exactas" if spanish else "Complete Exact-Source Index", h1)])
