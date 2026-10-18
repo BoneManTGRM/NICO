@@ -395,3 +395,209 @@ def localize_retained_roadmap(canonical: Mapping[str, Any], *, spanish: bool) ->
     return output
 
 __all__ = ["VERSION", "bind_final_finding_roadmap", "localize_retained_roadmap"]
+
+
+
+def _validate_rebinding_sources(package, canonical, binding, by_alias):
+    """Validate source contracts before any normalization-driven digest changes."""
+    refs = package['source_refs']
+    kind = package['kind']
+    expected_surface = {
+        'finding_review_and_remediation': 'canonical_findings',
+        'candidate_disposition': 'review_candidate_summary',
+        'evidence_gap_resolution': 'prior_stage_results',
+    }[kind]
+    if (any(ref.get('surface') != expected_surface for ref in refs)
+            or (kind != 'evidence_gap_resolution' and len(refs) != 1)):
+        raise ValueError('roadmap_rebinding_reference_kind_mismatch')
+    for dependency in package['dependencies']:
+        if (not isinstance(dependency, Mapping)
+                or ('source_ref' in dependency and dependency['source_ref'] not in refs)):
+            raise ValueError('roadmap_rebinding_dependency_reference_mismatch')
+    if kind == 'finding_review_and_remediation':
+        finding = by_alias.get(refs[0].get('finding_id'))
+        if finding is None:
+            raise ValueError('roadmap_rebinding_finding_unresolved')
+        if by_alias.get(package.get('finding_id')) != finding:
+            raise ValueError('roadmap_rebinding_package_finding_mismatch')
+        # Check every declared field independently: a matching source_commit_sha
+        # must not hide a contradictory commit_sha (or another declared source).
+        for field in (*_IDENTITY, 'source_commit_sha'):
+            expected = binding['commit_sha' if field == 'source_commit_sha' else field]
+            if _text(finding.get(field)) and _text(finding[field]) != expected:
+                raise ValueError('roadmap_rebinding_finding_source_identity_mismatch')
+        if not any(dep.get('gate') == 'qualified_specialist_disposition'
+                   and dep.get('source_ref') == refs[0] for dep in package['dependencies']):
+            raise ValueError('roadmap_rebinding_dependency_reference_missing')
+    elif kind == 'candidate_disposition':
+        summary = canonical.get('review_candidate_summary')
+        count = summary.get('review_required_total') if isinstance(summary, Mapping) else None
+        claimed = package.get('review_required_candidate_count')
+        if type(count) is not int or count <= 0 or type(claimed) is not int or claimed != count:
+            raise ValueError('roadmap_rebinding_candidate_count_mismatch')
+
+def rebind_generated_roadmap(canonical: Mapping[str, Any]) -> dict[str, Any]:
+    """Bind the entire provisional graph to reconciled findings before rendering.
+
+    This derives a new draft graph; it does not attest that an earlier reference
+    digest describes the normalized record. IDs and all generated mirrors change
+    together. Frozen artifacts must never call this after their render boundary.
+    """
+    from nico.report_work_package_identity_v1 import is_work_package
+
+    truth = canonical.get('roadmap_truth')
+    if not isinstance(truth, Mapping) or truth.get('version') != VERSION:
+        return dict(canonical)
+    binding = {key: _text((canonical.get('identity') or {}).get(key)) for key in _IDENTITY}
+    packages = canonical.get('roadmap')
+    if (not all(binding.values()) or truth.get('source_binding') != binding
+            or not isinstance(packages, list) or truth.get('work_package_count') != len(packages)):
+        raise ValueError('roadmap_rebinding_source_invalid')
+    for container in (canonical, canonical.get('assessment')):
+        if not isinstance(container, Mapping):
+            continue
+        mirrors = [container, *(container.get('stage_summaries') or [])]
+        for mirror in mirrors:
+            if isinstance(mirror, Mapping) and 'roadmap' in mirror and mirror['roadmap'] != packages:
+                raise ValueError('roadmap_rebinding_package_mirror_mismatch')
+    by_alias = {}
+    for finding in canonical.get('canonical_findings') or []:
+        for alias in [finding.get('finding_id'), *(finding.get('finding_aliases') or [])]:
+            if alias:
+                if alias in by_alias and by_alias[alias] != finding:
+                    raise ValueError('roadmap_rebinding_ambiguous_finding')
+                by_alias[alias] = finding
+    rebound = []
+    for package in packages:
+        if (not is_work_package(package) or package.get('source_binding') != binding
+                or package.get('stakeholder_approved') is not False
+                or package.get('delivery_authorized') is not False
+                or package.get('package_id') != _base(binding, package['kind'], package['source_refs'])['package_id']):
+            raise ValueError('roadmap_rebinding_package_invalid')
+        _validate_rebinding_sources(package, canonical, binding, by_alias)
+        item = deepcopy(package)
+        replacements = []
+        for ref in item['source_refs']:
+            old = deepcopy(ref)
+            if ref.get('surface') == 'canonical_findings':
+                finding = by_alias.get(ref.get('finding_id'))
+                if finding is None:
+                    raise ValueError('roadmap_rebinding_finding_unresolved')
+                # Keep the source alias: distinct proposals may reference distinct
+                # aliases of one final finding. Both resolve to the final record.
+                ref['record_sha256'] = _hash(finding)
+                if item['kind'] == 'finding_review_and_remediation':
+                    item.update({
+                        'retained_disposition': _text(finding.get('disposition')),
+                        'retained_status': _text(finding.get('status')),
+                        'retained_severity': _text(finding.get('severity')),
+                        'retained_location': _text(finding.get('exact_source') or finding.get('location') or finding.get('path')),
+                        'retained_correction': deepcopy(finding.get('recommendation') or finding.get('recommended_correction') or ''),
+                        'retained_verification': deepcopy(finding.get('verification') or finding.get('acceptance_criteria') or finding.get('exit_criteria') or []),
+                        'retained_rationale': deepcopy(finding.get('business_impact') or finding.get('impact') or finding.get('interpretation') or ''),
+                        'suggested_role_type': _role(finding),
+                    })
+            elif ref.get('surface') == 'review_candidate_summary':
+                ref['record_sha256'] = _hash(canonical.get('review_candidate_summary') or {})
+            elif ref.get('surface') != 'prior_stage_results':
+                raise ValueError('roadmap_rebinding_reference_unsupported')
+            replacements.append((old, deepcopy(ref)))
+        for dependency in item.get('dependencies') or []:
+            for old, new in replacements:
+                if dependency.get('source_ref') == old:
+                    dependency['source_ref'] = deepcopy(new)
+        item['package_id'] = _base(binding, item['kind'], item['source_refs'])['package_id']
+        rebound.append(item)
+    if len({p['package_id'] for p in rebound}) != len(rebound):
+        raise ValueError('roadmap_rebinding_package_collision')
+    if rebound == packages:
+        # Preparation can introduce planning stages after the source builder ran.
+        # Derive their missing ID lists even when no package needed rebinding.
+        # Keep explicit values intact: the freeze validator must reject drift.
+        output = dict(canonical)
+        ids = [package['package_id'] for package in packages]
+        for name, container in ((None, canonical), ('assessment', canonical.get('assessment'))):
+            if not isinstance(container, Mapping):
+                continue
+            stages = container.get('stage_summaries')
+            if not isinstance(stages, list):
+                continue
+            missing = [(i, stage) for i, stage in enumerate(stages)
+                       if isinstance(stage, Mapping)
+                       and stage.get('stage_id') in {'staffing_sequencing_and_cost', 'risk_reduction_and_executive_briefing'}
+                       and 'source_package_ids' not in stage]
+            if missing:
+                updated = list(stages)
+                for index, stage in missing:
+                    updated[index] = {**stage, 'source_package_ids': list(ids)}
+                if name is None:
+                    output['stage_summaries'] = updated
+                else:
+                    output[name] = {**container, 'stage_summaries': updated}
+        return output
+    by_id = {old['package_id']: (old, new) for old, new in zip(packages, rebound, strict=True)}
+    def replace_graph(value):
+        if isinstance(value, list):
+            return [replace_graph(child) for child in value]
+        if not isinstance(value, Mapping):
+            return deepcopy(value)
+        pair = by_id.get(value.get('package_id')) if isinstance(value.get('package_id'), str) else None
+        if pair and is_work_package(value):
+            if value != pair[0]:
+                raise ValueError('roadmap_rebinding_package_mirror_mismatch')
+            return deepcopy(pair[1])
+        result = {key: replace_graph(child) for key, child in value.items()}
+        if isinstance(value.get('source_package_ids'), list):
+            result['source_package_ids'] = [by_id[item][1]['package_id'] if isinstance(item, str) and item in by_id else item
+                                            for item in value['source_package_ids']]
+        return result
+    output = replace_graph(canonical)
+    spanish = str(output.get('report_language') or '').startswith('es')
+    old_presentation = _roadmap_presentation(packages, spanish, retained_literal_fallback=True)
+    presentation = _roadmap_presentation(rebound, spanish, retained_literal_fallback=True)
+    stage_keys = {'six_month_roadmap':'roadmap', 'staffing_sequencing_and_cost':'staffing',
+                  'risk_reduction_and_executive_briefing':'executive'}
+    for container in (output, output.get('assessment')):
+        if not isinstance(container, dict):
+            continue
+        if 'roadmap' in container:
+            container['roadmap'] = deepcopy(rebound)
+            container['roadmap_truth'] = deepcopy(truth)
+        for stage in container.get('stage_summaries') or []:
+            kind = stage_keys.get(stage.get('stage_id'))
+            if kind is None:
+                continue
+            old_lines = set(old_presentation[kind])
+            retained = [line for line in stage.get('evidence') or [] if not isinstance(line, str) or line not in old_lines]
+            stage['evidence'] = [*presentation[kind], *retained]
+            if kind == 'roadmap':
+                stage['roadmap'] = deepcopy(rebound)
+                stage['roadmap_truth'] = deepcopy(truth)
+            else:
+                stage['source_package_ids'] = [p['package_id'] for p in rebound]
+                stage['suggested_role_types'] = presentation['roles']
+    return output
+
+
+def assert_final_roadmap_binding(canonical: Mapping[str, Any]) -> None:
+    """Refuse to freeze artifacts if normalized sources changed after rendering."""
+    rebound = rebind_generated_roadmap(canonical)
+    if rebound.get('roadmap') != canonical.get('roadmap'):
+        raise ValueError('roadmap_binding_changed_after_render')
+    truth = canonical.get('roadmap_truth')
+    if not isinstance(truth, Mapping) or truth.get('version') != VERSION:
+        return
+    packages = canonical['roadmap']
+    ids = [p['package_id'] for p in packages]
+    for container in (canonical, canonical.get('assessment')):
+        if not isinstance(container, Mapping):
+            continue
+        if container.get('roadmap') != packages or container.get('roadmap_truth') != truth:
+            raise ValueError('roadmap_final_mirror_mismatch')
+        for stage in container.get('stage_summaries') or []:
+            if stage.get('stage_id') == 'six_month_roadmap':
+                if stage.get('roadmap') != packages or stage.get('roadmap_truth') != truth:
+                    raise ValueError('roadmap_final_mirror_mismatch')
+            elif stage.get('stage_id') in {'staffing_sequencing_and_cost', 'risk_reduction_and_executive_briefing'}:
+                if stage.get('source_package_ids') != ids:
+                    raise ValueError('roadmap_final_dependent_ids_mismatch')

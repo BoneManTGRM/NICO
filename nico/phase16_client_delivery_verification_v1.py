@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import re
+from nico.report_work_package_identity_v1 import is_work_package
 from nico.report_json_copy import deepcopy
 from collections.abc import Mapping
 from typing import Any
@@ -157,12 +158,14 @@ def _canonical_findings(values: Any) -> list[dict[str, Any]]:
 
 
 def _replace_nested_findings(value: Any, canonical_by_id: Mapping[str, Mapping[str, Any]]) -> Any:
+    if is_work_package(value):
+        return deepcopy(dict(value))
     if isinstance(value, list):
         output: list[Any] = []
         seen: set[tuple[str, str, str, str]] = set()
         for child in value:
             repaired = _replace_nested_findings(child, canonical_by_id)
-            if isinstance(repaired, Mapping):
+            if isinstance(repaired, Mapping) and not is_work_package(repaired):
                 finding_id = _finding_id(repaired)
                 repaired = deepcopy(dict(canonical_by_id.get(finding_id) or repaired))
                 key = _semantic_key(repaired)

@@ -370,6 +370,8 @@ def _prepare_client_artifact_package(
         from nico.comprehensive_coverage_reconciliation_v1 import reconcile_report_coverage
         prepared["json"] = refresh_stakeholder_classification(prepared.get("json") or {})
         prepared["json"] = reconcile_report_coverage(prepared["json"])
+        from nico.comprehensive_finding_roadmap_v1 import rebind_generated_roadmap
+        prepared["json"] = rebind_generated_roadmap(prepared["json"])
     return prepared
 
 
@@ -652,6 +654,8 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
             else {}
         )
         if final_canonical:
+            from nico.comprehensive_finding_roadmap_v1 import assert_final_roadmap_binding
+            assert_final_roadmap_binding(final_canonical)
             # Finalization legitimately appends deterministic manifest/navigation
             # metadata. Bind the persisted truth hash only after that last mutation so
             # publication and read authority describe the same canonical object.

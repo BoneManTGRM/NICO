@@ -157,7 +157,22 @@ def _anticipated_html(context: Mapping[str, Any], guide: str) -> str:
     )
 
 
-def _artifact_bytes(result: Mapping[str, Any], artifact_type: str) -> bytes:
+def _pdf_source(result: Mapping[str, Any]) -> Any:
+    try:
+        return result.get("pdf_base64")
+    except Exception as exc:
+        raise ValueError("Comprehensive PDF could not be decoded for hash verification") from exc
+
+
+def _pdf_bytes_from_source(source: Any) -> bytes:
+    try:
+        return base64.b64decode(str(source or ""), validate=True)
+    except Exception as exc:
+        raise ValueError("Comprehensive PDF could not be decoded for hash verification") from exc
+
+
+def _artifact_content(result: Mapping[str, Any], artifact_type: str) -> tuple[bytes, Any]:
+    """Return bytes together with the exact single-read value they came from."""
     text_fields = {
         "findings_csv": "findings_csv",
         "evidence_csv": "evidence_csv",
@@ -168,14 +183,17 @@ def _artifact_bytes(result: Mapping[str, Any], artifact_type: str) -> bytes:
         "canonical_json": "canonical_json",
     }
     if artifact_type == "comprehensive_pdf":
-        try:
-            return base64.b64decode(str(result.get("pdf_base64") or ""), validate=True)
-        except Exception as exc:
-            raise ValueError("Comprehensive PDF could not be decoded for hash verification") from exc
+        source = _pdf_source(result)
+        return _pdf_bytes_from_source(source), source if type(source) is str else None
     field = text_fields.get(artifact_type)
     if not field:
         raise ValueError(f"No retained content mapping exists for artifact type {artifact_type}")
-    return str(result.get(field) or "").encode("utf-8")
+    source = result.get(field)
+    return str(source or "").encode("utf-8"), source if type(source) is str else None
+
+
+def _artifact_bytes(result: Mapping[str, Any], artifact_type: str) -> bytes:
+    return _artifact_content(result, artifact_type)[0]
 
 
 def _validate_exact_artifact_hashes(result: Mapping[str, Any]) -> None:
@@ -203,9 +221,15 @@ def _validate_exact_artifact_hashes(result: Mapping[str, Any]) -> None:
     }
 
     observed_artifact_hashes: dict[str, str] = {}
+    # Invocation-local proofs bind digests to the actual extracted source value.
+    immutable_observations: dict[str, tuple[str, str]] = {}
     for item in artifacts:
         artifact_type = _text(item.get("artifact_type"), 100)
-        content = _artifact_bytes(result, artifact_type)
+        proof_field = {
+            "canonical_json": "canonical_json",
+            "comprehensive_pdf": "pdf_base64",
+        }.get(artifact_type)
+        content, original = _artifact_content(result, artifact_type)
         expected_sha = _text(item.get("sha256"), 100).lower()
         expected_size = item.get("size_bytes")
         actual_sha = _sha256(content)
@@ -221,6 +245,8 @@ def _validate_exact_artifact_hashes(result: Mapping[str, Any]) -> None:
                 f"artifact {artifact_type} byte-size mismatch: {actual_size} != {expected_size}"
             )
         observed_artifact_hashes[artifact_type] = actual_sha
+        if proof_field and type(original) is str:
+            immutable_observations[proof_field] = (original, actual_sha)
 
     for artifact_type, digest_field in {
         "findings_csv": "findings_csv_sha256",
@@ -251,8 +277,16 @@ def _validate_exact_artifact_hashes(result: Mapping[str, Any]) -> None:
     if retained_manifest != manifest:
         raise ValueError("detached evidence manifest bytes do not match retained manifest object")
 
-    canonical_json = str(result.get("canonical_json") or "").encode("utf-8")
-    pdf = _artifact_bytes(result, "comprehensive_pdf")
+    canonical_source = str(result.get("canonical_json") or "")
+    canonical_proof = immutable_observations.get("canonical_json")
+    canonical_proven = canonical_proof is not None and canonical_proof[0] is canonical_source
+    canonical_json = None if canonical_proven else canonical_source.encode("utf-8")
+    del canonical_source
+    pdf_proof = immutable_observations.get("pdf_base64")
+    pdf_source = _pdf_source(result)
+    pdf_proven = pdf_proof is not None and pdf_source is pdf_proof[0]
+    pdf = None if pdf_proven else _pdf_bytes_from_source(pdf_source)
+    del pdf_source
     identity = result.get("draft_artifact_identity")
     if not isinstance(identity, Mapping):
         raise ValueError("Exact draft artifact identity is missing")
@@ -442,8 +476,8 @@ def _validate_exact_artifact_hashes(result: Mapping[str, Any]) -> None:
     if canonical_manifest.get("identity") != manifest_identity:
         raise ValueError("detached and canonical artifact manifest identity mismatch")
     checks = {
-        "pdf_sha256": _sha256(pdf),
-        "canonical_json_sha256": _sha256(canonical_json),
+        "pdf_sha256": pdf_proof[1] if pdf_proven else _sha256(pdf),
+        "canonical_json_sha256": canonical_proof[1] if canonical_proven else _sha256(canonical_json),
         "evidence_manifest_sha256": _sha256(manifest_json),
     }
     for field, actual in checks.items():
