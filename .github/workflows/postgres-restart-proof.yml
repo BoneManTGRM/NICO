@@ -49,6 +49,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
+      - name: Qualify bounded read-only verifier on existing synthetic Postgres
+        timeout-minutes: 2
+        run: python scripts/postgres_readonly_restore_proof.py
+
       - name: Run synthetic restart and tenant-isolation proof
         run: |
           python scripts/postgres_restart_proof.py \
@@ -83,6 +87,7 @@ jobs:
         run: |
           python - <<'PY'
           import json
+          import hashlib
           import os
           from pathlib import Path
 
@@ -152,6 +157,17 @@ jobs:
           assert review_pdf["commit_sha"] == subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
           assert "postgresql://" not in json.dumps(review_pdf)
           assert "NICO_TEST_DATABASE_URL" not in json.dumps(review_pdf)
+          readonly = json.loads(Path("audit-results/postgres-readonly-restore-proof.json").read_text())
+          assert readonly["status"] == "passed" and readonly["synthetic"] is True
+          assert readonly["live_production_claim"] is False
+          assert readonly["restore_provenance_verified"] is False
+          assert readonly["evidence_record_written"] is False
+          assert readonly["verifier_sha256"] == hashlib.sha256(Path("scripts/verify_restored_storage_readonly.py").read_bytes()).hexdigest()
+          assert readonly["checks"] and all(readonly["checks"].values())
+          for key in ("bounded_reads", "missing_schema", "missing_table", "ledger_mismatch",
+                      "ledger_overlong", "server_readonly_enforcement", "write_rejected_by_postgres",
+                      "synthetic_schema_removed"):
+              assert readonly["checks"][key] is True
           lifecycle = json.loads(Path("audit-results/postgres-review-pdf-lifecycle-proof.json").read_text())
           assert lifecycle["status"] == "passed" and lifecycle["synthetic"] is True
           assert lifecycle["live_production_claim"] is False
@@ -177,6 +193,7 @@ jobs:
           name: postgres-restart-proof-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             audit-results/postgres-restart-proof.json
+            audit-results/postgres-readonly-restore-proof.json
             audit-results/postgres-intake-reservation-proof.json
             audit-results/postgres-scanner-artifact-proof.json
             audit-results/postgres-worker-job-proof.json
