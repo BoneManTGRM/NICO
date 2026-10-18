@@ -40,13 +40,24 @@ def _flowing_review_page(text: str) -> bool:
     A PDF dictionary bit alone cannot identify a worksheet.
     """
     normalized = _normalized(text)
-    lines = {_normalized(line) for line in text.splitlines()}
-    english = {'nico | automated draft', 'human decision pending | client delivery blocked'} <= lines
-    spanish = {'nico | borrador automatizado', 'decision humana pendiente | entrega bloqueada'} <= lines
-    if not (english or spanish):
-        return False
-    counter = re.search(r'\b(?:review page|pagina de revision) (\d+) (?:of|de) (\d+)\b', normalized)
-    if not counter or not 1 <= int(counter[1]) <= int(counter[2]):
+    lines = [_normalized(line) for line in text.splitlines() if line.strip()]
+    footers = (
+        ('human decision pending | client delivery blocked', 'nico | automated draft',
+         r'review page ([1-9][0-9]{0,3}) of ([1-9][0-9]{0,3})'),
+        ('decision humana pendiente | entrega bloqueada', 'nico | borrador automatizado',
+         r'pagina de revision ([1-9][0-9]{0,3}) de ([1-9][0-9]{0,3})'),
+    )
+    valid_footer = False
+    for index in range(2, len(lines)):
+        for boundary, draft, pattern in footers:
+            if lines[index - 2:index] != [boundary, draft]:
+                continue
+            # Only the bounded whole counter line in the footer block counts.
+            # Earlier literal evidence must neither mask nor supply this value.
+            counter = re.fullmatch(pattern, lines[index])
+            if counter and int(counter[1]) <= int(counter[2]):
+                valid_footer = True
+    if not valid_footer:
         return False
     section_ids = ('functional_qa', 'platform_parity', 'historical_trends_and_change_failure',
                    'requirements_traceability', 'stakeholder_and_business_alignment',

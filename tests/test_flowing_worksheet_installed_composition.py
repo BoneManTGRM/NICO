@@ -160,3 +160,35 @@ def test_structural_worksheet_preservation_still_enforces_finality(spanish):
         'stable_alias_projection_idempotent':True,'decision_finding_count':0}}
     with pytest.raises(ValueError,match='unapproved client report used finality language'):
         _validate_final_surfaces(canonical,register,'AUTOMATED DRAFT','AUTOMATED DRAFT',sanitized)
+
+
+@pytest.mark.parametrize('spanish',[False,True])
+@pytest.mark.parametrize('quoted_counter',['9 of 2','1 of 2'])
+def test_quoted_counter_cannot_mask_real_worksheet_footer(spanish,quoted_counter):
+    import io
+    from pypdf import PdfReader
+    from nico.comprehensive_pdf_layout_polish_v1 import _render_polished_review_pdf
+    from nico import comprehensive_client_review_companion_v5 as v5
+    from nico.client_pdf_status_sanitizer_v1 import sanitize_client_pdf_status
+    from nico.client_pdf_status_sanitizer_v7 import install_client_pdf_status_sanitizer_v7,_flowing_review_page
+    from tests.test_comprehensive_pdf_layout_polish_v1 import _review_canonical
+    install_client_pdf_status_sanitizer_v7()
+    counter=('Página de revisión '+quoted_counter.replace('of','de') if spanish else 'Review page '+quoted_counter)
+    evidence=counter+' scanner_triage. retained_evidence_quote'
+    canonical=_review_canonical();canonical['stage_summaries'][0]['evidence'].append(evidence)
+    assert evidence in v5.substantive_review_sections(canonical,spanish=spanish)[0]['evidence']
+    pdf=_render_polished_review_pdf(canonical,spanish=spanish)
+    before=PdfReader(io.BytesIO(pdf));after=PdfReader(io.BytesIO(sanitize_client_pdf_status(pdf)))
+    assert len(before.pages)==len(after.pages)==8
+    for original,preserved in zip(before.pages,after.pages):
+        assert original.extract_text()==preserved.extract_text()
+        assert original.get_contents().get_data()==preserved.get_contents().get_data()
+    assert evidence in ' '.join(after.pages[0].extract_text().split())
+    if quoted_counter=='1 of 2':
+        text=before.pages[0].extract_text()
+        actual='Página de revisión 1 de 8' if spanish else 'Review page 1 of 8'
+        assert actual in text
+        # A valid-looking quotation cannot replace an invalid/missing real
+        # footer counter, even when the other footer lines remain present.
+        assert not _flowing_review_page(text.replace(actual,'Página de revisión 9 de 2' if spanish else 'Review page 9 of 2'))
+        assert not _flowing_review_page(text.replace(actual,''))

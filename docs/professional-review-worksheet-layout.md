@@ -27,7 +27,7 @@ new page count of a retained production report. That count requires a replay.
 # Downstream preservation
 
 The status sanitizer recognizes the complete flowing worksheet structure:
-localized draft and pending/blocked footer lines, a valid review page counter,
+adjacent localized pending/blocked, draft, and whole page-counter footer lines,
 and a known section ID with its section count or continuation heading. This is
 presentation classification, not proof of provenance or approval authority.
 It prevents raw-page heuristics from deleting worksheets; all retained pages
@@ -35,3 +35,4 @@ still pass through finality rewriting and final content validation. The old
 `/NICOFlowingReviewWorksheet` bit is neither emitted nor trusted. Forged/copied
 bits cannot exempt internal appendix pages or bypass stale-finality rewriting.
 Exact artifact hashes, manifests, approval gates and the 60-page bound apply.
+Quoted counters in evidence do not supply or override the footer counter.
