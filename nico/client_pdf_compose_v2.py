@@ -331,7 +331,9 @@ def compose_compact_client_pdf(
         + required_ci_boundary_count
         + (len(human_evidence.pages) if human_evidence is not None else 0)
     )
+    from nico.report_delivery_timing_v1 import record_report_delivery_failure_reason
     if reserved_count > MAX_CLIENT_PDF_PAGES:
+        record_report_delivery_failure_reason("pdf_required_pages_limit")
         raise ValueError(
             "client-ready PDF required pages exceed the "
             f"{MAX_CLIENT_PDF_PAGES}-page boundary"
@@ -352,6 +354,7 @@ def compose_compact_client_pdf(
         retained = list(PdfReader(io.BytesIO(compacted)).pages)
         total_page_count = len(retained) + reserved_count
     if total_page_count > MAX_CLIENT_PDF_PAGES:
+        record_report_delivery_failure_reason("pdf_total_pages_limit")
         raise ValueError(
             "client-ready PDF cannot preserve every primary and required page within "
             f"the {MAX_CLIENT_PDF_PAGES}-page boundary: {total_page_count}"
@@ -392,6 +395,7 @@ def compose_compact_client_pdf(
     pdf = output.getvalue()
     page_count = len(PdfReader(io.BytesIO(pdf)).pages)
     if page_count > MAX_CLIENT_PDF_PAGES:
+        record_report_delivery_failure_reason("pdf_output_pages_limit")
         raise ValueError(
             f"client-ready PDF exceeds the {MAX_CLIENT_PDF_PAGES}-page boundary: {page_count}"
         )

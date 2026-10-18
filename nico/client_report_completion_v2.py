@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from nico.report_delivery_timing_v1 import report_delivery_phase_scope
+from nico.report_delivery_timing_v1 import report_delivery_phase_scope, report_delivery_failure_scope
 
 from nico.report_pdf_text import extract_pdf_page_texts
 
@@ -383,38 +383,34 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
             rendered_html = render_client_html(markdown, title, spanish=spanish)
 
         with report_delivery_phase_scope("finalize_pdf"):
-            base_pdf = base64.b64decode(str(result.get("pdf_base64") or ""))
+            with report_delivery_failure_scope("pdf_base_decode"):
+                base_pdf = base64.b64decode(str(result.get("pdf_base64") or ""))
             if compatibility_prepared:
-                base_pdf = legacy._replace_stale_pdf_text(base_pdf)
-                base_pdf = legacy._sanitize_pdf_control_glyphs(base_pdf)
-                legacy._assert_no_control_glyphs(base_pdf)
-            review_pdf = render_comprehensive_review_companion_pdf(
-                canonical,
-                spanish=spanish,
-            )
-            register_pdf = render_compact_finding_register_pdf(register, spanish=spanish)
-            gate_pdf = render_evidence_review_gate_pdf(canonical, register, spanish=spanish)
+                with report_delivery_failure_scope("pdf_legacy_cleanup"):
+                    base_pdf = legacy._replace_stale_pdf_text(base_pdf)
+                    base_pdf = legacy._sanitize_pdf_control_glyphs(base_pdf)
+                    legacy._assert_no_control_glyphs(base_pdf)
+            with report_delivery_failure_scope("pdf_review_render"):
+                review_pdf = render_comprehensive_review_companion_pdf(canonical, spanish=spanish)
+            with report_delivery_failure_scope("pdf_register_render"):
+                register_pdf = render_compact_finding_register_pdf(register, spanish=spanish)
+            with report_delivery_failure_scope("pdf_gate_render"):
+                gate_pdf = render_evidence_review_gate_pdf(canonical, register, spanish=spanish)
 
-            # Reserve the CI/CD boundary page inside the compact page budget instead of
-            # appending it after composition, where it could be truncated by a full body.
-            from nico.comprehensive_rendered_ci_boundary_producer_v79 import (
-                _boundary_pdf_page,
-            )
-
-            ci_boundary_pdf = _boundary_pdf_page(canonical, spanish=spanish)
+            # Reserve every required component inside the unchanged page budget.
+            from nico.comprehensive_rendered_ci_boundary_producer_v79 import _boundary_pdf_page
+            with report_delivery_failure_scope("pdf_ci_boundary_render"):
+                ci_boundary_pdf = _boundary_pdf_page(canonical, spanish=spanish)
             from nico.comprehensive_human_evidence_appendix import render_human_evidence_appendix
-            human_evidence_pdf = render_human_evidence_appendix(canonical, spanish=spanish)
-            pdf = sanitize_client_pdf_status(
-                compose_compact_client_pdf(
-                    base_pdf,
-                    register_pdf,
-                    gate_pdf,
-                    review_pdf=review_pdf,
-                    ci_boundary_pdf=ci_boundary_pdf,
-                    human_evidence_pdf=human_evidence_pdf,
-                ),
-                spanish=spanish,
-            )
+            with report_delivery_failure_scope("pdf_human_evidence_render"):
+                human_evidence_pdf = render_human_evidence_appendix(canonical, spanish=spanish)
+            with report_delivery_failure_scope("pdf_compose"):
+                pdf = compose_compact_client_pdf(
+                    base_pdf, register_pdf, gate_pdf, review_pdf=review_pdf,
+                    ci_boundary_pdf=ci_boundary_pdf, human_evidence_pdf=human_evidence_pdf,
+                )
+            with report_delivery_failure_scope("pdf_sanitize"):
+                pdf = sanitize_client_pdf_status(pdf, spanish=spanish)
         with report_delivery_phase_scope("finalize_validation"):
             validation = _validate_final_surfaces(
                 canonical,

@@ -12,6 +12,28 @@ from uuid import uuid4
 
 _ACTIVE: ContextVar[dict[str, Any] | None] = ContextVar("nico_report_delivery_timing", default=None)
 _LOGGER = logging.getLogger("uvicorn.error")
+_FAILURE_REASONS = frozenset({
+    'pdf_base_decode', 'pdf_legacy_cleanup', 'pdf_review_render',
+    'pdf_register_render', 'pdf_gate_render', 'pdf_ci_boundary_render',
+    'pdf_human_evidence_render', 'pdf_compose', 'pdf_sanitize',
+    'pdf_required_pages_limit', 'pdf_total_pages_limit', 'pdf_output_pages_limit',
+})
+
+
+def record_report_delivery_failure_reason(reason: str) -> None:
+    """Retain only a fixed code; never inspect an exception or report payload."""
+    state = _ACTIVE.get()
+    if state is not None and 'failure_reason' not in state:
+        state['failure_reason'] = reason if type(reason) is str and reason in _FAILURE_REASONS else 'unknown_failure'
+
+
+@contextmanager
+def report_delivery_failure_scope(reason: str):
+    try:
+        yield
+    except BaseException:
+        record_report_delivery_failure_reason(reason)
+        raise
 
 # Reserve 14 detail records, 17 ordinary records (including route_started),
 # and one final aggregate. Repeated/suppressed phases still aggregate all calls.
@@ -127,6 +149,8 @@ def report_delivery_timing(run_id: str, report_language: str):
             "http_transfer_completion_inferred": False,
             "phases": state["phases"],
         }
+        if outcome == 'failed' and 'failure_reason' in state:
+            payload['failure_reason'] = state['failure_reason']
         _emit("NICO_REPORT_TIMING", payload)
 
 
@@ -155,7 +179,9 @@ def report_delivery_phase_scope(name: str):
         else:
             state["reported_phases"].add(name)
             _progress(state, "phase_completed", phase=name, outcome=outcome,
-                      error_type=error_type, phase_times_are_inclusive=True, **phase)
+                      error_type=error_type, phase_times_are_inclusive=True,
+                      **({'failure_reason': state['failure_reason']}
+                         if outcome == 'failed' and 'failure_reason' in state else {}), **phase)
 
 
 def report_delivery_phase(name: str):
