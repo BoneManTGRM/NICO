@@ -116,11 +116,14 @@ def _provenance_lines(provenance: dict[str, Any]) -> list[tuple[str, str]]:
             ("Frontend observed at", str(observation.get("observed_at") or "unavailable")),
         ])
     if "frontend_backend_source_alignment" in provenance:
+        runtime_scope = provenance.get("release_identity_scope") == "report_generation_runtime; assessed repository identity is separate"
         lines.extend([
             ("Frontend/backend observed source alignment", str(provenance["frontend_backend_source_alignment"])),
             ("Observed frontend source identity", str(provenance.get("frontend_observed_source_revision") or "unavailable")),
             ("Observed frontend deployment identity", str((observation or {}).get("deployment_id") or "unavailable")),
-            ("Exact release readiness", str(provenance.get("exact_release_readiness") or "unverified")),
+            ("Report-generation runtime identity readiness" if runtime_scope else "Recorded readiness status (scope unknown)", str(provenance.get("exact_release_readiness") or "unverified")),
+            ("Readiness scope", "Report-generation runtime only" if runtime_scope else "unknown"),
+            ("Readiness interpretation", "This provenance alone describes the report-generation runtime identity; assessed-repository release readiness requires separate evidence." if runtime_scope else "This provenance alone does not identify the readiness scope; consult separate evidence before interpreting the recorded status."),
         ])
     execution = provenance.get("scanner_execution_evidence")
     if not isinstance(execution, dict):
@@ -150,6 +153,14 @@ def _provenance_lines(provenance: dict[str, Any]) -> list[tuple[str, str]]:
 
 
 _ES_LABELS = {
+    "Report-generation runtime identity readiness": "Preparación de la identidad del entorno de generación del informe",
+    "Recorded readiness status (scope unknown)": "Estado de preparación registrado (alcance desconocido)",
+    "Readiness scope": "Alcance del estado de preparación",
+    "Report-generation runtime only": "Solo el entorno de generación del informe",
+    "Readiness interpretation": "Interpretación del estado de preparación",
+    "unknown": "desconocido",
+    "This provenance alone describes the report-generation runtime identity; assessed-repository release readiness requires separate evidence.": "Esta procedencia por sí sola describe la identidad del entorno de generación del informe; la preparación de una versión del repositorio evaluado requiere evidencia separada.",
+    "This provenance alone does not identify the readiness scope; consult separate evidence before interpreting the recorded status.": "Esta procedencia por sí sola no identifica el alcance del estado de preparación; consulte evidencia separada antes de interpretar el estado registrado.",
     "Frontend configured-identity match": "Coincidencia con la identidad configurada del frontend",
     "Frontend/backend observed source alignment": "Coincidencia del código observado del frontend y backend",
     "Observed frontend source identity": "Identidad del código observado del frontend",
@@ -232,7 +243,7 @@ def _append_provenance_pdf(
     page.setTitle(title)
     page.setFont("Helvetica-Bold", 16)
     page.drawString(54, 738, title)
-    page.setFont("Helvetica", 8.5)
+    page.setFont("Helvetica", 9)
     y = 704
     def continuation() -> float:
         page.showPage()
@@ -244,13 +255,13 @@ def _append_provenance_pdf(
         value = localize(value)
         if y < 96:
             y = continuation()
-        page.setFont("Helvetica-Bold", 8.5)
+        page.setFont("Helvetica-Bold", 9)
         page.drawString(54, y, f"{localize(label)}:")
-        page.setFont("Helvetica", 8.5)
-        for line in simpleSplit(value, "Helvetica", 8.5, 504):
+        page.setFont("Helvetica", 9)
+        for line in simpleSplit(value, "Helvetica", 9, 504):
             if y < 72:
                 y = continuation()
-                page.setFont("Helvetica", 8.5)
+                page.setFont("Helvetica", 9)
             y -= 12
             page.drawString(54, y, line)
         y -= 24

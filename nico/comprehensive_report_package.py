@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_preview_labels_v1 import stage_preview_labels
+
 import base64
 import hashlib
 import html
@@ -853,6 +855,7 @@ def _markdown(
                 "",
                 f"### {stage['title']} — {localized(stage['status'].upper())}",
                 stage["summary"],
+                *stage_preview_labels(stage, assessment, spanish=localize_presentation is not None),
                 "",
                 f"{localized('Evidence')}:",
             ]
@@ -896,6 +899,7 @@ def _markdown(
                 "",
                 f"### {stage['title']} — {localized(stage['status'].upper())}",
                 stage["summary"],
+                *stage_preview_labels(stage, assessment, spanish=localize_presentation is not None),
             ]
             lines.extend(
                 (
@@ -906,6 +910,8 @@ def _markdown(
                 for item in stage["evidence"]
             )
             lines.extend(_source_markdown(stage, spanish=localize_presentation is not None))
+            if stage_id == "review_required_candidate_register":
+                lines.extend(f"- {item}" for item in stage["findings"])
 
     unavailable = _dedupe(assessment.get("unavailable_data_notes") or [], 50)
     lines += [
@@ -1418,6 +1424,9 @@ def _pdf(
                 if stage_id == "repository_and_delivery_evidence"
                 else 10
             )
+            block.extend(p(label, body) for label in stage_preview_labels(
+                stage, assessment, evidence_limit=preview_limit, evidence_text_limit=1000, findings_limit=12,
+                spanish=localize_presentation is not None))
             preview = stage["evidence"][:preview_limit]
             block.extend(
                 bullets(
@@ -1453,6 +1462,9 @@ def _pdf(
             p(f"{localized('Stage ID')}: {stage['stage_id']} · {localized('Status')}: {localized(stage['status'].upper())}", small),
             p(stage["summary"], body),
         ]
+        story.extend(p(label, body) for label in stage_preview_labels(
+            stage, assessment, evidence_limit=100, evidence_text_limit=1000, findings_limit=50,
+            spanish=localize_presentation is not None))
         evidence_rows = [[p(f"{stage['title']} — {localized('Retained Evidence')}", h3)]]
         evidence_rows.extend([item] for item in bullets(
             stage["evidence"], limit=100, client_literal=client_literal_stage,

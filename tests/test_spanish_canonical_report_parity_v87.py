@@ -1131,9 +1131,16 @@ install_comprehensive_spanish_client_surface_localization_v86()
 # its explanatory note, and derived artifact digests (plus PDF line wrapping).
 # Scores, findings, approval state, bookmarks and page counts remain unchanged;
 # every semantic, layout, manifest and repeat-render assertion below stays active.
-SMALL_ENGLISH_GOLDEN = {'markdown': ('f6e2c701410b4e02315e9eacb9650bfe423ada4e9aa54723983645d2aca4a574', 19388), 'html': ('0cf8931afa1e5491a157b9c794fee7e86795aa5a1da53994864897fffcd11d7c', 23757), 'pdf_base64': ('12263fd599a6c72adcc549877a6b3a0da11889a75148c73f3a15a674b6d35400', 182856), 'pdf_sha256': 'bab8414394c4f3c5733e76abd8e340d16b1e5f7b889125b34abeb44c15a20d14', 'page_count': 22}
-RICH_ENGLISH_GOLDEN = {'markdown': ('8c86eb0b33cec623ea5633369231a710f95c17633336d247ec87a0b347aeccf8', 21087), 'html': ('759661b3a63b0bc607ddc89bc039145d5acdbec8fc8abad72dc3842e7de557ac', 25762), 'pdf_base64': ('696679e90575a09c703b378467f70215311b067c8316a8cb7e52c0cc1bdfad9b', 285444), 'pdf_sha256': 'dcdd89576a23f1ba6d9adceaf8484f3f0bb87fbc1da7b328f7d24ead5efa1151', 'page_count': 47}
-PHASE9_ENGLISH_GOLDEN = {'markdown': ('935765a0aa76b93939fb3f94e7555b1dff36ab6a425358e44b0bc63c42bd85fe', 19426), 'html': ('01e869dfbe0d0a9f5cbbf3b2a10d5798fca87bb03fb5d6dc4ad494e87741d545', 23774), 'pdf_base64': ('4619e54ee8a17c61bfc876d035f241b9309b9e3dafb35f8414451d7abd995b3e', 181580), 'pdf_sha256': '6eefbced7373b048da5886967d66dcd912ef17d4595ca25cef04332bc8e3c0b9', 'page_count': 22}
+# PR1774 differential: exact a71ea0ff reproduces all prior goldens. The new
+# compact register retains every acceptance/verification/exit criterion, with
+# readable type and ID-bound headings; roadmap previews disclose retained scope.
+# Small/phase9 Markdown and HTML gain the retained exit criteria. PDF text changes
+# are those criteria, preview labels, layout wrapping, and derived artifact hashes.
+# Rich Markdown/HTML are unchanged. All page counts and bookmarks are unchanged;
+# exact fingerprints, bilingual truth/layout/manifest and repeat-render gates stay active.
+SMALL_ENGLISH_GOLDEN = {'markdown': ('2e3018c77bf24e5a58e48edbc7639e9d5148391aaf6b970e8a860de6e048d302', 19596), 'html': ('67d3ba039634db1d75b07cc1f037051a65b71b1674eb1108de3c77bb594dba99', 23977), 'pdf_base64': ('5e00c4087d0296bff5eea659fd2d6fd06fd914b0248257b85151fc5c12ecb973', 183840), 'pdf_sha256': '080237a476055e178c31ccba2acf08fb30041c3a246e4a99bd9929484af8900c', 'page_count': 22}
+RICH_ENGLISH_GOLDEN = {'markdown': ('8c86eb0b33cec623ea5633369231a710f95c17633336d247ec87a0b347aeccf8', 21087), 'html': ('759661b3a63b0bc607ddc89bc039145d5acdbec8fc8abad72dc3842e7de557ac', 25762), 'pdf_base64': ('6b2f7dc5d71e7c4ea4bcf972e8e599ae311af1db079abff00165feb90b29a839', 285904), 'pdf_sha256': 'be4ca4a82ab1f825ad9e0931be514c745a50e8e4dc98574aa1f19af2e31ca696', 'page_count': 47}
+PHASE9_ENGLISH_GOLDEN = {'markdown': ('61b1c6bc92b1e229427973dd5d4a60f69021e56a550101d53ad82832d838b437', 19676), 'html': ('c1d572381e90a1ab8b5e5d79228cc4ed94a9c52224005d1f1f2e7135642221ea', 24038), 'pdf_base64': ('99a44792a7f066fa348b4890d5cfa4f4fa617c48d55e3b8a08aafd163898f017', 182452), 'pdf_sha256': '31ba3377e08efb0c4d3000b15c3216057c5469390547d866c3e93f67b4e430d4', 'page_count': 22}
 
 SPANISH_OUTLINE = {
     "Functional QA": "QA funcional",
