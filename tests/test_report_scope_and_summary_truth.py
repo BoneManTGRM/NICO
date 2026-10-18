@@ -244,3 +244,20 @@ def test_full_canonical_preview_context_is_read_only_and_authoritative():
     before = deepcopy((canonical, context, stage))
     assert '1 of 75' in stage_preview_labels(stage, context)[0]
     assert (canonical, context, stage) == before
+
+
+def test_spanish_composite_exit_criterion_uses_its_original_field_contract():
+    from nico.client_finding_remediation_register_v2 import _GENERIC_EXIT_CRITERION
+    from nico.comprehensive_spanish_publication_preflight_v93 import install_spanish_publication_preflight_v93
+    install_spanish_publication_preflight_v93()
+    source = register()
+    source['code_findings'][0]['verification'] = []
+    source['code_findings'][0]['acceptance_criteria'] = []
+    source['code_findings'][0]['exit_criteria'] = [_GENERIC_EXIT_CRITERION]
+    before = deepcopy(source)
+    for output in (compact.compact_finding_register_markdown(source, spanish=True),
+                   pdf_text(compact.render_compact_finding_register_pdf(source, spanish=True))):
+        assert 'riesgo material sin resolver' in ' '.join(output.split())
+        assert 'regresión material' in ' '.join(output.split())
+        assert 'All listed' not in output
+    assert source == before

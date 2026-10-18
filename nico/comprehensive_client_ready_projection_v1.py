@@ -6,6 +6,7 @@ import base64
 import html
 import io
 import re
+import textwrap
 from nico.report_json_copy import deepcopy
 from typing import Any, Iterable, Mapping
 
@@ -166,14 +167,14 @@ def _complete_criterion_groups(item: Mapping[str, Any], *, spanish: bool) -> lis
     groups = []
     if verification:
         label = ("Verificación prevista" if spanish else "Planned verification") if acceptance and acceptance != verification else ("Criterios de aceptación" if spanish else "Acceptance criteria")
-        groups.append((label, verification))
+        groups.append((label, "verification", verification))
     if acceptance and acceptance != verification:
-        groups.append(("Criterios de aceptación" if spanish else "Acceptance criteria", acceptance))
+        groups.append(("Criterios de aceptación" if spanish else "Acceptance criteria", "acceptance_criteria", acceptance))
     exit_criteria = values("exit_criteria")
     if exit_criteria and exit_criteria not in (verification, acceptance):
-        groups.append(("Criterios de salida" if spanish else "Exit criteria", exit_criteria))
-    return [(label, [_authored_display(value, "verification", spanish=spanish, limit=len(value) + 1)
-                     for value in values]) for label, values in groups]
+        groups.append(("Criterios de salida" if spanish else "Exit criteria", "exit_criteria", exit_criteria))
+    return [(label, [_authored_display(value, key, spanish=spanish, limit=len(value) + 1)
+                     for value in values]) for label, key, values in groups]
 
 
 def compact_finding_register_markdown(register: Mapping[str, Any], *, spanish: bool) -> str:
@@ -408,7 +409,10 @@ def render_compact_finding_register_pdf(register: Mapping[str, Any], *, spanish:
             for index, criterion in enumerate(criteria, 1):
                 # Standalone Paragraphs can split across pages without clipping a
                 # long retained condition or forcing it into an indivisible row.
-                criterion_paragraphs.append(p(f"{index}. {criterion}", body, limit=len(criterion) + 32))
+                chunks = textwrap.wrap(criterion, width=1200, break_long_words=False, break_on_hyphens=False)
+                for part, chunk in enumerate(chunks):
+                    prefix = f"{index}. " if part == 0 else f"{index}. ({'continuación' if spanish else 'continued'}) · {_identifier(item)}: "
+                    criterion_paragraphs.append(p(prefix + chunk, body, limit=len(prefix + chunk) + 1))
             # Keep ordinary criterion sets with their ID; over-page paragraphs
             # still split using ReportLab's normal KeepTogether fallback.
             if sum(len(criterion) for criterion in criteria) <= 3000:
