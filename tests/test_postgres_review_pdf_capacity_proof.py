@@ -186,7 +186,8 @@ def test_schema_creation_requires_full_ci_guards(ci_context, monkeypatch, missin
     adapter.assert_not_called()
 
 
-def test_schema_adapter_keeps_actual_driver_and_pins_all_connections(ci_context, monkeypatch):
+@pytest.fixture
+def isolated_recording_driver(ci_context, monkeypatch):
     from unittest.mock import MagicMock
     from nico.storage import PostgresAdapter
     from nico.postgres_timeout_patch import postgres_connect_kwargs
@@ -211,6 +212,13 @@ def test_schema_adapter_keeps_actual_driver_and_pins_all_connections(ci_context,
     adapter._psycopg = driver;adapter._dict_row = dict_row
     monkeypatch.setattr(proof, 'existing_jobs', lambda explicit:SimpleNamespace(adapter=adapter))
     isolated = proof.isolated_adapter(True, schema, create=True)
+    return isolated, driver, con, schema
+
+
+def test_schema_adapter_keeps_actual_driver_and_pins_all_connections(isolated_recording_driver):
+    from nico.postgres_timeout_patch import postgres_connect_kwargs
+    from psycopg.rows import dict_row
+    isolated, driver, con, schema = isolated_recording_driver
     statements = [args.args[0] for args in con.execute.call_args_list]
     ddl = [s.as_string() for s in statements if not isinstance(s,str)]
     assert ddl == ['CREATE SCHEMA "'+schema+'"'] + [
@@ -330,3 +338,22 @@ def test_context_failure_evidence_reports_safe_code_location(tmp_path, monkeypat
     assert value['failure_site']['function'] == 'require_context'
     assert type(value['failure_site']['line']) is int
     assert 'explicit_synthetic_ci_context_required' not in output.read_text()
+
+
+@pytest.mark.parametrize('override', [
+    {'host':'remote'}, {'hostaddr':'10.0.0.1'}, {'port':5433}, {'dbname':'other'},
+    {'database':'other'}, {'service':'other'}, {'servicefile':'/tmp/other'},
+    {'user':'other'}, {'password':'other'}, {'passfile':'/tmp/other'},
+    {'dsn':'postgresql://other'}, {'conninfo':'postgresql://other'},
+    {'sslmode':'disable'}, {'sslcert':'/tmp/other'}, {'sslkey':'/tmp/other'},
+    {'target_session_attrs':'read-write'}, {'load_balance_hosts':'random'},
+    {'options':'-csearch_path=public'}, {'options':'-c statement_timeout=0'},
+    {'application_name':'unexpected'}, {'autocommit':True},
+    {'connect_timeout':0}, {'connect_timeout':True}, {'row_factory':None},
+])
+def test_schema_connector_rejects_overrides_before_driver(isolated_recording_driver, override):
+    isolated, driver, _, _ = isolated_recording_driver
+    driver.reset_mock()
+    with pytest.raises(ValueError, match='synthetic_schema_connection_required'):
+        isolated._psycopg.connect(proof.EXPECTED_TARGET, **override)
+    driver.connect.assert_not_called()

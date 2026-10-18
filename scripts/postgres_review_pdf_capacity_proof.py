@@ -270,9 +270,17 @@ def isolated_adapter(explicit, schema, *, create=False):
         # goes to this exact CI fixture and schema. Never inherit caller options.
         require_context(explicit)
         from nico.postgres_timeout_patch import postgres_connect_kwargs
-        options = kwargs.pop('options', '')
-        if url != EXPECTED_TARGET or options not in ('', postgres_connect_kwargs()['options']):
+        policy = postgres_connect_kwargs()
+        # psycopg keyword parameters override the URL. Permit only the exact
+        # non-routing arguments used by our ledger and tuple-row source store.
+        if (url != EXPECTED_TARGET
+                or set(kwargs) - {'row_factory', 'connect_timeout', 'options'}
+                or ('row_factory' in kwargs and kwargs['row_factory'] is not adapter._dict_row)
+                or ('connect_timeout' in kwargs and (type(kwargs['connect_timeout']) is not int
+                    or kwargs['connect_timeout'] != policy['connect_timeout']))
+                or ('options' in kwargs and kwargs['options'] != policy['options'])):
             raise ValueError('synthetic_schema_connection_required')
+        options = kwargs.pop('options', '')
         return driver.connect(url, options=options+' -csearch_path='+schema+',pg_catalog', **kwargs)
     adapter._psycopg = SimpleNamespace(connect=connect)
     with adapter._connect() as con:
