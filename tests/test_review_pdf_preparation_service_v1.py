@@ -276,9 +276,9 @@ assert attempts == [], attempts
 def test_real_isolated_worker_renders_complete_synthetic_locale(monkeypatch):
     from dataclasses import replace
     from tests.test_cross_locale_pdf_repeatability_v1 import _fixed_status
-    status = _fixed_status('en')
+    status = _fixed_status('es-MX')
     canonical = status['reports']['json']
-    i = replace(identity(), run_id=status['run_id'], repository=status['repository'],
+    i = replace(identity(), language="en", run_id=status['run_id'], repository=status['repository'],
         commit_sha=status['commit_sha'], customer_id=canonical['identity']['customer_id'],
         project_id=canonical['identity']['project_id'],
         canonical_truth_sha256=status['reports']['canonical_truth_sha256'],

@@ -68,7 +68,7 @@ def test_terminal_report_actions_stream_artifacts_instead_of_requiring_embedded_
     assert "await response.arrayBuffer()" in source
     assert 'new Blob([bytes], {type: "application/pdf"})' in source
     assert "disabled={!pdfAvailable || artifactAction !== null}" in source
-    assert "disabled={!markdownAvailable || artifactAction !== null}" in source
+    assert "disabled={spanishUnavailable || !markdownAvailable || artifactAction !== null}" in source
 
 
 def test_same_origin_proxy_allows_artifacts_and_forwards_bounded_projection() -> None:

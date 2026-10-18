@@ -4,6 +4,7 @@ import base64
 import hashlib
 import io
 import json
+from unittest.mock import patch
 from pypdf import PdfReader
 
 import pytest
@@ -54,10 +55,12 @@ def source(monkeypatch):
 
 def _prepare(service):
     root = deepcopy(service._store.record)
-    return subject.prepare_localized_edition(service, root["identity"]["run_id"], "es-MX", {
-        "preparation_authorized": True, "authorization_confirmed": True,
-        "expected_artifact_identity": review_artifact_identity(root),
-    })
+    # Construct a historical edition offline; release admission is tested separately.
+    with patch("nico.ordinary_report_language_release_v1.require_new_report_language"):
+        return subject.prepare_localized_edition(service, root["identity"]["run_id"], "es-MX", {
+            "preparation_authorized": True, "authorization_confirmed": True,
+            "expected_artifact_identity": review_artifact_identity(root),
+        })
 
 
 def test_separate_retained_locale_approval_preserves_source_and_delivery_boundary(source):
@@ -267,3 +270,20 @@ def test_zero_candidate_source_ledger_remains_numeric_and_bound():
     assert approved["review_work_ledger"] == approved_source["review_work_ledger"]
     assert approved["review_work_ledger"]["candidate_count"] == 0
     assert service._store.record["accepted_edition"] == approved_source["accepted_edition"]
+
+
+def test_release_blocks_new_spanish_but_reuses_valid_frozen_edition(source, monkeypatch):
+    root = deepcopy(source._store.record)
+    run_id = root["identity"]["run_id"]
+    payload = {"preparation_authorized": True, "authorization_confirmed": True,
+               "expected_artifact_identity": review_artifact_identity(root)}
+    with pytest.raises(ValueError, match="spanish_report_generation_unavailable"):
+        subject.prepare_localized_edition(source, run_id, "es-MX", payload)
+    assert source._store.record == root
+    _prepare(source)
+    def forbidden(*args, **kwargs):
+        pytest.fail("Existing edition must not render")
+    from nico import comprehensive_same_run_locale_report_v1 as locale_report
+    monkeypatch.setattr(locale_report, "_assemble_target", forbidden)
+    payload["expected_artifact_identity"] = review_artifact_identity(source._store.record)
+    subject.prepare_localized_edition(source, run_id, "es-MX", payload)

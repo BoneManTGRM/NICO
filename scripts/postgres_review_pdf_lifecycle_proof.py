@@ -22,7 +22,13 @@ os.environ['NICO_REVIEW_PDF_PG_QUALIFIED'] = 'false'
 os.environ['NEXT_PUBLIC_NICO_REVIEW_PDF_PREPARATION'] = 'false'
 
 
-def build_owned_record():
+# Retain a real cross-locale child render under the English-only release.
+# The Spanish source is an owned historical fixture, never a new assessment.
+SOURCE_LANGUAGE = 'es-MX'
+TARGET_LANGUAGE = 'en'
+
+
+def build_owned_record(source_language=SOURCE_LANGUAGE):
     from tests.test_cross_locale_pdf_repeatability_v1 import _install_production_wrappers
     from tests.test_v2_premium_report_renderer import _package
     from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
@@ -34,12 +40,12 @@ def build_owned_record():
     identity = dict(run_id=run_id, repository='synthetic/review-pdf-lifecycle',
         commit_sha='7'*40, evidence_ledger_id='ledger_'+run_id,
         customer_id='synthetic-pdf-'+uuid4().hex, project_id='synthetic-pdf-project')
-    package = _package('en')
+    package = _package(source_language)
     package['json']['identity'].update(identity)
     reports = rebuild_client_artifacts(package)
     reports['report_id'] = 'report_'+run_id
     reports['canonical_truth_sha256'] = canonical_sha256(reports['json'])
-    record = create_comprehensive_run_record(**identity, authorized=True)
+    record = create_comprehensive_run_record(**identity, report_language=source_language, authorized=True)
     # These are explicitly synthetic stage inputs, never executor results from
     # an assessment. The real transition/integrity APIs establish the new record.
     for stage in COMPREHENSIVE_STAGES:
@@ -116,8 +122,8 @@ def proof(progress=None):
     reports = status['reports']
     binding = dict(commit_sha=status['commit_sha'], canonical_truth_sha256=reports['canonical_truth_sha256'])
     progress["phase"] = "admit_and_render"
-    queued = runtime.prepare(status['run_id'], 'es-MX', binding)
-    identity, job = runtime._job(status['run_id'], 'es-MX', queued['job_id'], binding)
+    queued = runtime.prepare(status['run_id'], TARGET_LANGUAGE, binding)
+    identity, job = runtime._job(status['run_id'], TARGET_LANGUAGE, queued['job_id'], binding)
     source_before = runtime.source.capture(identity)
     ready = runtime.service.run_once(identity)
     assert ready['status'] == 'ready' and ready['client_delivery_allowed'] is False
@@ -149,7 +155,7 @@ def proof(progress=None):
     except PreparationConflict: checks['stale_owner_rejected'] = True
     else: raise AssertionError('stale owner accepted')
     # A second locale identity exercises real cancellation without another render.
-    cancelled_identity = replace(identity, language='en')
+    cancelled_identity = replace(identity, language=SOURCE_LANGUAGE)
     runtime.jobs.enqueue(cancelled_identity, preparation_authorized=True)
     runtime.cancel(cancelled_identity.run_id, cancelled_identity.language, cancelled_identity.job_id, binding)
     assert runtime.service.run_once(cancelled_identity) is None

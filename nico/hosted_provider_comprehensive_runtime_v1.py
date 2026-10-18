@@ -1509,6 +1509,8 @@ def _operator_intake(request: Request, payload: Mapping[str, Any], token: str) -
     provider_project = _text(payload.get("provider_project"))
     repository = canonical_repository_label(provider, provider_repository, organization=organization, project=provider_project)
     requested_sha = expected_commit_sha(dict(payload))
+    from nico.ordinary_report_language_release_v1 import require_new_report_language
+    require_new_report_language(report_language)
     run_id = f"comprun_{uuid4().hex}"
     ledger_id = f"ledger_comprehensive_{uuid4().hex}"
 

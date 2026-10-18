@@ -809,16 +809,14 @@ test('Spanish edition cannot hydrate an English authorized report from the same 
   assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
 });
 
-test('Spanish preparation may read its approved English source without granting either decision', async () => {
+test('Spanish preparation is unavailable without any request or decision', async () => {
   const h = harness({edition: 'es-MX', get: async () => response(fixture(true)), post: async () => response(fixture(false))});
   h.change('Operator password', 'unit-test-not-a-secret');
-  await h.click('Prepare Spanish final assessment report');
-  assert.equal(h.requests.length, 2);
-  assert.equal(h.requests[0].method, 'GET');
-  assert.ok(h.requests[0].url.endsWith('/comprun_unit_fixture'));
-  assert.equal(h.requests[1].body.preparation_authorized, true);
-  assert.ok(h.requests[1].url.endsWith('/localized-editions/es-MX'));
-  assert.equal(h.requests[1].body.delivery_authorized, undefined);
+  for (let i = 0; i < 2; i++) {
+    await assert.rejects(h.click('Prepare Spanish final assessment report'), /Disabled button/);
+  }
+  assert.match(h.text(), /New Spanish generation is unavailable/);
+  assert.equal(h.requests.length, 0);
   assert.equal(h.downloads.length, 0);
 });
 

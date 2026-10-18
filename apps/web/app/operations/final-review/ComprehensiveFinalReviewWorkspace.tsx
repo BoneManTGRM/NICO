@@ -725,36 +725,6 @@ export default function ComprehensiveFinalReviewWorkspace() {
     });
   }
 
-  async function prepareLocalizedEdition(): Promise<void> {
-    if (!operatorReady || artifactEdition === "source") return;
-    setLoading(true);
-    setError("");
-    setNotice("");
-    setResult(null);
-    setConfirmed(false);
-    setDownloadedArtifactDigest("");
-    try {
-      const source = await requestJson(canonicalUrl(`/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}`), {headers: headers()});
-      const prepared = await requestJson(statusUrl(), {
-        method: "POST",
-        headers: headers(true),
-        body: JSON.stringify({
-          preparation_authorized: true,
-          authorization_confirmed: true,
-          expected_artifact_identity: asRecord(source.review_artifact_identity),
-        }),
-      });
-      setResult(prepared);
-      setNotice(locale === "es-MX"
-        ? "Edición en español preparada desde la misma evaluación terminada. La revisión humana y la entrega permanecen separadas."
-        : "Spanish edition prepared from the same completed assessment. Human review and delivery remain separate.");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : copy.loadFailed);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function downloadExactPdf(source: ReviewResponse, download = true): Promise<string> {
     const exactReport = reportFrom(source);
     const encoded = String(exactReport.pdf_base64 || "");
@@ -1024,8 +994,8 @@ export default function ComprehensiveFinalReviewWorkspace() {
         </div></details>
       </form>
       {artifactEdition === "es-MX" ? <div className={styles.downloadActions}>
-        <p>{locale === "es-MX" ? "Prepare la edición en español desde la misma evaluación terminada; no se requiere aprobación humana para generar el informe." : "Prepare the Spanish edition from the same completed assessment; human approval is not required to generate the report."}</p>
-        <button className={styles.secondary} type="button" disabled={loading || !operatorReady || Boolean(result)} onClick={prepareLocalizedEdition}>{locale === "es-MX" ? "Preparar informe final en español" : "Prepare Spanish final assessment report"}</button>
+        <p>{locale === "es-MX" ? "La generación en español no está disponible por ahora. Cargue una edición ya conservada con los controles existentes." : "New Spanish generation is unavailable for now. Load an already frozen edition using the existing controls."}</p>
+        <button className={styles.secondary} type="button" disabled>{locale === "es-MX" ? "Preparar informe final en español" : "Prepare Spanish final assessment report"}</button>
       </div> : null}
       <p className={styles.securityNote}>{copy.security}</p>
       <p className={styles.securityNote}>{copy.optionalReviewerMetadata}</p>

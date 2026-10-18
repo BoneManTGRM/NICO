@@ -149,6 +149,11 @@ def _fresh_process_observation(status: dict, target_language: str, seed: str) ->
 def test_same_frozen_input_keeps_cross_locale_pdf_bytes(source_language, target_language, mode, seeds):
     status = _fixed_status(source_language)
     before = deepcopy(status)
+    if target_language == "es-MX":
+        with pytest.raises(ValueError, match="spanish_report_generation_unavailable"):
+            _pdf_observation(status, target_language)
+        assert status == before
+        return
     if mode == "warm":
         first = _pdf_observation(status, target_language)
         # Exercise EN -> es-MX -> EN and reverse using the same retained input.

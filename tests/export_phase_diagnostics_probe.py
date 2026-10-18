@@ -29,10 +29,11 @@ def test_real_installed_chain_hits_all_details_without_changing_outputs(caplog, 
 @pytest.mark.parametrize('language', ['en', 'es-MX'])
 def test_real_export_response_bytes_headers_and_manifests_are_identical(caplog, language):
     from copy import deepcopy
-    from tests.test_comprehensive_localized_export_v1 import source_status
+    from tests.test_cross_locale_pdf_repeatability_v1 import _fixed_status
     from nico.comprehensive_localized_export_v1 import localized_evidence_package
     install_production_chain()
-    source = source_status.__wrapped__(); before = deepcopy(source)
+    # Exercise new English rendering and retained Spanish export without bypassing admission.
+    source = _fixed_status('es-MX'); before = deepcopy(source)
     expected = localized_evidence_package(source, language)
     caplog.set_level(logging.INFO, logger='uvicorn.error')
     with timing.report_delivery_timing('comprun_' + 'c'*32, language):

@@ -54,6 +54,20 @@ def test_installed_render_cache_requires_stable_live_policy(tmp_path,monkeypatch
         return result
     monkeypatch.setattr(cache,'finish_retained_pdf',observe_finish)
     before=hashlib.sha256(database.read_bytes()).hexdigest()
+    if target_language == 'es-MX':
+        from fastapi import HTTPException
+        def forbidden(*args, **kwargs):
+            pytest.fail('Unavailable Spanish must not render or enter the cache')
+        monkeypatch.setattr(locale, '_render_target', forbidden)
+        for _ in range(2):
+            with pytest.raises(HTTPException) as caught:
+                endpoint(identity['run_id'], target_language)
+            assert caught.value.status_code == 409
+            assert caught.value.detail['reason'] == 'spanish_report_generation_unavailable'
+        assert tickets == []
+        assert len(restores) == len(renders) == 2
+        assert hashlib.sha256(database.read_bytes()).hexdigest() == before
+        return
     first=endpoint(identity['run_id'],target_language)
     assert first.headers['x-nico-localized-artifact-requires-new-approval']=='true'
     assert first.headers['x-nico-localized-artifact-approval-invalidated']=='true'

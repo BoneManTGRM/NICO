@@ -23,13 +23,13 @@ function harness(respond, locale='en') {
     localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
     history:{state:null,replaceState(_s,_t,url){window.location=new URL(url,window.location);}},
     setTimeout(fn,ms){if(ms<=5000)queueMicrotask(fn);return ++timer;},clearTimeout(){},setInterval(){return 1;},clearInterval(){},
-    addEventListener:on,removeEventListener:(type,fn)=>listeners.get(type)?.delete(fn),requestAnimationFrame:fn=>fn(),scrollTo(){}};
+    dispatchEvent:event=>{for(const fn of listeners.get(event.type)||[])fn(event);},addEventListener:on,removeEventListener:(type,fn)=>listeners.get(type)?.delete(fn),requestAnimationFrame:fn=>fn(),scrollTo(){}};
   const document={documentElement:{lang:locale},visibilityState:'visible',addEventListener:on,removeEventListener:window.removeEventListener};
   function load(filename) {
     if(cache.has(filename))return cache.get(filename);
     const module={exports:{}};cache.set(filename,module.exports);
     const js=ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
-    vm.runInNewContext(js,{module,exports:module.exports,window,document,URL,URLSearchParams,Headers,Response,AbortController,crypto:webcrypto,
+    vm.runInNewContext(js,{module,exports:module.exports,window,document,URL,URLSearchParams,Headers,Response,AbortController,CustomEvent:class {constructor(type,init){this.type=type;this.detail=init?.detail;}},crypto:webcrypto,
       setTimeout:window.setTimeout,clearTimeout(){},process:{env:{}},console,
       fetch:async(url,init)=>{const call={url,method:init.method,body:init.body?JSON.parse(init.body):null};calls.push(call);
         if(url.endsWith('/diagnostics/comprehensive-runtime'))return respond.readiness ? respond.readiness() : Response.json({status:'ready',survives_container_replacement_verified:true});
@@ -55,6 +55,8 @@ for(const locale of ['en','es-MX']) for(const code of ['specialist_authenticatio
     assert.equal(c.issue.runCreated,false);assert.equal(c.issue.code,code);assert.equal(c.issue.requestId,'request-denied');
     assert.equal(c.repository,'owner/repo');assert.equal(c.client,'Client');assert.equal(c.authorized,true);
     assert.equal(h.calls.filter(c=>c.method==='POST').length,1);
+    assert.equal(h.calls.find(c=>c.method==='POST').body.report_language,'en');
+    assert.equal(h.window.location.searchParams.get('report_locale'),'en-US');
     h.reload();await settle();assert.equal(h.render().phase,'idle');
   });
 }

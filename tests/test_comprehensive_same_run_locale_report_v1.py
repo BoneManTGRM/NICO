@@ -15,6 +15,17 @@ from pypdf import PdfReader
 from nico import comprehensive_same_run_locale_report_v1 as subject
 
 
+@pytest.fixture
+def offline_spanish_renderer(monkeypatch):
+    """Exercise retained renderer capability offline, outside release admission.
+
+    The ordinary release policy has separate real-boundary tests. These cases
+    continue checking translation, integrity and approval invalidation unchanged.
+    """
+    monkeypatch.setattr(subject, "require_new_report_language", lambda language: None)
+    monkeypatch.setattr(subject, "require_available_projection", lambda status, language: None)
+
+
 def _canonical(report_language: str = "en") -> dict:
     return {
         "service_id": "comprehensive",
@@ -287,6 +298,7 @@ def _approved_status(
     return status
 
 
+@pytest.mark.usefixtures("offline_spanish_renderer")
 def test_alternate_locale_uses_same_canonical_run_without_mutating_source(monkeypatch):
     status = _status(source_language="en")
     before = deepcopy(status)
@@ -430,6 +442,7 @@ def test_cross_locale_markdown_projection_never_invokes_pdf_or_full_assembler(
         ),
     ),
 )
+@pytest.mark.usefixtures("offline_spanish_renderer")
 def test_real_cross_locale_markdown_runs_full_preparation_without_pdf(
     monkeypatch,
     source_language,
@@ -878,8 +891,9 @@ def test_legacy_scanner_applicability_repair_preserves_assessment_truth_parity()
     assert reconciled["assessment"]["scanner_applicability_summary"]["applicability_unproven_scanners"] == 3
 
 
-def test_regeneration_marker_cannot_replace_approved_source_artifact(monkeypatch) -> None:
-    status = _approved_status(client_delivery_allowed=True)
+@pytest.mark.parametrize("language", ["en", "es-MX"])
+def test_regeneration_marker_cannot_replace_approved_source_artifact(monkeypatch, language) -> None:
+    status = _approved_status(source_language=language, client_delivery_allowed=True)
     status["_nico_force_pending_draft_artifact_regeneration"] = True
     source_pdf = base64.b64decode(status["reports"]["pdf_base64"])
 
@@ -888,7 +902,7 @@ def test_regeneration_marker_cannot_replace_approved_source_artifact(monkeypatch
 
     monkeypatch.setattr(subject, "_render_target", fail_if_called)
 
-    result = subject.build_same_run_locale_report(status, "en")
+    result = subject.build_same_run_locale_report(status, language)
 
     assert base64.b64decode(result["report"]["pdf_base64"]) == source_pdf
     assert result["localized_artifact_approval_invalidated"] is False
@@ -972,6 +986,7 @@ def test_frozen_source_pdf_fails_closed_on_canonical_truth_mismatch() -> None:
         subject.build_same_run_locale_pdf_response(status, "en")
 
 
+@pytest.mark.usefixtures("offline_spanish_renderer")
 def test_localized_pdf_response_keeps_same_run_and_truth(monkeypatch):
     status = _status(source_language="en")
     before = deepcopy(status)
@@ -1029,6 +1044,7 @@ def test_localized_pdf_response_keeps_same_run_and_truth(monkeypatch):
     ]
 
 
+@pytest.mark.usefixtures("offline_spanish_renderer")
 def test_localized_pdf_hash_mismatch_fails_closed(monkeypatch):
     status = _status(source_language="en")
     pdf_bytes = b"%PDF-1.4\nlocalized"
@@ -1055,7 +1071,7 @@ def test_canonical_truth_mismatch_fails_closed(monkeypatch):
     monkeypatch.setattr(subject, "_render_target", lambda *args, **kwargs: {})
 
     with pytest.raises(ValueError, match="canonical_truth_hash_mismatch"):
-        subject.build_same_run_locale_report(status, "es-MX")
+        subject.build_same_run_locale_report(status, "en")
 
 
 @pytest.mark.parametrize("value", [None, "not-a-sha", "a" * 63])
@@ -1069,7 +1085,7 @@ def test_canonical_truth_binding_is_required_and_well_formed(value):
         error = "canonical_truth_hash_invalid"
 
     with pytest.raises(ValueError, match=error):
-        subject.build_same_run_locale_report(status, "es-MX")
+        subject.build_same_run_locale_report(status, "en")
 
 
 @pytest.mark.parametrize(
@@ -1090,7 +1106,7 @@ def test_status_cannot_be_paired_with_another_canonical_run(field, value, error)
     status[field] = value
 
     with pytest.raises(ValueError, match=error):
-        subject.build_same_run_locale_report(status, "es-MX")
+        subject.build_same_run_locale_report(status, "en")
 
 
 def test_status_source_language_must_match_canonical_identity_language():
@@ -1121,7 +1137,7 @@ def test_canonical_source_language_is_required_and_internally_consistent():
     canonical["assessment"].pop("locale")
     missing["reports"]["canonical_truth_sha256"] = subject._canonical_hash(canonical)
     with pytest.raises(ValueError, match="canonical_report_language_required"):
-        subject.build_same_run_locale_report(missing, "es-MX")
+        subject.build_same_run_locale_report(missing, "en")
 
     inconsistent = _status(source_language="en")
     inconsistent["reports"]["json"]["locale"] = "es-MX"
@@ -1129,7 +1145,7 @@ def test_canonical_source_language_is_required_and_internally_consistent():
         inconsistent["reports"]["json"]
     )
     with pytest.raises(ValueError, match="canonical_report_language_inconsistent"):
-        subject.build_same_run_locale_report(inconsistent, "es-MX")
+        subject.build_same_run_locale_report(inconsistent, "en")
 
 
 def test_evidence_ledger_and_current_report_identity_are_required_and_bound():
@@ -1140,14 +1156,15 @@ def test_evidence_ledger_and_current_report_identity_are_required_and_bound():
         missing_ledger["reports"]["json"]
     )
     with pytest.raises(ValueError, match="canonical_evidence_ledger_id_required"):
-        subject.build_same_run_locale_report(missing_ledger, "es-MX")
+        subject.build_same_run_locale_report(missing_ledger, "en")
 
     report_mismatch = _status()
     report_mismatch["reports"]["report_id"] = "comprehensive_report_other"
     with pytest.raises(ValueError, match="status_canonical_report_id_mismatch"):
-        subject.build_same_run_locale_report(report_mismatch, "es-MX")
+        subject.build_same_run_locale_report(report_mismatch, "en")
 
 
+@pytest.mark.usefixtures("offline_spanish_renderer")
 def test_alternate_locale_calls_full_production_assembler_and_invalidates_approval(
     monkeypatch,
 ):
@@ -1291,6 +1308,7 @@ def test_real_controller_approved_status_derives_consistent_source_lifecycle(
     assert result["report"]["delivery_status"] == expected_delivery_status
 
 
+@pytest.mark.usefixtures("offline_spanish_renderer")
 def test_real_composed_same_run_en_es_preserves_truth_literals_and_navigation() -> None:
     from tests.test_v2_premium_report_renderer import _package
 
@@ -1530,7 +1548,7 @@ def test_non_terminal_run_cannot_publish_localized_report():
     status["terminal"] = False
 
     with pytest.raises(ValueError, match="terminal_report_required"):
-        subject.build_same_run_locale_report(status, "es-MX")
+        subject.build_same_run_locale_report(status, "en")
 
 
 def test_only_english_and_mexican_spanish_are_supported():

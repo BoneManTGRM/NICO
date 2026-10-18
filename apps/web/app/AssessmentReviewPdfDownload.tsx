@@ -271,6 +271,9 @@ function pendingReviewBindingMatches(
 /** The guard and Workspace fallback share one bounded, exact pending-review path. */
 function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval = false, resumeOnly = false): Promise<void> {
   const actions = button.closest(REPORT_ACTIONS_SELECTOR);
+  if (actions?.getAttribute("data-assessment-spanish-generation-unavailable") === "true") {
+    return Promise.reject(new Error("New Spanish report generation is unavailable for now. Select English or download an already frozen source artifact."));
+  }
   const runId = visibleRunId(actions);
   const commitSha = String(actions?.getAttribute("data-commit-sha") || "").trim();
   const canonicalTruthSha256 = String(actions?.getAttribute("data-canonical-truth-sha256") || "").trim().toLowerCase();

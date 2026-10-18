@@ -1287,6 +1287,8 @@ def _reconcile_public_intake_after_run_recovery(
 
 def _intake(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
     prepared = _prepare_public_intake_reservation_payload(payload)
+    from nico.ordinary_report_language_release_v1 import require_new_report_language
+    require_new_report_language(prepared.get("report_language"))
     reservation = _reserve_prepared_public_intake(request, prepared)
     if reservation.get("lease_owner") is not True:
         if reservation.get("status") == "accepted":

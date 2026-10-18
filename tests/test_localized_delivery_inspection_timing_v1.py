@@ -13,6 +13,18 @@ from nico import comprehensive_commercial_ship_projection_v3 as commercial
 from nico.comprehensive_localized_export_v1 import localized_evidence_package
 
 
+def _spanish_source():
+    from tests.test_v2_premium_report_renderer import _package
+    from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
+    reports = rebuild_client_artifacts(_package('es-MX'))
+    canonical = reports['json']
+    reports['report_id'] = canonical.get('report_id') or 'report_spanish_timing_fixture'
+    reports['canonical_truth_sha256'] = locale.canonical_sha256(canonical)
+    return {**{key: canonical['identity'][key] for key in
+               ('run_id', 'repository', 'commit_sha', 'evidence_ledger_id')},
+            'report_language': 'es-MX', 'terminal': True, 'reports': reports}
+
+
 def pending(source):
     result = deepcopy(source)
     result.update(human_review_required=True, human_review_completed=False,
@@ -22,10 +34,10 @@ def pending(source):
 
 @pytest.mark.parametrize('kind', ['markdown', 'zip'])
 def test_cross_language_skips_only_presentation_inspection_with_identical_output(source_status, monkeypatch, kind):
-    source = pending(source_status)
+    source = pending(_spanish_source())
     before = deepcopy(source)
     build = locale.build_same_run_locale_markdown_projection if kind == 'markdown' else localized_evidence_package
-    # A true presentation finding only forces regeneration, already required by es-MX.
+    # A true presentation finding only forces regeneration, already required by the English target.
     inspections = []
     def force_reprojection(*args):
         inspections.append(True)
@@ -33,12 +45,12 @@ def test_cross_language_skips_only_presentation_inspection_with_identical_output
     with monkeypatch.context() as previous_path:
         previous_path.setattr(commercial, '_cross_language_regeneration_required', lambda *args: False)
         previous_path.setattr(commercial, '_source_pdf_requires_integrity_reprojection', force_reprojection)
-        expected = build(source, 'es-MX')
+        expected = build(source, 'en')
     assert inspections, 'expected output must exercise the pre-change inspection path'
     def forbidden(*args):
         raise AssertionError('cross-language regeneration must not inspect source PDF presentation')
     monkeypatch.setattr(commercial, '_source_pdf_requires_integrity_reprojection', forbidden)
-    actual = build(source, 'es-MX')
+    actual = build(source, 'en')
     if kind == 'markdown':
         assert actual == expected  # Includes bytes/hash, canonical truth and both lifecycles.
         assert actual['canonical_truth_preserved'] is True
@@ -63,25 +75,25 @@ def test_same_language_still_checks_source_presentation(source_status, monkeypat
 @pytest.mark.parametrize('kind,damage', [('markdown', 'truth'), ('markdown', 'identity'),
                                        ('markdown', 'language'), ('zip', 'truth'), ('zip', 'identity'), ('zip', 'language'), ('zip', 'html')])
 def test_cross_language_still_rejects_tampered_inputs(source_status, kind, damage):
-    source = pending(source_status)
+    source = pending(_spanish_source())
     if damage == 'truth': source['reports']['canonical_truth_sha256'] = '0' * 64
     elif damage == 'identity': source['commit_sha'] = 'f' * 40
-    elif damage == 'language': source['report_language'] = 'es-MX'
+    elif damage == 'language': source['report_language'] = 'en'
     else: source['reports']['html'] += 'tampered'
     build = locale.build_same_run_locale_markdown_projection if kind == 'markdown' else localized_evidence_package
     with pytest.raises(ValueError):
-        build(source, 'es-MX')
+        build(source, 'en')
 
 
 @pytest.mark.parametrize('kind', ['markdown', 'zip'])
 def test_real_routes_emit_bounded_phase_timings_without_contents(source_status, caplog, kind):
-    source = pending(source_status)
+    source = pending(_spanish_source())
     app = FastAPI()
     app.state.comprehensive_api_controller = SimpleNamespace(status_artifact_read_only=lambda _: source)
     locale.install_same_run_locale_report(app)
     path = locale.ROUTE if kind == 'markdown' else locale.EVIDENCE_PACKAGE_ROUTE
     caplog.set_level(logging.INFO, logger='uvicorn.error')
-    response = TestClient(app).get(path.format(run_id=source['run_id'], report_language='es-MX'))
+    response = TestClient(app).get(path.format(run_id=source['run_id'], report_language='en'))
     assert response.status_code == 200, response.text[:200]
     records = [json.loads(r.getMessage().split('=', 1)[1]) for r in caplog.records
                if r.getMessage().startswith('NICO_REPORT_TIMING=')]
@@ -107,7 +119,7 @@ def test_route_failure_timing_does_not_leak_exception_payload(caplog, kind):
     locale.install_same_run_locale_report(app)
     path = locale.ROUTE if kind == 'markdown' else locale.EVIDENCE_PACKAGE_ROUTE
     caplog.set_level(logging.INFO, logger='uvicorn.error')
-    response = TestClient(app).get(path.format(run_id='comprun_' + 'a'*32, report_language='es-MX'))
+    response = TestClient(app).get(path.format(run_id='comprun_' + 'a'*32, report_language='en'))
     assert response.status_code == 409
     rows = [json.loads(r.getMessage().split('=',1)[1]) for r in caplog.records
             if r.getMessage().startswith('NICO_REPORT_TIMING=')]
