@@ -16,7 +16,12 @@ def require_available_projection(status: Mapping, target_language: str) -> None:
         return
     reports = status.get("reports")
     canonical = reports.get("json") if isinstance(reports, Mapping) else None
-    identity = canonical.get("identity") if isinstance(canonical, Mapping) else None
-    if (not isinstance(identity, Mapping) or identity.get("report_language") != "es-MX"
+    if (not isinstance(canonical, Mapping)
             or not isinstance(reports.get("pdf_base64"), str) or not reports.get("pdf_base64")):
+        require_new_report_language(target_language)
+    # Use the same alias normalization, canonical locale locations, and identity
+    # consistency checks as frozen delivery. Hash/lifecycle validation follows.
+    from nico.comprehensive_same_run_locale_report_v1 import _validate_status_canonical_identity
+    source = _validate_status_canonical_identity(status, canonical)
+    if source["report_language"] != target_language:
         require_new_report_language(target_language)
