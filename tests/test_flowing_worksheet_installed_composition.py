@@ -107,3 +107,56 @@ def test_sanitizer_preserves_owned_worksheet_streams_but_removes_internal_pages(
     for before,after in zip(review.pages,sanitized.pages):
         assert before.extract_text()==after.extract_text()
         assert before.get_contents().get_data()==after.get_contents().get_data()
+
+
+@pytest.mark.parametrize('copied',[False,True])
+def test_true_or_copied_page_marker_cannot_bypass_sanitization(copied):
+    import io
+    from pypdf import PdfReader,PdfWriter
+    from pypdf.generic import BooleanObject,NameObject
+    from nico.client_pdf_status_sanitizer_v1 import sanitize_client_pdf_status
+    from tests.test_client_pdf_status_sanitizer_v1 import _pdf
+    # Simulate both forged metadata and metadata copied from a prior renderer.
+    source=PdfReader(io.BytesIO(_pdf(['Executive Decision Brief',
+        'FINAL REPORT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED'],
+        ['Evidence appendix','scanner_triage.private_internal_record','FINAL REPORT'])))
+    donor=PdfReader(io.BytesIO(_pdf(['Unrelated page'])))
+    donor.pages[0][NameObject('/NICOFlowingReviewWorksheet')]=BooleanObject(True)
+    source.pages[1][NameObject('/NICOFlowingReviewWorksheet')]=(donor.pages[0]['/NICOFlowingReviewWorksheet'] if copied else BooleanObject(True))
+    source.pages[0][NameObject('/NICOFlowingReviewWorksheet')]=source.pages[1]['/NICOFlowingReviewWorksheet']
+    writer=PdfWriter();writer.append(source);buffer=io.BytesIO();writer.write(buffer)
+    result=PdfReader(io.BytesIO(sanitize_client_pdf_status(buffer.getvalue())))
+    assert len(result.pages)==1
+    assert 'private_internal_record' not in result.pages[0].extract_text()
+    assert 'FINAL REPORT' not in result.pages[0].extract_text()
+    assert 'AUTOMATED DRAFT' in result.pages[0].extract_text()
+
+
+@pytest.mark.parametrize('spanish',[False,True])
+def test_structural_worksheet_preservation_still_enforces_finality(spanish):
+    import io
+    from pypdf import PdfReader
+    from nico.comprehensive_pdf_layout_polish_v1 import _render_polished_review_pdf
+    from nico.client_pdf_status_sanitizer_v1 import sanitize_client_pdf_status
+    from nico.client_pdf_status_sanitizer_v7 import install_client_pdf_status_sanitizer_v7
+    from tests.test_comprehensive_pdf_layout_polish_v1 import _review_canonical
+    install_client_pdf_status_sanitizer_v7()
+    canonical=_review_canonical()
+    canonical['stage_summaries'][0]['evidence'].append('FINAL REPORT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED')
+    pdf=_render_polished_review_pdf(canonical,spanish=spanish)
+    sanitized=sanitize_client_pdf_status(pdf)
+    before=PdfReader(io.BytesIO(pdf));after=PdfReader(io.BytesIO(sanitized))
+    assert len(after.pages)==len(before.pages)
+    text=' '.join(page.extract_text() or '' for page in after.pages)
+    assert ('BORRADOR AUTOMATIZADO' if spanish else 'AUTOMATED DRAFT') in text
+    assert ('ENTREGA BLOQUEADA' if spanish else 'CLIENT DELIVERY BLOCKED') in text
+    # Embedded-font literal evidence may not be rewritten by the operand
+    # sanitizer. The unchanged final acceptance gate must reject it.
+    from nico.client_report_completion_v2 import _validate_final_surfaces
+    register={'summary':{'finding_population_reconciled':True,
+        'semantic_duplicate_code_anchors_absent':True,
+        'scanner_configuration_errors_promoted_to_code_findings':False,
+        'unverified_tls_candidates_promoted_to_p1':False,
+        'stable_alias_projection_idempotent':True,'decision_finding_count':0}}
+    with pytest.raises(ValueError,match='unapproved client report used finality language'):
+        _validate_final_surfaces(canonical,register,'AUTOMATED DRAFT','AUTOMATED DRAFT',sanitized)

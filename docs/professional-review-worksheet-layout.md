@@ -23,12 +23,15 @@ box. Supporting further scripts requires an appropriate portable font.
 
 Synthetic fixtures and visual inspections establish layout behavior, not the
 new page count of a retained production report. That count requires a replay.
+
 # Downstream preservation
 
-Flowing worksheet pages carry a renderer-owned boolean PDF page marker,
-`/NICOFlowingReviewWorksheet`. The status sanitizer preserves those pages and
-their content streams before applying its legacy internal-dump heuristics.
-Evidence wording cannot create this marker. Unmarked internal appendix pages
-and malformed marker values retain the existing removal behavior. The marker
-does not grant approval or delivery authority; final content validation, exact
-artifact hashes, manifests, and the 60-page bound still apply.
+The status sanitizer recognizes the complete flowing worksheet structure:
+localized draft and pending/blocked footer lines, a valid review page counter,
+and a known section ID with its section count or continuation heading. This is
+presentation classification, not proof of provenance or approval authority.
+It prevents raw-page heuristics from deleting worksheets; all retained pages
+still pass through finality rewriting and final content validation. The old
+`/NICOFlowingReviewWorksheet` bit is neither emitted nor trusted. Forged/copied
+bits cannot exempt internal appendix pages or bypass stale-finality rewriting.
+Exact artifact hashes, manifests, approval gates and the 60-page bound apply.

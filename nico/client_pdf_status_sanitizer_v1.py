@@ -8,7 +8,7 @@ import unicodedata
 from typing import Any
 
 from pypdf import PdfReader, PdfWriter
-from pypdf.generic import BooleanObject, ByteStringObject, ContentStream, TextStringObject
+from pypdf.generic import ByteStringObject, ContentStream, TextStringObject
 
 VERSION = "nico.client-pdf-status-sanitizer.v6.4"
 
@@ -162,13 +162,6 @@ def sanitize_client_pdf_status(pdf: bytes, *, spanish: bool | None = None) -> by
     from nico.comprehensive_human_evidence_appendix import is_literal_evidence_page
     for index, source_page in enumerate(reader.pages):
         page_text = page_texts[index]
-        worksheet = source_page.get('/NICOFlowingReviewWorksheet')
-        if isinstance(worksheet, BooleanObject) and worksheet.value is True:
-            # The flowing renderer owns these complete, pending-review pages.
-            # Evidence may quote internal field names or lifecycle language;
-            # preserve its exact content, as with literal supplied evidence.
-            writer.add_page(source_page)
-            continue
         if is_literal_evidence_page(source_page):
             # This dedicated appendix is a literal source record. A supplier may
             # quote internal field names or lifecycle phrases without making the
