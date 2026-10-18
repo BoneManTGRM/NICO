@@ -53,6 +53,12 @@ jobs:
         timeout-minutes: 2
         run: python scripts/postgres_readonly_restore_proof.py
 
+      - name: Qualify Comprehensive metadata SQL and auth-none wrappers
+        timeout-minutes: 3
+        env:
+          NICO_SYNTHETIC_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: python scripts/postgres_comprehensive_observation_proof.py
+
       - name: Run synthetic restart and tenant-isolation proof
         run: |
           python scripts/postgres_restart_proof.py \
@@ -102,6 +108,16 @@ jobs:
           serialized = json.dumps(payload)
           assert "postgresql://" not in serialized
           assert "NICO_TEST_DATABASE_URL" not in serialized
+
+          comprehensive = json.loads(Path("audit-results/postgres-comprehensive-observation-proof.json").read_text())
+          assert comprehensive["status"] == "passed"
+          assert comprehensive["commit_sha"] == os.environ["GITHUB_SHA"]
+          assert comprehensive["synthetic"] is True
+          assert comprehensive["report_bytes_verified"] is False
+          assert comprehensive["restore_provenance_verified"] is False
+          assert comprehensive["checks"] and all(comprehensive["checks"].values())
+          for name, digest in comprehensive["source_sha256"].items():
+              assert hashlib.sha256((Path("scripts/restore_observation") / name).read_bytes()).hexdigest() == digest
 
           reservation_path = Path("audit-results/postgres-intake-reservation-proof.json")
           reservation = json.loads(reservation_path.read_text(encoding="utf-8"))
@@ -194,6 +210,7 @@ jobs:
           path: |
             audit-results/postgres-restart-proof.json
             audit-results/postgres-readonly-restore-proof.json
+            audit-results/postgres-comprehensive-observation-proof.json
             audit-results/postgres-intake-reservation-proof.json
             audit-results/postgres-scanner-artifact-proof.json
             audit-results/postgres-worker-job-proof.json
