@@ -133,6 +133,9 @@ def _background_poll_reference(value: Mapping[str, Any]) -> dict[str, Any]:
 
 def _require_exact_final_report_integrity(record: Mapping[str, Any]) -> None:
     """Block every human-authority transition until final artifacts validate."""
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(record)
+
 
     # Imported at the operation boundary to avoid the controller/service import cycle.
     from nico.comprehensive_api_controller import _canonical_final_report_outputs

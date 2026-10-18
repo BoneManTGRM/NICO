@@ -118,6 +118,9 @@ def _artifact_record(request: Request, run_id: str) -> tuple[dict[str, Any], dic
             detail="comprehensive_read_only_artifact_loader_unavailable",
         )
     record = load_read_only(run_id)
+    from nico.ordinary_bundle_boundary_v2 import has_report_bundle, ERROR as BUNDLE_ERROR
+    if has_report_bundle(record):
+        raise HTTPException(status_code=409, detail=BUNDLE_ERROR)
     status = _text(record.get("status")).strip().lower()
     if not bool(record.get("terminal")) and status not in {
         "review_required",

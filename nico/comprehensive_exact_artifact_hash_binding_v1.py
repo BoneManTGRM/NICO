@@ -179,6 +179,9 @@ def _artifact_bytes(result: Mapping[str, Any], artifact_type: str) -> bytes:
 
 
 def _validate_exact_artifact_hashes(result: Mapping[str, Any]) -> None:
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(result)
+
     manifest = result.get("artifact_manifest")
     if not isinstance(manifest, Mapping):
         raise ValueError("Detached artifact manifest is missing")

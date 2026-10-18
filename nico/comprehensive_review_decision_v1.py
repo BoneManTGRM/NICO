@@ -169,6 +169,9 @@ def build_reviewed_edition(
     canonical evidence fingerprint, so disposition/QC state cannot be swapped after
     approval without invalidating the certificate chain.
     """
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(record)
+
 
     identity = record.get("identity") if isinstance(record.get("identity"), Mapping) else {}
     package = report_package_from_record(record)

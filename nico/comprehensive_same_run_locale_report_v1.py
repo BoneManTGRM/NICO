@@ -1249,6 +1249,9 @@ def build_same_run_locale_report(
     changes review, approval, acceptance, or delivery state. Both language outputs are
     derived from the exact canonical JSON already attached to the terminal report.
     """
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(status)
+
 
     target_language = _normalize_report_language(report_language)
     require_available_projection(status, target_language)
@@ -1460,6 +1463,9 @@ def build_same_run_locale_report(
 def build_same_run_locale_pdf_response(
     status: Mapping[str, Any], report_language: str
 ) -> Response:
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(status)
+
     frozen_source = _frozen_source_pdf_response(status, report_language)
     if frozen_source is not None:
         return frozen_source

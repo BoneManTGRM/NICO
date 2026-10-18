@@ -39,6 +39,9 @@ def _digest(value: bytes) -> dict[str, Any]:
 
 
 def _artifact_digests(reports: Mapping[str, Any]) -> dict[str, Any]:
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(reports)
+
     pdf = base64.b64decode(str(reports["pdf_base64"]), validate=True)
     if not pdf.startswith(b"%PDF"):
         raise ValueError("operator_approved_pdf_invalid")
@@ -158,6 +161,9 @@ def _cover(statement: Mapping[str, Any], *, spanish: bool, corrected_presentatio
 
 
 def build_operator_edition(record: dict[str, Any], payload: Mapping[str, Any]) -> dict[str, Any]:
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(record)
+
     from nico.comprehensive_run_service import _require_exact_final_report_integrity
     if any(payload.get(key) is not True for key in (
         "review_authorized", "authorization_confirmed", "exact_report_acknowledged",

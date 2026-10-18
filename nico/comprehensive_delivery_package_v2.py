@@ -70,6 +70,9 @@ def build_comprehensive_delivery_package(
     then normalized to the single-product architecture. No executive, simplified,
     premium, appendix, or alternate client PDF survives this boundary.
     """
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(report_package)
+
 
     legacy = build_premium_delivery_package(report_package)
     encoded = str(legacy.get("zip_base64") or "").strip()
