@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_delivery_timing_v1 import report_delivery_phase_scope
+
 from nico.report_pdf_text import extract_pdf_page_texts
 from nico.report_delivery_timing_v1 import report_delivery_phase
 
@@ -1412,7 +1414,11 @@ def install_comprehensive_artifact_manifest_approval_v1() -> dict[str, Any]:
 
         @wraps(current)
         def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
-            return attach_artifact_manifest(current(package))
+            # Preserve outer-callable lookup before evaluating the inner call.
+            attach = attach_artifact_manifest
+            result = current(package)
+            with report_delivery_phase_scope("finalize_manifest_attach"):
+                return attach(result)
 
         setattr(finalize_client_report_package, _FINALIZER_MARKER, True)
         setattr(finalize_client_report_package, "_nico_previous", current)
