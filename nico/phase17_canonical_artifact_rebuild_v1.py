@@ -349,21 +349,27 @@ def _prepare_client_artifact_package(
 
     from nico import client_report_completion_v2 as completion
 
-    reconciled = _phase2_review_truth_node(_reconcile(package))
-    prepared = repair_canonical_truth(reconciled)
-    prepared = _phase2_review_truth_node(_reconcile(prepared))
-    # Normalize structured evidence before any presentation renderer can stringify it.
-    install_client_surface_structure_cleanup_v1()
-    prepared = completion.prepare_client_report_package(prepared)
-    install_client_surface_structure_cleanup_v1()
-    install_human_review_worksheet_title_contract_v1()
-    prepared = _populate_premium_stage_summaries(prepared)
-    prepared = _phase2_review_truth_node(project_client_stage_summaries(prepared))
-    install_human_review_worksheet_title_contract_v1()
-    from nico.comprehensive_human_evidence_report_v2 import refresh_stakeholder_classification
-    from nico.comprehensive_coverage_reconciliation_v1 import reconcile_report_coverage
-    prepared["json"] = refresh_stakeholder_classification(prepared.get("json") or {})
-    prepared["json"] = reconcile_report_coverage(prepared["json"])
+    with report_delivery_phase_scope("prep_reconcile"):
+        reconciled = _phase2_review_truth_node(_reconcile(package))
+    with report_delivery_phase_scope("prep_truth_repair"):
+        prepared = repair_canonical_truth(reconciled)
+    with report_delivery_phase_scope("prep_reconcile"):
+        prepared = _phase2_review_truth_node(_reconcile(prepared))
+    with report_delivery_phase_scope("prep_installed_completion"):
+        # Normalize structured evidence before any presentation renderer can stringify it.
+        install_client_surface_structure_cleanup_v1()
+        prepared = completion.prepare_client_report_package(prepared)
+    with report_delivery_phase_scope("prep_stage_projection"):
+        install_client_surface_structure_cleanup_v1()
+        install_human_review_worksheet_title_contract_v1()
+        prepared = _populate_premium_stage_summaries(prepared)
+        prepared = _phase2_review_truth_node(project_client_stage_summaries(prepared))
+        install_human_review_worksheet_title_contract_v1()
+    with report_delivery_phase_scope("prep_coverage"):
+        from nico.comprehensive_human_evidence_report_v2 import refresh_stakeholder_classification
+        from nico.comprehensive_coverage_reconciliation_v1 import reconcile_report_coverage
+        prepared["json"] = refresh_stakeholder_classification(prepared.get("json") or {})
+        prepared["json"] = reconcile_report_coverage(prepared["json"])
     return prepared
 
 
