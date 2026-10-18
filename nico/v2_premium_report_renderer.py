@@ -414,7 +414,8 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
     else:
         # Full populations are available to renderer-local preview labels without
         # adding presentation metadata to the canonical assessment.
-        presentation_assessment = {**assessment, "_preview_context": canonical}
+        preview_source = {key: canonical[key] for key in ("roadmap", "review_candidate_register") if key in canonical}
+        presentation_assessment = {**assessment, "_preview_context": preview_source}
         markdown = _markdown(dict(identity), presentation_assessment, stages, generated_at).replace(
             "DRAFT — HUMAN REVIEW REQUIRED — CLIENT DELIVERY NOT AUTHORIZED",
             f"{EN_BOUNDARY} — CLIENT DELIVERY NOT AUTHORIZED",
