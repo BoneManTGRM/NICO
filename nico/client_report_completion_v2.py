@@ -404,13 +404,16 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
             from nico.comprehensive_human_evidence_appendix import render_human_evidence_appendix
             with report_delivery_failure_scope("pdf_human_evidence_render"):
                 human_evidence_pdf = render_human_evidence_appendix(canonical, spanish=spanish)
+            # Match sanitize(compose(...)): resolve the outer callable before
+            # composition can rebind installed renderer/sanitizer aliases.
+            sanitize_pdf = sanitize_client_pdf_status
             with report_delivery_failure_scope("pdf_compose"):
                 pdf = compose_compact_client_pdf(
                     base_pdf, register_pdf, gate_pdf, review_pdf=review_pdf,
                     ci_boundary_pdf=ci_boundary_pdf, human_evidence_pdf=human_evidence_pdf,
                 )
             with report_delivery_failure_scope("pdf_sanitize"):
-                pdf = sanitize_client_pdf_status(pdf, spanish=spanish)
+                pdf = sanitize_pdf(pdf, spanish=spanish)
         with report_delivery_phase_scope("finalize_validation"):
             validation = _validate_final_surfaces(
                 canonical,

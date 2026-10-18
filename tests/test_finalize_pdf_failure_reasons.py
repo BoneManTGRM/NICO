@@ -106,3 +106,39 @@ def test_failed_logging_cannot_replace_original_failure(monkeypatch):
         with timing.report_delivery_timing('comprun_'+'a'*32,'es-MX'):
             with timing.report_delivery_failure_scope('pdf_review_render'):raise original
     assert caught.value is original
+
+
+@pytest.mark.parametrize('sanitizer_raises',[False,True])
+def test_finalizer_captures_sanitizer_before_compose_time_rebind(monkeypatch,caplog,sanitizer_raises):
+    from nico import client_report_completion_v2 as completion
+    from tests.test_client_report_completion_v2 import _package
+    caplog.set_level(logging.INFO,logger='uvicorn.error')
+    compose=completion.compose_compact_client_pdf
+    sanitize=completion.sanitize_client_pdf_status
+    events=[]
+    original_error=ValueError('PRIVATE ORIGINAL SANITIZER ERROR')
+    def replacement(*args,**kwargs):
+        pytest.fail('compose-time sanitizer rebind changed callable capture order')
+    def captured(pdf,**kwargs):
+        events.append('captured_sanitizer')
+        if sanitizer_raises:raise original_error
+        return sanitize(pdf,**kwargs)
+    def rebinding_compose(*args,**kwargs):
+        events.append('compose')
+        monkeypatch.setattr(completion,'sanitize_client_pdf_status',replacement)
+        return compose(*args,**kwargs)
+    monkeypatch.setattr(completion,'sanitize_client_pdf_status',captured)
+    monkeypatch.setattr(completion,'compose_compact_client_pdf',rebinding_compose)
+    if sanitizer_raises:
+        with pytest.raises(ValueError) as caught:
+            with timing.report_delivery_timing('comprun_'+'a'*32,'en'):
+                completion.finalize_client_report_package(_package())
+        assert caught.value is original_error
+        assert records(caplog)[0]['failure_reason']=='pdf_sanitize'
+    else:
+        with timing.report_delivery_timing('comprun_'+'a'*32,'en'):
+            result=completion.finalize_client_report_package(_package())
+        assert result['client_delivery_allowed'] is False
+        assert 'failure_reason' not in records(caplog)[0]
+    assert events==['compose','captured_sanitizer']
+    assert 'PRIVATE ORIGINAL' not in caplog.text
