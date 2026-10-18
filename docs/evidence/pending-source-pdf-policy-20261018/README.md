@@ -58,3 +58,23 @@ workers, capacity, schema, environment variables, installations or purchases.
 It changes no production settings, credentials, source assessments or approved
 editions. Approved-source expansion is excluded. C++ remains paused and the
 unrelated database pilot remains on hold.
+
+## Independent-review correction: frozen source digest
+
+Review of `7c31deebc4eb236b4b8593d85a95ab271a2f9e6f` identified that
+self-consistent output hashes did not establish frozen-source identity. Three
+new regressions failed on that exact head: a different valid PDF was accepted
+by worker validation, ready publication and retained retrieval, even with all
+hash declarations updated consistently. The same-locale fixture also used an
+unrelated source digest; its positive case now binds the actual source bytes.
+
+Frozen mode now additionally requires the computed PDF digest to equal the
+immutable `source_artifact_sha256` in the job identity, before either full-parser
+validation or the publication/retrieval fast path can return. Localized-draft
+mode deliberately permits newly rendered bytes, with its existing source and
+approval gates unchanged. An explicit positive derivative control preserves this.
+
+Final correction verification: 276 Python cases in the same 12 isolated suites
+passed. Browser/TypeScript source is unchanged; the preceding 123 JavaScript and
+TypeScript results remain applicable. This correction changes no capacity,
+activation, authentication, source lifecycle, score, or acceptance policy.

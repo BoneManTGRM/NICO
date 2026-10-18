@@ -55,6 +55,8 @@ def validate_result(result, identity, *, parse_pdf=True):
     if (not pdf.startswith(b'%PDF') or headers.get('x-nico-pdf-sha256') != digest
             or headers.get('x-nico-artifact-sha256') != digest):
         raise ValueError('review_pdf_checksum_invalid')
+    if identity.artifact_mode == SOURCE and digest != identity.source_artifact_sha256:
+        raise ValueError('review_pdf_frozen_source_checksum_invalid')
     if type(result['validated_page_count']) is not int or result['validated_page_count'] < 1:
         raise ValueError('review_pdf_validation_missing')
     if not parse_pdf:
