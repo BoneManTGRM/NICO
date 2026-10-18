@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import html
 import io
-from typing import Any, Iterable, Mapping
+from typing import Any, Mapping
 
 from pypdf import PdfReader
 
@@ -19,36 +19,14 @@ _TOC_MIN_CLEARANCE = 6.0
 _TOC_ROWS_PER_PAGE = int((_TOC_FIRST_ROW_Y - _TOC_FONT_SIZE - _TOC_MATRIX_TOP_Y - _TOC_MIN_CLEARANCE) // _TOC_ROW_PITCH) + 1
 
 _REVIEW_TITLE_FONT_SIZE = 12.0
-_REVIEW_HEADING_FONT_SIZE = 8.0
-_REVIEW_BODY_FONT_SIZE = 7.4
-_REVIEW_SMALL_FONT_SIZE = 6.8
-_REVIEW_SECTION_HEIGHT_IN = 5.01
-_REVIEW_COLUMNS_HEIGHT_IN = 2.18
+_REVIEW_HEADING_FONT_SIZE = 9.0
+_REVIEW_BODY_FONT_SIZE = 9.0
+_REVIEW_SMALL_FONT_SIZE = 9.0
 
 
 def _text(value: Any, limit: int = 1000) -> str:
     normalized = " ".join(str(value or "").replace("\x7f", "-").split()).strip()
     return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
-
-
-def _unique(
-    values: Iterable[Any],
-    *,
-    limit: int,
-    item_limit: int = 430,
-) -> list[str]:
-    output: list[str] = []
-    seen: set[str] = set()
-    for raw in values:
-        value = _text(raw, item_limit)
-        key = value.casefold()
-        if not value or key in seen:
-            continue
-        seen.add(key)
-        output.append(value)
-        if len(output) >= limit:
-            break
-    return output
 
 
 def _toc_last_row_baseline() -> float:
@@ -243,370 +221,174 @@ def _render_polished_sparse_group(texts: list[str]) -> bytes:
     return buffer.getvalue()
 
 
-def _render_polished_review_pdf(
-    canonical: Mapping[str, Any],
-    *,
-    spanish: bool,
-) -> bytes:
-    from nico import comprehensive_client_review_companion_v5 as v5
-    from nico.comprehensive_client_review_companion_v5 import SECTION_COUNT
-    from nico.comprehensive_client_review_companion_v7 import (
-        COMPANION_PAGE_COUNT,
-        SECTIONS_PER_PAGE,
-    )
+def _render_polished_review_pdf(canonical: Mapping[str, Any], *, spanish: bool) -> bytes:
+    """Flow the authoritative eight-section projection without further cuts."""
+    from pathlib import Path
+    import reportlab
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter
-    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-    from reportlab.lib.units import inch
-    from reportlab.platypus import (
-        KeepInFrame,
-        PageBreak,
-        Paragraph,
-        SimpleDocTemplate,
-        Spacer,
-        Table,
-        TableStyle,
-    )
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.pdfgen.canvas import Canvas
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Flowable
+    from nico import comprehensive_client_review_companion_v5 as v5
 
     sections = v5.substantive_review_sections(canonical, spanish=spanish)
-    if len(sections) != SECTION_COUNT:
-        raise ValueError(
-            f"Comprehensive review companion requires {SECTION_COUNT} sections, got {len(sections)}"
-        )
+    if len(sections) != v5.SECTION_COUNT:
+        raise ValueError(f"Comprehensive review companion requires {v5.SECTION_COUNT} sections, got {len(sections)}")
+    # Private aliases keep this worksheet change out of TOC/matrix typography.
+    for name, filename in (("NICOReviewText", "Vera.ttf"), ("NICOReviewBold", "VeraBd.ttf")):
+        if name not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(TTFont(name, str(Path(reportlab.__file__).parent / "fonts" / filename)))
+    body = ParagraphStyle("ReviewBody", fontName="NICOReviewText", fontSize=_REVIEW_BODY_FONT_SIZE,
+                          leading=12, spaceAfter=4, splitLongWords=1, allowWidows=0,
+                          allowOrphans=0, textColor=colors.HexColor("#334155"))
+    title = ParagraphStyle("ReviewTitle", parent=body, fontName="NICOReviewBold",
+                           fontSize=_REVIEW_TITLE_FONT_SIZE, leading=16, spaceBefore=12, spaceAfter=6, keepWithNext=True)
+    heading = ParagraphStyle("ReviewHeading", parent=body, fontName="NICOReviewBold",
+                             spaceBefore=5, keepWithNext=True)
+    warning = ParagraphStyle("ReviewWarning", parent=body, fontName="NICOReviewBold",
+                             textColor=colors.HexColor("#92400e"), keepWithNext=True)
 
+    def paragraph(value: Any, style: Any = body) -> Paragraph:
+        text = str(value)
+        glyphs = pdfmetrics.getFont(style.fontName).face.charToGlyph
+        unsupported = next((ord(char) for char in text if not char.isspace() and ord(char) not in glyphs), None)
+        if unsupported is not None:
+            raise ValueError(f"review PDF font cannot preserve Unicode U+{unsupported:04X}")
+        return Paragraph(html.escape(text), style)
+
+    class SectionEnd(Flowable):
+        def wrap(self, *_args):
+            return 0, 0
+        def draw(self):
+            pass
+
+    class ReviewDocument(SimpleDocTemplate):
+        active_section = None
+        def afterFlowable(self, flowable):
+            if hasattr(flowable, "review_section"):
+                self.active_section = flowable.review_section
+                self.section_pages.append((self.active_section[1], self.page - 1))
+                self.review_structure.append(('section', self.active_section[0]))
+            elif hasattr(flowable, "review_decision_section"):
+                self.review_structure.append(('decision', flowable.review_decision_section))
+            elif isinstance(flowable, SectionEnd):
+                self.review_structure.append(('end', self.active_section[0]))
+                self.active_section = None
+
+    class CountedCanvas(Canvas):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.page_states = []
+        def showPage(self):
+            self.page_states.append(dict(self.__dict__))
+            self._startPage()
+        def save(self):
+            total = len(self.page_states)
+            for state in self.page_states:
+                self.__dict__.update(state)
+                self.saveState()
+                self.setFont("NICOReviewText", 9)
+                self.setFillColor(colors.HexColor("#475569"))
+                self.drawString(42, 34, "Decisión humana pendiente | Entrega bloqueada" if spanish
+                                else "Human decision pending | Client delivery blocked")
+                self.drawString(42, 21, "NICO | borrador automatizado" if spanish else "NICO | automated draft")
+                self.drawRightString(570, 21, (f"Página de revisión {self._pageNumber} de {total}" if spanish
+                                             else f"Review page {self._pageNumber} of {total}"))
+                self.restoreState()
+                super().showPage()
+            super().save()
+
+    def page_header(canvas, doc):
+        if doc.active_section is not None:
+            section_id, label = doc.active_section
+            continuation = "continuación" if spanish else "continued"
+            header = paragraph(f"{label} [{section_id}] — {continuation}", heading)
+            _, height = header.wrap(528, 60)
+            if height > 48:
+                raise ValueError("review continuation heading exceeds reserved header space")
+            header.drawOn(canvas, 42, 780 - height)
+
+    labels = [
+        ("status", "Estado", "Status"), ("summary", "Resumen", "Summary"),
+        ("evidence_state", "Estado de evidencia", "Evidence state"),
+        ("runtime_observation_established", "Observación de ejecución establecida", "Runtime observation established"),
+        ("independently_verified", "Verificado independientemente", "Independently verified"),
+        ("resource_evidence_state", "Estado de evidencia de recursos", "Resource evidence state"),
+        ("resource_commitment_established", "Compromiso de recursos establecido", "Resource commitment established"),
+        ("evidence", "Evidencia conservada", "Retained evidence"),
+        ("findings", "Observaciones prioritarias", "Priority observations"),
+        ("can_conclude", "Puede concluirse", "What can be concluded"),
+        ("cannot_conclude", "No puede concluirse", "What cannot be concluded"),
+        ("limitations", "Limitaciones", "Limitations"),
+        ("required_input", "Insumos requeridos del cliente", "Required client input"),
+        ("recommended_decision", "Decisión recomendada", "Recommended decision"),
+        ("questions", "Disposición del revisor", "Reviewer disposition"),
+    ]
+    story = []
+    for index, section in enumerate(sections, 1):
+        section_id = str(section["id"])
+        section_title = paragraph(f"{index}. {section['title']}", title)
+        section_title.review_section = (section_id, str(section["title"]))
+        story.extend([section_title, paragraph(
+            f"ID: {section_id} | " + (f"Sección {section['section_number']} de {section['section_count']}" if spanish
+                                     else f"Section {section['section_number']} of {section['section_count']}")),
+            paragraph("BORRADOR AUTOMATIZADO | DECISIÓN HUMANA PENDIENTE | ENTREGA BLOQUEADA" if spanish
+                      else "AUTOMATED DRAFT | HUMAN DECISION PENDING | CLIENT DELIVERY BLOCKED", warning)])
+        for key, es, en in labels:
+            if key not in section:
+                continue
+            story.append(paragraph(es if spanish else en, heading))
+            value = section[key]
+            if isinstance(value, (list, tuple)):
+                for item in value:
+                    story.append(paragraph(("[ ] " if key == "questions" else "- ") + str(item)))
+            else:
+                story.append(paragraph(str(value).lower() if isinstance(value, bool) else value))
+        decision_heading = paragraph("Registro de decisión" if spanish else "Decision record", heading)
+        decision_heading.review_decision_section = section_id
+        story.extend([
+            decision_heading,
+            paragraph("Resultado: [ ] aceptar evidencia  [ ] solicitar evidencia  [ ] rechazar conclusión  [ ] diferir" if spanish
+                      else "Outcome: [ ] accept evidence  [ ] request evidence  [ ] reject conclusion  [ ] defer"),
+            paragraph("Revisor / fecha / evidencia: _________________________________________________" if spanish
+                      else "Reviewer / date / acceptance evidence: __________________________________________"),
+            paragraph("La disposición de esta sección no autoriza por sí sola la entrega. La evidencia completa permanece en los artefactos estructurados." if spanish
+                      else "Section disposition alone does not authorize delivery. Complete retained evidence remains in the structured artifacts."),
+            SectionEnd(), Spacer(1, 8),
+        ])
     buffer = io.BytesIO()
-    styles = getSampleStyleSheet()
-    title = ParagraphStyle(
-        "NICOReviewPolishedTitle",
-        parent=styles["Heading1"],
-        fontName="Helvetica-Bold",
-        fontSize=_REVIEW_TITLE_FONT_SIZE,
-        leading=14.2,
-        textColor=colors.HexColor("#0f172a"),
-        spaceAfter=2.0,
-    )
-    heading = ParagraphStyle(
-        "NICOReviewPolishedHeading",
-        parent=styles["Heading2"],
-        fontName="Helvetica-Bold",
-        fontSize=_REVIEW_HEADING_FONT_SIZE,
-        leading=9.4,
-        textColor=colors.HexColor("#075985"),
-        spaceBefore=1.4,
-        spaceAfter=.8,
-    )
-    body = ParagraphStyle(
-        "NICOReviewPolishedBody",
-        parent=styles["BodyText"],
-        fontName="Helvetica",
-        fontSize=_REVIEW_BODY_FONT_SIZE,
-        leading=8.8,
-        textColor=colors.HexColor("#334155"),
-        spaceAfter=.7,
-        allowWidows=0,
-        allowOrphans=0,
-    )
-    small = ParagraphStyle(
-        "NICOReviewPolishedSmall",
-        parent=body,
-        fontSize=_REVIEW_SMALL_FONT_SIZE,
-        leading=8.1,
-        textColor=colors.HexColor("#475569"),
-        spaceAfter=.5,
-    )
-    warning = ParagraphStyle(
-        "NICOReviewPolishedWarning",
-        parent=body,
-        fontName="Helvetica-Bold",
-        fontSize=6.8,
-        leading=8.0,
-        textColor=colors.HexColor("#92400e"),
-        backColor=colors.HexColor("#fef3c7"),
-        borderColor=colors.HexColor("#f59e0b"),
-        borderWidth=.45,
-        borderPadding=2.2,
-        spaceAfter=1.4,
-    )
-    boundary = ParagraphStyle(
-        "NICOReviewPolishedBoundary",
-        parent=small,
-        textColor=colors.HexColor("#475569"),
-        backColor=colors.HexColor("#f1f5f9"),
-        borderColor=colors.HexColor("#cbd5e1"),
-        borderWidth=.35,
-        borderPadding=2.2,
-        spaceBefore=4.0,
-    )
-
-    def paragraph(
-        value: Any,
-        style: ParagraphStyle = body,
-        limit: int = 700,
-    ) -> Paragraph:
-        if not spanish:
-            return Paragraph(html.escape(_text(value, limit)), style)
-        rendered = " ".join(str(value or "").replace("\x7f", "-").split()).strip()
-        if len(rendered) > limit:
-            rendered = rendered[: limit - 3].rstrip()
-            clause_boundary = max(rendered.rfind("; "), rendered.rfind(". "))
-            if clause_boundary >= limit // 2:
-                rendered = rendered[:clause_boundary].rstrip(" ·;,:-")
-            elif " " in rendered:
-                rendered = rendered.rsplit(" ", 1)[0].rstrip(" ·;,:-")
-            rendered += "..."
-        return Paragraph(html.escape(rendered), style)
-
-    def footer(canvas: Any, doc: Any) -> None:
-        page = int(doc.page)
-        first = (page - 1) * SECTIONS_PER_PAGE + 1
-        last = min(SECTION_COUNT, first + SECTIONS_PER_PAGE - 1)
-        canvas.saveState()
-        canvas.setFont("Helvetica", 6.3)
-        canvas.setFillColor(colors.HexColor("#64748b"))
-        canvas.drawString(
-            .48 * inch,
-            .29 * inch,
-            (
-                "NICO | revisión integral del cliente | borrador automatizado"
-                if spanish
-                else "NICO | Comprehensive client review | automated draft"
-            ),
-        )
-        canvas.drawRightString(
-            8.02 * inch,
-            .29 * inch,
-            (
-                f"Página de revisión {page} de {COMPANION_PAGE_COUNT} | "
-                f"Secciones {first}-{last} de {SECTION_COUNT}"
-                if spanish
-                else f"Review page {page} of {COMPANION_PAGE_COUNT} | "
-                f"Sections {first}-{last} of {SECTION_COUNT}"
-            ),
-        )
-        canvas.restoreState()
-
-    def section_block(section: Mapping[str, Any], section_number: int) -> KeepInFrame:
-        evidence = _unique(
-            section.get("evidence") or [],
-            limit=max(3, len(section.get("evidence") or [])) if section.get("id") == "platform_parity" else 3,
-            item_limit=900 if spanish else 430,
-        )
-        findings = _unique(section.get("findings") or [], limit=2)
-        can_conclude = _unique(section.get("can_conclude") or [], limit=2)
-        cannot_conclude = _unique(
-            [
-                *(section.get("cannot_conclude") or []),
-                *(section.get("limitations") or []),
-            ],
-            limit=3,
-        )
-        required_input = _unique(section.get("required_input") or [], limit=2)
-        questions = _unique(section.get("questions") or [], limit=3)
-
-        content: list[Any] = [
-            paragraph(f"{section_number}. {section['title']}", title),
-            paragraph(
-                "BORRADOR AUTOMATIZADO | DECISIÓN HUMANA PENDIENTE | ENTREGA BLOQUEADA"
-                if spanish
-                else "AUTOMATED DRAFT | HUMAN DECISION PENDING | CLIENT DELIVERY BLOCKED",
-                warning,
-            ),
-        ]
-        status_table = Table(
-            [
-                [
-                    paragraph("Estado" if spanish else "Status", small),
-                    paragraph(section["status"], small),
-                ],
-                [
-                    paragraph("Resumen" if spanish else "Summary", small),
-                    paragraph(section["summary"], small, 800),
-                ],
-            ],
-            colWidths=[.82 * inch, 6.62 * inch],
-        )
-        status_table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#e0f2fe")),
-                    ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                    ("GRID", (0, 0), (-1, -1), .2, colors.HexColor("#cbd5e1")),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 2.2),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 2.2),
-                    ("TOPPADDING", (0, 0), (-1, -1), 2.0),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2.0),
-                ]
-            )
-        )
-        content.extend(
-            [
-                status_table,
-                paragraph("Evidencia conservada" if spanish else "Retained evidence", heading),
-            ]
-        )
-        if evidence:
-            content.extend(
-                paragraph(f"- {item}", small, 900 if spanish else 430)
-                for item in evidence
-            )
-        else:
-            content.append(
-                paragraph(
-                    "- No se conservó evidencia estructurada adicional."
-                    if spanish
-                    else "- No additional structured evidence was retained.",
-                    small,
-                )
-            )
-        if findings:
-            content.append(
-                paragraph(
-                    "Observaciones prioritarias" if spanish else "Priority observations",
-                    heading,
-                )
-            )
-            content.extend(paragraph(f"- {item}", small, 430) for item in findings)
-
-        left: list[Any] = [
-            paragraph("Puede concluirse" if spanish else "What can be concluded", heading)
-        ]
-        left.extend(paragraph(f"- {item}", small, 430) for item in can_conclude)
-        left.append(
-            paragraph(
-                "No puede concluirse" if spanish else "What cannot be concluded",
-                heading,
-            )
-        )
-        left.extend(paragraph(f"- {item}", small, 430) for item in cannot_conclude)
-
-        right: list[Any] = [
-            paragraph(
-                "Insumos requeridos del cliente" if spanish else "Required client input",
-                heading,
-            )
-        ]
-        right.extend(paragraph(f"- {item}", small, 430) for item in required_input)
-        right.extend(
-            [
-                paragraph("Decisión recomendada" if spanish else "Recommended decision", heading),
-                paragraph(section["recommended_decision"], boundary, 600),
-                paragraph("Disposición del revisor" if spanish else "Reviewer disposition", heading),
-            ]
-        )
-        right.extend(paragraph(f"[ ] {item}", small, 430) for item in questions)
-
-        columns = Table(
-            [[
-                KeepInFrame(
-                    3.58 * inch,
-                    _REVIEW_COLUMNS_HEIGHT_IN * inch,
-                    left,
-                    mode="shrink",
-                ),
-                KeepInFrame(
-                    3.58 * inch,
-                    _REVIEW_COLUMNS_HEIGHT_IN * inch,
-                    right,
-                    mode="shrink",
-                ),
-            ]],
-            colWidths=[3.72 * inch, 3.72 * inch],
-        )
-        columns.setStyle(
-            TableStyle(
-                [
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("BOX", (0, 0), (-1, -1), .2, colors.HexColor("#cbd5e1")),
-                    ("INNERGRID", (0, 0), (-1, -1), .2, colors.HexColor("#e2e8f0")),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 2.2),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 2.2),
-                    ("TOPPADDING", (0, 0), (-1, -1), 2.0),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2.0),
-                ]
-            )
-        )
-        content.extend(
-            [
-                Spacer(1, .01 * inch),
-                columns,
-                paragraph("Registro de decisión" if spanish else "Decision record", heading),
-                paragraph(
-                    "Resultado: [ ] aceptar evidencia  [ ] solicitar evidencia  [ ] rechazar conclusión  [ ] diferir"
-                    if spanish
-                    else "Outcome: [ ] accept evidence  [ ] request evidence  [ ] reject conclusion  [ ] defer",
-                    small,
-                ),
-                paragraph(
-                    "Revisor / fecha / evidencia: _________________________________________________"
-                    if spanish
-                    else "Reviewer / date / acceptance evidence: __________________________________________",
-                    small,
-                ),
-                paragraph(
-                    "La disposición de esta sección no autoriza por sí sola la entrega. La evidencia completa permanece en los artefactos estructurados."
-                    if spanish
-                    else "Section disposition alone does not authorize delivery. Complete retained evidence remains in the structured artifacts.",
-                    boundary,
-                ),
-            ]
-        )
-        return KeepInFrame(
-            7.52 * inch,
-            _REVIEW_SECTION_HEIGHT_IN * inch,
-            content,
-            mode="shrink",
-        )
-
-    story: list[Any] = []
-    for index, section in enumerate(sections, start=1):
-        story.append(section_block(section, index))
-        if index % SECTIONS_PER_PAGE == 1 and index < SECTION_COUNT:
-            story.append(Spacer(1, .06 * inch))
-        elif index < SECTION_COUNT:
-            story.append(PageBreak())
-
-    document = SimpleDocTemplate(
-        buffer,
-        pagesize=letter,
-        leftMargin=.48 * inch,
-        rightMargin=.48 * inch,
-        # Two fixed-height review sections plus their spacer require 10.08 inches.
-        # These margins leave 10.133 inches inside ReportLab's padded frame while
-        # keeping the footer below the content frame.
-        topMargin=.30 * inch,
-        bottomMargin=.40 * inch,
-        invariant=1,
-        title="NICO Comprehensive Client Review",
-        author="NICO",
-    )
-    document.build(story, onFirstPage=footer, onLaterPages=footer)
-    pdf = buffer.getvalue()
+    document = ReviewDocument(buffer, pagesize=letter, leftMargin=42, rightMargin=42,
+                              topMargin=72, bottomMargin=48, invariant=1,
+                              title="NICO Comprehensive Client Review", author="NICO")
+    document.section_pages = []
+    document.review_structure = []
+    document.build(story, onFirstPage=page_header, onLaterPages=page_header, canvasmaker=CountedCanvas)
+    # Validate renderer-owned flowables after layout, not unrestricted evidence
+    # text: user evidence may legitimately quote the decision-record heading.
+    expected_structure = [(kind, str(section['id'])) for section in sections
+                          for kind in ('section', 'decision', 'end')]
+    if document.review_structure != expected_structure:
+        raise ValueError("flowing review omitted or reordered a section decision record")
+    from pypdf import PdfWriter
+    writer = PdfWriter()
+    writer.append(PdfReader(io.BytesIO(buffer.getvalue())), import_outline=False)
+    for label, page_index in document.section_pages:
+        writer.add_outline_item(label, page_index)
+    output = io.BytesIO()
+    writer.write(output)
+    pdf = output.getvalue()
     reader = PdfReader(io.BytesIO(pdf))
-    if len(reader.pages) != COMPANION_PAGE_COUNT:
-        raise ValueError(
-            "Paired Comprehensive review companion must be exactly "
-            f"{COMPANION_PAGE_COUNT} pages, got {len(reader.pages)}."
-        )
-    for page_number, page in enumerate(reader.pages, start=1):
-        extracted = " ".join((page.extract_text() or "").casefold().split())
-        first = (page_number - 1) * SECTIONS_PER_PAGE
-        expected = sections[first : first + SECTIONS_PER_PAGE]
-        missing = [
-            str(section["title"])
-            for section in expected
-            if _text(section["title"]).casefold() not in extracted
-        ]
-        if missing:
-            raise ValueError(
-                f"paired review page {page_number} omitted section(s): "
-                + ", ".join(missing)
-            )
-        decision_marker = "registro de decisión" if spanish else "decision record"
-        if extracted.count(decision_marker) < len(expected):
-            raise ValueError(
-                f"paired review page {page_number} omitted a section decision record"
-            )
+    text = " ".join(" ".join(page.extract_text() or "" for page in reader.pages).split())
+    cursor = 0
+    for section in sections:
+        marker = f"ID: {section['id']}"
+        position = text.find(marker, cursor)
+        if position < 0:
+            raise ValueError(f"flowing review omitted or reordered section: {section['id']}")
+        cursor = position + len(marker)
     return pdf
 
 
@@ -644,6 +426,7 @@ def install_comprehensive_pdf_layout_polish_v1() -> dict[str, Any]:
     semantic._toc_pdf = _render_polished_toc_pdf
     reflow._render_group = _render_polished_sparse_group
 
+    setattr(_render_polished_review_pdf, "_nico_review_flowing", True)
     v7.render_paired_substantive_review_pdf = _render_polished_review_pdf
     rebind.render_paired_substantive_review_pdf = _render_polished_review_pdf
     for module in (v2, v3, v4, v5, v6):
@@ -660,8 +443,9 @@ def install_comprehensive_pdf_layout_polish_v1() -> dict[str, Any]:
         "toc_single_page_capacity_above_four_phase_matrix": True,
         "toc_last_row_baseline": _toc_last_row_baseline(),
         "sparse_section_keep_together": True,
-        "review_companion_pages": v7.COMPANION_PAGE_COUNT,
-        "review_sections_per_page": v7.SECTIONS_PER_PAGE,
+        "review_companion_pages": "content_dependent",
+        "review_section_count": v5.SECTION_COUNT,
+        "review_continuation_pages": True,
         "review_body_font_size": _REVIEW_BODY_FONT_SIZE,
         "review_small_font_size": _REVIEW_SMALL_FONT_SIZE,
         "canonical_truth_mutated": False,

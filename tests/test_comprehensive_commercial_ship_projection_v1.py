@@ -350,8 +350,10 @@ def test_same_run_route_binds_final_layout_before_actual_render_target() -> None
     layout = _bind_final_pdf_layout()
     from nico.comprehensive_pdf_layout_polish_v1 import _TOC_ROWS_PER_PAGE
     assert layout["toc_rows_per_page"] == _TOC_ROWS_PER_PAGE
-    assert layout["review_companion_pages"] == 4
-    assert layout["review_small_font_size"] >= 6.75
+    assert layout["review_companion_pages"] == "content_dependent"
+    assert layout["review_section_count"] == 8
+    assert layout["review_continuation_pages"] is True
+    assert layout["review_small_font_size"] >= 9
 
 
 def test_final_navigation_replaces_spanish_indice_and_preserves_appendix_continuation() -> None:
