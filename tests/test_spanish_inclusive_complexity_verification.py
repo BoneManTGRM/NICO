@@ -6,6 +6,7 @@ from nico.comprehensive_current_report_truth_parity_v1 import strict_spanish_pre
 from nico.comprehensive_same_run_locale_report_v1 import build_same_run_locale_markdown_projection
 from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
 from tests.test_v2_premium_report_renderer import _package
+from tests.test_comprehensive_same_run_locale_report_v1 import offline_spanish_renderer
 
 
 def test_current_inclusive_complexity_verification_translates_and_preserves_anchor():
@@ -24,7 +25,7 @@ def test_unknown_complexity_verification_remains_fail_closed():
             'apps/web/app/AssessmentRecoveryActions.tsx:61', 'verification')
 
 
-def test_inclusive_verification_survives_real_bounded_locale_projection():
+def test_inclusive_verification_survives_real_bounded_locale_projection(offline_spanish_renderer):
     package = _package('en')
     item = package['json']['canonical_findings'][0]
     item['verification'] = [

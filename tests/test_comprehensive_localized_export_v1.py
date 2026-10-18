@@ -40,6 +40,11 @@ def source_status():
 @pytest.mark.parametrize("language", ["en", "es-MX"])
 def test_download_contains_every_actual_format_and_manifest(source_status, language):
     before = deepcopy(source_status)
+    if language == "es-MX":
+        with pytest.raises(ValueError, match="spanish_report_generation_unavailable"):
+            localized_evidence_package(source_status, language)
+        assert source_status == before
+        return
     response = localized_evidence_package(source_status, language)
     assert source_status == before
     assert response.headers["x-nico-artifact-sha256"] == hashlib.sha256(response.body).hexdigest()
@@ -78,7 +83,7 @@ def test_refuses_incomplete_or_corrupt_source(source_status, mutation):
     else:
         status["reports"]["html"] += "tampered"
     with pytest.raises(ValueError):
-        localized_evidence_package(status, "es-MX")
+        localized_evidence_package(status, "en")
 
 
 @pytest.mark.parametrize("language", ["en", "es-MX"])
@@ -86,6 +91,10 @@ def test_pdf_before_and_after_zip_keeps_same_exact_identity(source_status, langu
     from nico.comprehensive_same_run_locale_report_v1 import build_same_run_locale_pdf_response
 
     before = deepcopy(source_status)
+    if language == "es-MX":
+        with pytest.raises(ValueError, match="spanish_report_generation_unavailable"):
+            build_same_run_locale_pdf_response(source_status, language)
+        return
     direct = build_same_run_locale_pdf_response(source_status, language)
     for _ in range(2):
         response = localized_evidence_package(source_status, language)
@@ -156,6 +165,11 @@ def test_exact_source_decision_does_not_approve_regenerated_files(source_status,
                       approval_status="rejected", delivery_status="blocked",
                       response_projection={"rejection_review_integrity_valid": True})
     before = deepcopy(status)
+    if language == "es-MX":
+        with pytest.raises(ValueError, match="spanish_report_generation_unavailable"):
+            localized_evidence_package(status, language)
+        assert status == before
+        return
     response = localized_evidence_package(status, language)
     assert status == before
     assert response.headers["x-nico-client-delivery-allowed"] == "false"

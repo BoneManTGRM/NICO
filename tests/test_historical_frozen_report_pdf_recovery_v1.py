@@ -83,7 +83,7 @@ def test_source_language_pdf_fails_closed_when_old_json_cannot_prove_asserted_ha
 def test_historical_cross_language_projection_still_fails_closed_on_unknown_hash_drift() -> None:
     status, _ = _historical_removed_field_status()
 
-    with pytest.raises(ValueError, match="canonical_truth_hash_mismatch"):
+    with pytest.raises(ValueError, match="spanish_report_generation_unavailable"):
         build_same_run_locale_pdf_response(status, "es-MX")
 
 

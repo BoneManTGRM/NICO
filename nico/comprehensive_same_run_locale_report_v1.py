@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from nico.report_delivery_timing_v1 import report_delivery_phase, report_delivery_timing
+from nico.ordinary_report_language_release_v1 import require_new_report_language, require_available_projection
 
 import base64
 import hashlib
@@ -783,6 +784,7 @@ def build_same_run_locale_markdown_projection(
     """
 
     target_language = _normalize_report_language(report_language)
+    require_available_projection(status, target_language)
     if status.get("terminal") is not True:
         raise ValueError("terminal_report_required")
 
@@ -835,6 +837,7 @@ def build_same_run_locale_markdown_projection(
         and source_lifecycle["approval_status"] != "approved_final"
     )
     if regenerated:
+        require_new_report_language(target_language)
         # PDF presentation applies this same projection before preparation. Using
         # the unprojected source here publishes a different Markdown byte set
         # from the one identified by the PDF's manifest.
@@ -1248,6 +1251,7 @@ def build_same_run_locale_report(
     """
 
     target_language = _normalize_report_language(report_language)
+    require_available_projection(status, target_language)
     if status.get("terminal") is not True:
         raise ValueError("terminal_report_required")
 
@@ -1335,8 +1339,10 @@ def build_same_run_locale_report(
             }
             source_artifacts_reused = True
         else:
+            require_new_report_language(target_language)
             artifacts = _render_target(canonical_copy, target_language)
     else:
+        require_new_report_language(target_language)
         artifacts = _render_target(canonical_copy, target_language)
 
     run_id = identity_binding["run_id"]
@@ -1458,6 +1464,7 @@ def build_same_run_locale_pdf_response(
     if frozen_source is not None:
         return frozen_source
 
+    require_new_report_language(report_language)
     projection = build_same_run_locale_report(status, report_language)
     report = projection["report"]
     try:
