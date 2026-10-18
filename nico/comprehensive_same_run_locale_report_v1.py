@@ -1568,6 +1568,7 @@ def install_same_run_locale_report(target: FastAPI) -> dict[str, Any]:
     if _route_count(target, "GET", PDF_ROUTE) == 0:
 
         def localized_report_pdf(run_id: str, report_language: str) -> Response:
+            from nico.retained_pdf_exact_input_cache_v1 import RetainedPdfBusy
             try:
                 with report_delivery_timing(run_id, report_language):
                     controller = getattr(target.state, "comprehensive_api_controller", None)
@@ -1581,6 +1582,9 @@ def install_same_run_locale_report(target: FastAPI) -> dict[str, Any]:
                             }) from exc
                     status = _controller_status(target, run_id)
                     return build_same_run_locale_pdf_response(status, report_language)
+            except RetainedPdfBusy as exc:
+                raise HTTPException(status_code=503, detail={'reason': 'retained_pdf_preparing'},
+                    headers={'Retry-After': '5', 'Cache-Control': 'no-store'}) from exc
             except ValueError as exc:
                 raise _projection_http_error(exc) from exc
 

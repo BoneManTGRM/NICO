@@ -101,7 +101,20 @@ function showStatus(container: Element | null, message: string, failure = false)
 
 class PdfDownloadFailure extends Error {}
 
-function downloadError(response: Response): Error {
+async function downloadError(response: Response): Promise<Error> {
+  const retryAfter = response.headers.get("retry-after") || "";
+  if (response.status === 503 && /^[1-9][0-9]?$/.test(retryAfter) && Number(retryAfter) <= 60) {
+    try {
+      const payload = await response.clone().json();
+      if (payload?.detail?.reason === "retained_pdf_preparing") {
+        return new PdfDownloadFailure(spanishUi()
+          ? `NICO todavía está preparando un PDF. Reintenta esta descarga dentro de al menos ${retryAfter} segundos; no inicies otra evaluación.`
+          : `NICO is still preparing a PDF. Retry this download in at least ${retryAfter} seconds; do not start another assessment.`);
+      }
+    } catch {
+      // Unrecognized or malformed busy responses retain the generic error.
+    }
+  }
   if (response.status === 401 || response.status === 403) {
     return new PdfDownloadFailure(spanishUi()
       ? "Inicia sesión en NICO y vuelve a descargar este PDF."
@@ -145,7 +158,7 @@ async function retrieveExactRunPdf(
   });
   if (signal.aborted) throw signal.reason;
   if (binding.isCurrent && !binding.isCurrent()) throw integrityError();
-  if (!response.ok) throw downloadError(response);
+  if (!response.ok) throw await downloadError(response);
   const header = (name: string) => String(response.headers.get(name) || "").trim();
   const declaredSha = header("x-nico-pdf-sha256").toLowerCase();
   const truthSha = header("x-nico-canonical-truth-sha256").toLowerCase();
@@ -417,7 +430,7 @@ async function prepareReviewPdf(runId: string, language: ReportLanguage, binding
       if (!prepare && jobId === "requested" && response.status === 404) return "admission_unknown";
       if ([404, 409, 422].includes(response.status)) savePreparation(key, "");
       if (response.status === 503) throw stillPending();
-      throw downloadError(response);
+      throw await downloadError(response);
     }
     const status = await response.json();
     if (controller.signal.aborted) throw controller.signal.reason;
