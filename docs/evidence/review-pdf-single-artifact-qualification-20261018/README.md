@@ -51,8 +51,8 @@ also runs its browser/proxy regressions. One initial worktree dependency-link
 failure was corrected by reusing already-installed TypeScript, without installing
 packages; the failure and successful rerun are retained. Complete results and
 commands are in the external handoff. PostgreSQL mock SQL checks are
-NOT real-PostgreSQL concurrency/durability acceptance. No CI workflow was changed
-or dispatched. No production or external database was contacted.
+NOT real-PostgreSQL concurrency/durability acceptance. The initial prototype did not change or dispatch CI. The later explicit
+synthetic proof wiring is described below; no workflow was manually dispatched. No production or external database was contacted.
 
 ## Remaining decisions and limitations
 
@@ -78,7 +78,70 @@ Production-size input, 20s admission/230s retrieval/900s job budgets and resourc
 contention remain unqualified. The protocol scans existing client_jobs without
 new indexes; a timeout fails closed.
 
-Real PostgreSQL proof additions belong in the existing isolated CI only after
-review. No activation, credentials/security changes, installations, purchases,
+Real PostgreSQL proof execution belongs in the existing isolated CI after review. No activation, credentials/security changes, installations, purchases,
 production mutations, new assessments or approved-source expansion occurred.
 C++ remains paused; the unrelated database pilot remains HOLD.
+
+
+## Explicit synthetic PostgreSQL capacity proof (not yet executed)
+
+`postgres_review_pdf_capacity_proof.py` requires `--synthetic-ci-proof`, the existing
+Postgres Restart Proof GitHub Actions context, a PR/push event and the exact public
+loopback CI fixture URL. It rejects unsupported prerequisites before connecting.
+It uses existing tables only, fails if the queue namespace is occupied, scrubs
+inherited production aliases and keeps rollout flags false. No schema creation,
+cleanup/deletion, new service or production configuration is included.
+
+The existing workflow now places this step BEFORE the old review-PDF ledger proof,
+which otherwise populates the globally counted namespace. The new proof retains
+bounded JSON evidence (including completed checks, phase, individual synthetic
+outcomes and failures) in the existing always-uploaded artifact. It requires all
+14 named checks and binds its recorded git HEAD to the other proofs' source SHA.
+No draft/flag skip condition applies. Branch push alone does not trigger this
+workflow: a parent-created PR or subsequent main push will exercise it. Default
+PR checkout may be a merge commit; inspect the recorded SHA/tree, not head_sha alone.
+
+The real-PG script is designed to exercise four independent distinct admissions
+while pg_locks proves global-first contention, duplicate reads, all terminal and
+legacy statuses, malformed namespace/workflow rows, exact 66 MiB/one-byte overflow,
+expired occupancy with a controlled physical process alive, concurrent rejected
+late publications and cancellation, stale ownership and crash without a cleanup
+receipt. Negative storage controls roll back uniquely owned fixture changes;
+there is no DELETE or reset of retained production artifacts. The final fixture
+row remains cancelled with occupancy held, without replacement.
+
+Scope limits are explicit: the live process is a controlled synthetic holder,
+not the actual PDF renderer. The publication race uses an expired owner and
+proves rejection, not successful ready publication. Crash follows cancellation;
+no automatic orphan-release policy is qualified. Successful complete source-locked
+ready publication/retrieval remains covered by the separate existing ordinary
+lifecycle proof and local prototype render test, not claimed by this new PG proof
+(`successful_ready_publication_proven=false`). Full capacity-enabled PostgreSQL
+ready publication and resource qualification remain open.
+
+Local proof-harness verification: 25 cases passed (context/target guards, occupied
+namespace rejection, real fixture publication fences, rollback controls, failure
+evidence and workflow structure/syntax). Existing proof-contract 12 and prototype 30
+cases passed again. No real PostgreSQL connection occurred here. Execution and
+independent review remain pending; this is not activation-ready.
+
+Fresh local verification on the completed proof files (three isolated pytest
+processes, all exit 0):
+
+```text
+/workspace/nico-venv/bin/pytest -q tests/test_postgres_review_pdf_capacity_proof.py
+25 passed in 0.17s
+/workspace/nico-venv/bin/pytest -q tests/test_postgres_review_pdf_preparation_proof.py
+12 passed in 7.50s
+/workspace/nico-venv/bin/pytest -q tests/test_review_pdf_single_artifact_qualification.py
+30 passed, 3 warnings in 12.88s
+```
+
+Logs and JUnit reports are retained in
+`/workspace/pdf-capacity-qualification-handoff/`. A standalone CLI smoke with
+`GITHUB_ACTIONS=false` exited 1 as required, retaining failure evidence at phase
+`context` with no checks completed and `error_type=ValueError`; no connector was
+used. Workflow YAML and its embedded evidence verifier were parsed by the harness.
+The three warnings are existing pypdf deprecations. These local results do not
+substitute for execution against the existing CI PostgreSQL service. No PR,
+manual workflow dispatch, merge, deployment or activation was performed.
