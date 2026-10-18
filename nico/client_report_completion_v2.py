@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_delivery_timing_v1 import report_delivery_phase_scope
+
 from nico.report_pdf_text import extract_pdf_page_texts
 
 import base64
@@ -313,180 +315,188 @@ def _validate_final_surfaces(
 def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
     """Finalize a bounded client PDF while retaining full JSON/CSV evidence."""
 
-    prepared = prepare_client_report_package(package)
-    from nico.comprehensive_rendered_package_reuse_v1 import _has_bound_rendered_surfaces
+    with report_delivery_phase_scope("finalize_core"):
+        with report_delivery_phase_scope("finalize_prepare"):
+            prepared = prepare_client_report_package(package)
+        with report_delivery_phase_scope("finalize_legacy"):
+            from nico.comprehensive_rendered_package_reuse_v1 import _has_bound_rendered_surfaces
 
-    compatibility_prepared = not _has_bound_rendered_surfaces(prepared)
-    if compatibility_prepared:
-        # Prepare legacy data/text without rendering the detailed PDF that the
-        # compact composer would discard. Validate the final authoritative PDF.
-        result, source_canonical, source_register, source_markdown, _, _ = (
-            legacy._prepare_completion_text(prepared)
-        )
-        result["json"] = source_canonical
-        result["markdown"] = source_markdown
-        result["scanner_applicability"] = deepcopy(
-            (source_canonical.get("assessment") or {}).get("scanner_applicability_summary") or {}
-        )
-    else:
-        # Preserve the installed reuse path and its exact receipt for packages
-        # that have already completed the single-pass renderer.
-        result = legacy.finalize_client_report_package(prepared)
-    canonical = normalize_client_assessment_truth(
-        result.get("json") if isinstance(result.get("json"), Mapping) else {}
-    )
-    canonical = _install_register(canonical)
-    canonical = reconcile_authoritative_scanner_truth(canonical)
-    canonical = apply_automated_draft_truth(canonical)
-    register = canonical["client_finding_remediation_register"]
-    spanish = legacy._is_spanish(canonical)
+            compatibility_prepared = not _has_bound_rendered_surfaces(prepared)
+            if compatibility_prepared:
+                # Prepare legacy data/text without rendering the detailed PDF that the
+                # compact composer would discard. Validate the final authoritative PDF.
+                result, source_canonical, source_register, source_markdown, _, _ = (
+                    legacy._prepare_completion_text(prepared)
+                )
+                result["json"] = source_canonical
+                result["markdown"] = source_markdown
+                result["scanner_applicability"] = deepcopy(
+                    (source_canonical.get("assessment") or {}).get("scanner_applicability_summary") or {}
+                )
+            else:
+                # Preserve the installed reuse path and its exact receipt for packages
+                # that have already completed the single-pass renderer.
+                result = legacy.finalize_client_report_package(prepared)
+        with report_delivery_phase_scope("finalize_truth"):
+            canonical = normalize_client_assessment_truth(
+                result.get("json") if isinstance(result.get("json"), Mapping) else {}
+            )
+            canonical = _install_register(canonical)
+            canonical = reconcile_authoritative_scanner_truth(canonical)
+            canonical = apply_automated_draft_truth(canonical)
+            register = canonical["client_finding_remediation_register"]
+            spanish = legacy._is_spanish(canonical)
 
-    markdown = compact_client_markdown(
-        str(result.get("markdown") or ""),
-        canonical,
-        register,
-        spanish=spanish,
-    )
-    markdown = _normalize_unapproved_language(
-        merge_review_companion_markdown(
-            markdown,
-            canonical,
-            spanish=spanish,
-        )
-    )
+        with report_delivery_phase_scope("finalize_presentation"):
+            markdown = compact_client_markdown(
+                str(result.get("markdown") or ""),
+                canonical,
+                register,
+                spanish=spanish,
+            )
+            markdown = _normalize_unapproved_language(
+                merge_review_companion_markdown(
+                    markdown,
+                    canonical,
+                    spanish=spanish,
+                )
+            )
 
-    # The review companion is the last Markdown reconstruction step. Bind the
-    # authoritative four-part CI/CD section here so no compact renderer or static
-    # alias can erase it before HTML and PDF are produced.
-    from nico.comprehensive_ci_boundary_compat_v74 import (
-        repair_ci_operational_markdown,
-    )
+            # The review companion is the last Markdown reconstruction step. Bind the
+            # authoritative four-part CI/CD section here so no compact renderer or static
+            # alias can erase it before HTML and PDF are produced.
+            from nico.comprehensive_ci_boundary_compat_v74 import (
+                repair_ci_operational_markdown,
+            )
 
-    markdown = repair_ci_operational_markdown(
-        markdown,
-        canonical,
-        spanish=spanish,
-    )
-    identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
-    title = (
-        "Evaluación Técnica Integral NICO"
-        if spanish
-        else f"NICO Comprehensive Technical Assessment — {_text(identity.get('repository'))}"
-    )
-    rendered_html = render_client_html(markdown, title, spanish=spanish)
+            markdown = repair_ci_operational_markdown(
+                markdown,
+                canonical,
+                spanish=spanish,
+            )
+            identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
+            title = (
+                "Evaluación Técnica Integral NICO"
+                if spanish
+                else f"NICO Comprehensive Technical Assessment — {_text(identity.get('repository'))}"
+            )
+            rendered_html = render_client_html(markdown, title, spanish=spanish)
 
-    base_pdf = base64.b64decode(str(result.get("pdf_base64") or ""))
-    if compatibility_prepared:
-        base_pdf = legacy._replace_stale_pdf_text(base_pdf)
-        base_pdf = legacy._sanitize_pdf_control_glyphs(base_pdf)
-        legacy._assert_no_control_glyphs(base_pdf)
-    review_pdf = render_comprehensive_review_companion_pdf(
-        canonical,
-        spanish=spanish,
-    )
-    register_pdf = render_compact_finding_register_pdf(register, spanish=spanish)
-    gate_pdf = render_evidence_review_gate_pdf(canonical, register, spanish=spanish)
+        with report_delivery_phase_scope("finalize_pdf"):
+            base_pdf = base64.b64decode(str(result.get("pdf_base64") or ""))
+            if compatibility_prepared:
+                base_pdf = legacy._replace_stale_pdf_text(base_pdf)
+                base_pdf = legacy._sanitize_pdf_control_glyphs(base_pdf)
+                legacy._assert_no_control_glyphs(base_pdf)
+            review_pdf = render_comprehensive_review_companion_pdf(
+                canonical,
+                spanish=spanish,
+            )
+            register_pdf = render_compact_finding_register_pdf(register, spanish=spanish)
+            gate_pdf = render_evidence_review_gate_pdf(canonical, register, spanish=spanish)
 
-    # Reserve the CI/CD boundary page inside the compact page budget instead of
-    # appending it after composition, where it could be truncated by a full body.
-    from nico.comprehensive_rendered_ci_boundary_producer_v79 import (
-        _boundary_pdf_page,
-    )
+            # Reserve the CI/CD boundary page inside the compact page budget instead of
+            # appending it after composition, where it could be truncated by a full body.
+            from nico.comprehensive_rendered_ci_boundary_producer_v79 import (
+                _boundary_pdf_page,
+            )
 
-    ci_boundary_pdf = _boundary_pdf_page(canonical, spanish=spanish)
-    from nico.comprehensive_human_evidence_appendix import render_human_evidence_appendix
-    human_evidence_pdf = render_human_evidence_appendix(canonical, spanish=spanish)
-    pdf = sanitize_client_pdf_status(
-        compose_compact_client_pdf(
-            base_pdf,
-            register_pdf,
-            gate_pdf,
-            review_pdf=review_pdf,
-            ci_boundary_pdf=ci_boundary_pdf,
-            human_evidence_pdf=human_evidence_pdf,
-        ),
-        spanish=spanish,
-    )
-    validation = _validate_final_surfaces(
-        canonical,
-        register,
-        markdown,
-        rendered_html,
-        pdf,
-    )
+            ci_boundary_pdf = _boundary_pdf_page(canonical, spanish=spanish)
+            from nico.comprehensive_human_evidence_appendix import render_human_evidence_appendix
+            human_evidence_pdf = render_human_evidence_appendix(canonical, spanish=spanish)
+            pdf = sanitize_client_pdf_status(
+                compose_compact_client_pdf(
+                    base_pdf,
+                    register_pdf,
+                    gate_pdf,
+                    review_pdf=review_pdf,
+                    ci_boundary_pdf=ci_boundary_pdf,
+                    human_evidence_pdf=human_evidence_pdf,
+                ),
+                spanish=spanish,
+            )
+        with report_delivery_phase_scope("finalize_validation"):
+            validation = _validate_final_surfaces(
+                canonical,
+                register,
+                markdown,
+                rendered_html,
+                pdf,
+            )
 
-    page_count = len(PdfReader(io.BytesIO(pdf)).pages)
-    review_page_count = len(PdfReader(io.BytesIO(review_pdf)).pages)
-    completion = deepcopy(dict(result.get("client_report_completion") or {}))
-    if compatibility_prepared:
-        completion.update({
-            "verification_and_exit_criteria_distinct": bool(
-                (source_register.get("summary") or {}).get("verification_and_exit_criteria_distinct")
-            ),
-            "legacy_scanner_only_provenance_replaced": True,
-            "full_evidence_appendix_preserved": (
-                "Evidence Appendix" in source_markdown or "Apéndice de evidencia" in source_markdown
-            ),
-            "obsolete_empty_finding_copy_removed": True,
-            "secret_values_retained": False,
-        })
-    completion.update(
-        {
-            "version": VERSION,
-            **validation,
-            "finding_register_in_json": True,
-            "finding_register_in_markdown": True,
-            "finding_register_in_html": True,
-            "finding_register_in_pdf": True,
-            "exact_source_locations_verified_in_pdf": True,
-            "scanner_applicability_in_all_formats": True,
-            "full_evidence_retained_in_structured_exports": True,
-            "full_evidence_appendix_in_client_pdf": False,
-            "comprehensive_review_companion_in_markdown": True,
-            "comprehensive_review_companion_in_html": True,
-            "comprehensive_review_companion_in_pdf": True,
-            "comprehensive_review_companion_page_count": review_page_count,
-            "ci_cd_boundary_bound_after_review_companion": True,
-            "ci_cd_boundary_reserved_in_pdf_budget": True,
-            "premium_cover_preserved": True,
-            "human_review_required": True,
-            "client_delivery_allowed": False,
-            "page_count": page_count,
-        }
-    )
-    premium = deepcopy(dict(result.get("premium_report_renderer") or {}))
-    premium.update(completion)
-    phase17 = deepcopy(dict(result.get("phase17_artifact_rebuild") or {}))
-    phase17.update(completion)
+        with report_delivery_phase_scope("finalize_binding"):
+            page_count = len(PdfReader(io.BytesIO(pdf)).pages)
+            review_page_count = len(PdfReader(io.BytesIO(review_pdf)).pages)
+            completion = deepcopy(dict(result.get("client_report_completion") or {}))
+            if compatibility_prepared:
+                completion.update({
+                    "verification_and_exit_criteria_distinct": bool(
+                        (source_register.get("summary") or {}).get("verification_and_exit_criteria_distinct")
+                    ),
+                    "legacy_scanner_only_provenance_replaced": True,
+                    "full_evidence_appendix_preserved": (
+                        "Evidence Appendix" in source_markdown or "Apéndice de evidencia" in source_markdown
+                    ),
+                    "obsolete_empty_finding_copy_removed": True,
+                    "secret_values_retained": False,
+                })
+            completion.update(
+                {
+                    "version": VERSION,
+                    **validation,
+                    "finding_register_in_json": True,
+                    "finding_register_in_markdown": True,
+                    "finding_register_in_html": True,
+                    "finding_register_in_pdf": True,
+                    "exact_source_locations_verified_in_pdf": True,
+                    "scanner_applicability_in_all_formats": True,
+                    "full_evidence_retained_in_structured_exports": True,
+                    "full_evidence_appendix_in_client_pdf": False,
+                    "comprehensive_review_companion_in_markdown": True,
+                    "comprehensive_review_companion_in_html": True,
+                    "comprehensive_review_companion_in_pdf": True,
+                    "comprehensive_review_companion_page_count": review_page_count,
+                    "ci_cd_boundary_bound_after_review_companion": True,
+                    "ci_cd_boundary_reserved_in_pdf_budget": True,
+                    "premium_cover_preserved": True,
+                    "human_review_required": True,
+                    "client_delivery_allowed": False,
+                    "page_count": page_count,
+                }
+            )
+            premium = deepcopy(dict(result.get("premium_report_renderer") or {}))
+            premium.update(completion)
+            phase17 = deepcopy(dict(result.get("phase17_artifact_rebuild") or {}))
+            phase17.update(completion)
 
-    result.update(
-        {
-            "json": canonical,
-            "client_finding_remediation_register": deepcopy(register),
-            "finding_population": deepcopy(register.get("summary") or {}),
-            "markdown": markdown,
-            "html": rendered_html,
-            "pdf_base64": base64.b64encode(pdf).decode("ascii"),
-            "pdf_sha256": hashlib.sha256(pdf).hexdigest(),
-            "markdown_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
-            "html_sha256": hashlib.sha256(rendered_html.encode("utf-8")).hexdigest(),
-            "pdf_page_count": page_count,
-            "core_report_page_count": page_count,
-            "final_package_page_count": page_count,
-            "status": "review_required",
-            "assessment_state": "review_required",
-            "report_finality": REPORT_FINALITY,
-            "approval_status": APPROVAL_STATUS,
-            "delivery_status": DELIVERY_STATUS,
-            "human_review_required": True,
-            "human_review_completed": False,
-            "client_delivery_allowed": False,
-            "phase17_artifact_rebuild": phase17,
-            "premium_report_renderer": premium,
-            "client_report_completion": completion,
-        }
-    )
-    return result
+            result.update(
+                {
+                    "json": canonical,
+                    "client_finding_remediation_register": deepcopy(register),
+                    "finding_population": deepcopy(register.get("summary") or {}),
+                    "markdown": markdown,
+                    "html": rendered_html,
+                    "pdf_base64": base64.b64encode(pdf).decode("ascii"),
+                    "pdf_sha256": hashlib.sha256(pdf).hexdigest(),
+                    "markdown_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
+                    "html_sha256": hashlib.sha256(rendered_html.encode("utf-8")).hexdigest(),
+                    "pdf_page_count": page_count,
+                    "core_report_page_count": page_count,
+                    "final_package_page_count": page_count,
+                    "status": "review_required",
+                    "assessment_state": "review_required",
+                    "report_finality": REPORT_FINALITY,
+                    "approval_status": APPROVAL_STATUS,
+                    "delivery_status": DELIVERY_STATUS,
+                    "human_review_required": True,
+                    "human_review_completed": False,
+                    "client_delivery_allowed": False,
+                    "phase17_artifact_rebuild": phase17,
+                    "premium_report_renderer": premium,
+                    "client_report_completion": completion,
+                }
+            )
+            return result
 
 
 __all__ = [

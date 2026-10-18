@@ -13,10 +13,19 @@ from uuid import uuid4
 _ACTIVE: ContextVar[dict[str, Any] | None] = ContextVar("nico_report_delivery_timing", default=None)
 _LOGGER = logging.getLogger("uvicorn.error")
 
-# Reserve one of the 32 records for the existing final aggregate. Emit each
-# code-owned phase at most once so frequent PDF lookups cannot consume the budget.
+# Reserve 14 detail records, 17 ordinary records (including route_started),
+# and one final aggregate. Repeated/suppressed phases still aggregate all calls.
 _MAX_RECORDS_PER_REQUEST = 32
-_PHASE_NAMES = frozenset({
+_DETAIL_PHASE_NAMES = frozenset({
+    'prep_reconcile', 'prep_truth_repair', 'prep_installed_completion',
+    'prep_stage_projection', 'prep_coverage', 'finalize_core',
+    'finalize_prepare', 'finalize_legacy', 'finalize_truth',
+    'finalize_presentation', 'finalize_pdf', 'finalize_validation',
+    'finalize_binding', 'finalize_manifest_attach',
+})
+_DETAIL_RECORDS = 14
+_ORDINARY_RECORDS = 17
+_PHASE_NAMES = _DETAIL_PHASE_NAMES | frozenset({
     'artifact_finalize',
     'artifact_preparation',
     'artifact_render',
@@ -63,9 +72,13 @@ def _emit(prefix: str, payload: dict[str, Any]) -> None:
 
 
 def _progress(state: dict[str, Any], event: str, **fields: Any) -> None:
-    if state["progress_records"] >= _MAX_RECORDS_PER_REQUEST - 1:
+    detail = event == "phase_completed" and fields.get("phase") in _DETAIL_PHASE_NAMES
+    budget_key = "detail_records" if detail else "ordinary_records"
+    limit = _DETAIL_RECORDS if detail else _ORDINARY_RECORDS
+    if state[budget_key] >= limit or state["progress_records"] >= _MAX_RECORDS_PER_REQUEST - 1:
         state["progress_suppressed"] += 1
         return
+    state[budget_key] += 1
     state["progress_records"] += 1
     _emit("NICO_REPORT_PROGRESS", {
         "schema": "nico.report-delivery-progress.v1",
@@ -89,6 +102,7 @@ def report_delivery_timing(run_id: str, report_language: str):
     state: dict[str, Any] = {"phases": {}, "run_id": run_id,
                              "report_language": report_language, "identity": identity,
                              "progress_records": 0, "progress_suppressed": 0,
+                             "detail_records": 0, "ordinary_records": 0,
                              "reported_phases": set()}
     token = _ACTIVE.set(state)
     started = time.perf_counter()
