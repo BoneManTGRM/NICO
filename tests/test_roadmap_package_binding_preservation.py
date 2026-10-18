@@ -267,3 +267,72 @@ def test_legacy_work_package_shape_is_preserved():
              'related_finding_ids':['alias'],'objective':'Retained scope',
              'ordered_implementation_steps':['Inspect'],'dependencies':[]}
     assert _replace_nested_findings([package],{'alias':{'finding_id':'primary'}})==[package]
+
+
+def synchronize_test_package_mirrors(report):
+    """Keep mirrors consistent so controls exercise source contracts, not mirror checks."""
+    from nico.comprehensive_finding_roadmap_v1 import _base
+    for p in report['roadmap']:
+        p['package_id']=_base(p['source_binding'],p['kind'],p['source_refs'])['package_id']
+    ids=[p['package_id'] for p in report['roadmap']]
+    for container in (report,report['assessment']):
+        container['roadmap']=deepcopy(report['roadmap'])
+        for stage in container['stage_summaries']:
+            if stage['stage_id']=='six_month_roadmap':stage['roadmap']=deepcopy(report['roadmap'])
+            else:stage['source_package_ids']=list(ids)
+
+
+@pytest.mark.parametrize('operation',['rebind','freeze'])
+@pytest.mark.parametrize('damage', ['dependency','commit_sha','source_commit_sha','run_id','repository',
+                                    'conflicting_commit_alias','candidate_count','package_finding_id'])
+def test_inconsistent_source_contract_rejected_before_rebinding_and_freeze(operation,damage):
+    from nico.comprehensive_finding_roadmap_v1 import rebind_generated_roadmap, assert_final_roadmap_binding
+    report=complete_report()
+    package=report['roadmap'][0]
+    finding=next(f for f in report['canonical_findings'] if f['finding_id']==package['finding_id'])
+    if damage=='dependency':
+        package['dependencies'][0]['source_ref']['record_sha256']='0'*64
+    elif damage=='package_finding_id':package['finding_id']='no_such_finding'
+    elif damage=='candidate_count':report['review_candidate_summary']['review_required_total']=3
+    else:
+        if damage=='conflicting_commit_alias':
+            finding['source_commit_sha']=report['identity']['commit_sha']
+            finding['commit_sha']='b'*40
+        else:finding[damage]='b'*40 if 'sha' in damage else 'other-source'
+        # Even a self-consistent digest cannot legitimize another source identity.
+        package['source_refs'][0]['record_sha256']=_hash(finding)
+        package['dependencies'][0]['source_ref']=deepcopy(package['source_refs'][0])
+    if damage=='candidate_count':
+        candidate=next(p for p in report['roadmap'] if p['kind']=='candidate_disposition')
+        candidate['source_refs'][0]['record_sha256']=_hash(report['review_candidate_summary'])
+    synchronize_test_package_mirrors(report)
+    before=deepcopy(report)
+    fn=rebind_generated_roadmap if operation=='rebind' else assert_final_roadmap_binding
+    with pytest.raises(ValueError,match='roadmap_rebinding_'):
+        fn(report)
+    assert report==before
+
+@pytest.mark.parametrize('operation',['rebind','freeze'])
+def test_reviewer_foreign_source_repro_rejected_without_rewriting_old_reference(operation):
+    from nico.comprehensive_finding_roadmap_v1 import rebind_generated_roadmap, assert_final_roadmap_binding
+    report=complete_report(False)
+    finding=next(f for f in report['canonical_findings'] if f['finding_id']==report['roadmap'][0]['finding_id'])
+    finding.update(source_commit_sha='b'*40,run_id='different_run',repository='different/repository')
+    before=deepcopy(report)
+    with pytest.raises(ValueError,match='roadmap_rebinding_finding_source_identity_mismatch'):
+        (rebind_generated_roadmap if operation=='rebind' else assert_final_roadmap_binding)(report)
+    assert report==before
+
+
+def test_candidate_metadata_normalization_rebinds_without_changing_review_count():
+    from nico.comprehensive_finding_roadmap_v1 import rebind_generated_roadmap, assert_final_roadmap_binding, _base
+    report=complete_report()
+    original=next(p for p in report['roadmap'] if p['kind']=='candidate_disposition')
+    report['review_candidate_summary']['normalization_note']='Retained review status'
+    result=rebind_generated_roadmap(report)
+    candidate=next(p for p in result['roadmap'] if p['kind']=='candidate_disposition')
+    assert candidate['review_required_candidate_count']==1536
+    assert candidate['source_refs'][0]['record_sha256']==_hash(result['review_candidate_summary'])
+    assert candidate['package_id']!=original['package_id']
+    assert candidate['package_id']==_base(candidate['source_binding'],candidate['kind'],candidate['source_refs'])['package_id']
+    assert_final_roadmap_binding(result)

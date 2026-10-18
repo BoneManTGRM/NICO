@@ -397,6 +397,45 @@ def localize_retained_roadmap(canonical: Mapping[str, Any], *, spanish: bool) ->
 __all__ = ["VERSION", "bind_final_finding_roadmap", "localize_retained_roadmap"]
 
 
+
+def _validate_rebinding_sources(package, canonical, binding, by_alias):
+    """Validate source contracts before any normalization-driven digest changes."""
+    refs = package['source_refs']
+    kind = package['kind']
+    expected_surface = {
+        'finding_review_and_remediation': 'canonical_findings',
+        'candidate_disposition': 'review_candidate_summary',
+        'evidence_gap_resolution': 'prior_stage_results',
+    }[kind]
+    if (any(ref.get('surface') != expected_surface for ref in refs)
+            or (kind != 'evidence_gap_resolution' and len(refs) != 1)):
+        raise ValueError('roadmap_rebinding_reference_kind_mismatch')
+    for dependency in package['dependencies']:
+        if (not isinstance(dependency, Mapping)
+                or ('source_ref' in dependency and dependency['source_ref'] not in refs)):
+            raise ValueError('roadmap_rebinding_dependency_reference_mismatch')
+    if kind == 'finding_review_and_remediation':
+        finding = by_alias.get(refs[0].get('finding_id'))
+        if finding is None:
+            raise ValueError('roadmap_rebinding_finding_unresolved')
+        if by_alias.get(package.get('finding_id')) != finding:
+            raise ValueError('roadmap_rebinding_package_finding_mismatch')
+        # Check every declared field independently: a matching source_commit_sha
+        # must not hide a contradictory commit_sha (or another declared source).
+        for field in (*_IDENTITY, 'source_commit_sha'):
+            expected = binding['commit_sha' if field == 'source_commit_sha' else field]
+            if _text(finding.get(field)) and _text(finding[field]) != expected:
+                raise ValueError('roadmap_rebinding_finding_source_identity_mismatch')
+        if not any(dep.get('gate') == 'qualified_specialist_disposition'
+                   and dep.get('source_ref') == refs[0] for dep in package['dependencies']):
+            raise ValueError('roadmap_rebinding_dependency_reference_missing')
+    elif kind == 'candidate_disposition':
+        summary = canonical.get('review_candidate_summary')
+        count = summary.get('review_required_total') if isinstance(summary, Mapping) else None
+        claimed = package.get('review_required_candidate_count')
+        if type(count) is not int or count <= 0 or type(claimed) is not int or claimed != count:
+            raise ValueError('roadmap_rebinding_candidate_count_mismatch')
+
 def rebind_generated_roadmap(canonical: Mapping[str, Any]) -> dict[str, Any]:
     """Bind the entire provisional graph to reconciled findings before rendering.
 
@@ -435,6 +474,7 @@ def rebind_generated_roadmap(canonical: Mapping[str, Any]) -> dict[str, Any]:
                 or package.get('delivery_authorized') is not False
                 or package.get('package_id') != _base(binding, package['kind'], package['source_refs'])['package_id']):
             raise ValueError('roadmap_rebinding_package_invalid')
+        _validate_rebinding_sources(package, canonical, binding, by_alias)
         item = deepcopy(package)
         replacements = []
         for ref in item['source_refs']:
