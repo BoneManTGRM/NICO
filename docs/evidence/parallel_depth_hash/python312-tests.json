@@ -2,67 +2,67 @@
   {
     "name": "bounded_comprehensive_record_hash_v1",
     "exit_code": 0,
-    "seconds": 2.618,
-    "summary": "34 passed, 1 warning in 0.98s"
+    "seconds": 1.767,
+    "summary": "37 passed in 0.94s"
   },
   {
     "name": "comprehensive_run_record",
     "exit_code": 0,
-    "seconds": 0.915,
+    "seconds": 1.018,
     "summary": "6 passed in 0.10s"
   },
   {
     "name": "comprehensive_run_record_copy_boundary_v1",
     "exit_code": 0,
-    "seconds": 1.016,
-    "summary": "4 passed in 0.12s"
+    "seconds": 0.916,
+    "summary": "4 passed in 0.11s"
   },
   {
     "name": "comprehensive_run_storage_codec_v1",
     "exit_code": 0,
     "seconds": 0.966,
-    "summary": "36 passed in 0.17s"
+    "summary": "36 passed in 0.16s"
   },
   {
     "name": "comprehensive_run_storage_dedup_v1",
     "exit_code": 0,
     "seconds": 1.517,
-    "summary": "41 passed in 0.73s"
+    "summary": "41 passed in 0.72s"
   },
   {
     "name": "comprehensive_run_storage_chunks_v1",
     "exit_code": 0,
-    "seconds": 4.174,
-    "summary": "30 passed in 3.34s"
+    "seconds": 4.172,
+    "summary": "30 passed in 3.35s"
   },
   {
     "name": "comprehensive_run_storage_capacity_v1",
     "exit_code": 0,
-    "seconds": 1.131,
-    "summary": "7 passed in 0.10s"
+    "seconds": 0.916,
+    "summary": "7 passed in 0.09s"
   },
   {
     "name": "comprehensive_run_store",
     "exit_code": 0,
-    "seconds": 0.922,
+    "seconds": 0.92,
     "summary": "10 passed in 0.12s"
   },
   {
     "name": "comprehensive_canonical_truth_hash_compat_v1",
     "exit_code": 0,
-    "seconds": 1.066,
-    "summary": "12 passed in 0.13s"
+    "seconds": 0.92,
+    "summary": "12 passed in 0.10s"
   },
   {
     "name": "comprehensive_artifact_manifest_approval_v1",
     "exit_code": 0,
-    "seconds": 5.424,
-    "summary": "38 passed, 38 warnings in 4.63s"
+    "seconds": 5.478,
+    "summary": "38 passed, 38 warnings in 4.68s"
   },
   {
     "name": "exact_artifact_review_compat_v1",
     "exit_code": 0,
-    "seconds": 0.866,
+    "seconds": 0.916,
     "summary": "4 passed in 0.09s"
   },
   {

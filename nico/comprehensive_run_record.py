@@ -67,15 +67,18 @@ def _bounded_native_json(value: Any, *, max_depth: int = 64) -> bool:
             if any(type(key) is not str for key in item):
                 return False
             bytes_left -= 2 + 2 * len(item)
+            # Count private copies, not a caller-owned container that may change.
+            pending_before = len(pending)
             pending.extend(item.keys())
             pending.extend(item.values())
-            depths.extend([depth + 1] * (2 * len(item)))
+            depths.extend([depth + 1] * (len(pending) - pending_before))
         elif kind in (list, tuple):
             if len(pending) + len(item) > nodes_left:
                 return False
             bytes_left -= 2 + len(item)
+            pending_before = len(pending)
             pending.extend(item)
-            depths.extend([depth + 1] * len(item))
+            depths.extend([depth + 1] * (len(pending) - pending_before))
         elif kind is str:
             bytes_left -= 2 + 6 * len(item)
         elif kind is int:
