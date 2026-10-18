@@ -12,13 +12,16 @@ from nico.comprehensive_four_phase_report_v1 import finalize_four_phase_report_p
 from tests.test_comprehensive_four_phase_report_v1 import _canonical, _package
 
 
-def fixture_pdf(spanish, outline=True, dedicated=False):
+def fixture_pdf(spanish, outline=True, dedicated=False, heading_style="plain"):
     qa='QA funcional' if spanish else 'Functional QA'
     professional='Evaluación profesional ampliada' if spanish else 'Broader Professional Assessment'
     toc='Tabla de contenido' if spanish else 'Table of Contents'
+    heading = qa
+    if heading_style in ('numbered','numbered_wrapped'): heading = '1. ' + heading
+    if heading_style in ('wrapped','numbered_wrapped'): heading = heading.replace('Functional QA','Functional\nQA').replace('QA funcional','QA\nfuncional')
     texts=['NICO Comprehensive',toc+'\n'+qa,toc+' 2\n'+qa,
            qa+' unavailable', 'Review-Required Candidate Register',
-           professional if dedicated else 'Evidence boundary',qa,
+           professional if dedicated else 'Evidence boundary',heading,
            'Human Review and Exact-Artifact Approval Record']
     stream=io.BytesIO();pdf=canvas.Canvas(stream,invariant=1)
     for text in texts:
@@ -84,4 +87,13 @@ def test_phase_three_rejects_toc_outline_destination(spanish):
     output=io.BytesIO();writer.write(output)
     rendered=apply_four_phase_pdf(output.getvalue(),_canonical(language='es-MX' if spanish else 'en'))
     title='Evaluación profesional ampliada' if spanish else 'Broader Professional Assessment'
+    assert destinations(PdfReader(io.BytesIO(rendered)))[title]==6
+
+
+@pytest.mark.parametrize('language',['en','es-MX'])
+@pytest.mark.parametrize('heading_style',['numbered','wrapped','numbered_wrapped'])
+def test_missing_outline_recognizes_real_numbered_and_wrapped_heading(language,heading_style):
+    source=fixture_pdf(language=='es-MX',outline=False,heading_style=heading_style)
+    rendered=apply_four_phase_pdf(source,_canonical(language=language))
+    title='Evaluación profesional ampliada' if language=='es-MX' else 'Broader Professional Assessment'
     assert destinations(PdfReader(io.BytesIO(rendered)))[title]==6

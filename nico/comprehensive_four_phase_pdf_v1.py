@@ -229,11 +229,17 @@ def _professional_section_target(reader: Any, page_texts: Any, target_index: int
     for title in titles:
         if title.casefold() in targets:
             return targets[title.casefold()]
-    # With no section outline, require a standalone heading, preferring the
-    # dedicated professional section. Keep the established bounded fallback.
+    # Reuse semantic navigation's numbered / bounded wrapped-heading recognition.
+    # Exact aliases deliberately omit status suffixes so limitation prose cannot
+    # become a section destination. Keep the established bounded fallback.
+    from nico.comprehensive_semantic_navigation_v1 import _section_for_visible_heading
     for title in titles:
+        aliases = (({}, ((title.casefold(), ()),)),)
         for index, page_lines in enumerate(lines):
-            if eligible(index) and title.casefold() in page_lines:
+            if eligible(index) and any(
+                _section_for_visible_heading(page_lines, line_index, alias_index=aliases) is not None
+                for line_index in range(len(page_lines))
+            ):
                 return index
     return fallback
 
