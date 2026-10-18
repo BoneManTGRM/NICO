@@ -405,7 +405,7 @@ def render_compact_finding_register_pdf(register: Mapping[str, Any], *, spanish:
         story.append(table)
         for label, criteria in criterion_groups:
             criterion_heading = ParagraphStyle("CR-Criteria", parent=body, fontName="Helvetica-Bold", keepWithNext=True, spaceBefore=8)
-            criterion_paragraphs = [p(f"{label} · {_identifier(item)} · " + ("resultado no verificado" if spanish else "outcome not verified"), criterion_heading)]
+            criterion_paragraphs = [p(f"{label} · {_identifier(item)} · " + ("Resultado: no verificado" if spanish else "Outcome: not verified"), criterion_heading)]
             for index, criterion in enumerate(criteria, 1):
                 # Standalone Paragraphs can split across pages without clipping a
                 # long retained condition or forcing it into an indivisible row.

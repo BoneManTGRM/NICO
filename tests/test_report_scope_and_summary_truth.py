@@ -315,3 +315,22 @@ def test_roadmap_text_limit_uses_normalized_length_and_only_shown_rows(length):
     label = stage_preview_labels(stage, source, evidence_text_limit=1000)[0]
     assert ('partially' in label) == (length > 1000)
     assert 'partially' not in stage_preview_labels(stage, source, evidence_limit=0, evidence_text_limit=1000)[0]
+
+
+@pytest.mark.parametrize('spanish', [False, True])
+def test_each_distinct_criterion_group_retains_explicit_unverified_outcome(spanish):
+    source = register()
+    source['code_findings'][0]['exit_criteria'] = [
+        'All listed verification requirements pass on the exact remediation commit.']
+    if spanish:
+        source['code_findings'][0].update(verification=['Verificar la corrección.'],
+            acceptance_criteria=['Revisar la evidencia.'], exit_criteria=['Confirmar el cierre.'])
+    before = deepcopy(source)
+    text = pdf_text(compact.render_compact_finding_register_pdf(source, spanish=spanish))
+    marker = 'Resultado: no verificado' if spanish else 'Outcome: not verified'
+    groups = compact._complete_criterion_groups(source['code_findings'][0], spanish=spanish)
+    assert len(groups) == 3
+    for label, _ in groups:
+        assert f'{label} · NICO-FINDING-ABC123 · {marker}' in text
+    assert text.count(marker) == 3
+    assert source == before
