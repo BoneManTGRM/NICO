@@ -271,7 +271,11 @@ def _render_polished_review_pdf(canonical: Mapping[str, Any], *, spanish: bool) 
             if hasattr(flowable, "review_section"):
                 self.active_section = flowable.review_section
                 self.section_pages.append((self.active_section[1], self.page - 1))
+                self.review_structure.append(('section', self.active_section[0]))
+            elif hasattr(flowable, "review_decision_section"):
+                self.review_structure.append(('decision', flowable.review_decision_section))
             elif isinstance(flowable, SectionEnd):
+                self.review_structure.append(('end', self.active_section[0]))
                 self.active_section = None
 
     class CountedCanvas(Canvas):
@@ -343,8 +347,10 @@ def _render_polished_review_pdf(canonical: Mapping[str, Any], *, spanish: bool) 
                     story.append(paragraph(("[ ] " if key == "questions" else "- ") + str(item)))
             else:
                 story.append(paragraph(str(value).lower() if isinstance(value, bool) else value))
+        decision_heading = paragraph("Registro de decisión" if spanish else "Decision record", heading)
+        decision_heading.review_decision_section = section_id
         story.extend([
-            paragraph("Registro de decisión" if spanish else "Decision record", heading),
+            decision_heading,
             paragraph("Resultado: [ ] aceptar evidencia  [ ] solicitar evidencia  [ ] rechazar conclusión  [ ] diferir" if spanish
                       else "Outcome: [ ] accept evidence  [ ] request evidence  [ ] reject conclusion  [ ] defer"),
             paragraph("Revisor / fecha / evidencia: _________________________________________________" if spanish
@@ -358,7 +364,14 @@ def _render_polished_review_pdf(canonical: Mapping[str, Any], *, spanish: bool) 
                               topMargin=72, bottomMargin=48, invariant=1,
                               title="NICO Comprehensive Client Review", author="NICO")
     document.section_pages = []
+    document.review_structure = []
     document.build(story, onFirstPage=page_header, onLaterPages=page_header, canvasmaker=CountedCanvas)
+    # Validate renderer-owned flowables after layout, not unrestricted evidence
+    # text: user evidence may legitimately quote the decision-record heading.
+    expected_structure = [(kind, str(section['id'])) for section in sections
+                          for kind in ('section', 'decision', 'end')]
+    if document.review_structure != expected_structure:
+        raise ValueError("flowing review omitted or reordered a section decision record")
     from pypdf import PdfWriter
     writer = PdfWriter()
     writer.append(PdfReader(io.BytesIO(buffer.getvalue())), import_outline=False)
@@ -376,9 +389,6 @@ def _render_polished_review_pdf(canonical: Mapping[str, Any], *, spanish: bool) 
         if position < 0:
             raise ValueError(f"flowing review omitted or reordered section: {section['id']}")
         cursor = position + len(marker)
-    decision_marker = "Registro de decisión" if spanish else "Decision record"
-    if text.count(decision_marker) != v5.SECTION_COUNT:
-        raise ValueError("flowing review omitted a section decision record")
     return pdf
 
 

@@ -14,6 +14,43 @@ from tests.test_comprehensive_pdf_layout_polish_v1 import _review_canonical
 LIST_FIELDS = ('evidence','findings','can_conclude','cannot_conclude','limitations','required_input','questions')
 
 
+@pytest.mark.parametrize('spanish',[False,True])
+def test_evidence_can_quote_decision_record_heading(spanish):
+    canonical=_review_canonical()
+    marker='Registro de decisión' if spanish else 'Decision record'
+    evidence=f'Retained source contains literal {marker} for human review.'
+    canonical['stage_summaries'][0]['evidence'].append(evidence)
+    before=deepcopy(canonical)
+    sections=v5.substantive_review_sections(canonical,spanish=spanish)
+    assert any(evidence in section['evidence'] for section in sections)
+    pdf=polish._render_polished_review_pdf(canonical,spanish=spanish)
+    reader=PdfReader(io.BytesIO(pdf))
+    text=' '.join(' '.join(page.extract_text() for page in reader.pages).split())
+    assert evidence in text
+    assert text.count(marker)==v5.SECTION_COUNT+1
+    assert len(reader.outline)==v5.SECTION_COUNT
+    assert canonical==before
+
+
+@pytest.mark.parametrize('spanish',[False,True])
+@pytest.mark.parametrize('damage',['omit','duplicate','wrong_section'])
+def test_renderer_owned_decision_structure_remains_required(monkeypatch,spanish,damage):
+    from reportlab.platypus import SimpleDocTemplate
+    build=SimpleDocTemplate.build
+    def damaged_build(document,story,*args,**kwargs):
+        index=next(i for i,item in enumerate(story) if hasattr(item,'review_decision_section'))
+        if damage=='omit':
+            del story[index]
+        elif damage=='duplicate':
+            story.insert(index,story[index])
+        else:
+            story[index].review_decision_section='wrong_section'
+        return build(document,story,*args,**kwargs)
+    monkeypatch.setattr(SimpleDocTemplate,'build',damaged_build)
+    with pytest.raises(ValueError,match='omitted or reordered a section decision record'):
+        polish._render_polished_review_pdf(_review_canonical(),spanish=spanish)
+
+
 def dense_sections(spanish):
     sections = deepcopy(v5.substantive_review_sections(_review_canonical(),spanish=spanish))
     for index, section in enumerate(sections):
