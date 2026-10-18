@@ -22,7 +22,8 @@ from fastapi import Response
 from nico import comprehensive_run_storage_codec_v1 as codec
 from nico.report_delivery_timing_v1 import report_delivery_phase
 
-VERSION = "nico.retained_pdf_exact_input_cache.v2"
+VERSION = "nico.retained_pdf_exact_input_cache.v1"
+CACHE_VERSION = "nico.retained_pdf_exact_input_cache.v2"
 MAX_RETAINED_BYTES = 4 * 1024 * 1024
 MAX_ENTRIES = 4
 _CHUNK = 64 * 1024
@@ -178,7 +179,55 @@ _retained_bytes = 0
 _lock = threading.Lock()
 
 
+# Durable preparation imports this original v1 contract. Its module order and
+# marker must not inherit the process-local renderer installation state.
 def _live_policy(builder: Any) -> tuple[Any, ...]:
+    """Bind live codec, integrity, edition and installed projection implementations.
+
+    Module code/configuration is fixed for an app lifetime; startup wrappers and
+    supported live callable/limit replacement must still invalidate old entries.
+    Holding the callable objects also prevents recycled object IDs matching old
+    policy. No request/session data or mutable module dictionaries are retained.
+    """
+
+    names = (
+        'nico.comprehensive_run_store', 'nico.comprehensive_run_record',
+        'nico.comprehensive_run_service',
+        'nico.comprehensive_run_storage_codec_v1',
+        'nico.comprehensive_run_storage_chunks_v1', 'nico.comprehensive_run_storage_dedup_v1',
+        'nico.comprehensive_api_controller', 'nico.comprehensive_same_run_locale_report_v1',
+        'nico.comprehensive_commercial_ship_projection_v1',
+        'nico.comprehensive_commercial_ship_projection_v3',
+        'nico.comprehensive_client_delivery_contract_v1',
+        'nico.decision_grade_accepted_edition_guard_v1',
+        'nico.comprehensive_review_decision_v1', 'nico.report_pdf_text',
+    )
+    policy: list[Any] = [VERSION, builder, MAX_RETAINED_BYTES, MAX_ENTRIES]
+    for name in names:
+        module = sys.modules.get(name)
+        policy.append(name)
+        if module is None:
+            policy.append(None)
+            continue
+        policy.append(getattr(module, 'VERSION', None))
+        for attribute, value in sorted(vars(module).items()):
+            if inspect.isfunction(value):
+                policy.extend((attribute, value))
+            elif inspect.isclass(value) and value.__module__ == name:
+                for method, descriptor in sorted(vars(value).items()):
+                    if inspect.isfunction(descriptor):
+                        policy.extend((attribute, method, descriptor))
+                    elif isinstance(descriptor, (staticmethod, classmethod)):
+                        policy.extend((attribute, method, descriptor.__func__))
+            elif attribute.startswith(('MAX_', '_MAX_', '_HASH_')) and type(value) in (int, str, bool):
+                policy.extend((attribute, value))
+            elif attribute.startswith('_FINAL_REPORT_') and type(value) in (set, frozenset, tuple):
+                policy.extend((attribute, tuple(sorted(value))))
+    return tuple(policy)
+
+
+
+def _cache_live_policy(builder: Any) -> tuple[Any, ...]:
     """Bind live codec, integrity, edition and installed projection implementations.
 
     Module code/configuration is fixed for an app lifetime; startup wrappers and
@@ -209,7 +258,7 @@ def _live_policy(builder: Any) -> tuple[Any, ...]:
         'nico.decision_grade_accepted_edition_guard_v1',
         'nico.comprehensive_review_decision_v1', 'nico.report_pdf_text',
     )
-    policy: list[Any] = [VERSION, builder, MAX_RETAINED_BYTES, MAX_ENTRIES]
+    policy: list[Any] = [CACHE_VERSION, builder, MAX_RETAINED_BYTES, MAX_ENTRIES]
     for name in names:
         module = sys.modules.get(name)
         policy.append(name)
@@ -363,7 +412,7 @@ class _PreparedPdf:
                   for field, index in (('status', 8), ('revision', 9), ('terminal', 10),
                                        ('integrity_sha256', 11), ('updated_at', 12)))
         if (not matches or _snapshot_fingerprint(row, self.run_id, self.language) != fingerprint
-                or _live_policy(self.builder) != self.key[1]):
+                or _cache_live_policy(self.builder) != self.key[1]):
             return _PreparedPdf(self.key, None, self.run_id, self.language, self.builder, None)
         return self
 
@@ -372,7 +421,7 @@ class _PreparedPdf:
 def prepare_retained_pdf(*, namespace: Any, row: Any, run_id: str,
                          report_language: str, builder: Any) -> _PreparedPdf:
     global _retained_bytes
-    policy = _live_policy(builder)
+    policy = _cache_live_policy(builder)
     fingerprint = _snapshot_fingerprint(row, run_id, report_language)
     key = (namespace, policy, fingerprint, report_language)
     metadata = tuple(row[1:]) if fingerprint is not None else None
@@ -401,7 +450,7 @@ def prepare_retained_pdf(*, namespace: Any, row: Any, run_id: str,
 def finish_retained_pdf(prepared: _PreparedPdf, build: Callable[[], Response]) -> Response:
     global _retained_bytes
     if prepared.cached is not None:
-        if _live_policy(prepared.builder) == prepared.key[1]:
+        if _cache_live_policy(prepared.builder) == prepared.key[1]:
             return prepared.cached.response()
         # The fallback reloads current input. Even if policy returns to its old
         # value while rebuilding, that result is not proof for this old ticket.
@@ -418,7 +467,7 @@ def finish_retained_pdf(prepared: _PreparedPdf, build: Callable[[], Response]) -
     if isinstance(entry, _PendingLocalizedPdf):
         key = (*key, _DRAFT_POLICY)
     policy = key[1]
-    if entry is None or _live_policy(prepared.builder) != policy:
+    if entry is None or _cache_live_policy(prepared.builder) != policy:
         return response
     # Conservative accounting counts each scalar, body, dataclass, tuple and key.
     size = sys.getsizeof(entry) + sys.getsizeof(key) + sys.getsizeof(entry.__dict__)
@@ -429,7 +478,7 @@ def finish_retained_pdf(prepared: _PreparedPdf, build: Callable[[], Response]) -
     if size > MAX_RETAINED_BYTES:
         return response
     with _lock:
-        if _live_policy(prepared.builder) != policy:
+        if _cache_live_policy(prepared.builder) != policy:
             return response
         prior = _entries.pop(key, None)
         if prior is not None:
@@ -439,7 +488,7 @@ def finish_retained_pdf(prepared: _PreparedPdf, build: Callable[[], Response]) -
             _retained_bytes -= removed[1]
         _entries[key] = (entry, size)
         _retained_bytes += size
-        if _live_policy(prepared.builder) != policy:
+        if _cache_live_policy(prepared.builder) != policy:
             del _entries[key]
             _retained_bytes -= size
     return response

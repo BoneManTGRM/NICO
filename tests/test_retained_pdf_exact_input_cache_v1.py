@@ -212,7 +212,7 @@ def test_cache_version_change_forces_fresh_validation(retained, monkeypatch):
     from nico import retained_pdf_exact_input_cache_v1 as cache
     _, run_id, endpoint, expected, calls, _ = retained
     endpoint(run_id, 'en')
-    monkeypatch.setattr(cache, 'VERSION', 'owned next implementation')
+    monkeypatch.setattr(cache, 'CACHE_VERSION', 'owned next implementation')
     assert endpoint(run_id, 'en').body == expected
     assert len(calls) == 2
 
@@ -275,13 +275,13 @@ def test_invalidated_warm_ticket_cannot_mint_under_old_input_after_policy_aba(re
     database, run_id, endpoint, expected, calls, _ = retained
     endpoint(run_id, 'en')
     original_finish = cache.finish_retained_pdf
-    original_version = cache.VERSION
+    original_version = cache.CACHE_VERSION
     observed = []
 
     def invalidate_then_rebuild(prepared, build):
         assert prepared.cached is not None
         original_entry = cache._entries[prepared.key][0]
-        cache.VERSION = 'owned temporary policy'
+        cache.CACHE_VERSION = 'owned temporary policy'
 
         def mutate(record):
             package = record['stage_results']['final_comprehensive_report_generation']['report_package']
@@ -293,7 +293,7 @@ def test_invalidated_warm_ticket_cannot_mint_under_old_input_after_policy_aba(re
 
         def rebuild_with_policy_returning_to_original():
             response = build()
-            cache.VERSION = original_version
+            cache.CACHE_VERSION = original_version
             return response
 
         try:
@@ -303,7 +303,7 @@ def test_invalidated_warm_ticket_cannot_mint_under_old_input_after_policy_aba(re
             assert observed[-1].body == expected
             return response
         finally:
-            cache.VERSION = original_version
+            cache.CACHE_VERSION = original_version
 
     monkeypatch.setattr(cache, 'finish_retained_pdf', invalidate_then_rebuild)
     assert endpoint(run_id, 'en').body == expected + b'\n'

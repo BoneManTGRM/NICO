@@ -45,9 +45,9 @@ def test_installed_render_cache_requires_stable_live_policy(tmp_path,monkeypatch
     tickets=[]
     finish=cache.finish_retained_pdf
     def observe_finish(prepared, build):
-        old=cache._live_policy(prepared.builder)
+        old=cache._cache_live_policy(prepared.builder)
         result=finish(prepared,build)
-        new=cache._live_policy(prepared.builder)
+        new=cache._cache_live_policy(prepared.builder)
         differences=[(repr(a)[:150],repr(b)[:150]) for a,b in zip(old,new) if a!=b]
         tickets.append({'metadata':prepared.metadata is not None,'cached':prepared.cached is not None,
                         'stable':old==new,'differences':differences[:12]})

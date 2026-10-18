@@ -70,3 +70,50 @@ print(json.dumps(runtime_policy()))
             env=dict(os.environ, PYTHONHASHSEED=seed), timeout=30)
         assert result.returncode == 0, result.stderr[-1000:]
         assert tuple(json.loads(result.stdout)) == warmed
+
+
+def test_original_durable_manifest_and_hash_contract(monkeypatch):
+    import hashlib, inspect, marshal
+    from nico.comprehensive_same_run_locale_report_v1 import build_same_run_locale_pdf_response
+    from nico.review_pdf_preparation_service_v1 import _fingerprint
+    # Digest of the exact _live_policy source on main 644b5516. This locks its
+    # original 14-module traversal/order, callable population and limits.
+    assert hashlib.sha256(inspect.getsource(cache._live_policy).strip().encode()).hexdigest() == (
+        '83cbd5ce771febf35ffb2469803b09a29b80c395aac9bd92144e7f200905c9c7')
+    assert cache.VERSION == 'nico.retained_pdf_exact_input_cache.v1'
+    monkeypatch.setenv('RAILWAY_GIT_COMMIT_SHA','e'*40)
+    values=[]
+    for value in cache._live_policy(build_same_run_locale_pdf_response):
+        values.append([value.__module__,value.__qualname__,hashlib.sha256(marshal.dumps(value.__code__,0)).hexdigest()]
+                      if callable(value) else value)
+    assert api.runtime_policy() == ('e'*40,_fingerprint(['review-pdf-api.v3',api.ARTIFACT_POLICY,'e'*40,values]))
+    before=api.runtime_policy()
+    monkeypatch.setattr(cache,'CACHE_VERSION','different process cache policy')
+    assert api.runtime_policy()==before
+
+
+def test_durable_codec_integrity_and_policy_changes_remain_rejected(monkeypatch):
+    from types import SimpleNamespace
+    import pytest
+    from nico import comprehensive_run_storage_codec_v1 as codec
+    from nico import comprehensive_run_record as record
+    from nico.review_pdf_preparation_service_v1 import RetainedSourceAuthority
+    from nico.review_pdf_preparation_jobs_v1 import PreparationConflict
+    monkeypatch.setenv('RAILWAY_GIT_COMMIT_SHA','e'*40)
+    revision,policy=api.runtime_policy()
+    identity=SimpleNamespace(renderer_revision=revision,policy_sha256=policy)
+    source=RetainedSourceAuthority(None,None,api.runtime_policy)
+    for module,name in ((codec,'decode_run_storage'),(record,'_record_hash')):
+        original=getattr(module,name)
+        def changed(*args,**kwargs): return original(*args,**kwargs)
+        with monkeypatch.context() as patch:
+            patch.setattr(module,name,changed)
+            with pytest.raises(PreparationConflict,match='preparation_policy_changed'): source.check_policy(identity)
+            assert getattr(module,name) is changed
+        source.check_policy(identity)
+    for module,name,value in ((codec,'MAX_UNCOMPRESSED_BYTES',1),(cache,'VERSION','changed'),
+                              (api,'ARTIFACT_POLICY','changed')):
+        with monkeypatch.context() as patch:
+            patch.setattr(module,name,value)
+            with pytest.raises(PreparationConflict,match='preparation_policy_changed'): source.check_policy(identity)
+        source.check_policy(identity)

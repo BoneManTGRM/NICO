@@ -41,11 +41,11 @@ def test_distinct_draft_entry_reuses_exact_bytes_and_headers(draft):
 
 def test_finalizer_rebinding_invalidates_policy():
     from nico import client_report_completion_v2 as completion
-    before = cache._live_policy(locale.build_same_run_locale_pdf_response)
+    before = cache._cache_live_policy(locale.build_same_run_locale_pdf_response)
     old = completion.finalize_client_report_package
     try:
         completion.finalize_client_report_package = lambda package: old(package)
-        assert cache._live_policy(locale.build_same_run_locale_pdf_response) != before
+        assert cache._cache_live_policy(locale.build_same_run_locale_pdf_response) != before
     finally:
         completion.finalize_client_report_package = old
 
