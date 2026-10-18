@@ -143,13 +143,13 @@ jobs:
           assert len(protocol["checks"]) == 33
           assert all(value is True for value in protocol["checks"].values())
           capacity = json.loads(Path("audit-results/postgres-review-pdf-capacity-proof.json").read_text())
-          from scripts.postgres_review_pdf_capacity_proof import REQUIRED_CHECKS
+          from scripts.postgres_review_pdf_capacity_proof import REQUIRED_CHECKS, POSITIVE_CHECKS
           assert capacity["status"] == "passed" and capacity["synthetic"] is True
           assert capacity["live_production_claim"] is False
           assert capacity["assessment_executed"] is False
           assert capacity["client_delivery_allowed"] is False
-          assert capacity["successful_ready_publication_proven"] is False
-          assert set(capacity["checks"]) == set(REQUIRED_CHECKS)
+          assert capacity["successful_ready_publication_proven"] is True
+          assert set(capacity["checks"]) == set(REQUIRED_CHECKS) | set(POSITIVE_CHECKS)
           assert all(value is True for value in capacity["checks"].values())
           assert "postgresql://" not in json.dumps(capacity)
           assert "NICO_TEST_DATABASE_URL" not in json.dumps(capacity)

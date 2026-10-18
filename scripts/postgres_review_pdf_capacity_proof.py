@@ -1,7 +1,7 @@
 """One-artifact capacity proof for the existing synthetic CI Postgres service only.
 
-No schema initialization, production target, retained-row deletion or automatic
-orphan recovery. Run BEFORE the other review-PDF proofs populate client_jobs.
+No production target, retained-row deletion or automatic orphan recovery.
+Positive lifecycle uses an isolated schema in the explicitly guarded CI service. Run BEFORE the other review-PDF proofs populate client_jobs.
 """
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ def require_context(explicit):
             or os.environ.get('CI') != 'true'
             or os.environ.get('GITHUB_WORKFLOW') != 'Postgres Restart Proof'
             or os.environ.get('GITHUB_REPOSITORY') != 'BoneManTGRM/NICO'
-            or os.environ.get('GITHUB_EVENT_NAME') not in {'pull_request', 'push'}
+            or os.environ.get('GITHUB_EVENT_NAME') not in {'pull_request', 'push', 'workflow_dispatch'}
             or not os.environ.get('GITHUB_RUN_ID', '').isdigit()
             or not os.environ.get('GITHUB_RUN_ATTEMPT', '').isdigit()
             or os.environ.get('NICO_TEST_DATABASE_URL') != EXPECTED_TARGET):
@@ -232,6 +232,194 @@ def check_storage_boundaries(jobs, winner, checks, observations=None):
     checks['negative_controls_rolled_back_without_deletion'] = True
 
 
+# Fixture isolation only: production tables and advisory-lock semantics are unchanged.
+# No public fallback in search_path and no retained rows are deleted or reset.
+FIXTURE_TABLES = ('client_jobs', 'nico_comprehensive_runs',
+    'nico_comprehensive_review_history_commitments', 'nico_comprehensive_browser_projections',
+    'nico_comprehensive_final_report_jobs')
+POSITIVE_CHECKS = (
+    'real_source_and_history_restored', 'real_child_rendered_with_occupancy_held',
+    'occupancy_held_through_physical_cleanup', 'cleanup_receipt_released_execution_only',
+    'capacity_enabled_ready_publication', 'fresh_process_retrieved_exact_bytes',
+    'identity_hash_and_gates_verified', 'retained_reservation_blocks_new_identity',
+    'existing_pdf_retrievable_after_rejected_admission', 'source_and_history_unchanged',
+    'result_and_serialized_bounds_preserved',
+)
+
+
+def isolated_adapter(explicit, schema, *, create=False):
+    require_context(explicit)
+    import re
+    if not re.fullmatch(r'capacity_positive_[0-9a-f]{32}', schema):
+        raise ValueError('owned_synthetic_schema_required')
+    # This sets flags OFF and scrubs inherited production connection aliases.
+    adapter = existing_jobs(explicit).adapter
+    from psycopg import sql
+    if create:
+        with adapter._connect() as con:
+            assert con.execute('SELECT current_database() AS db,current_user AS owner,pg_is_in_recovery() AS recovery').fetchone() == {
+                'db':'nico', 'owner':'nico', 'recovery':False}
+            con.execute(sql.SQL('CREATE SCHEMA {}').format(sql.Identifier(schema)))
+            for table in FIXTURE_TABLES:
+                con.execute(sql.SQL('CREATE TABLE {}.{} (LIKE public.{} INCLUDING ALL)').format(
+                    sql.Identifier(schema), sql.Identifier(table), sql.Identifier(table)))
+    from types import SimpleNamespace
+    driver = adapter._psycopg
+    def connect(url, **kwargs):
+        # Every ledger/source connection, including tuple-row source restoration,
+        # goes to this exact CI fixture and schema. Never inherit caller options.
+        require_context(explicit)
+        from nico.postgres_timeout_patch import postgres_connect_kwargs
+        options = kwargs.pop('options', '')
+        if url != EXPECTED_TARGET or options not in ('', postgres_connect_kwargs()['options']):
+            raise ValueError('synthetic_schema_connection_required')
+        return driver.connect(url, options=options+' -csearch_path='+schema+',pg_catalog', **kwargs)
+    adapter._psycopg = SimpleNamespace(connect=connect)
+    with adapter._connect() as con:
+        assert con.execute('SELECT current_schema() AS name').fetchone()['name'] == schema
+        for table in FIXTURE_TABLES:
+            # No fallback to public if a fixture table is absent.
+            assert con.execute('SELECT to_regclass(%s) AS name', (table,)).fetchone()['name']
+    return adapter
+
+
+def observed_jobs_class(base, checks):
+    class ObservedJobs(base):
+        def confirm_execution_exit(self, identity, owner, *, state, supervisor):
+            before = self.get(identity)
+            assert before['status'] == 'ready'
+            assert before['qualification']['execution_state'] == 'held'
+            assert state['physical_worker_exit_confirmed'] is True
+            assert state['temporary_files_cleanup_confirmed'] is True
+            assert all(guard.idle() for guard in state['pending_guards'])
+            assert supervisor is not None and not supervisor.is_alive()
+            super().confirm_execution_exit(identity, owner, state=state, supervisor=supervisor)
+            after = self.get(identity)
+            expected = dict(before, updated_epoch=after['updated_epoch'],
+                qualification=dict(before['qualification'], execution_state='released'))
+            assert after == expected
+            checks['cleanup_receipt_released_execution_only'] = True
+    return ObservedJobs
+
+
+def observe_worker(runtime, checks):
+    actual_worker = runtime.service.worker
+    def observed_worker(status, identity, **kwargs):
+        state = kwargs['state']; heartbeat = kwargs['heartbeat']
+        def observed_heartbeat(**phase):
+            assert state['physical_worker_exit_confirmed'] is False
+            assert state['temporary_files_cleanup_confirmed'] is False
+            assert runtime.jobs.get(identity)['qualification']['execution_state'] == 'held'
+            heartbeat(**phase)
+            checks['real_child_rendered_with_occupancy_held'] = True
+        kwargs['heartbeat'] = observed_heartbeat
+        result = actual_worker(status, identity, **kwargs)
+        # Actual worker returns only after child termination and private-file cleanup.
+        assert state['physical_worker_exit_confirmed'] is True
+        assert state['temporary_files_cleanup_confirmed'] is True
+        assert runtime.jobs.get(identity)['qualification']['execution_state'] == 'held'
+        checks['occupancy_held_through_physical_cleanup'] = True
+        return result
+    runtime.service.worker = observed_worker
+    return runtime
+
+
+def qualified_runtime(adapter, checks=None):
+    from scripts.postgres_review_pdf_lifecycle_proof import runtime_for
+    from nico.review_pdf_single_artifact_qualification_v1 import QualificationOnlyPostgresJobs
+    factory = (QualificationOnlyPostgresJobs if checks is None
+               else observed_jobs_class(QualificationOnlyPostgresJobs, checks))
+    runtime = runtime_for(adapter, jobs_factory=factory)
+    return runtime if checks is None else observe_worker(runtime, checks)
+
+
+def positive_read(expected, *, explicit):
+    require_context(explicit)
+    from scripts.postgres_review_pdf_lifecycle_proof import fresh_read
+    from nico.review_pdf_single_artifact_qualification_v1 import QualificationOnlyPostgresJobs
+    adapter = isolated_adapter(explicit, expected['schema'])
+    return fresh_read(expected, adapter=adapter, jobs_factory=QualificationOnlyPostgresJobs)
+
+
+def positive_lifecycle(progress, *, explicit):
+    from scripts.postgres_review_pdf_lifecycle_proof import build_owned_record
+    from nico.review_pdf_preparation_jobs_v1 import PreparationConflict
+    from nico.review_pdf_single_artifact_qualification_v1 import MAX_SERIALIZED_BYTES, serialized_size
+    checks = progress['checks']
+    progress['phase'] = 'positive_isolated_fixture_schema'
+    schema = 'capacity_positive_'+uuid4().hex
+    adapter = isolated_adapter(explicit, schema, create=True)
+    release = subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+    os.environ['RAILWAY_GIT_COMMIT_SHA'] = release
+    progress['phase'] = 'positive_real_source_and_history'
+    record = build_owned_record()
+    runtime = qualified_runtime(adapter, checks)
+    try:
+        store = runtime.source.store
+        persisted = store.create(record)
+        assert store.load(record['identity']['run_id']) == persisted
+        status = runtime.source.controller._status_artifact_from_record(persisted)
+        binding = dict(commit_sha=status['commit_sha'], canonical_truth_sha256=status['reports']['canonical_truth_sha256'])
+        queued = runtime.prepare(status['run_id'], 'es-MX', binding)
+        identity, _ = runtime._job(status['run_id'], 'es-MX', queued['job_id'], binding)
+        before = runtime.source.capture(identity)
+        with adapter._connect() as con:
+            history_before = con.execute('SELECT * FROM nico_comprehensive_review_history_commitments WHERE run_id=%s', (identity.run_id,)).fetchone()
+        assert history_before is not None
+        checks['real_source_and_history_restored'] = True
+        progress['phase'] = 'positive_actual_render_and_locked_publication'
+        ready = runtime.service.run_once(identity)
+        assert ready['status'] == 'ready' and ready['client_delivery_allowed'] is False
+        retained = runtime.jobs.get(identity)
+        assert retained['status'] == 'ready' and retained['qualification']['execution_state'] == 'released'
+        assert checks.get('cleanup_receipt_released_execution_only') is True
+        assert runtime.service.capacity.acquire(blocking=False)
+        runtime.service.capacity.release()
+        checks['capacity_enabled_ready_publication'] = True
+        progress['phase'] = 'positive_verified_retrieval'
+        response = runtime.retrieve(identity.run_id, identity.language, identity.job_id, binding)
+        expected = dict(schema=schema, identity=asdict(identity), job_id=identity.job_id, binding=binding,
+            pdf_sha256=hashlib.sha256(response.body).hexdigest(), pdf_bytes=len(response.body))
+        assert expected['pdf_sha256'] == retained['pdf_sha256']
+        assert expected['pdf_bytes'] > 0
+        assert len(retained['pdf_base64']) <= 64*1024*1024
+        assert serialized_size(retained) <= MAX_SERIALIZED_BYTES
+        assert retained['qualification']['reserved_bytes'] == MAX_SERIALIZED_BYTES
+        checks['result_and_serialized_bounds_preserved'] = True
+        assert runtime.jobs.enqueue(identity, preparation_authorized=True) == retained
+        assert runtime.jobs.claim(identity) is None
+        try:
+            runtime.jobs.enqueue(replace(identity, language='en'), preparation_authorized=True)
+        except PreparationConflict as error:
+            assert str(error) == 'qualification_one_artifact_full'
+        else:
+            raise AssertionError('released_execution_lost_retained_reservation')
+        with runtime.jobs._transaction(identity) as con:
+            assert runtime.jobs._queue_ids(con) == [identity.job_id]
+        assert runtime.jobs.get(identity) == retained
+        checks['retained_reservation_blocks_new_identity'] = True
+        # Re-run full authoritative retrieval after the rejected admission.
+        assert runtime.retrieve(identity.run_id, identity.language, identity.job_id, binding).body == response.body
+        checks['existing_pdf_retrievable_after_rejected_admission'] = True
+        assert runtime.source.capture(identity) == before
+        assert store.load(identity.run_id) == persisted
+        with adapter._connect() as con:
+            assert con.execute('SELECT * FROM nico_comprehensive_review_history_commitments WHERE run_id=%s', (identity.run_id,)).fetchone() == history_before
+        checks['source_and_history_unchanged'] = True
+    finally:
+        runtime.close()
+    progress['phase'] = 'positive_fresh_process_retrieval'
+    reader = subprocess.run([sys.executable, __file__, '--synthetic-ci-proof', '--positive-read'],
+        input=json.dumps(expected), text=True, capture_output=True, timeout=60)
+    if reader.returncode or reader.stderr:
+        raise RuntimeError('synthetic_positive_reader_failed')
+    observed = json.loads(reader.stdout)
+    assert observed == {'fresh_process_retrieved_exact_bytes':True, 'identity_hash_and_gates_verified':True}
+    checks.update(observed)
+    progress['observations'].append({'positive_pdf_sha256':expected['pdf_sha256'], 'positive_pdf_bytes':expected['pdf_bytes'],
+        'reservation_bytes':MAX_SERIALIZED_BYTES, 'execution_state':'released', 'status':'ready'})
+
+
 def proof(progress, *, explicit):
     jobs = existing_jobs(explicit)
     from nico.review_pdf_preparation_jobs_v1 import PreparationIdentity, PreparationConflict
@@ -314,10 +502,16 @@ def proof(progress, *, explicit):
             'NICO_ENABLE_REVIEW_PDF_PREPARATION','NICO_REVIEW_PDF_PG_QUALIFIED',
             'NEXT_PUBLIC_NICO_REVIEW_PDF_PREPARATION'))
         assert set(checks)==set(REQUIRED_CHECKS) and all(value is True for value in checks.values())
+        positive_lifecycle(progress, explicit=explicit)
+        assert all(os.environ.get(key)=='false' for key in (
+            'NICO_ENABLE_REVIEW_PDF_PREPARATION','NICO_REVIEW_PDF_PG_QUALIFIED',
+            'NEXT_PUBLIC_NICO_REVIEW_PDF_PREPARATION'))
+        assert set(checks) == set(REQUIRED_CHECKS) | set(POSITIVE_CHECKS)
+        assert all(value is True for value in checks.values())
         progress['phase']='complete'
         return dict(status='passed',synthetic=True,live_production_claim=False,
             assessment_executed=False,client_delivery_allowed=False,commit_sha=release,
-            qualified_scope='capacity_protocol_only',successful_ready_publication_proven=False,
+            qualified_scope='capacity_protocol_and_synthetic_lifecycle',successful_ready_publication_proven=True,
             checks=checks,observations=observations)
     finally:
         for p in children:
@@ -329,6 +523,20 @@ def proof(progress, *, explicit):
                 if pipe is not None: pipe.close()
 
 
+def failure_site(error):
+    """Repository code location only; never exception text, SQL parameters or locals."""
+    allowed = {'postgres_review_pdf_capacity_proof.py', 'postgres_review_pdf_lifecycle_proof.py',
+        'review_pdf_single_artifact_qualification_v1.py', 'review_pdf_preparation_jobs_v1.py'}
+    site = {}
+    tb = error.__traceback__
+    while tb is not None:
+        filename = Path(tb.tb_frame.f_code.co_filename).name
+        if filename in allowed:
+            site = {'file':filename, 'function':tb.tb_frame.f_code.co_name, 'line':tb.tb_lineno}
+        tb = tb.tb_next
+    return site
+
+
 def write_proof(output, *, explicit):
     progress = {'phase':'context','checks':{},'observations':[]}
     started = time.monotonic()
@@ -336,7 +544,8 @@ def write_proof(output, *, explicit):
         result = proof(progress,explicit=explicit)
     except BaseException as error:
         result = dict(status='failed',synthetic=True,live_production_claim=False,
-            assessment_executed=False,client_delivery_allowed=False,error_type=type(error).__name__,**progress)
+            assessment_executed=False,client_delivery_allowed=False,error_type=type(error).__name__,
+            failure_site=failure_site(error),**progress)
         output.parent.mkdir(parents=True,exist_ok=True)
         output.write_text(json.dumps(result,indent=2)+'\n')
         raise RuntimeError('synthetic_capacity_proof_failed') from None
@@ -350,9 +559,16 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--synthetic-ci-proof',action='store_true')
     parser.add_argument('--child',action='store_true')
+    parser.add_argument('--positive-read',action='store_true')
     parser.add_argument('--output',type=Path)
     args=parser.parse_args()
-    if args.child:
+    if args.positive_read:
+        try:
+            print(json.dumps(positive_read(json.load(sys.stdin), explicit=args.synthetic_ci_proof)))
+        except BaseException as error:
+            print(json.dumps({'event':'failed','error_type':type(error).__name__}),flush=True)
+            raise SystemExit(1)
+    elif args.child:
         try: child(args.synthetic_ci_proof)
         except BaseException as error:
             print(json.dumps({'event':'failed','error_type':type(error).__name__}),flush=True)

@@ -397,3 +397,20 @@ def test_execution_marker_cannot_be_replaced_or_reset(ledger):
         with ledger._transaction(i) as con:
             job=ledger._read(con,i);job['qualification']['execution_state']='held'
             ledger._write(con,i,job)
+
+
+def test_postgres_namespace_query_uses_valid_psycopg_parameters():
+    from psycopg._queries import PostgresQuery
+    from psycopg.adapt import Transformer
+    from nico.review_pdf_single_artifact_qualification_v1 import QualificationOnlyPostgresJobs
+    con = Mock()
+    con.execute.return_value.fetchall.return_value = [{'job_id': 'reviewpdfprep_existing'}]
+    from nico.storage import PostgresAdapter
+    jobs = QualificationOnlyPostgresJobs(PostgresAdapter.__new__(PostgresAdapter))
+    assert jobs._queue_ids(con) == ['reviewpdfprep_existing']
+    sql, parameters = con.execute.call_args.args
+    query = PostgresQuery(Transformer())
+    # Real psycopg parsing/adaptation, without a database or mocked parser.
+    query.convert(sql, parameters)
+    assert b'LIMIT 2' in query.query
+    assert b'review_pdf_preparation.%' in query.params

@@ -83,65 +83,93 @@ production mutations, new assessments or approved-source expansion occurred.
 C++ remains paused; the unrelated database pilot remains HOLD.
 
 
-## Explicit synthetic PostgreSQL capacity proof (not yet executed)
+## Explicit synthetic PostgreSQL capacity proof
 
-`postgres_review_pdf_capacity_proof.py` requires `--synthetic-ci-proof`, the existing
-Postgres Restart Proof GitHub Actions context, a PR/push event and the exact public
-loopback CI fixture URL. It rejects unsupported prerequisites before connecting.
-It uses existing tables only, fails if the queue namespace is occupied, scrubs
-inherited production aliases and keeps rollout flags false. No schema creation,
-cleanup/deletion, new service or production configuration is included.
+The proof requires `--synthetic-ci-proof`, the existing Postgres Restart Proof
+GitHub Actions context, valid run identity, and the exact public loopback CI
+fixture URL. It accepts all existing workflow events: pull_request, push and
+workflow_dispatch. No workflow was manually dispatched.
 
-The existing workflow now places this step BEFORE the old review-PDF ledger proof,
-which otherwise populates the globally counted namespace. The new proof retains
-bounded JSON evidence (including completed checks, phase, individual synthetic
-outcomes and failures) in the existing always-uploaded artifact. It requires all
-14 named checks and binds its recorded git HEAD to the other proofs' source SHA.
-No draft/flag skip condition applies. Branch push alone does not trigger this
-workflow: a parent-created PR or subsequent main push will exercise it. Default
-PR checkout may be a merge commit; inspect the recorded SHA/tree, not head_sha alone.
+PR 1777's first actual PostgreSQL run, 39096244641 (job 117583188723), failed
+before any capacity checks completed. Parent retrieved artifact 12124548625 and
+verified ZIP SHA-256
+`0878ea2ede16ab66fedf5f06005007b17b93a4e3d5a5ba8e1af0f52d04a1a204`.
+Its retained JSON identifies ProgrammingError in
+`existing_empty_queue_and_global_first_contention`. The real psycopg parameter
+parser reproduces the cause without a connection: a literal percent sign in the
+namespace LIKE expression is parsed as an invalid placeholder when parameters
+are supplied. The fix binds the LIKE pattern as a parameter; namespace selection,
+locks, bounds and acceptance semantics do not change. A regression test uses the
+actual psycopg parser/adaptor. The initial test scaffold mistakenly supplied a
+Mock where PostgresAdapter was required; that setup failure is retained separately
+from the subsequent intended ProgrammingError reproduction.
 
-The real-PG script is designed to exercise four independent distinct admissions
-while pg_locks proves global-first contention, duplicate reads, all terminal and
-legacy statuses, malformed namespace/workflow rows, exact 66 MiB/one-byte overflow,
-expired occupancy with a controlled physical process alive, concurrent rejected
-late publications and cancellation, stale ownership and crash without a cleanup
-receipt. Negative storage controls roll back uniquely owned fixture changes;
-there is no DELETE or reset of retained production artifacts. The final fixture
-row remains cancelled with occupancy held, without replacement.
+The same proof script retains all 14 original negative/concurrency checks and
+adds 11 mandatory positive lifecycle checks. The existing workflow requires the
+exact combined check set and successful_ready_publication_proven=true, using the
+same service definition, step and uploaded artifact. It runs before other
+review-PDF proofs populate the ordinary queue namespace. Its recorded git HEAD
+must match the other proofs. A branch push alone does not run this workflow;
+automatic PR CI does. PR checkout may use a merge SHA.
 
-Scope limits are explicit: the live process is a controlled synthetic holder,
-not the actual PDF renderer. The publication race uses an expired owner and
-proves rejection, not successful ready publication. Crash follows cancellation;
-no automatic orphan-release policy is qualified. Successful complete source-locked
-ready publication/retrieval remains covered by the separate existing ordinary
-lifecycle proof and local prototype render test, not claimed by this new PG proof
-(`successful_ready_publication_proven=false`). Full capacity-enabled PostgreSQL
-ready publication and resource qualification remain open.
+Negative scenarios retain their original namespace and cancelled/held reservation.
+For the positive scenario, only after explicit CI/target guards pass, the proof
+creates a uniquely named capacity_positive_<uuid> schema in the SAME ephemeral
+CI PostgreSQL service. It clones the five required fixture tables from existing
+public tables, without copying rows. No service, database, matrix lane, deletion,
+reset or drop is added. Every positive ledger and source-store connection pins
+search_path to that schema and pg_catalog, with no public fallback. Actual
+production ledger queries and advisory-lock semantics remain unchanged. The
+existing CI lifecycle disposes of the ephemeral service.
 
-Local proof-harness verification: 25 cases passed (context/target guards, occupied
-namespace rejection, real fixture publication fences, rollback controls, failure
-evidence and workflow structure/syntax). Existing proof-contract 12 and prototype 30
-cases passed again. No real PostgreSQL connection occurred here. Execution and
-independent review remain pending; this is not activation-ready.
+The positive path reuses build_owned_record, the real independent history
+commitment/store, source restoration, actual rendering child, locked ready
+publication, and complete retrieval validators from the existing lifecycle proof.
+A pass-through observer asserts occupancy remains held while the child runs and
+through actual private-file cleanup. At the real cleanup receipt it requires
+confirmed physical exit, cleaned files, idle guards and a stopped supervisor.
+Calling the unmodified receipt must change only execution_state and update time:
+reservation, identity, result bytes and status remain retained. No validation is
+stubbed, ready row manufactured, or cleanup state invented.
 
-Fresh local verification on the completed proof files (three isolated pytest
-processes, all exit 0):
+After ready publication, the proof verifies the unchanged 64 MiB encoded-result
+limit and 66 MiB logical JSON limit, duplicate idempotency and no second claim.
+A distinct identity must still fail specifically with
+qualification_one_artifact_full. The original PDF remains retrievable through
+the real runtime after that rejection. A fresh interpreter uses the same pinned
+schema and qualification ledger to verify digest, length, source identity and
+pending-review/delivery gates. Source record and independent history commitment
+must remain unchanged. All rollout flags remain false; constructor selection is
+proof-only. Failure retains phase, completed checks, safe repository code location
+and exception class, without SQL values, exception text or secrets.
+
+Local tests use the actual psycopg parser and a real SQLite source/renderer to
+exercise the positive observers and unchanged result validator. They also check
+schema guards, pinned connection options, supported events and workflow/evidence
+wiring. SQLite is not PostgreSQL concurrency or fresh-process PG retrieval proof.
+Actual execution of the corrected combined proof remains pending automatic PR CI;
+no success is claimed from the local harness. Production-size timing and resource
+qualification also remain open. C++ remains paused; database pilot remains HOLD.
+
+Fresh local validation of the correction (all exit 0; 91 passed total):
 
 ```text
 /workspace/nico-venv/bin/pytest -q tests/test_postgres_review_pdf_capacity_proof.py
-25 passed in 0.17s
-/workspace/nico-venv/bin/pytest -q tests/test_postgres_review_pdf_preparation_proof.py
-12 passed in 7.50s
+46 passed, 3 warnings in 5.74s
 /workspace/nico-venv/bin/pytest -q tests/test_review_pdf_single_artifact_qualification.py
-30 passed, 3 warnings in 12.88s
+31 passed, 3 warnings in 13.91s
+/workspace/nico-venv/bin/pytest -q tests/test_postgres_review_pdf_preparation_proof.py tests/test_review_pdf_real_source_lifecycle.py
+14 passed, 6 warnings in 18.37s
 ```
 
-Logs and JUnit reports are retained in
-`/workspace/pdf-capacity-qualification-handoff/`. A standalone CLI smoke with
-`GITHUB_ACTIONS=false` exited 1 as required, retaining failure evidence at phase
-`context` with no checks completed and `error_type=ValueError`; no connector was
-used. Workflow YAML and its embedded evidence verifier were parsed by the harness.
-The three warnings are existing pypdf deprecations. These local results do not
-substitute for execution against the existing CI PostgreSQL service. No PR,
-manual workflow dispatch, merge, deployment or activation was performed.
+Warnings are existing pypdf deprecations. Logs/JUnit files are retained under
+`/workspace/pdf-capacity-qualification-handoff/correction-*`. Before/after event
+and psycopg-parser reproductions are retained there too. The first positive local
+test incorrectly attempted the PostgreSQL-only runtime lookup against SQLite;
+that failure is preserved in positive-harness-initial.txt. The corrected local
+test derives the real identity and validates retained bytes with the actual
+validator, without stubbing runtime lookup or claiming PG retrieval. Fresh-process
+runtime retrieval remains a mandatory actual-PG CI check.
+
+Main 644b5516bf6dcace88de5178b88bffa1fb11e76e was normally merged before this
+correction; no force push, deployment or activation is part of this work.

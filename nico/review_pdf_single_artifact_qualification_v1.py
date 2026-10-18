@@ -165,7 +165,7 @@ class QualificationOnlyPostgresJobs(_OneArtifactQualification, PostgresReviewPdf
     def _queue_ids(self, connection):
         rows = connection.execute(
             "SELECT job_id FROM client_jobs WHERE left(job_id,%s)=%s "
-            "OR payload->>'workflow' LIKE 'review_pdf_preparation.%' LIMIT 2",
-            (len(PREFIX), PREFIX),
+            "OR payload->>'workflow' LIKE %s LIMIT 2",
+            (len(PREFIX), PREFIX, 'review_pdf_preparation.%'),
         ).fetchall()
         return [row['job_id'] for row in rows]
