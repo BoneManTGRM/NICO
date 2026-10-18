@@ -138,6 +138,32 @@ def test_installer_and_late_rebinding_keep_flowing_renderer():
     assert v7.render_paired_substantive_review_pdf is polish._render_polished_review_pdf
 
 
+def test_installed_mobile_wrapper_reports_content_dependent_flowing_layout(monkeypatch):
+    from nico import comprehensive_mobile_score_projection_v2 as mobile
+    from nico import comprehensive_client_review_companion_v7 as v7
+    from nico.comprehensive_review_companion_v7_mobile_contract import install_comprehensive_review_companion_v7_mobile_contract
+    polish.install_comprehensive_pdf_layout_polish_v1()
+    for state in (install_comprehensive_review_companion_v7_mobile_contract(),
+                  mobile.install_comprehensive_mobile_score_projection_v2(),
+                  install_comprehensive_review_companion_v7_mobile_contract(),
+                  mobile.install_comprehensive_mobile_score_projection_v2()):
+        assert state['decision_useful_review_companion_pages'] is None
+        assert state['review_companion_sections_per_page'] is None
+        assert state['review_companion_section_count']==8
+        assert state['paired_review_pages_active'] is False
+        assert state['flowing_review_pages_active'] is True
+    # Metadata follows later renderer changes rather than capturing the first
+    # installation's layout, while retaining the legacy paired contract.
+    with monkeypatch.context() as context:
+        context.setattr(v7,'render_paired_substantive_review_pdf',lambda *a,**k: b'')
+        state=install_comprehensive_review_companion_v7_mobile_contract()
+        assert state['decision_useful_review_companion_pages']==4
+        assert state['review_companion_sections_per_page']==2
+        assert state['paired_review_pages_active'] is True
+        assert state['flowing_review_pages_active'] is False
+    assert install_comprehensive_review_companion_v7_mobile_contract()['decision_useful_review_companion_pages'] is None
+
+
 def test_final_composition_accepts_60_and_rejects_61_without_dropping_review_pages():
     from tests.test_client_pdf_compose_v2 import _pdf
     from nico.client_pdf_compose_v2 import compose_compact_client_pdf
