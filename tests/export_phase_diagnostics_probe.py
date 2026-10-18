@@ -42,4 +42,3 @@ def test_real_export_response_bytes_headers_and_manifests_are_identical(caplog, 
     assert actual.status_code == expected.status_code
     assert source == before
     assert records(caplog, 'NICO_REPORT_TIMING')[0]['outcome'] == 'completed'
-
