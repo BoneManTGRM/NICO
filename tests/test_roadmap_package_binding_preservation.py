@@ -336,3 +336,34 @@ def test_candidate_metadata_normalization_rebinds_without_changing_review_count(
     assert candidate['package_id']!=original['package_id']
     assert candidate['package_id']==_base(candidate['source_binding'],candidate['kind'],candidate['source_refs'])['package_id']
     assert_final_roadmap_binding(result)
+
+
+@pytest.mark.parametrize('candidate_count', [0, 3])
+def test_unchanged_package_graph_initializes_late_planning_stage_ids(candidate_count):
+    from tests.test_comprehensive_finding_roadmap_v1 import _canonical
+    from nico.comprehensive_finding_roadmap_v1 import rebind_generated_roadmap, assert_final_roadmap_binding
+    canonical=_canonical();canonical['canonical_findings']=[];canonical['stage_summaries']=[]
+    canonical['review_candidate_summary']={'review_required_total':candidate_count}
+    report=bind_final_finding_roadmap(canonical,raw_stages={})
+    late_stages=[{'stage_id':name,'evidence':['Retained planning input']} for name in (
+        'risk_reduction_and_executive_briefing','staffing_sequencing_and_cost')]
+    report['stage_summaries']=deepcopy(late_stages)
+    report['assessment']['stage_summaries']=deepcopy(late_stages)
+    before=deepcopy(report)
+    result=rebind_generated_roadmap(report)
+    assert result['roadmap']==report['roadmap']
+    ids=[p['package_id'] for p in report['roadmap']]
+    for container in (result,result['assessment']):
+        for stage in container['stage_summaries']:
+            assert stage['source_package_ids']==ids
+            assert stage['evidence']==['Retained planning input']
+    assert_final_roadmap_binding(result)
+    assert report==before
+    assert rebind_generated_roadmap(result)==result
+    # Missing or explicit incorrect fields still fail at the freeze boundary.
+    with pytest.raises(ValueError,match='roadmap_final_dependent_ids_mismatch'):
+        assert_final_roadmap_binding(before)
+    damaged=deepcopy(result)
+    damaged['assessment']['stage_summaries'][0]['source_package_ids']=['unknown']
+    with pytest.raises(ValueError,match='roadmap_final_dependent_ids_mismatch'):
+        assert_final_roadmap_binding(damaged)

@@ -511,7 +511,30 @@ def rebind_generated_roadmap(canonical: Mapping[str, Any]) -> dict[str, Any]:
     if len({p['package_id'] for p in rebound}) != len(rebound):
         raise ValueError('roadmap_rebinding_package_collision')
     if rebound == packages:
-        return dict(canonical)
+        # Preparation can introduce planning stages after the source builder ran.
+        # Derive their missing ID lists even when no package needed rebinding.
+        # Keep explicit values intact: the freeze validator must reject drift.
+        output = dict(canonical)
+        ids = [package['package_id'] for package in packages]
+        for name, container in ((None, canonical), ('assessment', canonical.get('assessment'))):
+            if not isinstance(container, Mapping):
+                continue
+            stages = container.get('stage_summaries')
+            if not isinstance(stages, list):
+                continue
+            missing = [(i, stage) for i, stage in enumerate(stages)
+                       if isinstance(stage, Mapping)
+                       and stage.get('stage_id') in {'staffing_sequencing_and_cost', 'risk_reduction_and_executive_briefing'}
+                       and 'source_package_ids' not in stage]
+            if missing:
+                updated = list(stages)
+                for index, stage in missing:
+                    updated[index] = {**stage, 'source_package_ids': list(ids)}
+                if name is None:
+                    output['stage_summaries'] = updated
+                else:
+                    output[name] = {**container, 'stage_summaries': updated}
+        return output
     by_id = {old['package_id']: (old, new) for old, new in zip(packages, rebound, strict=True)}
     def replace_graph(value):
         if isinstance(value, list):
