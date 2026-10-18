@@ -375,6 +375,11 @@ def _render_polished_review_pdf(canonical: Mapping[str, Any], *, spanish: bool) 
     from pypdf import PdfWriter
     writer = PdfWriter()
     writer.append(PdfReader(io.BytesIO(buffer.getvalue())), import_outline=False)
+    from pypdf.generic import BooleanObject, NameObject
+    for page in writer.pages:
+        # Owned presentation metadata, never inferred from evidence wording.
+        # Later sanitization must not mistake complete worksheets for raw dumps.
+        page[NameObject('/NICOFlowingReviewWorksheet')] = BooleanObject(True)
     for label, page_index in document.section_pages:
         writer.add_outline_item(label, page_index)
     output = io.BytesIO()
