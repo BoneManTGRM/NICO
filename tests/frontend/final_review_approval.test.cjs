@@ -434,7 +434,7 @@ test('final review navigation preserves exact run and locale without copying cre
   assert.equal(finalReviewHref('/operations', '?run_id=comprun_unit_fixture'), '/operations');
 });
 
-test('workflow banner retains the reviewed run and edition in both languages', () => {
+test('workflow banner preserves identity and distinguishes operator permission from outstanding specialist review', () => {
   const navigation = loadHelpers('apps/web/app/PrimaryNavigation.tsx');
   for (const lang of ['en', 'es-MX']) {
     const jsx = (type, props) => ({type, props});
@@ -446,7 +446,23 @@ test('workflow banner retains the reviewed run and edition in both languages', (
       if (name === './PrimaryNavigation') return navigation;
       throw new Error(`Unexpected import ${name}`);
     }});
-    const link = nodes(component.default()).find(n => n.type === 'a' && /Final Review|Revisión final/.test(text(n)));
+    const rendered = component.default();
+    const boundary = nodes(rendered).find(n => n.props?.className === 'workflow-boundary');
+    const message = text(boundary);
+    if (lang === 'en') {
+      assert.match(message, /records operator approval and client-delivery permission together/);
+      assert.match(message, /Delivery remains blocked until both are recorded/);
+      assert.match(message, /Outstanding specialist review and independent QC remain disclosed/);
+      assert.match(message, /no report is sent automatically/);
+      assert.doesNotMatch(message, /Human review and separate delivery authorization required/);
+    } else {
+      assert.match(message, /aprobación del operador y el permiso de entrega al cliente en una misma acción/);
+      assert.match(message, /entrega permanece bloqueada hasta registrar ambos/);
+      assert.match(message, /revisión especializada y el control de calidad independiente pendientes siguen declarados/);
+      assert.match(message, /no se envía ningún informe automáticamente/);
+      assert.doesNotMatch(message, /revisión humana y una autorización de entrega independiente/);
+    }
+    const link = nodes(rendered).find(n => n.type === 'a' && /Final Review|Revisión final/.test(text(n)));
     const target = new URL(link.props.href, 'https://unit.invalid');
     assert.equal(target.pathname, '/operations/final-review');
     assert.equal(target.searchParams.get('run_id'), 'comprun_unit_fixture');
