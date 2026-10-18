@@ -1425,7 +1425,7 @@ def _pdf(
                 else 10
             )
             block.extend(p(label, body) for label in stage_preview_labels(
-                stage, assessment, evidence_limit=preview_limit, findings_limit=12,
+                stage, assessment, evidence_limit=preview_limit, evidence_text_limit=1000, findings_limit=12,
                 spanish=localize_presentation is not None))
             preview = stage["evidence"][:preview_limit]
             block.extend(
@@ -1463,7 +1463,7 @@ def _pdf(
             p(stage["summary"], body),
         ]
         story.extend(p(label, body) for label in stage_preview_labels(
-            stage, assessment, evidence_limit=100, findings_limit=50,
+            stage, assessment, evidence_limit=100, evidence_text_limit=1000, findings_limit=50,
             spanish=localize_presentation is not None))
         evidence_rows = [[p(f"{stage['title']} — {localized('Retained Evidence')}", h3)]]
         evidence_rows.extend([item] for item in bullets(

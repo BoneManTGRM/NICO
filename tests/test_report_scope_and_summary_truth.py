@@ -261,3 +261,57 @@ def test_spanish_composite_exit_criterion_uses_its_original_field_contract():
         assert 'regresión material' in ' '.join(output.split())
         assert 'All listed' not in output
     assert source == before
+
+
+@pytest.mark.parametrize('format_name', ['en-pdf', 'es-localized-pdf', 'es-pdf', 'en-markdown', 'es-markdown'])
+def test_long_roadmap_row_discloses_actual_format_truncation(format_name):
+    import base64
+    from nico.comprehensive_report_package import _pdf, _markdown
+    from nico.comprehensive_report_spanish_artifacts_v51 import _spanish_pdf
+    from nico.comprehensive_report_spanish_text_v51 import _spanish_markdown, _es
+    identity, assessment, stages = preview_fixture()
+    assessment['roadmap'] = assessment['roadmap'][:1]
+    stage = stages[0]
+    stage['evidence'] = [assessment['roadmap'][0]['package_id'] + ' | ' + 'Detalle conservado. ' * 80 + 'ROADMAP_REQUIRED_TAIL']
+    stages = [stage]
+    canonical = {'identity': identity, 'assessment': assessment, 'stage_summaries': stages, 'roadmap': assessment['roadmap']}
+    before = deepcopy(canonical)
+    if format_name in ('en-pdf', 'es-localized-pdf'):
+        encoded, error, _ = _pdf(identity, assessment, stages, '2026-10-18T00:00:00Z',
+                                localize_presentation=_es if format_name.startswith('es') else None)
+        assert not error
+        output = pdf_text(base64.b64decode(encoded))
+    elif format_name == 'es-pdf':
+        data, _ = _spanish_pdf(canonical)
+        output = pdf_text(data)
+    elif format_name == 'en-markdown':
+        output = _markdown(identity, assessment, stages, '2026-10-18T00:00:00Z')
+    else:
+        output = _spanish_markdown(canonical)
+    output = ' '.join(output.split())
+    partial = 'Algunos paquetes se muestran parcialmente.' if format_name.startswith('es') else 'Some packages are partially shown.'
+    assert ('1 de 1 paquetes' if format_name.startswith('es') else '1 of 1 work packages') in output
+    if format_name in ('en-pdf', 'es-localized-pdf'):
+        assert 'ROADMAP_REQUIRED_TAIL' not in output
+        assert partial in output
+    else:
+        assert 'ROADMAP_REQUIRED_TAIL' in output
+        assert partial not in output
+    assert canonical == before
+    assert compact.MAX_CLIENT_PDF_PAGES == 60
+
+
+@pytest.mark.parametrize('length', [999, 1000, 1001])
+def test_roadmap_text_limit_uses_normalized_length_and_only_shown_rows(length):
+    from nico.report_preview_labels_v1 import stage_preview_labels
+    prefix = 'NICO-WORK-0000000000000001 | '
+    row = prefix + 'x' * (length - len(prefix))
+    source = {'roadmap': [{'package_id': 'NICO-WORK-0000000000000001'}]}
+    stage = {'stage_id': 'six_month_roadmap', 'evidence': [row]}
+    label = stage_preview_labels(stage, source, evidence_text_limit=1000)[0]
+    assert ('partially' in label) == (length > 1000)
+    # Raw extra whitespace does not count as omitted substantive content.
+    stage['evidence'] = [row.replace(' | ', '   |   ') + '   ']
+    label = stage_preview_labels(stage, source, evidence_text_limit=1000)[0]
+    assert ('partially' in label) == (length > 1000)
+    assert 'partially' not in stage_preview_labels(stage, source, evidence_limit=0, evidence_text_limit=1000)[0]

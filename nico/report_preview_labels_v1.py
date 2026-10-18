@@ -5,6 +5,7 @@ from typing import Any, Mapping
 
 def stage_preview_labels(stage: Mapping[str, Any], context: Mapping[str, Any], *,
                          evidence_limit: int | None = None,
+                         evidence_text_limit: int | None = None,
                          findings_limit: int | None = None,
                          spanish: bool = False) -> list[str]:
     assessment = context.get('assessment')
@@ -44,7 +45,7 @@ def stage_preview_labels(stage: Mapping[str, Any], context: Mapping[str, Any], *
         return []
     packages = retained('roadmap')
     package_ids = {str(item['package_id']) for item in packages or [] if item.get('package_id')}
-    lines = [str(line) for line in stage.get('evidence') or [] if str(line or '').strip()]
+    lines = [' '.join(str(line).split()) for line in stage.get('evidence') or [] if str(line or '').strip()]
     # The roadmap producer prefixes each detail with the exact retained package ID.
     def counts(values: list[str]) -> Counter:
         return Counter(line.partition(' | ')[0] for line in values
@@ -52,6 +53,14 @@ def stage_preview_labels(stage: Mapping[str, Any], context: Mapping[str, Any], *
     complete, shown = counts(lines), counts(lines[:evidence_limit])
     total = str(len(package_ids)) if packages is not None else ('desconocido' if spanish else 'unknown')
     partial = any(count < complete[identifier] for identifier, count in shown.items())
+    if evidence_text_limit is not None:
+        # Match the PDF bullet renderer's whitespace normalization before its
+        # character cap. A present row is not necessarily a complete detail.
+        partial = partial or any(
+            line.partition(' | ')[0] in package_ids
+            and len(line) > evidence_text_limit
+            for line in lines[:evidence_limit]
+        )
     if spanish:
         label = f'Vista previa de la hoja de ruta: detalles de {len(shown)} de {total} paquetes de trabajo.'
         if partial:
