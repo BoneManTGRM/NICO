@@ -1,0 +1,29 @@
+{
+  "python": "3.11.17 (main, Oct  6 2026, 02:02:21) [GCC 14.2.0]",
+  "large_container_peak_bytes": [
+    77601
+  ],
+  "large_container_limit_bytes": 1048576,
+  "probes": [
+    {
+      "name": "max_list",
+      "accepted": true,
+      "extra_peak_bytes": 196664
+    },
+    {
+      "name": "over_list",
+      "accepted": false,
+      "extra_peak_bytes": 108
+    },
+    {
+      "name": "max_dict",
+      "accepted": true,
+      "extra_peak_bytes": 196656
+    },
+    {
+      "name": "over_dict",
+      "accepted": false,
+      "extra_peak_bytes": 112
+    }
+  ]
+}

@@ -46,11 +46,13 @@ _HASH_NATIVE_BYTES_LIMIT = 1024 * 1024
 def _bounded_native_json(value: Any, *, max_depth: int = 64) -> bool:
     """Limit native encoding to small plain-JSON subtrees, including escaped bytes."""
 
-    pending = [(value, 0)]
+    pending = [value]
+    depths = [0]
     nodes_left = _HASH_NATIVE_NODE_LIMIT
     bytes_left = _HASH_NATIVE_BYTES_LIMIT
     while pending:
-        item, depth = pending.pop()
+        item = pending.pop()
+        depth = depths.pop()
         nodes_left -= 1
         if nodes_left < 0:
             return False
@@ -65,13 +67,15 @@ def _bounded_native_json(value: Any, *, max_depth: int = 64) -> bool:
             if any(type(key) is not str for key in item):
                 return False
             bytes_left -= 2 + 2 * len(item)
-            pending.extend((key, depth + 1) for key in item.keys())
-            pending.extend((child, depth + 1) for child in item.values())
+            pending.extend(item.keys())
+            pending.extend(item.values())
+            depths.extend([depth + 1] * (2 * len(item)))
         elif kind in (list, tuple):
             if len(pending) + len(item) > nodes_left:
                 return False
             bytes_left -= 2 + len(item)
-            pending.extend((child, depth + 1) for child in item)
+            pending.extend(item)
+            depths.extend([depth + 1] * len(item))
         elif kind is str:
             bytes_left -= 2 + 6 * len(item)
         elif kind is int:

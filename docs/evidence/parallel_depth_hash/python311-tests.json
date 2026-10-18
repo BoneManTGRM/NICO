@@ -1,0 +1,74 @@
+[
+  {
+    "name": "bounded_comprehensive_record_hash_v1",
+    "exit_code": 0,
+    "seconds": 3.069,
+    "summary": "34 passed, 2 warnings in 1.44s"
+  },
+  {
+    "name": "comprehensive_run_record",
+    "exit_code": 0,
+    "seconds": 1.62,
+    "summary": "6 passed, 2 warnings in 0.07s"
+  },
+  {
+    "name": "comprehensive_run_record_copy_boundary_v1",
+    "exit_code": 0,
+    "seconds": 1.617,
+    "summary": "4 passed, 2 warnings in 0.09s"
+  },
+  {
+    "name": "comprehensive_run_storage_codec_v1",
+    "exit_code": 0,
+    "seconds": 1.667,
+    "summary": "36 passed, 2 warnings in 0.15s"
+  },
+  {
+    "name": "comprehensive_run_storage_dedup_v1",
+    "exit_code": 0,
+    "seconds": 2.319,
+    "summary": "41 passed, 2 warnings in 0.76s"
+  },
+  {
+    "name": "comprehensive_run_storage_chunks_v1",
+    "exit_code": 0,
+    "seconds": 4.823,
+    "summary": "30 passed, 2 warnings in 3.30s"
+  },
+  {
+    "name": "comprehensive_run_storage_capacity_v1",
+    "exit_code": 0,
+    "seconds": 1.617,
+    "summary": "7 passed, 2 warnings in 0.07s"
+  },
+  {
+    "name": "comprehensive_run_store",
+    "exit_code": 0,
+    "seconds": 1.617,
+    "summary": "10 passed, 2 warnings in 0.09s"
+  },
+  {
+    "name": "comprehensive_canonical_truth_hash_compat_v1",
+    "exit_code": 0,
+    "seconds": 1.617,
+    "summary": "12 passed, 2 warnings in 0.09s"
+  },
+  {
+    "name": "comprehensive_artifact_manifest_approval_v1",
+    "exit_code": 0,
+    "seconds": 6.626,
+    "summary": "38 passed, 40 warnings in 5.06s"
+  },
+  {
+    "name": "exact_artifact_review_compat_v1",
+    "exit_code": 0,
+    "seconds": 1.567,
+    "summary": "4 passed, 2 warnings in 0.06s"
+  },
+  {
+    "name": "report_validation_text_reuse_v1",
+    "exit_code": 0,
+    "seconds": 1.617,
+    "summary": "3 passed, 2 warnings in 0.10s"
+  }
+]
