@@ -23,9 +23,14 @@ def stage_preview_labels(stage: Mapping[str, Any], context: Mapping[str, Any], *
     stage_id = stage.get('stage_id')
     if stage_id == 'risk_reduction_and_executive_briefing':
         packages = retained('roadmap')
-        if packages is None:
+        # The producer binds these IDs to this stage's executive evidence.
+        # An explicit empty list is authoritative; only absence uses outer data.
+        source_ids = stage.get('source_package_ids')
+        if packages is None and not isinstance(source_ids, list):
             return []
-        identifiers = {str(item['package_id']) for item in packages if item.get('package_id')}
+        identifiers = ({str(value) for value in source_ids if value}
+                       if isinstance(source_ids, list) else
+                       {str(item['package_id']) for item in packages or [] if item.get('package_id')})
         for line in list(stage.get('evidence') or [])[:evidence_limit]:
             if str(line).startswith(('Proposed work packages (summary)', 'Paquetes de trabajo propuestos (resumen)')):
                 shown = set(str(line).partition(': ')[2].split(', ')) & identifiers
@@ -43,7 +48,11 @@ def stage_preview_labels(stage: Mapping[str, Any], context: Mapping[str, Any], *
         )]
     if stage_id != 'six_month_roadmap':
         return []
-    packages = retained('roadmap')
+    # Count the collection that produced the rendered details, not an older
+    # outer projection. Legacy stages without a collection keep the fallback.
+    stage_packages = stage.get('roadmap')
+    packages = ([item for item in stage_packages if isinstance(item, Mapping)]
+                if isinstance(stage_packages, list) else retained('roadmap'))
     package_ids = {str(item['package_id']) for item in packages or [] if item.get('package_id')}
     lines = [' '.join(str(line).split()) for line in stage.get('evidence') or [] if str(line or '').strip()]
     # The roadmap producer prefixes each detail with the exact retained package ID.
