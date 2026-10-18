@@ -115,8 +115,14 @@ def test_report_actions_and_terminal_truth_keep_locale_and_approval_boundaries_s
     assert 'path.startsWith("/es-mx/")' in review_action
     assert 'path === "/es-mx"' in markdown
     assert 'path.startsWith("/es-mx/")' in markdown
-    assert "separate delivery authorization required" in workflow
-    assert "autorización de entrega independiente" in workflow
+    assert "records operator approval and client-delivery permission together" in workflow
+    assert "Delivery remains blocked until both are recorded" in workflow
+    assert "Outstanding specialist review and independent QC remain disclosed" in workflow
+    assert "no report is sent automatically" in workflow
+    assert "aprobación del operador y el permiso de entrega al cliente en una misma acción" in workflow
+    assert "entrega permanece bloqueada hasta registrar ambos" in workflow
+    assert "revisión especializada y el control de calidad independiente pendientes siguen declarados" in workflow
+    assert "no se envía ningún informe automáticamente" in workflow
 
 
 def test_evidence_completion_labels_are_locale_owned_while_counts_remain_canonical() -> None:
