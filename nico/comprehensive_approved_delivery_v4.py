@@ -274,6 +274,9 @@ def build_approved_delivery_package(
     record: Mapping[str, Any],
     manifest: Mapping[str, Any],
 ) -> dict[str, Any]:
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(record, manifest)
+
     bound = bind_phase4_approval_manifest(record, manifest)
     delivery_authorization = record.get("delivery_authorization")
     if not isinstance(delivery_authorization, Mapping):
@@ -780,6 +783,9 @@ def validate_approved_delivery_package(
     record: Mapping[str, Any],
     package: Any,
 ) -> dict[str, Any]:
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(record, package)
+
     try:
         result = dict(validate_v3(record, package))
     except ValueError as exc:

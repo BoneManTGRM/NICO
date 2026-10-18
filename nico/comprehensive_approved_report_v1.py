@@ -499,6 +499,9 @@ def build_approved_report_package(
     contains the same technical content, deterministic lifecycle substitutions, and
     a human-review certificate; delivery authorization remains a later action.
     """
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(package)
+
 
     output = deepcopy(dict(package))
     try:

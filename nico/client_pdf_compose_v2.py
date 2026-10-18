@@ -192,38 +192,7 @@ def _optional_pdf_reader(pdf: bytes | None, *, label: str) -> PdfReader | None:
     return PdfReader(io.BytesIO(pdf))
 
 
-def compose_compact_client_pdf(
-    base_pdf: bytes,
-    register_pdf: bytes,
-    gate_pdf: bytes,
-    *,
-    review_pdf: bytes | None = None,
-    ci_boundary_pdf: bytes | None = None,
-    human_evidence_pdf: bytes | None = None,
-) -> bytes:
-    """Retain one cover, the decision body, and every required client page.
-
-    The legacy premium body can contain its own title page after the branded cover
-    is applied. That second cover is not evidence and can introduce a second
-    generated timestamp, so it is removed here. Review and CI/CD boundary pages
-    are reserved before the body budget is calculated and are never silently
-    truncated.
-    """
-
-    if not base_pdf.startswith(b"%PDF"):
-        raise ValueError("compact client composition requires a valid base PDF")
-    if not register_pdf.startswith(b"%PDF"):
-        raise ValueError("compact client composition requires a valid register PDF")
-    if not gate_pdf.startswith(b"%PDF"):
-        raise ValueError("compact client composition requires a valid gate PDF")
-
-    base = PdfReader(io.BytesIO(base_pdf))
-    review = _optional_pdf_reader(review_pdf, label="review companion")
-    ci_boundary = _optional_pdf_reader(ci_boundary_pdf, label="CI/CD boundary")
-    human_evidence = _optional_pdf_reader(human_evidence_pdf, label="human evidence")
-    register = PdfReader(io.BytesIO(register_pdf))
-    gate = PdfReader(io.BytesIO(gate_pdf))
-
+def _retained_primary_pages(base: PdfReader, ci_boundary: PdfReader | None) -> list[Any]:
     retained: list[Any] = []
     replacing_legacy_register = False
     preserving_primary_tail = False
@@ -320,6 +289,43 @@ def compose_compact_client_pdf(
     if not retained:
         raise ValueError("client-ready PDF composition removed every primary report page")
 
+    return retained
+
+
+def compose_compact_client_pdf(
+    base_pdf: bytes,
+    register_pdf: bytes,
+    gate_pdf: bytes,
+    *,
+    review_pdf: bytes | None = None,
+    ci_boundary_pdf: bytes | None = None,
+    human_evidence_pdf: bytes | None = None,
+) -> bytes:
+    """Retain one cover, the decision body, and every required client page.
+
+    The legacy premium body can contain its own title page after the branded cover
+    is applied. That second cover is not evidence and can introduce a second
+    generated timestamp, so it is removed here. Review and CI/CD boundary pages
+    are reserved before the body budget is calculated and are never silently
+    truncated.
+    """
+
+    if not base_pdf.startswith(b"%PDF"):
+        raise ValueError("compact client composition requires a valid base PDF")
+    if not register_pdf.startswith(b"%PDF"):
+        raise ValueError("compact client composition requires a valid register PDF")
+    if not gate_pdf.startswith(b"%PDF"):
+        raise ValueError("compact client composition requires a valid gate PDF")
+
+    base = PdfReader(io.BytesIO(base_pdf))
+    review = _optional_pdf_reader(review_pdf, label="review companion")
+    ci_boundary = _optional_pdf_reader(ci_boundary_pdf, label="CI/CD boundary")
+    human_evidence = _optional_pdf_reader(human_evidence_pdf, label="human evidence")
+    register = PdfReader(io.BytesIO(register_pdf))
+    gate = PdfReader(io.BytesIO(gate_pdf))
+
+    retained = _retained_primary_pages(base, ci_boundary)
+
     register_and_gate_count = len(register.pages) + len(gate.pages)
     review_count = len(review.pages) if review is not None else 0
     ci_boundary_count = len(ci_boundary.pages) if ci_boundary is not None else 0
@@ -402,8 +408,47 @@ def compose_compact_client_pdf(
     return pdf
 
 
+def compose_review_bundle(
+    identity: dict[str, str],
+    base_pdf: bytes,
+    register_pdf: bytes,
+    gate_pdf: bytes,
+    *,
+    review_pdf: bytes,
+    ci_boundary_pdf: bytes,
+    human_evidence_pdf: bytes | None = None,
+) -> dict[str, Any]:
+    """Explicit v2 composition; never used as an implicit v1 error fallback.
+
+    The installed assembler must still validate final surfaces collectively and
+    freeze its structured artifact family before exposing this review bundle.
+    """
+    from nico import ordinary_review_bundle_v2 as bundle
+
+    components = [("primary", base_pdf), ("ci_boundary", ci_boundary_pdf),
+                  ("review_companion", review_pdf)]
+    if human_evidence_pdf is not None:
+        components.append(("human_evidence", human_evidence_pdf))
+    components.extend([("finding_register", register_pdf), ("acceptance_gate", gate_pdf)])
+    if any(not isinstance(data, bytes) for _, data in components):
+        raise ValueError("bundle_required_component_missing")
+    if sum(len(data) for _, data in components) > bundle.MAX_BYTES:
+        raise ValueError("bundle_byte_limit")
+    readers = {name: bundle._reader(data) for name, data in components}
+    if sum(len(reader.pages) for reader in readers.values()) > bundle.MAX_SOURCE_PAGES:
+        raise ValueError("bundle_page_limit")
+    retained = _retained_primary_pages(readers["primary"], readers["ci_boundary"])
+    writer = PdfWriter()
+    for page in retained:
+        writer.add_page(page)
+    output = io.BytesIO()
+    writer.write(output)
+    return bundle.build_review_bundle(identity, [("primary", output.getvalue()), *components[1:]])
+
+
 __all__ = [
     "CORE_REVIEW_COMPANION_PAGES",
     "VERSION",
     "compose_compact_client_pdf",
+    "compose_review_bundle",
 ]
