@@ -154,6 +154,11 @@ WITH ledger AS MATERIALIZED (
  FROM public.nico_schema_migrations WHERE version='2026.09.08.1' LIMIT 2
 ), ledger_check AS (
  SELECT count(*)=1 AND coalesce(bool_and(matches),false) AS ledger_valid FROM ledger
+), projection_rows AS MATERIALIZED (
+  SELECT run_id, revision, run_integrity_sha256, projection_sha256, updated_at, projection
+  FROM public.nico_comprehensive_browser_projections
+  WHERE run_id = :'expected_run_id'
+  LIMIT 2
 ), runs AS MATERIALIZED (
   SELECT run_id, customer_id, project_id, repository, commit_sha,
          evidence_ledger_id, status, revision, terminal, integrity_sha256,
@@ -167,12 +172,7 @@ WITH ledger AS MATERIALIZED (
          p.updated_at AS projection_updated_at, p.projection,
          r.payload -> '__nico_comprehensive_run_storage_v1__' AS envelope
   FROM runs AS r
-  LEFT JOIN LATERAL (
-    SELECT revision, run_integrity_sha256, projection_sha256, updated_at, projection
-    FROM public.nico_comprehensive_browser_projections AS p
-    WHERE p.run_id = r.run_id
-    LIMIT 2
-  ) AS p ON true
+  LEFT JOIN projection_rows AS p ON p.run_id = r.run_id
 ), checks AS MATERIALIZED (
   SELECT *,
     coalesce(
@@ -242,6 +242,34 @@ WITH ledger AS MATERIALIZED (
       AND payload -> 'integrity_sha256' = to_jsonb(integrity_sha256), false)
     END AS storage_metadata_shape_valid
   FROM joined
+), diagnostics AS (
+  -- Stored claims only. Unknown labels and compressed canonical fields are null.
+  -- Do not interpret a legacy missing projection as corruption or report loss.
+  SELECT CASE WHEN count(*)=1 THEN jsonb_agg(jsonb_build_object(
+    'exact_run_status', CASE WHEN status IN (
+      'ready','review_required','approved','rejected','failed','blocked',
+      'queued','running','pending','planned','in_progress') THEN status ELSE NULL END,
+    'uncompressed_canonical', CASE
+      WHEN jsonb_typeof(payload)='object'
+        AND NOT (payload ? '__nico_comprehensive_run_storage_v1__')
+      THEN jsonb_build_object(
+        'artifact_schema', CASE WHEN payload ->> 'artifact_schema' IN (
+          'nico.comprehensive_run_record.v2','nico.comprehensive_run_record.v5')
+          THEN payload ->> 'artifact_schema' ELSE NULL END,
+        'final_stage_completed', coalesce(
+          jsonb_typeof(payload -> 'completed_stages')='array'
+          AND (payload -> 'completed_stages') ? 'final_comprehensive_report_generation',false),
+        'final_stage_status', CASE WHEN payload #>> '{stage_results,final_comprehensive_report_generation,status}' IN (
+          'complete','completed','passed','review_required','queued','running',
+          'pending','planned','in_progress','failed','blocked')
+          THEN payload #>> '{stage_results,final_comprehensive_report_generation,status}' ELSE NULL END,
+        'report_package_object_present', coalesce(jsonb_typeof(
+          payload #> '{stage_results,final_comprehensive_report_generation,report_package}')='object',false),
+        'reports_object_present', coalesce(jsonb_typeof(
+          payload #> '{stage_results,final_comprehensive_report_generation,reports}')='object',false)
+      ) ELSE NULL END
+  )) -> 0 ELSE NULL END AS canonical_diagnostics
+  FROM runs
 ), summary AS (
   SELECT (SELECT count(*) FROM runs) AS run_count,
          count(*) AS joined_row_count,
@@ -272,6 +300,8 @@ SELECT jsonb_build_object(
   'schema_contract_sha256','8ab54b42689aa75fdb3bd40ca4582491eaf585ac6a7c73117cb7d9d200d5e534',
   'migration_ledger_matches',ledger_valid,
   'run_count',run_count,'joined_row_count',joined_row_count,
+  'projection_count',(SELECT count(*) FROM projection_rows),
+  'canonical_diagnostics',(SELECT canonical_diagnostics FROM diagnostics),
   'run_metadata_valid',run_metadata_valid,
   'projection_metadata_bound',projection_metadata_bound,
   'stored_report_manifest_present',stored_report_manifest_present,
@@ -291,6 +321,7 @@ SELECT jsonb_build_object('status','blocked',
  'comprehensive_missing_columns', :comprehensive_missing_columns,
  'required_contract_columns_verified', :contract_missing_columns = 0,
  'comprehensive_columns_verified', :comprehensive_missing_columns = 0,
+ 'projection_count',NULL,'canonical_diagnostics',NULL,
  'observation_sha256',NULL, 'canonical_payload_deserialized',false,
  'canonical_integrity_recomputed',false,'projection_hash_recomputed',false,
  'report_bytes_verified',false,'restore_provenance_verified',false,'evidence_record_written',false);

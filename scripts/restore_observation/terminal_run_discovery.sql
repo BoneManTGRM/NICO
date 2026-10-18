@@ -1,6 +1,6 @@
 -- REVIEW CANDIDATE ONLY. No live execution performed.
 -- Discover at most three existing terminal Comprehensive run identities.
--- Only non-secret run IDs, revisions and commit hashes may be returned.
+-- Only non-secret run IDs, revisions, commit hashes and allowlisted statuses returned.
 -- No payload, repository, customer/project, report text or credentials selected.
 -- Same previously reviewed clean-env/auth-none local-socket wrapper required.
 BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
@@ -9,7 +9,9 @@ SET LOCAL lock_timeout = 1000;
 SET LOCAL idle_in_transaction_session_timeout = 10000;
 SET LOCAL search_path = pg_catalog;
 WITH sampled AS MATERIALIZED (
-  SELECT left(run_id,129) AS run_id, revision, left(commit_sha,41) AS commit_sha
+  SELECT left(run_id,129) AS run_id, revision, left(commit_sha,41) AS commit_sha,
+         CASE WHEN status IN ('review_required','approved','rejected','failed','blocked')
+           THEN status ELSE NULL END AS exact_run_status
   FROM public.nico_comprehensive_runs
   WHERE terminal IS TRUE
   ORDER BY run_id
@@ -32,6 +34,7 @@ SELECT jsonb_build_object(
   'runs',coalesce(jsonb_agg(jsonb_build_object(
      'run_id',CASE WHEN valid THEN run_id ELSE NULL END,
      'revision',CASE WHEN valid THEN revision ELSE NULL END,
+     'exact_run_status',CASE WHEN valid THEN exact_run_status ELSE NULL END,
      'commit_sha',CASE WHEN valid THEN commit_sha ELSE NULL END
   ) ORDER BY run_id),'[]'::jsonb),
   'historical_report_identity_independently_matched',false,

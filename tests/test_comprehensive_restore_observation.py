@@ -128,3 +128,20 @@ def test_wrapper_clean_env_exact_args_and_exit(tmp_path,name,psql_exit):
     assert proc.returncode==(0 if psql_exit==0 else 1)
     assert proc.stdout==('observation_transaction_closed\n' if psql_exit==0 else 'observation_failed\n')
     assert proc.stderr==''
+
+
+def test_additive_diagnostics_preserve_acceptance_and_hide_payload_contents():
+    # These are output-contract checks. Actual PostgreSQL behavior is qualified
+    # by postgres_comprehensive_observation_proof.py in the existing workflow.
+    assert "'projection_count'," in SQL
+    assert "'canonical_diagnostics'," in SQL
+    for field in ['exact_run_status','artifact_schema','final_stage_completed',
+                  'final_stage_status','report_package_object_present','reports_object_present']:
+        assert "'"+field+"'" in SQL
+    gate = '''WHEN ledger_valid AND run_count=1 AND joined_row_count=1 AND run_metadata_valid
+                    AND projection_metadata_bound AND stored_report_manifest_present
+                    AND storage_metadata_shape_valid'''
+    assert SQL.count(gate)==2  # Original success and digest predicates unchanged.
+    discovery=(ROOT/'terminal_run_discovery.sql').read_text()
+    assert "'exact_run_status'" in discovery
+    assert 'payload ->' not in discovery and 'payload #>' not in discovery

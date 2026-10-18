@@ -51,7 +51,11 @@ def proof():
                 conn.execute('CREATE TABLE nico_comprehensive_runs(run_id text,customer_id text,project_id text,repository text,commit_sha text,evidence_ledger_id text,status text,revision integer,terminal boolean,integrity_sha256 text,updated_at text,payload jsonb)')
                 conn.execute('CREATE TABLE nico_comprehensive_browser_projections(run_id text,revision integer,run_integrity_sha256 text,projection_sha256 text,updated_at text,projection jsonb)')
                 identity = dict(run_id='comprun_synthetic',customer_id='customer',project_id='project',repository='fixture/repo',commit_sha='a'*40,evidence_ledger_id='ledger')
-                payload = dict(identity=identity,integrity_sha256='b'*64)
+                payload = dict(identity=identity,integrity_sha256='b'*64,
+                    artifact_schema='nico.comprehensive_run_record.v5',
+                    completed_stages=['final_comprehensive_report_generation'],
+                    stage_results={'final_comprehensive_report_generation':dict(status='complete',
+                        report_package={'private_report':'synthetic_payload_must_not_escape'})})
                 projection = dict(**identity,revision=1,integrity_sha256='b'*64,canonical_status='review_required',terminal=True,
                     response_projection=dict(browser_projection=True,durable_projection=True,terminal_report_manifest_attached=True),
                     reports=dict(pdf_available=True,json_available=True,pdf_sha256='c'*64,canonical_truth_sha256='d'*64))
@@ -62,7 +66,7 @@ def proof():
                         (*identity.values(),'review_required','b'*64,'2026-10-18T00:00:00Z',json.dumps(body)))
                     conn.execute('INSERT INTO nico_comprehensive_browser_projections VALUES (%s,1,%s,%s,%s,%s::jsonb)',
                         (identity['run_id'],'b'*64,'e'*64,'2026-10-18T00:00:00Z',json.dumps(projected)))
-                def observe(name, *, blocked=False, discover=False, error=False, run_id=None):
+                def observe(name, *, blocked=False, discover=False, error=False, run_id=None, expected=None, discovery_status='review_required'):
                     before = generic._snapshot(conn,'public')
                     env = dict(PATH=directory+':/usr/bin:/bin', POSTGRES_USER='nico', POSTGRES_DB=db,
                         NICO_EXPECTED_RUN_ID=run_id or identity['run_id'], PGPASSWORD='must_not_leak', PGSERVICE='must_not_leak')
@@ -71,6 +75,7 @@ def proof():
                     assert generic._snapshot(conn,'public') == before
                     assert conn.execute('SELECT count(*) FROM pg_stat_activity WHERE datname=%s AND pid<>pg_backend_pid()', (db,)).fetchone()[0]==0
                     assert proc.stderr == ''
+                    assert 'synthetic_payload_must_not_escape' not in proc.stdout
                     if error:
                         assert proc.returncode != 0 and proc.stdout.endswith('observation_failed\n')
                     else:
@@ -81,22 +86,76 @@ def proof():
                         assert result['restore_provenance_verified'] is False
                         assert result['report_bytes_verified'] is False
                         if discover:
-                            assert result['runs']==[dict(run_id=identity['run_id'],revision=1,commit_sha='a'*40)]
+                            assert result['runs']==[dict(run_id=identity['run_id'],revision=1,commit_sha='a'*40,exact_run_status=discovery_status)]
                         else:
                             assert result['status']==('blocked' if blocked else 'bounded_comprehensive_metadata_observation'), (name,result)
                             if blocked: assert result['observation_sha256'] is None
                             else: generic._assert_digest(result['observation_sha256'])
+                        if expected:
+                            for key,value in expected.items():
+                                assert result[key]==value, (name,key,result[key],value)
                     checks[name]=True
                     checks[name+'_rows_columns_unchanged_and_session_closed']=True
-                seed();observe('uncompressed_generic_reports_empty');observe('exact_terminal_discovery',discover=True)
+                canonical = dict(exact_run_status='review_required',uncompressed_canonical=dict(
+                    artifact_schema='nico.comprehensive_run_record.v5',final_stage_completed=True,
+                    final_stage_status='complete',report_package_object_present=True,reports_object_present=False))
+                seed();observe('uncompressed_generic_reports_empty',expected=dict(
+                    projection_count=1,canonical_diagnostics=canonical,
+                    projection_metadata_bound=True,stored_report_manifest_present=True))
+                observe('exact_terminal_discovery',discover=True)
+                legacy=copy.deepcopy(payload);legacy['artifact_schema']='nico.comprehensive_run_record.v2'
+                seed(legacy);conn.execute('DELETE FROM nico_comprehensive_browser_projections')
+                legacy_diagnostic=copy.deepcopy(canonical)
+                legacy_diagnostic['uncompressed_canonical']['artifact_schema']='nico.comprehensive_run_record.v2'
+                observe('legacy_report_without_projection',blocked=True,expected=dict(projection_count=0,
+                    joined_row_count=1,canonical_diagnostics=legacy_diagnostic,
+                    projection_metadata_bound=False,stored_report_manifest_present=False))
+                for status in ['failed','blocked']:
+                    reportless=copy.deepcopy(payload);reportless['completed_stages']=[]
+                    reportless['stage_results']={'final_comprehensive_report_generation':{'status':status}}
+                    expected=copy.deepcopy(canonical);expected['exact_run_status']=status
+                    expected['uncompressed_canonical'].update(final_stage_completed=False,final_stage_status=status,
+                        report_package_object_present=False)
+                    seed(reportless);conn.execute('UPDATE nico_comprehensive_runs SET status=%s',(status,))
+                    conn.execute('DELETE FROM nico_comprehensive_browser_projections')
+                    observe(status+'_reportless_missing_projection',blocked=True,expected=dict(
+                        projection_count=0,canonical_diagnostics=expected))
+                    observe(status+'_discovery',discover=True,discovery_status=status)
+                    reportless_projection=copy.deepcopy(projection)
+                    reportless_projection['canonical_status']=status
+                    reportless_projection['reports']={}
+                    reportless_projection['response_projection']['terminal_report_manifest_attached']=False
+                    seed(reportless,reportless_projection);conn.execute('UPDATE nico_comprehensive_runs SET status=%s',(status,))
+                    observe(status+'_reportless_bound_projection',blocked=True,expected=dict(
+                        projection_count=1,canonical_diagnostics=expected,
+                        projection_metadata_bound=True,stored_report_manifest_present=False))
+                alias=copy.deepcopy(payload);final=alias['stage_results']['final_comprehensive_report_generation']
+                final['reports']=final.pop('report_package');expected=copy.deepcopy(canonical)
+                expected['uncompressed_canonical'].update(report_package_object_present=False,reports_object_present=True)
+                seed(alias);observe('historical_reports_alias',expected=dict(canonical_diagnostics=expected))
+                malformed=copy.deepcopy(payload)
+                malformed['completed_stages']={'final_comprehensive_report_generation':True}
+                malformed['stage_results']['final_comprehensive_report_generation'].update(report_package=[],reports=None)
+                expected=copy.deepcopy(canonical)
+                expected['uncompressed_canonical'].update(final_stage_completed=False,report_package_object_present=False)
+                seed(malformed);observe('nonobject_report_and_nonarray_completion',expected=dict(canonical_diagnostics=expected))
+                unknown=copy.deepcopy(payload);unknown['artifact_schema']='synthetic_payload_must_not_escape'
+                unknown['stage_results']['final_comprehensive_report_generation']['status']='synthetic_payload_must_not_escape'
+                expected=copy.deepcopy(canonical);expected['uncompressed_canonical'].update(artifact_schema=None,final_stage_status=None)
+                seed(unknown);observe('unknown_canonical_labels_suppressed',expected=dict(canonical_diagnostics=expected))
+                conn.execute('UPDATE nico_comprehensive_runs SET status=%s',('synthetic_payload_must_not_escape',))
+                expected['exact_run_status']=None
+                observe('unknown_run_status_suppressed',blocked=True,expected=dict(canonical_diagnostics=expected))
+                observe('unknown_discovery_status_suppressed',discover=True,discovery_status=None)
+                seed()
                 observe('wrong_exact_run',blocked=True,run_id='comprun_absent')
                 observe('quoted_input',blocked=True,run_id="x' OR true --")
                 for version, encoding in [('v1','zlib+base64'),('v2','zlib+json-token-refs-v1+base64'),('v3','zlib+json-chunk-refs-v1+base64')]:
                     envelope={'__nico_comprehensive_run_storage_v1__':dict(schema='nico.comprehensive_run_storage.'+version,encoding=encoding,size_bytes=100,sha256='f'*64,data='eA==')}
-                    seed(envelope);observe('stored_envelope_metadata_'+version)
+                    seed(envelope);observe('stored_envelope_metadata_'+version,expected=dict(canonical_diagnostics=dict(exact_run_status='review_required',uncompressed_canonical=None)))
                 # Deliberately not a real compressed report: passing metadata is not decode proof.
                 for field,value in [('revision',2),('commit_sha','0'*40),('run_id','other'),('integrity_sha256','0'*64),('terminal',None)]:
-                    bad=copy.deepcopy(projection);bad[field]=value;seed(projected=bad);observe('projection_'+field,blocked=True)
+                    bad=copy.deepcopy(projection);bad[field]=value;seed(projected=bad);observe('projection_'+field,blocked=True,expected=dict(projection_count=1,projection_metadata_bound=False,stored_report_manifest_present=True,canonical_diagnostics=canonical))
                 for value in [None,'bad','c'*65]:
                     bad=copy.deepcopy(projection);bad['reports']['pdf_sha256']=value
                     seed(projected=bad);observe('pdf_digest_'+str(value),blocked=True)
@@ -105,16 +164,16 @@ def proof():
                     seed(bad);observe('envelope_'+field,blocked=True)
                 seed();conn.execute('DELETE FROM nico_schema_migrations');observe('absent_ledger',blocked=True)
                 conn.execute('INSERT INTO nico_schema_migrations(version,contract_sha256) VALUES (%s,%s)',(contract['version'],contract['contract_sha256']))
-                seed();conn.execute('DELETE FROM nico_comprehensive_browser_projections');observe('absent_projection',blocked=True)
+                seed();conn.execute('DELETE FROM nico_comprehensive_browser_projections');observe('absent_projection',blocked=True,expected=dict(projection_count=0,joined_row_count=1,canonical_diagnostics=canonical))
                 seed();conn.execute('UPDATE nico_schema_migrations SET contract_sha256=%s',('0'*64,));observe('wrong_ledger',blocked=True)
                 conn.execute('UPDATE nico_schema_migrations SET contract_sha256=%s',(contract['contract_sha256'],))
                 seed();conn.execute('UPDATE nico_comprehensive_browser_projections SET projection=NULL');observe('null_projection',blocked=True)
                 seed();conn.execute('UPDATE nico_comprehensive_browser_projections SET revision=2');observe('row_revision',blocked=True)
                 seed();conn.execute('UPDATE nico_comprehensive_browser_projections SET run_integrity_sha256=%s',('0'*64,));observe('row_integrity',blocked=True)
                 seed();conn.execute('UPDATE nico_comprehensive_runs SET payload=NULL');observe('null_payload',blocked=True)
-                seed();conn.execute('INSERT INTO nico_comprehensive_runs SELECT * FROM nico_comprehensive_runs');observe('duplicate_run',blocked=True)
-                seed();conn.execute('INSERT INTO nico_comprehensive_browser_projections SELECT * FROM nico_comprehensive_browser_projections');observe('duplicate_projection',blocked=True)
-                seed();conn.execute('DELETE FROM nico_comprehensive_runs');conn.execute("INSERT INTO reports(report_id) VALUES ('generic_only')");observe('wrong_table',blocked=True)
+                seed();conn.execute('INSERT INTO nico_comprehensive_runs SELECT * FROM nico_comprehensive_runs');observe('duplicate_run',blocked=True,expected=dict(projection_count=1,canonical_diagnostics=None))
+                seed();conn.execute('INSERT INTO nico_comprehensive_browser_projections SELECT * FROM nico_comprehensive_browser_projections');observe('duplicate_projection',blocked=True,expected=dict(projection_count=2,canonical_diagnostics=canonical))
+                seed();conn.execute('DELETE FROM nico_comprehensive_runs');conn.execute("INSERT INTO reports(report_id) VALUES ('generic_only')");observe('wrong_table',blocked=True,expected=dict(projection_count=1,canonical_diagnostics=None))
                 seed()
                 for table,column in [('customers','customer_id'),('nico_comprehensive_runs','payload'),('nico_comprehensive_browser_projections','projection')]:
                     conn.execute(f'ALTER TABLE "{table}" RENAME COLUMN "{column}" TO missing_column')
