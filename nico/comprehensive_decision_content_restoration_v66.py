@@ -32,7 +32,10 @@ _NON_PRODUCTION_SEGMENTS = {
     "coverage",
     "node_modules",
 }
-_PATH_RE = re.compile(r"([A-Za-z0-9_.\-/]+\.(?:py|tsx?|jsx?|mjs|cjs|json|ya?ml|toml))")
+_PATH_RE = re.compile(
+    r"(?<![A-Za-z0-9_.\-/\[\]])"
+    r"([A-Za-z0-9_.\-/\[\]]+\.(?:py|tsx?|jsx?|mjs|cjs|json|ya?ml|toml))"
+)
 
 
 def _text(value: Any, limit: int = 4000) -> str:
@@ -223,7 +226,12 @@ def _path_from_hotspot(item: Mapping[str, Any]) -> str:
         value = _text(item.get(key))
         match = _PATH_RE.search(value)
         if match:
-            return match.group(1)
+            path = match.group(1)
+            # Reference wrappers close after the matched extension. Preserve
+            # balanced dynamic-route segments, removing only unmatched openers.
+            leading = len(path) - len(path.lstrip("["))
+            wrappers = max(0, path.count("[") - path.count("]"))
+            return path[min(leading, wrappers):]
     return ""
 
 

@@ -71,7 +71,7 @@ def _assert_record_parity(canonical, monkeypatch):
     "tests/example.py:2 · sample · complexity 40",
 ])
 def test_prefilter_preserves_exact_hotspot_spans_and_groups(raw):
-    assert register._HOTSPOT_LINE.pattern == _LEGACY_HOTSPOT.pattern
+    # Bracket-free legacy inputs retain their exact match spans and groups.
     assert register._HOTSPOT_LINE.flags == _LEGACY_HOTSPOT.flags
     guarded = _match_values(register._line_matches(raw, register._HOTSPOT_LINE, register._HOTSPOT_LINE_START)) if register._HOTSPOT_REQUIRED.search(raw) else []
     assert guarded == _matches(_LEGACY_HOTSPOT, raw)
@@ -217,7 +217,8 @@ def test_candidate_scan_preserves_original_match_and_group_spans(raw):
         (_LEGACY_RISK, register._RISK_LINE, register._RISK_LINE_START),
         (_LEGACY_HOTSPOT, register._HOTSPOT_LINE, register._HOTSPOT_LINE_START),
     ]:
-        assert pattern.pattern == original.pattern
+        if pattern is register._RISK_LINE:
+            assert pattern.pattern == original.pattern
         assert pattern.flags == original.flags
         assert _match_values(register._line_matches(raw, pattern, starts)) == _matches(original, raw)
 

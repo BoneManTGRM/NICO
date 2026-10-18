@@ -120,7 +120,7 @@ _COMPLEXITY_ACCEPTANCE_RE = re.compile(
     r"(?:above (?P<legacy_threshold>\d+)|of (?P<threshold>\d+) or greater) "
     # Canonical verification deduplication removes terminal punctuation. Accept
     # that same generated contract even when a late renderer retains v88 directly.
-    r"at (?P<location>[A-Za-z0-9_.\-/]+:\d+)\.?$"
+    r"at (?P<location>[A-Za-z0-9_.\-/\[\]]+:\d+)\.?$"
 )
 _COMPLEXITY_TITLE_RE = re.compile(
     r"^Reduce complexity in (?P<name>[^\r\n]+)$"
