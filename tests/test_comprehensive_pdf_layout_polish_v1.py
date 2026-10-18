@@ -121,8 +121,10 @@ def test_layout_polish_binds_presentation_only_contracts() -> None:
     assert state["toc_rows_per_page"] == 28
     assert state["toc_single_page_capacity_above_four_phase_matrix"] is True
     assert state["sparse_section_keep_together"] is True
-    assert state["review_companion_pages"] == 4
-    assert state["review_small_font_size"] >= 6.8
+    assert state["review_companion_pages"] == "content_dependent"
+    assert state["review_section_count"] == 8
+    assert state["review_continuation_pages"] is True
+    assert state["review_small_font_size"] >= 9
     assert state["canonical_truth_mutated"] is False
     assert semantic._TOC_ROWS_PER_PAGE == 28
     assert getattr(semantic._toc_pdf, "__nico_comprehensive_pdf_layout_polish_v1__") is True
@@ -231,7 +233,7 @@ def test_sparse_reflow_keeps_velocity_evidence_with_its_heading() -> None:
     assert final_evidence_page == title_page
 
 
-def test_review_companion_uses_readable_typography_without_adding_pages() -> None:
+def test_review_companion_flows_all_sections_at_readable_size() -> None:
     from nico import comprehensive_client_review_companion_v7 as v7
     from nico.comprehensive_pdf_layout_polish_v1 import (
         install_comprehensive_pdf_layout_polish_v1,
@@ -258,9 +260,9 @@ def test_review_companion_uses_readable_typography_without_adding_pages() -> Non
     for page in reader.pages:
         page.extract_text(visitor_text=collect_font_size)
 
-    assert len(reader.pages) == 4
+    assert len(reader.pages) > 4
     assert font_sizes
-    assert min(font_sizes) >= 6.75
+    assert min(font_sizes) >= 9
     from nico.comprehensive_client_review_companion_v5 import substantive_review_sections
 
     expected_sections = substantive_review_sections(_review_canonical(), spanish=False)

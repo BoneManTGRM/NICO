@@ -17,7 +17,7 @@ def install_comprehensive_review_companion_v7_rebind() -> dict[str, Any]:
 
     Older installers may execute after v7 and resolve their own module-level
     callable again. Replace those callables, not only the exported aliases, so a
-    later compatibility pass still resolves the four-page implementation.
+    later compatibility pass still resolves the currently selected implementation.
     """
 
     from nico import client_report_completion_v2 as completion
@@ -53,8 +53,8 @@ def install_comprehensive_review_companion_v7_rebind() -> dict[str, Any]:
     return {
         "status": "installed",
         "version": VERSION,
-        "page_count": COMPANION_PAGE_COUNT,
-        "sections_per_page": SECTIONS_PER_PAGE,
+        "page_count": None if getattr(render_paired_substantive_review_pdf, "_nico_review_flowing", False) else COMPANION_PAGE_COUNT,
+        "sections_per_page": None if getattr(render_paired_substantive_review_pdf, "_nico_review_flowing", False) else SECTIONS_PER_PAGE,
         "completion_bound": (
             completion.render_comprehensive_review_companion_pdf
             is render_paired_substantive_review_pdf
