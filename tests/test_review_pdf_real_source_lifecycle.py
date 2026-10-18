@@ -10,15 +10,16 @@ from nico.review_pdf_preparation_jobs_v1 import ReviewPdfPreparationJobs
 from nico.review_pdf_preparation_service_v1 import RetainedSourceAuthority, ReviewPdfPreparationService
 
 
-@pytest.mark.parametrize('language', ['en', 'es-MX'])
-def test_real_owned_record_restores_and_child_publishes_without_an_assessment(tmp_path, monkeypatch, language):
+@pytest.mark.parametrize('source_language', ['en', 'es-MX'])
+def test_real_owned_record_restores_and_child_publishes_without_an_assessment(tmp_path, monkeypatch, source_language):
+    language = 'en'
     from scripts.postgres_review_pdf_lifecycle_proof import build_owned_record, controller_for
     from nico.review_pdf_preparation_api_v1 import PreparationRuntime, runtime_policy
     monkeypatch.setenv('RAILWAY_GIT_COMMIT_SHA', 'e'*40)
     path = tmp_path/'owned.sqlite'
     store = ComprehensiveRunStore(lambda: sqlite3.connect(path))
     store.ensure_schema()  # Only this disposable local unit-test database.
-    record = store.create(build_owned_record())
+    record = store.create(build_owned_record(source_language))
     source = RetainedSourceAuthority(store, controller_for(store), runtime_policy)
     service = ReviewPdfPreparationService(ReviewPdfPreparationJobs(SQLiteRuntimeAdapter(path)),
                                           source, capacity=BoundedSemaphore(1))
@@ -29,7 +30,7 @@ def test_real_owned_record_restores_and_child_publishes_without_an_assessment(tm
     mode = qualified['artifact_mode']
     assert qualified['state'] == 'eligible'
     assert mode in {'pending-source-frozen', 'pending-source-localized-draft'}
-    if language == 'es-MX':
+    if source_language != language:
         assert mode == 'pending-source-localized-draft'
     projected = runtime.prepare(status['run_id'], language, binding)
     assert projected['job_id'] == qualified['job_id']

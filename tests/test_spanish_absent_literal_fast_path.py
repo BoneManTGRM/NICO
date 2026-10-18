@@ -36,6 +36,10 @@ def test_exact_legacy_replacement_semantics():
 def test_actual_localized_pdf_bytes_match_legacy(monkeypatch):
     from tests.test_cross_locale_pdf_repeatability_v1 import _fixed_status, _pdf_observation
     from nico.comprehensive_spanish_final_report_runtime_cache_v94 import reset_comprehensive_spanish_final_report_runtime_cache_v94_for_tests as reset
+    # Offline renderer equivalence; real release admission is tested separately.
+    from nico import comprehensive_same_run_locale_report_v1 as locale
+    monkeypatch.setattr(locale, 'require_new_report_language', lambda language: None)
+    monkeypatch.setattr(locale, 'require_available_projection', lambda status, language: None)
     status = _fixed_status('en')
     reset()
     optimized = _pdf_observation(status, 'es-MX')

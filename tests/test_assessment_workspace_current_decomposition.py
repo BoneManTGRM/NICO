@@ -42,7 +42,7 @@ def test_public_workspace_is_one_semantic_comprehensive_engagement() -> None:
     assert 'requestWithRetry(' in hook
     assert '"/assessment/comprehensive-intake"' in hook
     assert 'assessment_depth: "strategic"' in hook
-    assert 'report_language: reportLanguageForRequest(locale)' in hook
+    assert 'report_language: "en"' in hook
 
 
 def test_score_assurance_and_risk_remain_separate() -> None:

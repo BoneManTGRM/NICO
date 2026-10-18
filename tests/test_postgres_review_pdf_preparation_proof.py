@@ -67,3 +67,44 @@ def test_lifecycle_failure_writes_bounded_evidence_and_still_fails(tmp_path, mon
     assert result['live_production_claim'] is False
     assert result['client_delivery_allowed'] is False
     assert 'private payload' not in output.read_text()
+
+
+def test_lifecycle_fixture_renders_english_in_actual_isolated_child():
+    """Exercise the CI fixture/child boundary without a database or assessment."""
+    script = '''
+from copy import deepcopy
+from dataclasses import replace
+from threading import Event
+from scripts.postgres_review_pdf_lifecycle_proof import build_owned_record, controller_for, SOURCE_LANGUAGE, TARGET_LANGUAGE
+from tests.test_review_pdf_preparation_jobs_v1 import identity
+from nico.review_pdf_preparation_worker_v1 import run_worker, validate_result
+from nico.review_pdf_artifact_policy_v1 import artifact_mode, LOCALIZED
+record = build_owned_record()
+status = controller_for(None)._status_artifact_from_record(record)
+assert status['report_language'] == SOURCE_LANGUAGE == 'es-MX'
+assert TARGET_LANGUAGE == 'en'
+assert artifact_mode(status, TARGET_LANGUAGE) == LOCALIZED
+canonical = status['reports']['json']
+i = replace(identity(), run_id=status['run_id'], repository=status['repository'],
+    commit_sha=status['commit_sha'], customer_id=canonical['identity']['customer_id'],
+    project_id=canonical['identity']['project_id'], source_revision=record['revision'],
+    source_integrity_sha256=record['integrity_sha256'],
+    canonical_truth_sha256=status['reports']['canonical_truth_sha256'],
+    source_artifact_sha256=status['reports']['pdf_sha256'], language=TARGET_LANGUAGE)
+before = deepcopy(status)
+state = {}
+result = run_worker(status, i, stop=Event(), heartbeat=lambda **kwargs: None, state=state, max_seconds=60)
+pdf, digest = validate_result(result, i)
+assert pdf.startswith(b'%PDF') and digest
+assert result['validated_page_count'] > 0
+assert result['headers']['x-nico-report-language'] == 'en'
+assert result['headers']['x-nico-localized-artifact-requires-new-approval'] == 'true'
+assert result['headers']['x-nico-client-delivery-allowed'] == 'false'
+assert status == before
+assert state['physical_worker_exit_confirmed'] is True
+assert replace(i, language=SOURCE_LANGUAGE).job_id != i.job_id
+print('real isolated English cross-locale child passed; source unchanged; approval/delivery blocked')
+'''
+    result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, timeout=90)
+    assert result.returncode == 0, result.stderr[-3000:]
+    assert 'real isolated English cross-locale child passed' in result.stdout

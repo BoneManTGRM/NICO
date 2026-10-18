@@ -1,4 +1,5 @@
 """Isolated authorization checks; these never authorize the owner's live report."""
+from unittest.mock import patch
 import base64
 import hashlib
 import io
@@ -143,10 +144,12 @@ def test_delivery_requires_prior_approval_and_locale_permission_stays_isolated(s
         })
     approved, _ = approved_request(service)
     run = approved["identity"]["run_id"]
-    _, _, locale = localized.prepare_localized_edition(service, run, "es-MX", {
-        "preparation_authorized": True, "authorization_confirmed": True,
-        "expected_artifact_identity": presented_operator_identity(approved, approved["operator_approved_edition"]),
-    })
+    # Build an owned historical edition; keep approval/delivery validators real.
+    with patch("nico.ordinary_report_language_release_v1.require_new_report_language"):
+        _, _, locale = localized.prepare_localized_edition(service, run, "es-MX", {
+            "preparation_authorized": True, "authorization_confirmed": True,
+            "expected_artifact_identity": presented_operator_identity(approved, approved["operator_approved_edition"]),
+        })
     _, _, locale = localized.mutate_localized_edition(service, run, "es-MX", payload(locale))
     root_before = current(service)
     request = dict(delivery_kind="operator_report", delivery_authorized=True, authorization_confirmed=True,
@@ -161,17 +164,19 @@ def test_delivery_requires_prior_approval_and_locale_permission_stays_isolated(s
         assert current(service).get(key) == root_before.get(key)
 
 
-def test_authorized_source_can_prepare_spanish_without_transferring_permission(service):
+def test_historical_spanish_edition_does_not_inherit_source_delivery_permission(service):
     from nico import comprehensive_localized_edition_v1 as localized
     from nico.comprehensive_operator_delivery_v1 import project_operator_delivery
     approved, request = approved_request(service)
     run = approved["identity"]["run_id"]
     authorized = authorize_operator_delivery(service, run, request)
     visible_identity = project_operator_delivery({}, authorized, include_reports=True)["review_artifact_identity"]
-    root, _, draft = localized.prepare_localized_edition(service, run, "es-MX", {
-        "preparation_authorized": True, "authorization_confirmed": True,
-        "expected_artifact_identity": visible_identity,
-    })
+    # Build an owned historical edition; keep approval/delivery validators real.
+    with patch("nico.ordinary_report_language_release_v1.require_new_report_language"):
+        root, _, draft = localized.prepare_localized_edition(service, run, "es-MX", {
+            "preparation_authorized": True, "authorization_confirmed": True,
+            "expected_artifact_identity": visible_identity,
+        })
     assert root["client_delivery_allowed"] is True
     assert validated_operator_delivery(root) is not None
     assert draft["client_delivery_allowed"] is False
