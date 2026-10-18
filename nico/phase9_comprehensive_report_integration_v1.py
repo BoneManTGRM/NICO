@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_work_package_identity_v1 import is_work_package
+
 import base64
 import hashlib
 import json
@@ -180,6 +182,8 @@ def _findings_from(report: Mapping[str, Any]) -> list[Mapping[str, Any]]:
 
 
 def _sync_surface(value: Any, canonical_by_id: Mapping[str, Mapping[str, Any]]) -> Any:
+    if is_work_package(value):
+        return deepcopy(dict(value))
     if isinstance(value, list):
         return [_sync_surface(item, canonical_by_id) for item in value]
     if not isinstance(value, Mapping):

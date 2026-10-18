@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_work_package_identity_v1 import is_work_package
+
 import re
 from collections.abc import Mapping
 from nico.report_json_copy import deepcopy
@@ -439,6 +441,8 @@ def canonicalize_final_findings(
 def _sync_finding_reference(
     value: Any, by_alias: Mapping[str, Mapping[str, Any]]
 ) -> Any:
+    if is_work_package(value):
+        return deepcopy(dict(value))
     if isinstance(value, list):
         return [_sync_finding_reference(item, by_alias) for item in value]
     if not isinstance(value, Mapping):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_work_package_identity_v1 import is_work_package
+
 import hashlib
 import re
 from collections.abc import Mapping
@@ -440,6 +442,8 @@ def _canonical_by_identity(findings: Iterable[Mapping[str, Any]]) -> dict[str, M
 
 
 def _sync_surface(value: Any, canonical_by_id: Mapping[str, Mapping[str, Any]]) -> Any:
+    if is_work_package(value):
+        return deepcopy(dict(value))
     if isinstance(value, list):
         return [_sync_surface(item, canonical_by_id) for item in value]
     if not isinstance(value, Mapping):
