@@ -149,3 +149,24 @@ def test_navigation_tampering_after_construction_is_not_frozen(monkeypatch):
     monkeypatch.setattr(core,'build_review_bundle',broken)
     with pytest.raises(ValueError,match='bundle_navigation'):
         subject.finalize_spanish_review_family(**inputs(2))
+
+
+@pytest.mark.parametrize('damage', ['ledger','customer','project','depth','score','finding','stage'])
+def test_freeze_rejects_localized_source_truth_drift_before_build(monkeypatch,damage):
+    args=inputs(2)
+    source=args['source_canonical'];localized=args['localized_canonical']
+    identity_fields={'ledger':'evidence_ledger_id','customer':'customer_id','project':'project_id','depth':'assessment_depth'}
+    if damage in identity_fields:
+        key=identity_fields[damage];source['identity'][key]='source_value';localized['identity'][key]='changed_value'
+    elif damage=='score':
+        source['assessment']['technical_score']=93;localized['assessment']['technical_score']=92
+    elif damage=='finding':
+        source['canonical_findings']=[{'finding_id':'required_finding','priority':'P1','location':'src/a.py:10'}]
+    else:
+        source['stage_summaries']=[{'stage_id':'required_source_stage'}]
+    args['expected_source_truth_sha256']=canonical_sha256(source)
+    args['exports']['canonical_json']=core._json(localized).decode()
+    before=deepcopy(args)
+    with pytest.raises(ValueError,match='family_freeze_source_identity|family_freeze_assessment_truth_parity'):
+        subject.finalize_spanish_review_family(**args)
+    assert args==before

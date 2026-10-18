@@ -49,8 +49,14 @@ def finalize_spanish_review_family(
         raise ValueError("family_freeze_identity")
     if local_identity.get("report_language") != "es-MX":
         raise ValueError("family_freeze_dormant_spanish_only")
-    if any(source_identity.get(key) != local_identity.get(key) for key in ("run_id", "repository", "commit_sha")):
+    if any(source_identity.get(key) != local_identity.get(key) for key in ("run_id", "repository", "commit_sha", "evidence_ledger_id",
+        "customer_id", "project_id", "assessment_depth")):
         raise ValueError("family_freeze_source_identity")
+    # A valid digest for each side does not establish locale parity. Use the
+    # same immutable assessment projection as the installed same-run assembler.
+    from nico.comprehensive_same_run_locale_report_v1 import _assessment_truth_projection
+    if _assessment_truth_projection(source) != _assessment_truth_projection(canonical):
+        raise ValueError("family_freeze_assessment_truth_parity")
     local_digest = canonical_sha256(canonical)
     identity = core._identity({**{key: local_identity.get(key) for key in
         ("run_id", "repository", "commit_sha", "report_language")},
