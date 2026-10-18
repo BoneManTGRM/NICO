@@ -22,7 +22,7 @@ from fastapi import Response
 from nico import comprehensive_run_storage_codec_v1 as codec
 from nico.report_delivery_timing_v1 import report_delivery_phase
 
-VERSION = "nico.retained_pdf_exact_input_cache.v1"
+VERSION = "nico.retained_pdf_exact_input_cache.v2"
 MAX_RETAINED_BYTES = 4 * 1024 * 1024
 MAX_ENTRIES = 4
 _CHUNK = 64 * 1024
@@ -71,8 +71,109 @@ class _PendingPdf:
         return Response(self.body, media_type="application/pdf", headers=headers)
 
 
+
+_DRAFT_POLICY = 'pending-localized-draft.v1'
+
+
+@dataclass(frozen=True)
+class _PendingLocalizedPdf:
+    body: bytes
+    disposition: str
+    run_id: str
+    commit_sha: str
+    language: str
+    truth_sha256: str
+    pdf_sha256: str
+    repository: str | None = None
+    frozen_marker: str | None = None
+
+    def response(self) -> Response:
+        headers = {
+            'Content-Disposition': self.disposition,
+            'X-NICO-Run-ID': self.run_id, 'X-NICO-Commit-SHA': self.commit_sha,
+            'X-NICO-Report-Language': self.language,
+            'X-NICO-Canonical-Truth-SHA256': self.truth_sha256,
+            'X-NICO-PDF-SHA256': self.pdf_sha256, 'X-NICO-Artifact-SHA256': self.pdf_sha256,
+            'X-NICO-Assessment-Rerun': 'false', 'X-NICO-Approval-Status': 'pending_human_approval',
+            'X-NICO-Delivery-Status': 'blocked_pending_human_approval',
+            'X-NICO-Client-Delivery-Allowed': 'false',
+            'X-NICO-Localized-Artifact-Requires-New-Approval': 'true',
+            'X-NICO-Localized-Artifact-Approval-Invalidated': 'true',
+            'X-NICO-Artifact-Finality': 'automated_draft',
+        }
+        if self.frozen_marker is not None:
+            headers['X-NICO-Frozen-Source-Artifact'] = self.frozen_marker
+        if self.repository is not None:
+            headers.update({
+                'X-NICO-Repository': self.repository,
+                'X-NICO-Artifact-Scope': 'client-facing-same-run-projection',
+                'X-NICO-Approval-State-Mutated': 'false', 'X-NICO-Delivery-State-Mutated': 'false',
+            })
+        return Response(self.body, media_type='application/pdf', headers=headers)
+
+
+def _pending_localized_pdf(response: Any, run_id: str, language: str, row: Any) -> _PendingLocalizedPdf | None:
+    # Separate authority predicate: never broaden the frozen-source predicate.
+    if type(response) is not Response or response.status_code != 200 or response.background is not None:
+        return None
+    if type(response.body) is not bytes or len(response.body) > MAX_RETAINED_BYTES or not response.body.startswith(b'%PDF'):
+        return None
+    if len(response.raw_headers) != len({name.lower() for name, _ in response.raw_headers}):
+        return None
+    headers = response.headers
+    if headers.get('x-nico-frozen-source-artifact') not in (None, 'false'):
+        return None
+    truth = headers.get('x-nico-canonical-truth-sha256', '')
+    digest = hashlib.sha256(response.body).hexdigest()
+    disposition = headers.get('content-disposition', '')
+    if not _SHA.fullmatch(truth) or not disposition or len(disposition) > 4096:
+        return None
+    repository = row[6] if 'x-nico-repository' in headers else None
+    entry = _PendingLocalizedPdf(response.body, disposition, run_id, row[7], language,
+        truth, digest, repository, headers.get('x-nico-frozen-source-artifact'))
+    # Exact reconstruction rejects inherited approval, cookies, custom authority,
+    # incorrect hashes/identity, missing gates and unforeseen response headers.
+    if dict(entry.response().headers) != dict(headers):
+        return None
+    return entry
+
+
+class RetainedPdfBusy(RuntimeError):
+    pass
+
+
+_active_computation: object | None = None
+
+
+class RetainedPdfComputation:
+    """One process-local owner; release follows actual synchronous function exit."""
+    def __init__(self):
+        self.token = object()
+        self.owned = False
+
+    def __enter__(self):
+        return self
+
+    def acquire(self):
+        global _active_computation
+        with _lock:
+            if self.owned:
+                return
+            if _active_computation is not None:
+                raise RetainedPdfBusy('retained_pdf_preparing')
+            _active_computation = self.token
+            self.owned = True
+
+    def __exit__(self, *_exc):
+        global _active_computation
+        with _lock:
+            if self.owned and _active_computation is self.token:
+                _active_computation = None
+                self.owned = False
+
+
 # Global bounded population; opaque controller namespaces do not retain apps.
-_entries: OrderedDict[tuple[Any, ...], tuple[_PendingPdf, int]] = OrderedDict()
+_entries: OrderedDict[tuple[Any, ...], tuple[_PendingPdf | _PendingLocalizedPdf, int]] = OrderedDict()
 _retained_bytes = 0
 _lock = threading.Lock()
 
@@ -95,6 +196,16 @@ def _live_policy(builder: Any) -> tuple[Any, ...]:
         'nico.comprehensive_commercial_ship_projection_v1',
         'nico.comprehensive_commercial_ship_projection_v3',
         'nico.comprehensive_client_delivery_contract_v1',
+        'nico.comprehensive_spanish_canonical_report_v87', 'nico.comprehensive_report_package',
+        'nico.phase17_canonical_artifact_rebuild_v1',
+        'nico.v2_single_pass_premium_report', 'nico.v2_premium_evidence_appendix',
+        'nico.v2_authoritative_premium_report', 'nico.v2_premium_report_renderer',
+        'nico.client_report_completion_v1', 'nico.client_report_completion_v2',
+        'nico.client_pdf_compose_v2',
+        'nico.comprehensive_terminal_report_language_authority_v83',
+        'nico.comprehensive_client_review_companion_v7',
+        'nico.comprehensive_client_review_companion_v7_rebind',
+        'nico.comprehensive_client_review_companion_v7_finalizer_binding',
         'nico.decision_grade_accepted_edition_guard_v1',
         'nico.comprehensive_review_decision_v1', 'nico.report_pdf_text',
     )
@@ -239,7 +350,7 @@ class _PreparedPdf:
     run_id: str
     language: str
     builder: Any
-    cached: _PendingPdf | None
+    cached: _PendingPdf | _PendingLocalizedPdf | None
 
     def after_restore(self, row: Any, record: Any) -> _PreparedPdf:
         fingerprint = self.key[2]
@@ -267,18 +378,21 @@ def prepare_retained_pdf(*, namespace: Any, row: Any, run_id: str,
     metadata = tuple(row[1:]) if fingerprint is not None else None
     if fingerprint is not None:
         with _lock:
-            stored = _entries.get(key)
-            if stored is not None:
+            for candidate_key in (key, (*key, _DRAFT_POLICY)):
+                stored = _entries.get(candidate_key)
+                if stored is None:
+                    continue
                 entry, size = stored
-                # Immutable bytes get a fresh small digest and a fresh Response;
-                # no shared mutable headers or cached session decisions escape.
-                if (entry.run_id == run_id and entry.language == report_language
+                # Fresh digest and fresh response; never share mutable headers.
+                expected_type = _PendingPdf if candidate_key == key else _PendingLocalizedPdf
+                if (type(entry) is expected_type and entry.run_id == run_id
+                        and entry.language == report_language
                         and entry.commit_sha == metadata[6]
                         and (entry.repository is None or entry.repository == metadata[5])
                         and hashlib.sha256(entry.body).hexdigest() == entry.pdf_sha256):
-                    _entries.move_to_end(key)
-                    return _PreparedPdf(key, metadata, run_id, report_language, builder, entry)
-                del _entries[key]
+                    _entries.move_to_end(candidate_key)
+                    return _PreparedPdf(candidate_key, metadata, run_id, report_language, builder, entry)
+                del _entries[candidate_key]
                 _retained_bytes -= size
     return _PreparedPdf(key, metadata, run_id, report_language, builder, None)
 
@@ -298,7 +412,11 @@ def finish_retained_pdf(prepared: _PreparedPdf, build: Callable[[], Response]) -
     # Only small frozen metadata remains after SQL restoration. No compressed
     # row, database cursor, lazy loader or mutable run is retained by this ticket.
     entry = _pending_pdf(response, prepared.run_id, prepared.language, (None, *prepared.metadata))
+    if entry is None:
+        entry = _pending_localized_pdf(response, prepared.run_id, prepared.language, (None, *prepared.metadata))
     key = prepared.key
+    if isinstance(entry, _PendingLocalizedPdf):
+        key = (*key, _DRAFT_POLICY)
     policy = key[1]
     if entry is None or _live_policy(prepared.builder) != policy:
         return response
@@ -311,6 +429,8 @@ def finish_retained_pdf(prepared: _PreparedPdf, build: Callable[[], Response]) -
     if size > MAX_RETAINED_BYTES:
         return response
     with _lock:
+        if _live_policy(prepared.builder) != policy:
+            return response
         prior = _entries.pop(key, None)
         if prior is not None:
             _retained_bytes -= prior[1]
@@ -319,4 +439,7 @@ def finish_retained_pdf(prepared: _PreparedPdf, build: Callable[[], Response]) -
             _retained_bytes -= removed[1]
         _entries[key] = (entry, size)
         _retained_bytes += size
+        if _live_policy(prepared.builder) != policy:
+            del _entries[key]
+            _retained_bytes -= size
     return response
