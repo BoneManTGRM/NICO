@@ -451,6 +451,11 @@ def architecture_data_flow_provider(context: dict[str, Any]) -> dict[str, Any]:
     if observation is not None:
         evidence["source_observation"] = observation
         evidence["structured_tables"] = structured_tables(observation)
+    from nico.source_function_measurement_report_v1 import measurement_tables, UNAVAILABLE
+    if observation is not None:
+        evidence["structured_tables"].extend(measurement_tables(context, repo, complexity))
+    else:
+        evidence["function_measurement_status"] = UNAVAILABLE
     return _result(
         context,
         summary=(
