@@ -158,6 +158,29 @@ def _groups(texts: list[str]) -> list[tuple[int, int]]:
     return sorted(groups)
 
 
+def _keep_small_evidence_leadin(paragraphs: list[Any], lines: list[str], width: float, max_height: float) -> bool:
+    """Keep a short title/score/narrative chain with its first evidence bullet.
+
+    Measure rendered height, including spacing, rather than assuming extracted
+    source lines fit on one rendered line. Larger sections remain splittable.
+    """
+    if "Evidence" not in lines:
+        return False
+    label = lines.index("Evidence")
+    if (label + 1 >= len(lines) or not lines[label + 1].startswith(("-", "•"))
+            or any(line.startswith(("-", "•")) for line in lines[:label])):
+        return False
+    height = 0.0
+    for paragraph in paragraphs[:label + 2]:
+        height += paragraph.wrap(width, max_height)[1]
+        height += paragraph.getSpaceBefore() + paragraph.getSpaceAfter()
+        if height > max_height:
+            return False
+    for paragraph in paragraphs[:label + 1]:
+        paragraph.keepWithNext = True
+    return True
+
+
 def _render_group(texts: list[str]) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter
@@ -211,17 +234,18 @@ def _render_group(texts: list[str]) -> bytes:
         title = lines[0] if _ordinary_sparse_stage(text) else ""
         if page_index:
             story.append(Spacer(1, 0.08 * inch))
+        section_story: list[Any] = []
         for line_index, line in enumerate(lines):
             escaped = html.escape(line)
             if title and line_index == 0:
-                story.append(Paragraph(escaped, heading))
+                section_story.append(Paragraph(escaped, heading))
             elif "AUTOMATED DRAFT" in line.upper() or "PENDING HUMAN APPROVAL" in line.upper():
-                story.append(Paragraph(escaped, eyebrow))
+                section_story.append(Paragraph(escaped, eyebrow))
             elif line.startswith(("-", "•")):
                 # Keep the literal source prefix. The preservation gate intentionally
                 # compares exact extracted report text; changing '-' to '•' made valid
                 # sparse groups fail closed and left production reports at 44 pages.
-                story.append(Paragraph(escaped, bullet))
+                section_story.append(Paragraph(escaped, bullet))
             else:
                 paragraph = Paragraph(escaped, body)
                 # The section title already keeps with its next paragraph. Extend
@@ -230,7 +254,13 @@ def _render_group(texts: list[str]) -> bytes:
                 if (title and line == "Evidence" and line_index + 1 < len(lines)
                         and lines[line_index + 1].startswith(("-", "•"))):
                     paragraph.keepWithNext = True
-                story.append(paragraph)
+                section_story.append(paragraph)
+
+        if title:
+            # SimpleDocTemplate's frame has six-point horizontal padding on each
+            # side. Cap the chain at 2.5 inches, far below a full usable page.
+            _keep_small_evidence_leadin(section_story, lines, letter[0] - 1.16 * inch - 12, 2.5 * inch)
+        story.extend(section_story)
 
     document = SimpleDocTemplate(
         buffer,
