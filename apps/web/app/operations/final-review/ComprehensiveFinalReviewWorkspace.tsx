@@ -454,6 +454,46 @@ function reviewStatusPresentation(copy: typeof COPY[Locale], state: {
   };
 }
 
+function validateApprovalResponse(
+  reviewed: ReviewResponse,
+  approvalCompleted: boolean,
+  reviewArtifactIdentity: JsonRecord,
+  copy: typeof COPY[Locale],
+): {operatorEdition: JsonRecord; operatorDecision: boolean} {
+  const operatorEdition = operatorEditionFrom(reviewed);
+  const operatorDecision = Object.keys(operatorEdition).length > 0;
+  if (!approvalCompleted && operatorDecision
+    && stableIdentity(operatorEdition.source_review_artifact_identity) !== stableIdentity(reviewArtifactIdentity)) {
+    throw new Error(copy.invalidPdf);
+  }
+  if ((!approvalCompleted && !operatorDecision)
+    || reviewCertificateFrom(reviewed).decision !== "approved") {
+    throw new Error(copy.approvalFailed);
+  }
+  return {operatorEdition, operatorDecision};
+}
+
+function assertDeliveryResponseBinding(
+  authorized: ReviewResponse,
+  receipt: JsonRecord,
+  reviewed: ReviewResponse,
+  approvedArtifactIdentity: JsonRecord,
+  operatorEdition: JsonRecord,
+  operatorDecision: boolean,
+  copy: typeof COPY[Locale],
+): void {
+  if (authorized.client_delivery_allowed !== true
+    || (operatorDecision && (!/^[0-9a-f]{64}$/i.test(String(receipt.delivery_authorization_certificate_sha256 || ""))
+      || stableIdentity(receipt.authorized_artifact_identity) !== stableIdentity(approvedArtifactIdentity)
+      || receipt.approval_certificate_sha256 !== reviewCertificateFrom(reviewed).approval_certificate_sha256
+      || (operatorDecision && receipt.original_approval_manifest_sha256 !== (asRecord(operatorEdition.rendering_derivation).authoritative_approval_manifest_sha256 || operatorEdition.accepted_edition_manifest_sha256))
+      || stableIdentity(operatorEditionFrom(authorized).source_review_artifact_identity) !== stableIdentity(operatorEdition.source_review_artifact_identity)
+      || stableIdentity(reviewCertificateFrom(authorized).source_identity) !== stableIdentity(reviewCertificateFrom(reviewed).source_identity)
+      || reviewCertificateFrom(authorized).approval_certificate_sha256 !== reviewCertificateFrom(reviewed).approval_certificate_sha256))) {
+    throw new Error(copy.authorizationFailed);
+  }
+}
+
 export default function ComprehensiveFinalReviewWorkspace() {
   const [locale, setLocale] = useState<Locale>("en");
   const [runId, setRunId] = useState("");
@@ -829,16 +869,9 @@ export default function ComprehensiveFinalReviewWorkspace() {
       uncertainDecision.current = resumed;
       const reviewed = reuseApproval ? resumed : await submitDecision("approved");
       assertSelection();
-      const operatorEdition = operatorEditionFrom(reviewed);
-      const operatorDecision = Object.keys(operatorEdition).length > 0;
-      if (!approvalCompleted && operatorDecision
-        && stableIdentity(operatorEdition.source_review_artifact_identity) !== stableIdentity(reviewArtifactIdentity)) {
-        throw new Error(copy.invalidPdf);
-      }
-      if ((!approvalCompleted && !operatorDecision)
-        || reviewCertificateFrom(reviewed).decision !== "approved") {
-        throw new Error(copy.approvalFailed);
-      }
+      const {operatorEdition, operatorDecision} = validateApprovalResponse(
+        reviewed, approvalCompleted, reviewArtifactIdentity, copy,
+      );
       setResult(reviewed);
       uncertainDecision.current = null;
       approvalRecorded = true;
@@ -863,16 +896,9 @@ export default function ComprehensiveFinalReviewWorkspace() {
       });
       const receipt = asRecord(authorized.delivery_authorization);
       assertSelection();
-      if (authorized.client_delivery_allowed !== true
-        || (operatorDecision && (!/^[0-9a-f]{64}$/i.test(String(receipt.delivery_authorization_certificate_sha256 || ""))
-          || stableIdentity(receipt.authorized_artifact_identity) !== stableIdentity(approvedArtifactIdentity)
-          || receipt.approval_certificate_sha256 !== reviewCertificateFrom(reviewed).approval_certificate_sha256
-          || (operatorDecision && receipt.original_approval_manifest_sha256 !== (asRecord(operatorEdition.rendering_derivation).authoritative_approval_manifest_sha256 || operatorEdition.accepted_edition_manifest_sha256))
-          || stableIdentity(operatorEditionFrom(authorized).source_review_artifact_identity) !== stableIdentity(operatorEdition.source_review_artifact_identity)
-          || stableIdentity(reviewCertificateFrom(authorized).source_identity) !== stableIdentity(reviewCertificateFrom(reviewed).source_identity)
-          || reviewCertificateFrom(authorized).approval_certificate_sha256 !== reviewCertificateFrom(reviewed).approval_certificate_sha256))) {
-        throw new Error(copy.authorizationFailed);
-      }
+      assertDeliveryResponseBinding(
+        authorized, receipt, reviewed, approvedArtifactIdentity, operatorEdition, operatorDecision, copy,
+      );
       setResult(authorized);
       authorizationRecorded = true;
       setConfirmed(false);
