@@ -345,6 +345,17 @@ def _dedupe_records(records: Iterable[dict[str, str]], limit: int = 40) -> list[
     return output
 
 
+def clear_unscored_architecture_aliases(section: dict[str, Any]) -> None:
+    """Keep an explicit producer exclusion authoritative over stale display aliases."""
+    if (section.get("id") not in {"architecture_debt", "velocity_complexity"}
+            or section.get("score_status") != "NOT_SCORED"
+            or section.get("exclude_from_maturity") is not True):
+        return
+    for key in ("score", "source_score", "presented_score", "score_value", "technical_score"):
+        section[key] = None
+    section.update(score_band="not_scored", score_band_label="NOT SCORED", technical_score_display="NOT SCORED")
+
+
 def _section(
     section_id: str,
     label: str,

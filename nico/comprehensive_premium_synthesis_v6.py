@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.comprehensive_decision_grade_model_v5 import clear_unscored_architecture_aliases
+
 from copy import deepcopy
 from pathlib import PurePosixPath
 from typing import Any
@@ -175,6 +177,7 @@ def _weighted_maturity(sections: list[dict[str, Any]]) -> tuple[int | None, list
     weighted_sum = 0.0
     active_weight = 0.0
     for section in sections:
+        clear_unscored_architecture_aliases(section)
         section_id = _text(section.get("id"))
         weight = SECTION_WEIGHTS.get(section_id, 0.0)
         score = section.get("score_value")

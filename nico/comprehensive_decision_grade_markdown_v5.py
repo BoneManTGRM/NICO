@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.comprehensive_decision_grade_model_v5 import clear_unscored_architecture_aliases
+
 from copy import deepcopy
 from typing import Any, Iterable
 
@@ -48,6 +50,7 @@ def _decorate_assessment(assessment: dict[str, Any]) -> dict[str, Any]:
     for section in sections:
         if not isinstance(section, dict):
             continue
+        clear_unscored_architecture_aliases(section)
         score = section.get("score_value")
         if score is None:
             score = section.get("presented_score", section.get("score"))

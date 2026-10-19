@@ -111,7 +111,7 @@ def _scan() -> dict:
 
 def test_strong_exact_sha_evidence_can_earn_90_without_override(monkeypatch) -> None:
     monkeypatch.setattr(legacy, "_repo", lambda context: _repo())
-    monkeypatch.setattr(legacy, "_complexity", lambda context: {"complexity_score": 78, "files_analyzed": 100, "risk_level": "moderate"})
+    monkeypatch.setattr(legacy, "_complexity", lambda context: {**context, "snapshot_commit_sha": context["commit_sha"], "evidence_id": "test-complexity", "complexity_score": 78, "files_analyzed": 100, "risk_level": "moderate"})
     monkeypatch.setattr(legacy, "_scan", lambda context: _scan())
 
     result = scoring.canonical_scoring_provider(_context())
@@ -135,7 +135,7 @@ def test_dependency_candidates_do_not_lower_secret_or_static_scores(monkeypatch)
         {"raw": 59, "review_required": 59}
     )
     monkeypatch.setattr(legacy, "_repo", lambda context: _repo())
-    monkeypatch.setattr(legacy, "_complexity", lambda context: {"complexity_score": 78, "files_analyzed": 100, "risk_level": "moderate"})
+    monkeypatch.setattr(legacy, "_complexity", lambda context: {**context, "snapshot_commit_sha": context["commit_sha"], "evidence_id": "test-complexity", "complexity_score": 78, "files_analyzed": 100, "risk_level": "moderate"})
     monkeypatch.setattr(legacy, "_scan", lambda context: scan)
 
     result = scoring.canonical_scoring_provider(_context())
@@ -158,7 +158,7 @@ def test_incomplete_eslint_reduces_coverage_and_static_assurance(monkeypatch) ->
         }
     )
     monkeypatch.setattr(legacy, "_repo", lambda context: _repo())
-    monkeypatch.setattr(legacy, "_complexity", lambda context: {"complexity_score": 78, "files_analyzed": 100, "risk_level": "moderate"})
+    monkeypatch.setattr(legacy, "_complexity", lambda context: {**context, "snapshot_commit_sha": context["commit_sha"], "evidence_id": "test-complexity", "complexity_score": 78, "files_analyzed": 100, "risk_level": "moderate"})
     monkeypatch.setattr(legacy, "_scan", lambda context: scan)
 
     result = scoring.canonical_scoring_provider(_context())
@@ -174,7 +174,7 @@ def test_source_observation_count_does_not_claim_canonical_findings(monkeypatch,
     repo = _repo()
     repo["code_signal_evidence"]["risk_pattern_hits"] = 2
     monkeypatch.setattr(legacy, "_repo", lambda context: repo)
-    monkeypatch.setattr(legacy, "_complexity", lambda context: {"complexity_score": 78})
+    monkeypatch.setattr(legacy, "_complexity", lambda context: {**context, "snapshot_commit_sha": context["commit_sha"], "evidence_id": "test-complexity", "complexity_score": 78})
     monkeypatch.setattr(legacy, "_scan", lambda context: _scan())
     from nico import comprehensive_native_providers_v5
     provider = comprehensive_native_providers_v5 if active_chain else scoring

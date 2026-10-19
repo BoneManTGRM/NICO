@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import math
 from typing import Any
 
 from fastapi import FastAPI
@@ -226,6 +227,42 @@ def _velocity_score(activity: dict[str, Any], workflow: dict[str, Any]) -> tuple
     return _bounded(score), evidence, findings
 
 
+def _score_population(sections: list[dict[str, Any]]) -> dict[str, Any]:
+    excluded = [item["id"] for item in sections if item.get("exclude_from_maturity") is True]
+    return {"scored_section_count": sum(type(item.get("presented_score")) is int and item.get("exclude_from_maturity") is not True for item in sections),
+            "total_section_count": len(sections), "excluded_section_ids": excluded,
+            "population_change_is_quality_improvement": False}
+
+
+def _architecture_score_input(context: dict[str, Any], complexity: dict[str, Any]) -> tuple[int | None, dict[str, Any]]:
+    value = complexity.get("complexity_score")
+    reason = "measured_score_missing"
+    valid_number = type(value) in (int, float) and 0 <= value <= 100 and math.isfinite(value)
+    bindings = {key: complexity.get(key) == context.get(key) and bool(context.get(key))
+                for key in ("run_id", "repository", "customer_id", "project_id")}
+    bindings["commit_sha"] = bool(context.get("commit_sha")) and complexity.get("snapshot_commit_sha") == context.get("commit_sha")
+    for field in ("commit_sha", "evidence_ledger_id"):
+        if field in complexity:
+            bindings["declared_" + field] = complexity[field] == context.get(field) and bool(context.get(field))
+    evidence_id = complexity.get("evidence_id")
+    if value is not None and not valid_number:
+        reason = "measured_score_invalid"
+    elif valid_number:
+        reason = "retained_score_input" if all(bindings.values()) and isinstance(evidence_id, str) and evidence_id.strip() else "score_input_identity_unproven"
+    score = int(value) if reason == "retained_score_input" else None
+    return score, {
+        "version": "nico.architecture-score-input.v1",
+        "accepted_score": score,
+        "source_field": "complexity_evidence.complexity_score",
+        "evidence_id": complexity.get("evidence_id"),
+        "snapshot_commit_sha": complexity.get("snapshot_commit_sha"),
+        "identity_matches": bindings,
+        "status": "scored" if score is not None else "not_scored",
+        "reason": reason,
+        "fallback_used": False,
+    }
+
+
 def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
     repo = legacy._repo(context)
     complexity = legacy._complexity(context)
@@ -290,8 +327,7 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
     )
 
     ci_score, ci_evidence, ci_findings = _ci_score(workflow)
-    measured_complexity = complexity.get("complexity_score")
-    architecture_score = int(measured_complexity) if isinstance(measured_complexity, (int, float)) else 78
+    architecture_score, architecture_input = _architecture_score_input(context, complexity)
     architecture_findings: list[str] = []
     if str(complexity.get("risk_level") or complexity.get("risk") or "").casefold() in {"high", "critical"}:
         architecture_findings.append("Complexity evidence reports concentrated high-risk hotspots.")
@@ -343,6 +379,13 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
         ),
     ]
 
+    architecture_section = next(item for item in sections if item["id"] == "architecture_debt")
+    architecture_section["score_input_provenance"] = architecture_input
+    if architecture_score is None:
+        architecture_section.update(source_score=None, score_value=None, score_status="NOT_SCORED")
+        architecture_section["summary"] = "Unscored controls are excluded from maturity; any resulting mean change is not evidence of improved source quality."
+        architecture_section["unavailable"].append("Architecture is not scored because a valid exact-source score input is unavailable; measured complexity evidence remains retained.")
+
     scored = [int(item["presented_score"]) for item in sections if isinstance(item.get("presented_score"), int)]
     overall = round(sum(scored) / len(scored)) if scored else 0
     applicable_tools = (*_DEPENDENCY_TOOLS, *_STATIC_TOOLS, *_SECRET_TOOLS)
@@ -385,6 +428,7 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
             "incomplete_analyzers": incomplete,
         },
         "score_contract": {
+            "scored_population": _score_population(sections),
             "version": VERSION,
             "target_score_not_used_as_input": True,
             "score_override_allowed": False,

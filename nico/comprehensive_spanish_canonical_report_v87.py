@@ -22,6 +22,10 @@ VERSION = "nico.comprehensive-spanish-canonical-report.v87"
 # Downstream compaction identifies those semantic sections by their localized
 # titles; alternate synonyms would leave duplicate stage blocks/pages in Spanish.
 _CANONICAL_PARITY_EXACT = {
+    "Unscored controls are excluded from maturity; any resulting mean change is not evidence of improved source quality.": "Los controles sin puntuación se excluyen de la madurez; cualquier cambio resultante en la media no demuestra una mejora de la calidad del código fuente.",
+    "Architecture is not scored because a valid exact-source score input is unavailable; measured complexity evidence remains retained.": "La arquitectura no se puntúa porque no se dispone de una entrada de puntuación válida vinculada a la fuente exacta; se conservan las mediciones de complejidad.",
+    "Delivery capacity is not scored because architecture has no valid exact-source score input.": "La capacidad de entrega no se puntúa porque la arquitectura no tiene una entrada de puntuación válida vinculada a la fuente exacta.",
+    "Architecture and technical-debt score: not scored.": "Puntuación de arquitectura y deuda técnica: sin puntuación.",
     "Status record retention does not establish raw execution evidence.": (
         "La conservación del registro de estado no acredita evidencia sin procesar de la ejecución."
     ),
