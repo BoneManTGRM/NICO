@@ -26,7 +26,8 @@ def test_actual_final_review_handlers() -> None:
     result = subprocess.run(
         [node, "--test", "tests/frontend/final_review_approval.test.cjs",
          "tests/frontend/assessment_operator_state.test.cjs",
-         "tests/frontend/final_review_response_validation.test.cjs"],
+         "tests/frontend/final_review_response_validation.test.cjs",
+         "tests/frontend/final_review_presentation.test.cjs"],
         cwd=ROOT, capture_output=True, text=True, timeout=30,
     )
     assert result.returncode == 0, result.stdout + result.stderr

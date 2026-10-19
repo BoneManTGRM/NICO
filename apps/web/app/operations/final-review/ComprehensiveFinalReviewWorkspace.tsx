@@ -1,6 +1,6 @@
 "use client";
 
-import {FormEvent, useEffect, useMemo, useRef, useState} from "react";
+import {ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState} from "react";
 import styles from "./final-review.module.css";
 
 type Decision = "request_more_evidence" | "rejected";
@@ -454,6 +454,239 @@ function reviewStatusPresentation(copy: typeof COPY[Locale], state: {
   };
 }
 
+function approvalGuidanceText(copy: typeof COPY[Locale], {
+  approvalAuthorityReady, result, finalPdfAvailable, finalActionAuthorityReady,
+  approvalCompleted, exactEditionDownloaded, confirmed,
+}: {
+  approvalAuthorityReady: boolean;
+  result: ReviewResponse | null;
+  finalPdfAvailable: boolean;
+  finalActionAuthorityReady: boolean;
+  approvalCompleted: boolean;
+  exactEditionDownloaded: boolean;
+  confirmed: boolean;
+}): string {
+  return !approvalAuthorityReady ? copy.enterReviewer
+    : result && !finalPdfAvailable ? copy.finalPdfUnavailable
+    : !finalActionAuthorityReady ? copy.legacyDeliveryRequired
+    : approvalCompleted ? copy.approvalReady
+    : !exactEditionDownloaded ? copy.reviewDownloadRequired
+    : !confirmed ? copy.confirmFirst
+    : copy.approvalReady;
+}
+
+function artifactDisplayDigests({
+  edition, currentReviewDigest, result, certificate, approvedPackage, deliveryCertificate,
+}: {
+  edition: JsonRecord;
+  currentReviewDigest: string;
+  result: ReviewResponse | null;
+  certificate: JsonRecord;
+  approvedPackage: JsonRecord;
+  deliveryCertificate: JsonRecord;
+}) {
+  const reportDigest = String(
+    edition.report_artifact_digest
+      || currentReviewDigest
+      || asRecord(result?.review_context).artifact_digest
+      || "",
+  );
+  const certificateDigest = String(certificate.approval_certificate_sha256 || "");
+  const packageDigest = String(approvedPackage.zip_sha256 || "");
+  const deliveryCertificateDigest = String(
+    deliveryCertificate.delivery_authorization_certificate_sha256 || "",
+  );
+  return {reportDigest, certificateDigest, packageDigest, deliveryCertificateDigest};
+}
+
+type FinalReviewHeroProps = {
+  copy: typeof COPY[Locale];
+  statusPresentation: ReturnType<typeof reviewStatusPresentation>;
+  runId: string;
+  identityReady: boolean;
+};
+
+function FinalReviewHero({
+  copy, statusPresentation, runId, identityReady,
+}: FinalReviewHeroProps) {
+  return <section className={styles.hero}>
+      <div className={styles.heroGlow} aria-hidden="true" />
+      <p className={styles.eyebrow}>{copy.eyebrow}</p>
+      <h1>{statusPresentation.heading.hero}</h1>
+      <p className={styles.lead}>{copy.lead}</p>
+      <div className={styles.identityStrip}>
+        <div><span>{copy.assessment}</span><strong>{copy.comprehensive}</strong></div>
+        <div><span>{copy.exactRun}</span><strong>{runId.trim() || copy.directRun}</strong></div>
+        <div className={identityReady ? styles.identityReady : styles.identityMissing}><span>{copy.identity}</span><strong>{identityReady ? copy.bound : copy.missing}</strong></div>
+      </div>
+    </section>;
+}
+
+type FinalReviewAccessPanelProps = {
+  locale: Locale;
+  copy: typeof COPY[Locale];
+  artifactEdition: "source" | "es-MX";
+  loading: boolean;
+  reviewer: string;
+  reviewerRole: string;
+  adminToken: string;
+  runId: string;
+  operatorReady: boolean;
+  result: ReviewResponse | null;
+  reviewerQueueHref: string;
+  error: string;
+  notice: string;
+  loadStatus: (event?: FormEvent) => Promise<void>;
+  onEditionChange: (event: ChangeEvent<HTMLSelectElement>) => void;
+  onReviewerChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onReviewerRoleChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onAdminTokenChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onRunIdChange: (event: ChangeEvent<HTMLInputElement>) => void;
+};
+
+function FinalReviewAccessPanel({
+  locale, copy, artifactEdition, loading, reviewer, reviewerRole, adminToken, runId, operatorReady, result, reviewerQueueHref, error, notice, loadStatus, onEditionChange, onReviewerChange, onReviewerRoleChange, onAdminTokenChange, onRunIdChange,
+}: FinalReviewAccessPanelProps) {
+  return <section className={styles.panel}>
+      <div className={styles.stepHeading}><span className={styles.stepNumber}>1</span><div><p className={styles.kicker}>{copy.secureAccess}</p><h2>{copy.identifyReviewer}</h2><p>{copy.identityAttached}</p></div></div>
+      <form className={styles.form} onSubmit={loadStatus}>
+        <label>{locale === "es-MX" ? "Edición del informe" : "Report edition"}<select value={artifactEdition} disabled={loading} onChange={onEditionChange}>
+          <option value="source">{locale === "es-MX" ? "Edición original" : "Source edition"}</option>
+          <option value="es-MX">Español (México) — es-MX</option>
+        </select></label>
+        <label className={styles.reviewerField}>{copy.reviewer}<input value={reviewer} disabled={loading} onChange={onReviewerChange} placeholder={copy.reviewerPlaceholder} autoComplete="name" /></label>
+        <label className={styles.tokenField}>{copy.reviewerRole}<input list="nico-reviewer-roles" value={reviewerRole} disabled={loading} onChange={onReviewerRoleChange} placeholder={copy.reviewerRolePlaceholder} autoComplete="off" />
+          <datalist id="nico-reviewer-roles">
+            {AUTHORIZED_REVIEWER_ROLES.map((role) => <option value={role.value} key={role.value}>{locale === "es-MX" ? role.es : role.en}</option>)}
+            <option value="test">Test</option>
+          </datalist>
+        </label>
+        <label className={styles.tokenField}>{copy.operatorToken}<input type="password" value={adminToken} disabled={loading} onChange={onAdminTokenChange} placeholder={copy.secureToken} autoComplete="current-password" spellCheck={false} /></label>
+        <button className={styles.primary} type="submit" disabled={loading || !operatorReady}>{loading ? copy.opening : result ? copy.refresh : copy.open}</button>
+        <details className={styles.advanced}><summary>{copy.exactIdentity}</summary><div className={styles.advancedGrid}>
+          <label>{copy.assessment}<input value={copy.comprehensive} readOnly aria-readonly="true" /></label>
+          <label>{copy.exactRunId}<input value={runId} disabled={loading} onChange={onRunIdChange} placeholder="comprun_…" autoCapitalize="none" autoCorrect="off" spellCheck={false} /></label>
+        </div></details>
+      </form>
+      {artifactEdition === "es-MX" ? <div className={styles.downloadActions}>
+        <p>{locale === "es-MX" ? "La generación en español no está disponible por ahora. Cargue una edición ya conservada con los controles existentes." : "New Spanish generation is unavailable for now. Load an already frozen edition using the existing controls."}</p>
+        <button className={styles.secondary} type="button" disabled>{locale === "es-MX" ? "Preparar informe final en español" : "Prepare Spanish final assessment report"}</button>
+      </div> : null}
+      <p className={styles.securityNote}>{copy.security}</p>
+      <p className={styles.securityNote}>{copy.optionalReviewerMetadata}</p>
+      {runId.trim() ? <p className={styles.securityNote}><a href={reviewerQueueHref}>{copy.reviewerQueue}</a></p> : null}
+      <div className={styles.feedback} aria-live="polite">{error ? <div className={styles.error} role="alert">{error}</div> : null}{!error && notice ? <div className={styles.success}>{notice}</div> : null}</div>
+    </section>;
+}
+
+type FinalReviewDecisionPanelProps = {
+  locale: Locale;
+  copy: typeof COPY[Locale];
+  statusPresentation: ReturnType<typeof reviewStatusPresentation>;
+  result: ReviewResponse | null;
+  rawStatus: string;
+  report: JsonRecord;
+  digests: ReturnType<typeof artifactDisplayDigests>;
+  manifestDigest: string;
+  approvalCompleted: boolean;
+  confirmed: boolean;
+  exactEditionDownloaded: boolean;
+  loading: boolean;
+  note: string;
+  deliveryAllowed: boolean;
+  operatorReady: boolean;
+  finalPdfAvailable: boolean;
+  finalActionAuthorityReady: boolean;
+  currentReviewPdfDigest: string;
+  operatorApprovalCompleted: boolean;
+  approvalNextStep: string;
+  downloadFinalReport: () => Promise<void>;
+  approveExactReport: () => Promise<void>;
+  downloadPackage: () => Promise<void>;
+  recordOtherDecision: (decision: Decision) => Promise<void>;
+  onConfirmedChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onNoteChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
+};
+
+function FinalReviewDecisionPanel({
+  locale, copy, statusPresentation, result, rawStatus, report, digests, manifestDigest, approvalCompleted, confirmed, exactEditionDownloaded, loading, note, deliveryAllowed, operatorReady, finalPdfAvailable, finalActionAuthorityReady, currentReviewPdfDigest, operatorApprovalCompleted, approvalNextStep, downloadFinalReport, approveExactReport, downloadPackage, recordOtherDecision, onConfirmedChange, onNoteChange,
+}: FinalReviewDecisionPanelProps) {
+  const {reportDigest, certificateDigest, packageDigest, deliveryCertificateDigest} = digests;
+  return <section className={`${styles.panel} ${result ? styles.approvalActive : styles.approvalWaiting}`}>
+      <div className={styles.stepHeading}><span className={styles.stepNumber}>2</span><div><p className={styles.kicker}>{copy.finalDecision}</p><h2>{statusPresentation.heading.decision}</h2><p>{statusPresentation.heading.lead}</p></div></div>
+      <p className={styles.securityNote}>{copy.operatorDisclosure}</p>
+      <div className={styles.statusGrid}>
+        <article className={styles.statusCard}><span>{statusPresentation.reviewLabel}</span><strong>{reviewStatusLabel(rawStatus, locale)}</strong></article>
+        <article className={styles.statusCard}><span>{copy.specialistReview}</span><strong>{statusPresentation.specialistStatus}</strong></article>
+        <article className={statusPresentation.delivery.cardClass}><span>{copy.delivery}</span><strong>{statusPresentation.delivery.status}</strong></article>
+      </div>
+      {result ? renderArtifactSummary([
+        [copy.reportDigest, reportDigest],
+        [copy.certificateDigest, certificateDigest],
+        [copy.manifestDigest, manifestDigest],
+        [copy.packageDigest, packageDigest],
+        [copy.deliveryCertificateDigest, deliveryCertificateDigest],
+      ], report.pdf_filename, copy.notIssued) : null}
+      {!result ? <div className={styles.emptyState}><strong>{copy.emptyTitle}</strong><span>{copy.emptyBody}</span></div> : <>
+        {!approvalCompleted ? <label className={styles.confirmRow}><input type="checkbox" checked={confirmed} disabled={!exactEditionDownloaded || loading} onChange={onConfirmedChange} /><span><strong>{copy.reviewedExact}</strong><small>{copy.reviewedDetail}</small></span></label> : null}
+        <details className={styles.noteDetails}><summary>{copy.approvalNote}</summary><label>{copy.approvalNoteLabel}<textarea value={note} onChange={onNoteChange} placeholder={copy.approvalPlaceholder} /></label></details>
+        <div className={styles.downloadActions}>
+          <button className={deliveryAllowed ? styles.approve : styles.secondary} type="button" data-nico-pdf-action="true" disabled={loading || !operatorReady || !finalPdfAvailable} onClick={downloadFinalReport}>{approvalCompleted ? copy.downloadApprovedReport : copy.downloadFinalReport}</button>
+          {!deliveryAllowed ? <button className={styles.approve} type="button" data-nico-pdf-action="true" aria-describedby="approval-next-step" disabled={loading || !finalPdfAvailable || !finalActionAuthorityReady || !currentReviewPdfDigest || (!approvalCompleted && (!confirmed || !exactEditionDownloaded))} onClick={approveExactReport}>{loading ? copy.recording : copy.approveExactReport}</button> : null}
+          {approvalCompleted && !deliveryAllowed ? <span className={styles.securityNote}>{copy.alreadyApproved}</span> : null}
+          {deliveryAllowed && !operatorApprovalCompleted ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadPackage}>{copy.downloadPackage}</button> : null}
+        </div>
+        {!deliveryAllowed ? <p id="approval-next-step" className={styles.securityNote} aria-live="polite">{approvalNextStep}</p> : null}
+        <div className={statusPresentation.delivery.bannerClass}>{statusPresentation.delivery.message}</div>
+        <details className={styles.otherDecisions}><summary>{copy.otherDecision}</summary><p>{copy.otherDecisionLead}</p><div className={styles.decisionActions}><button type="button" disabled={loading || approvalCompleted} onClick={() => recordOtherDecision("request_more_evidence")}>{copy.requestEvidence}</button><button className={styles.reject} type="button" disabled={loading || approvalCompleted} onClick={() => recordOtherDecision("rejected")}>{copy.reject}</button></div></details>
+      </>}
+    </section>;
+}
+
+type FinalReviewTechnicalRecordProps = {
+  copy: typeof COPY[Locale];
+  result: ReviewResponse | null;
+  operatorApprovalCompleted: boolean;
+  retainedEditionExportReady: boolean;
+  downloadRetainedEditionRecords: () => Promise<void>;
+  certificate: JsonRecord;
+  digests: ReturnType<typeof artifactDisplayDigests>;
+  manifestDigest: string;
+  edition: JsonRecord;
+  report: JsonRecord;
+  currentReviewPdfDigest: string;
+};
+
+function FinalReviewTechnicalRecord({
+  copy, result, operatorApprovalCompleted, retainedEditionExportReady, downloadRetainedEditionRecords, certificate, digests, manifestDigest, edition, report, currentReviewPdfDigest,
+}: FinalReviewTechnicalRecordProps) {
+  const {reportDigest, certificateDigest} = digests;
+  return result ? <section className={`${styles.panel} ${styles.recordPanel}`}><details className={styles.record}><summary>{copy.technicalRecord}</summary>
+      {operatorApprovalCompleted ? <button className={styles.secondary} type="button" disabled={!retainedEditionExportReady} onClick={downloadRetainedEditionRecords}>{copy.retainedEditionRecords}</button> : null}
+      <pre className={styles.code}>{JSON.stringify({
+      status: result.status,
+      operator_approval_status: result.operator_approval_status,
+      human_review_completed: result.human_review_completed,
+      client_delivery_allowed: result.client_delivery_allowed,
+      delivery_authorization: result.delivery_authorization,
+      review_artifact_identity: result.review_artifact_identity,
+      approval_basis: certificate.approval_basis,
+      approval_certificate_sha256: certificateDigest,
+      accepted_edition_manifest_sha256: manifestDigest,
+      source_review_artifact_identity: edition.source_review_artifact_identity,
+      rendering_derivation: edition.rendering_derivation ? {
+        version: asRecord(edition.rendering_derivation).version,
+        kind: asRecord(edition.rendering_derivation).kind,
+        new_human_approval: asRecord(edition.rendering_derivation).new_human_approval,
+        authoritative_approval_manifest_sha256: asRecord(edition.rendering_derivation).authoritative_approval_manifest_sha256,
+        original_approved_pdf_sha256: asRecord(edition.rendering_derivation).original_approved_pdf_sha256,
+      } : undefined,
+      report_artifact_digest: reportDigest,
+      pdf_filename: report.pdf_filename,
+      pdf_sha256: currentReviewPdfDigest,
+    }, null, 2)}</pre></details></section> : null;
+}
+
 function validateApprovalResponse(
   reviewed: ReviewResponse,
   approvalCompleted: boolean,
@@ -562,25 +795,14 @@ export default function ComprehensiveFinalReviewWorkspace() {
     && result?.human_review_completed === true && approvalCompleted;
   const finalActionAuthorityReady = approvalCompleted && !operatorApprovalCompleted
     ? canonicalApprovalReady : approvalAuthorityReady;
-  const approvalNextStep = !approvalAuthorityReady ? copy.enterReviewer
-    : result && !finalPdfAvailable ? copy.finalPdfUnavailable
-    : !finalActionAuthorityReady ? copy.legacyDeliveryRequired
-    : approvalCompleted ? copy.approvalReady
-    : !exactEditionDownloaded ? copy.reviewDownloadRequired
-    : !confirmed ? copy.confirmFirst
-    : copy.approvalReady;
-  const reportDigest = String(
-    edition.report_artifact_digest
-      || currentReviewDigest
-      || asRecord(result?.review_context).artifact_digest
-      || "",
-  );
-  const certificateDigest = String(certificate.approval_certificate_sha256 || "");
+  const approvalNextStep = approvalGuidanceText(copy, {
+    approvalAuthorityReady, result, finalPdfAvailable, finalActionAuthorityReady,
+    approvalCompleted, exactEditionDownloaded, confirmed,
+  });
+  const displayDigests = artifactDisplayDigests({
+    edition, currentReviewDigest, result, certificate, approvedPackage, deliveryCertificate,
+  });
   const manifestDigest = String(edition.accepted_edition_manifest_sha256 || "");
-  const packageDigest = String(approvedPackage.zip_sha256 || "");
-  const deliveryCertificateDigest = String(
-    deliveryCertificate.delivery_authorization_certificate_sha256 || "",
-  );
   const retainedEditionExportReady = Boolean(operatorReady && operatorApprovalCompleted
     && manifestDigest && !loading && reviewArtifactIdentity.run_id === runId.trim());
 
@@ -981,107 +1203,86 @@ export default function ComprehensiveFinalReviewWorkspace() {
 
   const reviewerQueueHref = `/operations/reviewer-queue?run_id=${encodeURIComponent(runId.trim())}&lang=${encodeURIComponent(locale)}`;
 
+  const onEditionChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    selectionVersion.current += 1; uncertainDecision.current = null;
+    setArtifactEdition(event.target.value === "es-MX" ? "es-MX" : "source");
+    setResult(null); setConfirmed(false); setDownloadedArtifactDigest(""); setError(""); setNotice("");
+  };
+  const onReviewerChange = (event: ChangeEvent<HTMLInputElement>) => setReviewer(event.target.value);
+  const onReviewerRoleChange = (event: ChangeEvent<HTMLInputElement>) => setReviewerRole(event.target.value);
+  const onAdminTokenChange = (event: ChangeEvent<HTMLInputElement>) => setAdminToken(event.target.value);
+  const onRunIdChange = (event: ChangeEvent<HTMLInputElement>) => {selectionVersion.current += 1; uncertainDecision.current = null; setRunId(event.target.value); setResult(null); setConfirmed(false); setDownloadedArtifactDigest("");};
+  const onConfirmedChange = (event: ChangeEvent<HTMLInputElement>) => setConfirmed(event.target.checked);
+  const onNoteChange = (event: ChangeEvent<HTMLTextAreaElement>) => setNote(event.target.value);
+
   return <main className={styles.shell} data-review-contract="final-report-independent-v1">
-    <section className={styles.hero}>
-      <div className={styles.heroGlow} aria-hidden="true" />
-      <p className={styles.eyebrow}>{copy.eyebrow}</p>
-      <h1>{statusPresentation.heading.hero}</h1>
-      <p className={styles.lead}>{copy.lead}</p>
-      <div className={styles.identityStrip}>
-        <div><span>{copy.assessment}</span><strong>{copy.comprehensive}</strong></div>
-        <div><span>{copy.exactRun}</span><strong>{runId.trim() || copy.directRun}</strong></div>
-        <div className={identityReady ? styles.identityReady : styles.identityMissing}><span>{copy.identity}</span><strong>{identityReady ? copy.bound : copy.missing}</strong></div>
-      </div>
-    </section>
-
-    <section className={styles.panel}>
-      <div className={styles.stepHeading}><span className={styles.stepNumber}>1</span><div><p className={styles.kicker}>{copy.secureAccess}</p><h2>{copy.identifyReviewer}</h2><p>{copy.identityAttached}</p></div></div>
-      <form className={styles.form} onSubmit={loadStatus}>
-        <label>{locale === "es-MX" ? "Edición del informe" : "Report edition"}<select value={artifactEdition} disabled={loading} onChange={(event) => {
-          selectionVersion.current += 1; uncertainDecision.current = null;
-          setArtifactEdition(event.target.value === "es-MX" ? "es-MX" : "source");
-          setResult(null); setConfirmed(false); setDownloadedArtifactDigest(""); setError(""); setNotice("");
-        }}>
-          <option value="source">{locale === "es-MX" ? "Edición original" : "Source edition"}</option>
-          <option value="es-MX">Español (México) — es-MX</option>
-        </select></label>
-        <label className={styles.reviewerField}>{copy.reviewer}<input value={reviewer} disabled={loading} onChange={(event) => setReviewer(event.target.value)} placeholder={copy.reviewerPlaceholder} autoComplete="name" /></label>
-        <label className={styles.tokenField}>{copy.reviewerRole}<input list="nico-reviewer-roles" value={reviewerRole} disabled={loading} onChange={(event) => setReviewerRole(event.target.value)} placeholder={copy.reviewerRolePlaceholder} autoComplete="off" />
-          <datalist id="nico-reviewer-roles">
-            {AUTHORIZED_REVIEWER_ROLES.map((role) => <option value={role.value} key={role.value}>{locale === "es-MX" ? role.es : role.en}</option>)}
-            <option value="test">Test</option>
-          </datalist>
-        </label>
-        <label className={styles.tokenField}>{copy.operatorToken}<input type="password" value={adminToken} disabled={loading} onChange={(event) => setAdminToken(event.target.value)} placeholder={copy.secureToken} autoComplete="current-password" spellCheck={false} /></label>
-        <button className={styles.primary} type="submit" disabled={loading || !operatorReady}>{loading ? copy.opening : result ? copy.refresh : copy.open}</button>
-        <details className={styles.advanced}><summary>{copy.exactIdentity}</summary><div className={styles.advancedGrid}>
-          <label>{copy.assessment}<input value={copy.comprehensive} readOnly aria-readonly="true" /></label>
-          <label>{copy.exactRunId}<input value={runId} disabled={loading} onChange={(event) => {selectionVersion.current += 1; uncertainDecision.current = null; setRunId(event.target.value); setResult(null); setConfirmed(false); setDownloadedArtifactDigest("");}} placeholder="comprun_…" autoCapitalize="none" autoCorrect="off" spellCheck={false} /></label>
-        </div></details>
-      </form>
-      {artifactEdition === "es-MX" ? <div className={styles.downloadActions}>
-        <p>{locale === "es-MX" ? "La generación en español no está disponible por ahora. Cargue una edición ya conservada con los controles existentes." : "New Spanish generation is unavailable for now. Load an already frozen edition using the existing controls."}</p>
-        <button className={styles.secondary} type="button" disabled>{locale === "es-MX" ? "Preparar informe final en español" : "Prepare Spanish final assessment report"}</button>
-      </div> : null}
-      <p className={styles.securityNote}>{copy.security}</p>
-      <p className={styles.securityNote}>{copy.optionalReviewerMetadata}</p>
-      {runId.trim() ? <p className={styles.securityNote}><a href={reviewerQueueHref}>{copy.reviewerQueue}</a></p> : null}
-      <div className={styles.feedback} aria-live="polite">{error ? <div className={styles.error} role="alert">{error}</div> : null}{!error && notice ? <div className={styles.success}>{notice}</div> : null}</div>
-    </section>
-
-    <section className={`${styles.panel} ${result ? styles.approvalActive : styles.approvalWaiting}`}>
-      <div className={styles.stepHeading}><span className={styles.stepNumber}>2</span><div><p className={styles.kicker}>{copy.finalDecision}</p><h2>{statusPresentation.heading.decision}</h2><p>{statusPresentation.heading.lead}</p></div></div>
-      <p className={styles.securityNote}>{copy.operatorDisclosure}</p>
-      <div className={styles.statusGrid}>
-        <article className={styles.statusCard}><span>{statusPresentation.reviewLabel}</span><strong>{reviewStatusLabel(rawStatus, locale)}</strong></article>
-        <article className={styles.statusCard}><span>{copy.specialistReview}</span><strong>{statusPresentation.specialistStatus}</strong></article>
-        <article className={statusPresentation.delivery.cardClass}><span>{copy.delivery}</span><strong>{statusPresentation.delivery.status}</strong></article>
-      </div>
-      {result ? renderArtifactSummary([
-        [copy.reportDigest, reportDigest],
-        [copy.certificateDigest, certificateDigest],
-        [copy.manifestDigest, manifestDigest],
-        [copy.packageDigest, packageDigest],
-        [copy.deliveryCertificateDigest, deliveryCertificateDigest],
-      ], report.pdf_filename, copy.notIssued) : null}
-      {!result ? <div className={styles.emptyState}><strong>{copy.emptyTitle}</strong><span>{copy.emptyBody}</span></div> : <>
-        {!approvalCompleted ? <label className={styles.confirmRow}><input type="checkbox" checked={confirmed} disabled={!exactEditionDownloaded || loading} onChange={(event) => setConfirmed(event.target.checked)} /><span><strong>{copy.reviewedExact}</strong><small>{copy.reviewedDetail}</small></span></label> : null}
-        <details className={styles.noteDetails}><summary>{copy.approvalNote}</summary><label>{copy.approvalNoteLabel}<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder={copy.approvalPlaceholder} /></label></details>
-        <div className={styles.downloadActions}>
-          <button className={deliveryAllowed ? styles.approve : styles.secondary} type="button" data-nico-pdf-action="true" disabled={loading || !operatorReady || !finalPdfAvailable} onClick={downloadFinalReport}>{approvalCompleted ? copy.downloadApprovedReport : copy.downloadFinalReport}</button>
-          {!deliveryAllowed ? <button className={styles.approve} type="button" data-nico-pdf-action="true" aria-describedby="approval-next-step" disabled={loading || !finalPdfAvailable || !finalActionAuthorityReady || !currentReviewPdfDigest || (!approvalCompleted && (!confirmed || !exactEditionDownloaded))} onClick={approveExactReport}>{loading ? copy.recording : copy.approveExactReport}</button> : null}
-          {approvalCompleted && !deliveryAllowed ? <span className={styles.securityNote}>{copy.alreadyApproved}</span> : null}
-          {deliveryAllowed && !operatorApprovalCompleted ? <button className={styles.secondary} type="button" disabled={loading} onClick={downloadPackage}>{copy.downloadPackage}</button> : null}
-        </div>
-        {!deliveryAllowed ? <p id="approval-next-step" className={styles.securityNote} aria-live="polite">{approvalNextStep}</p> : null}
-        <div className={statusPresentation.delivery.bannerClass}>{statusPresentation.delivery.message}</div>
-        <details className={styles.otherDecisions}><summary>{copy.otherDecision}</summary><p>{copy.otherDecisionLead}</p><div className={styles.decisionActions}><button type="button" disabled={loading || approvalCompleted} onClick={() => recordOtherDecision("request_more_evidence")}>{copy.requestEvidence}</button><button className={styles.reject} type="button" disabled={loading || approvalCompleted} onClick={() => recordOtherDecision("rejected")}>{copy.reject}</button></div></details>
-      </>}
-    </section>
-
-    {result ? <section className={`${styles.panel} ${styles.recordPanel}`}><details className={styles.record}><summary>{copy.technicalRecord}</summary>
-      {operatorApprovalCompleted ? <button className={styles.secondary} type="button" disabled={!retainedEditionExportReady} onClick={downloadRetainedEditionRecords}>{copy.retainedEditionRecords}</button> : null}
-      <pre className={styles.code}>{JSON.stringify({
-      status: result.status,
-      operator_approval_status: result.operator_approval_status,
-      human_review_completed: result.human_review_completed,
-      client_delivery_allowed: result.client_delivery_allowed,
-      delivery_authorization: result.delivery_authorization,
-      review_artifact_identity: result.review_artifact_identity,
-      approval_basis: certificate.approval_basis,
-      approval_certificate_sha256: certificateDigest,
-      accepted_edition_manifest_sha256: manifestDigest,
-      source_review_artifact_identity: edition.source_review_artifact_identity,
-      rendering_derivation: edition.rendering_derivation ? {
-        version: asRecord(edition.rendering_derivation).version,
-        kind: asRecord(edition.rendering_derivation).kind,
-        new_human_approval: asRecord(edition.rendering_derivation).new_human_approval,
-        authoritative_approval_manifest_sha256: asRecord(edition.rendering_derivation).authoritative_approval_manifest_sha256,
-        original_approved_pdf_sha256: asRecord(edition.rendering_derivation).original_approved_pdf_sha256,
-      } : undefined,
-      report_artifact_digest: reportDigest,
-      pdf_filename: report.pdf_filename,
-      pdf_sha256: currentReviewPdfDigest,
-    }, null, 2)}</pre></details></section> : null}
+    <FinalReviewHero
+      copy={copy}
+      statusPresentation={statusPresentation}
+      runId={runId}
+      identityReady={identityReady}
+    />
+    <FinalReviewAccessPanel
+      locale={locale}
+      copy={copy}
+      artifactEdition={artifactEdition}
+      loading={loading}
+      reviewer={reviewer}
+      reviewerRole={reviewerRole}
+      adminToken={adminToken}
+      runId={runId}
+      operatorReady={operatorReady}
+      result={result}
+      reviewerQueueHref={reviewerQueueHref}
+      error={error}
+      notice={notice}
+      loadStatus={loadStatus}
+      onEditionChange={onEditionChange}
+      onReviewerChange={onReviewerChange}
+      onReviewerRoleChange={onReviewerRoleChange}
+      onAdminTokenChange={onAdminTokenChange}
+      onRunIdChange={onRunIdChange}
+    />
+    <FinalReviewDecisionPanel
+      locale={locale}
+      copy={copy}
+      statusPresentation={statusPresentation}
+      result={result}
+      rawStatus={rawStatus}
+      report={report}
+      digests={displayDigests}
+      manifestDigest={manifestDigest}
+      approvalCompleted={approvalCompleted}
+      confirmed={confirmed}
+      exactEditionDownloaded={exactEditionDownloaded}
+      loading={loading}
+      note={note}
+      deliveryAllowed={deliveryAllowed}
+      operatorReady={operatorReady}
+      finalPdfAvailable={finalPdfAvailable}
+      finalActionAuthorityReady={finalActionAuthorityReady}
+      currentReviewPdfDigest={currentReviewPdfDigest}
+      operatorApprovalCompleted={operatorApprovalCompleted}
+      approvalNextStep={approvalNextStep}
+      downloadFinalReport={downloadFinalReport}
+      approveExactReport={approveExactReport}
+      downloadPackage={downloadPackage}
+      recordOtherDecision={recordOtherDecision}
+      onConfirmedChange={onConfirmedChange}
+      onNoteChange={onNoteChange}
+    />
+    <FinalReviewTechnicalRecord
+      copy={copy}
+      result={result}
+      operatorApprovalCompleted={operatorApprovalCompleted}
+      retainedEditionExportReady={retainedEditionExportReady}
+      downloadRetainedEditionRecords={downloadRetainedEditionRecords}
+      certificate={certificate}
+      digests={displayDigests}
+      manifestDigest={manifestDigest}
+      edition={edition}
+      report={report}
+      currentReviewPdfDigest={currentReviewPdfDigest}
+    />
   </main>;
 }
