@@ -173,6 +173,34 @@ function empiricalStatus(value: unknown, locale: Locale): string {
   return label || `Estado técnico: ${status}`;
 }
 
+type ProjectionSummaryProps = {projection: Projection; locale: Locale};
+
+function ReviewProgressSummary({projection, locale}: ProjectionSummaryProps) {
+  const copy = COPY[locale];
+  return <div className={styles.summary}>
+    <article><b>{projection.dispositioned_candidate_count ?? 0}/{projection.candidate_count ?? 0}</b><span>{locale === "es-MX" ? "candidatos con disposición" : "candidates dispositioned"}</span></article>
+    <article><b>{projection.quality_control_completed_count ?? 0}/{projection.quality_control_required_count ?? 0}</b><span>{locale === "es-MX" ? "muestras de control de calidad completadas" : "QC samples complete"}</span></article>
+    <article><b>{projection.open_evidence_request_count ?? 0}</b><span>{locale === "es-MX" ? "solicitudes de evidencia abiertas" : "open evidence requests"}</span></article>
+    <article><b>{Array.isArray(projection.unresolved_high_impact_candidate_ids) ? projection.unresolved_high_impact_candidate_ids.length : 0}</b><span>{locale === "es-MX" ? "escalamientos abiertos" : "open high-impact escalations"}</span></article>
+    <article className={styles.wide}><b>{projection.ready_for_final_approval ? copy.ready : copy.notReady}</b><span>{locale === "es-MX" ? "La aprobación final sigue siendo una decisión humana separada." : "Final approval remains a separate human decision."}</span></article>
+  </div>;
+}
+
+function EmpiricalStudySummary({projection, locale}: ProjectionSummaryProps) {
+  const copy = COPY[locale];
+  const empirical = asRecord(projection.empirical_measurement);
+  const ledger = asRecord(projection.ledger);
+  return <details className={styles.empirical}>
+    <summary>{copy.empirical}</summary>
+    <dl>
+      <div><dt>{copy.status}</dt><dd>{empiricalStatus(empirical.status, locale)}</dd></div>
+      <div><dt>{copy.combinedHours}</dt><dd>{String(empirical.combined_specialist_hours ?? 0)}</dd></div>
+      <div><dt>{copy.fourHoursVerified}</dt><dd>{empirical.four_combined_specialist_hours_empirically_proven === true ? copy.yes : copy.no}</dd></div>
+      <div><dt>{copy.auditEvents}</dt><dd>{String(projection.ledger ? (Array.isArray(ledger.audit_events) ? ledger.audit_events.length : 0) : 0)}</dd></div>
+    </dl>
+  </details>;
+}
+
 export default function ReviewWorkPanel({runId, refresh = 0, isCurrent, onChanged}: WorkspaceProps = savedRun()) {
   const scope = useReviewScope(isCurrent);
   const [locale, setLocale] = useState<Locale>("en");
@@ -317,7 +345,6 @@ export default function ReviewWorkPanel({runId, refresh = 0, isCurrent, onChange
     }
   }
 
-  const empirical = asRecord(projection?.empirical_measurement);
   const ledger = asRecord(projection?.ledger);
   const sessionActions = action === "start_session" || action === "stop_session" || action === "complete_empirical_study";
 
@@ -339,13 +366,7 @@ export default function ReviewWorkPanel({runId, refresh = 0, isCurrent, onChange
     <p className={styles.security}>{copy.warning}</p>
     <div className={styles.actions}><button type="button" onClick={load} disabled={busy || !runId.trim()}>{projection ? copy.refresh : copy.load}</button></div>
 
-    {projection ? <div className={styles.summary}>
-      <article><b>{projection.dispositioned_candidate_count ?? 0}/{projection.candidate_count ?? 0}</b><span>{locale === "es-MX" ? "candidatos con disposición" : "candidates dispositioned"}</span></article>
-      <article><b>{projection.quality_control_completed_count ?? 0}/{projection.quality_control_required_count ?? 0}</b><span>{locale === "es-MX" ? "muestras de control de calidad completadas" : "QC samples complete"}</span></article>
-      <article><b>{projection.open_evidence_request_count ?? 0}</b><span>{locale === "es-MX" ? "solicitudes de evidencia abiertas" : "open evidence requests"}</span></article>
-      <article><b>{Array.isArray(projection.unresolved_high_impact_candidate_ids) ? projection.unresolved_high_impact_candidate_ids.length : 0}</b><span>{locale === "es-MX" ? "escalamientos abiertos" : "open high-impact escalations"}</span></article>
-      <article className={styles.wide}><b>{projection.ready_for_final_approval ? copy.ready : copy.notReady}</b><span>{locale === "es-MX" ? "La aprobación final sigue siendo una decisión humana separada." : "Final approval remains a separate human decision."}</span></article>
-    </div> : null}
+    {projection ? <ReviewProgressSummary projection={projection} locale={locale} /> : null}
 
     {projection ? <QualityControlRecords records={ledger.quality_control} blockers={projection.quality_control_blockers} events={ledger.audit_events} locale={locale} busy={busy} onSelect={(candidateId) => {
       setAction("quality_control"); setTargetId(candidateId); setQcNote(""); setQcOutcome("agree");
@@ -378,7 +399,7 @@ export default function ReviewWorkPanel({runId, refresh = 0, isCurrent, onChange
       <div className={`${styles.actions} ${styles.full}`}><button type="submit" disabled={busy || !projection || !reviewer.trim() || !reviewerRole.trim()}>{busy ? copy.recording : action === "start_session" ? copy.sessionStart : action === "stop_session" ? copy.sessionStop : action === "complete_empirical_study" ? copy.completeStudy : copy.submit}</button></div>
     </form>
 
-    {projection ? <details className={styles.empirical}><summary>{copy.empirical}</summary><dl><div><dt>{copy.status}</dt><dd>{empiricalStatus(empirical.status, locale)}</dd></div><div><dt>{copy.combinedHours}</dt><dd>{String(empirical.combined_specialist_hours ?? 0)}</dd></div><div><dt>{copy.fourHoursVerified}</dt><dd>{empirical.four_combined_specialist_hours_empirically_proven === true ? copy.yes : copy.no}</dd></div><div><dt>{copy.auditEvents}</dt><dd>{String(projection.ledger ? (Array.isArray(ledger.audit_events) ? ledger.audit_events.length : 0) : 0)}</dd></div></dl></details> : null}
+    {projection ? <EmpiricalStudySummary projection={projection} locale={locale} /> : null}
     {error ? <p className={styles.error} role="alert">{error}</p> : null}
   </section>;
 }
