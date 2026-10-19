@@ -564,7 +564,7 @@ def _source_markdown(stage: dict[str, Any], *, spanish: bool) -> list[str]:
 def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, row_limit: int = 24) -> list[Any]:
     from reportlab.lib import colors
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+    from reportlab.platypus import CondPageBreak, Paragraph, Spacer, Table, TableStyle
 
     from nico.comprehensive_source_table_presentation_v1 import source_table_summary
 
@@ -629,8 +629,7 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
             heading = table["title"]
             if offset:
                 heading = _source_cell(heading, spanish=spanish) + (" (continuación)" if spanish else " (continued)")
-            if summary is None or offset:
-                flowables.append(cell(heading, True))
+            batch_heading = cell(heading, True) if summary is None or offset else None
             values = [[cell(value) for value in columns]] + [
                 [cell(value, preview=summary is not None, literal=column in {"Source", "Target"} or (column == "Value" and row[0] in table.get("literal_value_labels", ()) and value is not None)) for column, value in zip(columns, row)]
                 for row in batch
@@ -658,6 +657,19 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
                 ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
                 ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
             ]))
+            if batch_heading is not None:
+                # keepWithNext groups the heading with the entire table batch,
+                # wasting the remaining frame even though Table can split rows.
+                # Reserve only a real header and first data row (plus the note
+                # when it is the last row's NOSPLIT partner), then allow splitting.
+                batch_heading.keepWithNext = False
+                heading_height = batch_heading.wrap(width, 100000)[1]
+                rendered.wrap(width, 100000)
+                first_rows = 3 if len(batch) <= 1 else 2
+                start_height = (heading_height + batch_heading.getSpaceBefore()
+                                + batch_heading.getSpaceAfter()
+                                + sum(rendered._rowHeights[:first_rows]))
+                flowables += [CondPageBreak(start_height), batch_heading]
             flowables += [rendered, Spacer(1, 5)]
     return flowables
 
