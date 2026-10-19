@@ -109,4 +109,6 @@ def test_shared_source_projection_is_complete_in_both_stage_orders(monkeypatch, 
     assert forward == reverse
     assert len(forward) == 1
     assert forward[0]["profile_coverage"]
-    assert len(forward[0]["structured_tables"]) == 3
+    assert forward[0]["structured_tables"][:3] == stages[1]["structured_tables"][:3]
+    assert any(table["title"] in {"Function measurement scope", "Function measurement availability"}
+               for table in forward[0]["structured_tables"])
