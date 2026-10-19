@@ -205,17 +205,7 @@ function buildClusterUnit(context: ClusterValidationContext, candidates: JsonRec
   return null;
 }
 
-function buildQueue(payload: ReviewQueuePayload, locale: Locale): QueueModel {
-  const register = canonicalRegister(payload);
-  if (!Array.isArray(register.findings)) throw new Error(tr(locale, "The exact terminal report does not contain a canonical scanner candidate register.", "El informe terminal exacto no contiene un registro canónico de candidatos de los analizadores."));
-  const findings = asRecords(register.findings);
-  const triage = asRecord(register.technical_triage);
-  const integrityErrors: string[] = [];
-  const rawClusters = register.review_workload_clusters;
-  if (!Array.isArray(rawClusters)) integrityErrors.push(tr(locale, "Canonical deterministic cluster metadata is unavailable.", "Los metadatos canónicos de los grupos deterministas no están disponibles."));
-  const clusterRecords = asRecords(rawClusters);
-  if (Array.isArray(rawClusters) && clusterRecords.length !== rawClusters.length) integrityErrors.push(tr(locale, "Canonical cluster metadata contains a malformed record.", "Los metadatos canónicos de los grupos contienen un registro con formato incorrecto."));
-
+function indexQueueCandidates(findings: JsonRecord[], payload: ReviewQueuePayload, locale: Locale, integrityErrors: string[]) {
   const candidateById = new Map<string, JsonRecord>();
   const sourceIds: string[] = [];
   for (const candidate of findings) {
@@ -234,6 +224,37 @@ function buildQueue(payload: ReviewQueuePayload, locale: Locale): QueueModel {
     if (candidate.human_review_required !== true || candidate.client_delivery_allowed === true) integrityErrors.push(tr(locale, `Candidate ${id} does not preserve the mandatory pre-approval review boundary.`, `El candidato ${id} no conserva el límite obligatorio de revisión previa a la aprobación.`));
     if (candidate.human_disposition !== null && candidate.human_disposition !== undefined) integrityErrors.push(tr(locale, `Candidate ${id} already contains a human disposition outside this read-only work package.`, `El candidato ${id} ya contiene una disposición humana fuera de este paquete de trabajo de solo lectura.`));
   }
+  return {candidateById, sourceIds};
+}
+
+function validateReviewFindingWorkload(payload: ReviewQueuePayload, units: QueueUnit[], locale: Locale, integrityErrors: string[]) {
+  const exactSourceFindings = asRecords(payload.exact_source_review_findings);
+  const operationalContextFindings = asRecords(payload.operational_context_review_findings);
+  const scannerCandidateReviewWorkUnits = finiteNumber(payload.scanner_candidate_review_work_units);
+  const exactSourceReviewWorkUnits = finiteNumber(payload.exact_source_review_work_units);
+  const operationalContextReviewWorkUnits = finiteNumber(payload.operational_context_review_work_units);
+  const totalUnresolvedHumanReviewWorkUnits = finiteNumber(payload.total_unresolved_human_review_work_units);
+  if (scannerCandidateReviewWorkUnits === null || scannerCandidateReviewWorkUnits !== units.length) integrityErrors.push(tr(locale, "Scanner-candidate review work units do not reconcile with the displayed scanner queue.", "Las unidades de revisión de candidatos de analizadores no coinciden con la cola de analizadores mostrada."));
+  if (exactSourceReviewWorkUnits === null || exactSourceReviewWorkUnits !== exactSourceFindings.length) integrityErrors.push(tr(locale, "Exact-source review work units do not reconcile with the retained exact-source findings.", "Las unidades de revisión con fuente exacta no coinciden con los hallazgos con fuente exacta conservados."));
+  if (operationalContextReviewWorkUnits === null || operationalContextReviewWorkUnits !== operationalContextFindings.length) integrityErrors.push(tr(locale, "Operational/context review work units do not reconcile with the retained operational findings.", "Las unidades de revisión operativa o contextual no coinciden con los hallazgos operativos conservados."));
+  const combinedUnits = units.length + exactSourceFindings.length + operationalContextFindings.length;
+  if (totalUnresolvedHumanReviewWorkUnits === null || totalUnresolvedHumanReviewWorkUnits !== combinedUnits) integrityErrors.push(tr(locale, "Total unresolved human-review work units do not reconcile across scanner, exact-source, and operational/context findings.", "El total de unidades de revisión humana sin resolver no coincide entre los hallazgos de analizadores, de fuente exacta y operativos o contextuales."));
+  if (payload.operator_attention_required !== (combinedUnits > 0)) integrityErrors.push(tr(locale, "Operator-attention state does not reconcile with the combined unresolved workload.", "El estado de atención del operador no coincide con la carga combinada sin resolver."));
+  return {exactSourceFindings, operationalContextFindings, scannerCandidateReviewWorkUnits, exactSourceReviewWorkUnits, operationalContextReviewWorkUnits, totalUnresolvedHumanReviewWorkUnits};
+}
+
+function buildQueue(payload: ReviewQueuePayload, locale: Locale): QueueModel {
+  const register = canonicalRegister(payload);
+  if (!Array.isArray(register.findings)) throw new Error(tr(locale, "The exact terminal report does not contain a canonical scanner candidate register.", "El informe terminal exacto no contiene un registro canónico de candidatos de los analizadores."));
+  const findings = asRecords(register.findings);
+  const triage = asRecord(register.technical_triage);
+  const integrityErrors: string[] = [];
+  const rawClusters = register.review_workload_clusters;
+  if (!Array.isArray(rawClusters)) integrityErrors.push(tr(locale, "Canonical deterministic cluster metadata is unavailable.", "Los metadatos canónicos de los grupos deterministas no están disponibles."));
+  const clusterRecords = asRecords(rawClusters);
+  if (Array.isArray(rawClusters) && clusterRecords.length !== rawClusters.length) integrityErrors.push(tr(locale, "Canonical cluster metadata contains a malformed record.", "Los metadatos canónicos de los grupos contienen un registro con formato incorrecto."));
+
+  const {candidateById, sourceIds} = indexQueueCandidates(findings, payload, locale, integrityErrors);
 
   const observedClusterIds = new Set<string>();
   const clusteredCandidateIds: string[] = [];
@@ -274,18 +295,7 @@ function buildQueue(payload: ReviewQueuePayload, locale: Locale): QueueModel {
   if (finiteNumber(payload.candidate_count) !== candidateCount) integrityErrors.push(tr(locale, "Protected queue candidate count does not match the canonical register.", "El número de candidatos de la cola protegida no coincide con el registro canónico."));
   if (finiteNumber(payload.human_review_work_units) !== units.length) integrityErrors.push(tr(locale, "Protected queue work-unit count does not reconcile with the displayed queue.", "El número de unidades de trabajo de la cola protegida no coincide con la cola mostrada."));
 
-  const exactSourceFindings = asRecords(payload.exact_source_review_findings);
-  const operationalContextFindings = asRecords(payload.operational_context_review_findings);
-  const scannerCandidateReviewWorkUnits = finiteNumber(payload.scanner_candidate_review_work_units);
-  const exactSourceReviewWorkUnits = finiteNumber(payload.exact_source_review_work_units);
-  const operationalContextReviewWorkUnits = finiteNumber(payload.operational_context_review_work_units);
-  const totalUnresolvedHumanReviewWorkUnits = finiteNumber(payload.total_unresolved_human_review_work_units);
-  if (scannerCandidateReviewWorkUnits === null || scannerCandidateReviewWorkUnits !== units.length) integrityErrors.push(tr(locale, "Scanner-candidate review work units do not reconcile with the displayed scanner queue.", "Las unidades de revisión de candidatos de analizadores no coinciden con la cola de analizadores mostrada."));
-  if (exactSourceReviewWorkUnits === null || exactSourceReviewWorkUnits !== exactSourceFindings.length) integrityErrors.push(tr(locale, "Exact-source review work units do not reconcile with the retained exact-source findings.", "Las unidades de revisión con fuente exacta no coinciden con los hallazgos con fuente exacta conservados."));
-  if (operationalContextReviewWorkUnits === null || operationalContextReviewWorkUnits !== operationalContextFindings.length) integrityErrors.push(tr(locale, "Operational/context review work units do not reconcile with the retained operational findings.", "Las unidades de revisión operativa o contextual no coinciden con los hallazgos operativos conservados."));
-  const combinedUnits = units.length + exactSourceFindings.length + operationalContextFindings.length;
-  if (totalUnresolvedHumanReviewWorkUnits === null || totalUnresolvedHumanReviewWorkUnits !== combinedUnits) integrityErrors.push(tr(locale, "Total unresolved human-review work units do not reconcile across scanner, exact-source, and operational/context findings.", "El total de unidades de revisión humana sin resolver no coincide entre los hallazgos de analizadores, de fuente exacta y operativos o contextuales."));
-  if (payload.operator_attention_required !== (combinedUnits > 0)) integrityErrors.push(tr(locale, "Operator-attention state does not reconcile with the combined unresolved workload.", "El estado de atención del operador no coincide con la carga combinada sin resolver."));
+  const {exactSourceFindings, operationalContextFindings, scannerCandidateReviewWorkUnits, exactSourceReviewWorkUnits, operationalContextReviewWorkUnits, totalUnresolvedHumanReviewWorkUnits} = validateReviewFindingWorkload(payload, units, locale, integrityErrors);
 
   return {units, individualUnits, groupedUnits, retainedUnits, candidateCount, clusterCount: clusterRecords.length, exactSourceFindings, operationalContextFindings, scannerCandidateReviewWorkUnits: scannerCandidateReviewWorkUnits ?? 0, exactSourceReviewWorkUnits: exactSourceReviewWorkUnits ?? 0, operationalContextReviewWorkUnits: operationalContextReviewWorkUnits ?? 0, totalUnresolvedHumanReviewWorkUnits: totalUnresolvedHumanReviewWorkUnits ?? 0, integrityErrors: Array.from(new Set(integrityErrors))};
 }
