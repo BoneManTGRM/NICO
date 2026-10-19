@@ -111,7 +111,9 @@ function harness({locale = 'en', edition = 'source', post, get, ios = false, pop
     useMemo: fn => fn(),
     useEffect(fn) {if (!effectMounted) effects.push(fn);},
   };
-  const jsx = (type, props) => ({type, props});
+  // Presentation components are stateless; resolve them to the same host tree
+  // observed before extraction, without allocating another hook frame.
+  const jsx = (type, props) => typeof type === 'function' ? type(props) : ({type, props});
   class TestURL extends URL {
     static createObjectURL(blob) {const id = `blob:unit-${blobs.size}`; blobs.set(id, blob); return id;}
     static revokeObjectURL() {}

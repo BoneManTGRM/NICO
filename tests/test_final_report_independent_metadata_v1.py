@@ -124,7 +124,23 @@ def test_final_action_is_visible_until_delivery_finishes_without_reviewer_metada
     assert '!deliveryAllowed ? <button className={styles.approve}' in WORKSPACE
     assert 'aria-describedby="approval-next-step"' in WORKSPACE
     assert 'id="approval-next-step"' in WORKSPACE
-    assert "const approvalNextStep = !approvalAuthorityReady" in WORKSPACE
+    guidance = WORKSPACE.split("function approvalGuidanceText(", 1)[1].split(
+        "function artifactDisplayDigests(", 1
+    )[0]
+    assert (
+        "return !approvalAuthorityReady ? copy.enterReviewer "
+        ": result && !finalPdfAvailable ? copy.finalPdfUnavailable "
+        ": !finalActionAuthorityReady ? copy.legacyDeliveryRequired "
+        ": approvalCompleted ? copy.approvalReady "
+        ": !exactEditionDownloaded ? copy.reviewDownloadRequired "
+        ": !confirmed ? copy.confirmFirst : copy.approvalReady;"
+    ) in " ".join(guidance.split())
+    parent = WORKSPACE.split("export default function ComprehensiveFinalReviewWorkspace", 1)[1]
+    assert (
+        "const approvalNextStep = approvalGuidanceText(copy, { "
+        "approvalAuthorityReady, result, finalPdfAvailable, finalActionAuthorityReady, "
+        "approvalCompleted, exactEditionDownloaded, confirmed, });"
+    ) in " ".join(parent.split())
     assert "copy.reviewDownloadRequired" in WORKSPACE
     assert "copy.approvalReady" in WORKSPACE
     assert 'optionalReviewerMetadata: "Reviewer name and role are optional for approval.' in WORKSPACE
