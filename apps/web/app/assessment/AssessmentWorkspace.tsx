@@ -648,6 +648,8 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     const markdownLabel = approvedLocaleMismatch
       ? `${copy.copy} · ${requestedLanguageLabel} · ${copy.newApprovalRequired}`
       : `${copy.copy} · ${requestedLanguageLabel}`;
+    const pdfActionDisabled = !pdfAvailable || artifactAction !== null;
+    const draftPdfActionDisabled = spanishUnavailable || pdfActionDisabled;
     return <div
       className={`report-actions ${workspaceStyles.reportActionBar}`}
       data-assessment-report-actions="true"
@@ -671,16 +673,16 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         type="button"
         data-assessment-pdf-kind="accepted-edition"
         data-report-language={acceptedPdfIdentity?.reportLanguage}
-        data-assessment-action-disabled={!pdfAvailable || artifactAction !== null ? "true" : "false"}
-        disabled={!pdfAvailable || artifactAction !== null}
+        data-assessment-action-disabled={pdfActionDisabled ? "true" : "false"}
+        disabled={pdfActionDisabled}
         onClick={downloadApprovedPdf}
       >{copy.downloadApprovedPdf} · {acceptedLanguageLabel}</button> : null}
       {!exactApprovedPdfAvailable || approvedLocaleMismatch ? <button
         type="button"
         data-assessment-pdf-kind="localized-draft-pending-approval"
         data-report-language={requestedReportLanguage}
-        data-assessment-action-disabled={spanishUnavailable || !pdfAvailable || artifactAction !== null ? "true" : "false"}
-        disabled={spanishUnavailable || !pdfAvailable || artifactAction !== null}
+        data-assessment-action-disabled={draftPdfActionDisabled ? "true" : "false"}
+        disabled={draftPdfActionDisabled}
         onClick={downloadPdf}
       >{draftPdfLabel}</button> : null}
       {reportReady && result?.run_id ? <a
