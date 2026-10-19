@@ -155,8 +155,7 @@ export function progressPercent(
     enteredStageFloor,
     activeStageInterpolated,
   );
-  if (running && stageIndex === 0 && display === 0) display = 1;
-  if (running && stageIndex < 0 && display === 0) display = 1;
+  if (running && stageIndex <= 0 && display === 0) display = 1;
 
   return Math.round(Math.max(0, Math.min(100, display)) * 100) / 100;
 }
