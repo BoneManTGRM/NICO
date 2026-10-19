@@ -70,6 +70,7 @@ def measurement_tables(context: dict, repository: dict, complexity: dict) -> lis
         selected = [row for row in files if (row['status'], row['language'], row['method']) == (status, language, method)]
         population = sum(row['metrics']['function_count'] for row in selected)
         rows = [['Files', len(selected)], ['Enumerated functions', population]]
+        distribution = []
         for dimension in ('cc', 'nesting', 'loc'):
             histogram = Counter()
             for row in selected:
@@ -82,10 +83,14 @@ def measurement_tables(context: dict, repository: dict, complexity: dict) -> lis
                 rows.append(['Sum(CC-1) in enumerated functions', sum((int(k)-1)*n for k,n in histogram.items())])
                 # Exact bins retain the distribution without inventing a new
                 # threshold or assigning quality labels.
-                rows.extend([[f'CC {k}: functions', histogram[k]] for k in sorted(histogram, key=int)])
+                distribution = [[f'CC {k}: functions', histogram[k]] for k in sorted(histogram, key=int)]
             thresholds = {'cc': (11, 21), 'nesting': (5,), 'loc': (80,)}[dimension]
             rows.extend([[f'{dimension.upper()} at least {threshold}: functions',
                           sum(n for k,n in histogram.items() if int(k) >= threshold)] for threshold in thresholds])
         label = 'Complete observed population' if status == 'measured' else 'Partial observed population (parser incomplete)'
+        # Keep the fixed-size summary outside the histogram's existing PDF
+        # preview budget. Large distributions retain every canonical row and
+        # use the renderer's existing explicit truncation disclosure.
         tables.append(table(f'{label}: {language} / {method}', rows))
+        tables.append(table(f'CC distribution — {label}: {language} / {method}', distribution))
     return tables

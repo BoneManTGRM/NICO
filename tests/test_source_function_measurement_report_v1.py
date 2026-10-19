@@ -1,8 +1,10 @@
 from copy import deepcopy
 import base64
 import io
+import html
 import json
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -108,7 +110,8 @@ def test_extraction_is_not_decision_reduction(monkeypatch, tmp_path):
     assert [v['CC at least 21: functions'] for v in values] == [1,0,1]
 
 
-def test_english_final_crossformat_and_artifacts(monkeypatch, tmp_path):
+@pytest.mark.parametrize("bins", [1, 40, 60])
+def test_english_final_crossformat_and_artifacts(monkeypatch, tmp_path, bins):
     from test_source_profile_final_rendering import collected_package
     from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
     from nico.comprehensive_pdf_embedded_fonts_v1 import install_comprehensive_pdf_embedded_fonts_v1
@@ -116,7 +119,9 @@ def test_english_final_crossformat_and_artifacts(monkeypatch, tmp_path):
     collector.install_typescript_ast_complexity_v1()
     install_comprehensive_pdf_embedded_fonts_v1()
     install_comprehensive_pdf_layout_polish_v1()
-    monkeypatch.setattr(fixture, 'FILES', {'src/a.py': 'def f(x):\n'+'    if x: pass\n'*22+'    return 0\n'})
+    decisions = [22] if bins == 1 else range(bins)
+    source = ''.join(f'def f{i}(x):\n' + '    if x: pass\n'*count + '    return 0\n' for i,count in enumerate(decisions))
+    monkeypatch.setattr(fixture, 'FILES', {'src/a.py': source})
     package, _ = collected_package(monkeypatch, tmp_path)
     canonical = package['json']
     tables = deepcopy(canonical['stage_summaries'][1]['structured_tables'])
@@ -135,11 +140,31 @@ def test_english_final_crossformat_and_artifacts(monkeypatch, tmp_path):
     for output in (result['markdown'],result['html'],text):
         for phrase in ('Function measurement scope', 'Complete observed population', 'CC maximum', 'CC at least 21: functions', 'NOT SCORED', 'Sum(CC-1)'):
             assert phrase in output
-    assert rows(tables)['CC maximum'] == 23
-    assert rows(tables)['CC at least 21: functions'] == 1
+    assert rows(tables)['CC maximum'] == (23 if bins == 1 else bins)
+    assert rows(tables)['CC at least 21: functions'] == (1 if bins == 1 else bins - 20)
+    summary = next(table for table in tables if table['title'].startswith('Complete observed population'))
+    assert len(summary['rows']) == 16
+    html_text = html.unescape(re.sub(r'<[^>]+>', ' ', result['html']))
+    for label, value in summary['rows']:
+        if re.fullmatch(r'CC [0-9]+: functions', label):
+            continue
+        assert f'| {label} | {value} |' in result['markdown']
+        for rendered_text in (text, html_text):
+            assert re.search(re.escape(label) + r'\s+' + re.escape(str(value)) + r'\b', rendered_text), (label, value)
+    if bins > 1:
+        distribution = next(table for table in tables if table['title'].startswith('CC distribution'))
+        assert len(distribution['rows']) == bins
+        for label, value in distribution['rows']:
+            assert label in result['markdown'] and label in result['html']
+        if bins > 48:
+            assert 'Remaining rows are omitted from the PDF' in text
+            assert 'Complete retained rows: 60' in text
+            assert 'CC 60: functions' not in text
+        else:
+            assert 'CC 40: functions' in text
     assert {k:v for k,v in result['json']['assessment'].items() if k != 'stage_summaries'} == {k:v for k,v in baseline_result['json']['assessment'].items() if k != 'stage_summaries'}
     assert len(reader.pages) <= result['client_report_completion']['client_pdf_page_boundary']
-    target = Path(os.environ.get('MEASUREMENT_ARTIFACT_DIR',str(tmp_path)))
+    target = Path(os.environ.get('MEASUREMENT_ARTIFACT_DIR',str(tmp_path))) / f'bins-{bins}'
     target.mkdir(parents=True,exist_ok=True)
     for name, data in [('report.pdf',pdf),('report.json',json.dumps(result['json'],sort_keys=True,indent=2).encode()),('report.md',result['markdown'].encode()),('report.html',result['html'].encode()),('pdf-text.txt',text.encode())]:
         (target/name).write_bytes(data)
