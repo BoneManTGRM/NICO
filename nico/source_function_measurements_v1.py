@@ -108,12 +108,20 @@ def build_measurements(source_files: dict[str, str], analyses: list[dict[str, An
         method = analysis.get("method")
         supported = method in {"python_ast", "typescript_compiler_ast"}
         functions = analysis.get("functions", [])
+        if supported:
+            if "functions" not in analysis or not isinstance(functions, list):
+                raise ValueError("missing explicit function population")
+            if "declared_function_count" in analysis:
+                declared = analysis["declared_function_count"]
+                if type(declared) is not int or declared < 0 or declared != len(functions):
+                    raise ValueError("contradictory declared function population")
         if not isinstance(functions, list) or any(not isinstance(f, dict) or f.get("path") != item["path"] or f.get("method") != method for f in functions):
             raise ValueError("invalid function provenance")
         status = ("partial" if analysis.get("status") != "analyzed" or analysis.get("parser_diagnostic_count", 0) else "measured") if supported else ("unsupported" if analysis else "missing")
         rows.append({**item, "status": status, "language": analysis.get("language"), "method": method,
                      "parser_version": platform.python_version() if method == "python_ast" else ast_result.get("parser_version") if method == "typescript_compiler_ast" else None,
                      "loc_methods": sorted({f["loc_method"] for f in functions if f.get("loc_method")}),
+                     "population": {"enumerated_count": len(functions), "declared_count": analysis.get("declared_function_count")} if supported else None,
                      "metrics": _metrics(functions) if supported else None})
     return {"version": VERSION, "identity": None, "limitations": dict(LIMITATIONS),
             "producer_source_sha256": _producer(), "inventory": inventory,
@@ -128,6 +136,10 @@ def _validate_measurements(value: Any, *, expected_identity: dict[str, Any] | No
     This checks consistency and binding, not authenticity or source recomputation.
     """
     if value is None:
+        return False
+    if isinstance(value, dict) and value.get("status") == "unavailable":
+        if set(value) != {"version", "status", "reason", "identity", "limitations"} or value.get("version") != VERSION or value.get("identity") is not None or value.get("limitations") != LIMITATIONS or not isinstance(value.get("reason"), str) or not value["reason"]:
+            raise ValueError("malformed unavailable measurement attachment")
         return False
     if not isinstance(value, dict) or value.get("version") != VERSION or value.get("limitations") != LIMITATIONS:
         raise ValueError("unsupported measurement contract")
@@ -169,6 +181,11 @@ def _validate_measurements(value: Any, *, expected_identity: dict[str, Any] | No
         if row.get("language") != expected_language or not isinstance(row.get("loc_methods"), list) or any(not isinstance(m, str) or not m for m in row["loc_methods"]):
             raise ValueError("invalid method provenance")
         count = _integer(metrics["function_count"])
+        population = row["population"]
+        if set(population) != {"enumerated_count", "declared_count"} or _integer(population["enumerated_count"]) != count:
+            raise ValueError("function population mismatch")
+        if population["declared_count"] is not None and _integer(population["declared_count"]) != count:
+            raise ValueError("declared function population mismatch")
         expected = {"function_count": count}
         for dimension in DIMENSIONS:
             expected[dimension] = _dimension(metrics[dimension]["histogram"], dimension)
@@ -196,7 +213,8 @@ def bind_measurements(evidence: dict[str, Any]) -> None:
         return
     value = deepcopy(evidence[KEY])
     identity = {key: evidence.get(key) for key in IDENTITY_KEYS}
-    validate_measurements(value, expected_identity=None, expected_inventory=value["inventory"])
+    if not validate_measurements(value, expected_identity=None, expected_inventory=value.get("inventory", [])):
+        return
     # Legacy/incomplete envelopes remain unbound observations, without changing
     # existing report acceptance. Consumers must supply a complete expected identity.
     if any(not isinstance(v, str) or not v for v in identity.values()) or not re.fullmatch(r"[0-9a-f]{40}", identity["snapshot_commit_sha"]):
@@ -204,3 +222,18 @@ def bind_measurements(evidence: dict[str, Any]) -> None:
     value["identity"] = identity
     validate_measurements(value, expected_identity=identity, expected_inventory=value["inventory"])
     evidence[KEY] = value
+
+
+def build_optional_measurements(source_files: dict[str, str], analyses: list[dict[str, Any]], ast_result: dict[str, Any]) -> dict[str, Any]:
+    """Only optional retention validation may degrade to unavailable.
+
+    Source acquisition, parsing and legacy metrics execute outside this boundary;
+    their errors are not caught here. An unavailable attachment grants no credit.
+    """
+    try:
+        value = build_measurements(source_files, analyses, ast_result)
+        validate_measurements(value, expected_identity=None, expected_inventory=value["inventory"])
+        return value
+    except ValueError as exc:
+        return {"version": VERSION, "status": "unavailable", "reason": str(exc),
+                "identity": None, "limitations": dict(LIMITATIONS)}

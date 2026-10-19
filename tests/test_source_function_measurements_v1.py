@@ -138,7 +138,7 @@ def test_existing_payload_is_identical_when_optional_field_removed(monkeypatch):
     import nico.source_function_measurements_v1 as module
     files = {'src/a.py': 'def f(x):\n    if x: return 1\n    return 0\n'}
     with_measurement = collector._build_complexity(files)
-    monkeypatch.setattr(module, 'build_measurements', lambda *args: None)
+    monkeypatch.setattr(module, 'build_optional_measurements', lambda *args: None)
     without_measurement = collector._build_complexity(files)
     optional = with_measurement.pop(KEY)
     without_measurement.pop(KEY)
@@ -219,3 +219,73 @@ def test_empty_scope_is_not_whole_source_zero():
     assert value['aggregate']['function_count'] == 0
     assert value['aggregate']['cc']['maximum'] is None
     assert value['limitations']['whole_source_decision_burden'] == 'unavailable'
+
+
+@pytest.mark.parametrize('population', ['missing', 'contradictory', 'boolean_count'])
+def test_actual_collector_population_gaps_are_unavailable(monkeypatch, population):
+    analysis = {'path': 'src/one.ts', 'status': 'analyzed', 'language': 'javascript-typescript',
+                'method': 'typescript_compiler_ast', 'declared_function_count': 1}
+    if population != 'missing':
+        analysis['functions'] = []
+    if population == 'boolean_count':
+        analysis['declared_function_count'] = False
+    monkeypatch.setattr(collector, '_run_typescript_ast', lambda files: {
+        'status': 'complete', 'parser_version': 'fixture', 'analyses': [analysis]})
+    result = collector._build_complexity({'src/one.ts': 'function one() { return 1; }'})
+    assert result['status'] == 'attached'
+    assert result[KEY]['status'] == 'unavailable'
+    assert 'function population' in result[KEY]['reason']
+    assert 'aggregate' not in result[KEY]
+    assert not validate_measurements(result[KEY], expected_identity=None, expected_inventory=[])
+    envelope = {KEY: result[KEY]}
+    bind_measurements(envelope)
+    assert envelope[KEY] == result[KEY]
+
+
+def test_literal_git_backslash_path_does_not_abort_existing_collection():
+    result = collector._build_complexity({r'src/legacy\name.py': 'def one(): return 1'})
+    assert result['status'] == 'attached'
+    assert result['functions_measured'] == 1
+    assert result[KEY]['status'] == 'unavailable'
+    assert 'noncanonical source path' in result[KEY]['reason']
+    assert not validate_measurements(result[KEY], expected_identity=None, expected_inventory=[])
+
+
+@pytest.mark.parametrize('extension,source', [('py', 'value = 1'), ('ts', 'const value = 1;')])
+def test_explicit_empty_successful_parse_remains_measured(extension, source):
+    value = measured({f'src/empty.{extension}': source})
+    assert valid(value)
+    assert value['files'][0]['status'] == 'measured'
+    assert value['files'][0]['metrics']['function_count'] == 0
+
+
+def test_optional_rejection_preserves_all_existing_backslash_path_fields(monkeypatch):
+    import nico.source_function_measurements_v1 as module
+    files = {r'src/legacy\name.py': 'def one(): return 1'}
+    rejected = collector._build_complexity(files)
+    monkeypatch.setattr(module, 'build_optional_measurements', lambda *args: None)
+    legacy = collector._build_complexity(files)
+    rejected.pop(KEY)
+    legacy.pop(KEY)
+    assert rejected == legacy
+
+
+def test_base_collection_errors_are_not_swallowed(monkeypatch):
+    def fail(*args):
+        raise ValueError('base collection error')
+    monkeypatch.setattr(collector, '_collect_python_analyses', fail)
+    with pytest.raises(ValueError, match='base collection error'):
+        collector._build_complexity({'src/a.py': 'def one(): return 1'})
+
+
+@pytest.mark.parametrize('field,bad', [('enumerated_count', 99), ('enumerated_count', False), ('declared_count', 99), ('declared_count', False)])
+def test_retained_population_metadata_reconciles(sample, field, bad):
+    sample['files'][0]['population'][field] = bad
+    with pytest.raises(ValueError): valid(sample)
+
+
+def test_unavailable_attachment_cannot_smuggle_zero_aggregates():
+    value = measured({r'src/legacy\name.py': 'def one(): return 1'})
+    value['aggregate'] = {'function_count': 0}
+    with pytest.raises(ValueError):
+        validate_measurements(value, expected_identity=None, expected_inventory=[])

@@ -393,8 +393,8 @@ def _build_complexity(files: dict[str, str]) -> dict[str, Any]:
         "high_complexity": sum(value >= 11 for value in complexities),
         "import_graph": ast_result.get("import_graph") if isinstance(ast_result.get("import_graph"), dict) else {},
     }
-    from nico.source_function_measurements_v1 import KEY, build_measurements
-    measurements = build_measurements(source_files, analyses, ast_result)
+    from nico.source_function_measurements_v1 import KEY, build_optional_measurements
+    measurements = build_optional_measurements(source_files, analyses, ast_result)
     return {**_complexity_summary_payload(context), **_complexity_architecture_payload(context), KEY: measurements}
 
 
