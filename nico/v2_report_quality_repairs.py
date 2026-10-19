@@ -285,6 +285,14 @@ def _scorecard_page(canonical: Mapping[str, Any]) -> bytes:
         fontName="Helvetica-Bold",
         textColor=colors.white,
     )
+    score_cell = ParagraphStyle(
+        "QualityScorecardScore",
+        parent=cell,
+        # Preserve score words for both readers and publication token parity.
+        # Character wrapping splits NOT SCORED into NOT SCORE / D here.
+        wordWrap="LTR",
+        splitLongWords=False,
+    )
 
     def paragraph(value: Any, style: ParagraphStyle = cell) -> Paragraph:
         return Paragraph(html.escape(_text(value)), style)
@@ -316,7 +324,7 @@ def _scorecard_page(canonical: Mapping[str, Any]) -> bytes:
                     .replace("_", " ")
                     .title()
                 ),
-                paragraph(score_label),
+                paragraph(score_label, score_cell),
                 paragraph(item.get("summary")),
             ]
         )
