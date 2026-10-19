@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -67,7 +70,16 @@ def test_terminal_report_actions_stream_artifacts_instead_of_requiring_embedded_
     assert '`/assessment/comprehensive-run/${encodeURIComponent(runId)}/report/pdf`' in source
     assert "await response.arrayBuffer()" in source
     assert 'new Blob([bytes], {type: "application/pdf"})' in source
-    assert "disabled={!pdfAvailable || artifactAction !== null}" in source
+    assert "const pdfActionDisabled = !pdfAvailable || artifactAction !== null;" in source
+    assert "const draftPdfActionDisabled = spanishUnavailable || pdfActionDisabled;" in source
+    # Bind checks to each actual PDF button, not an unrelated matching expression.
+    buttons = re.findall(r"<button\b.*?</button>", source, re.DOTALL)
+    for kind, predicate in (("accepted-edition", "pdfActionDisabled"),
+                            ("localized-draft-pending-approval", "draftPdfActionDisabled")):
+        matching = [button for button in buttons if f'data-assessment-pdf-kind="{kind}"' in button]
+        assert len(matching) == 1
+        assert f"disabled={{{predicate}}}" in matching[0]
+        assert f'data-assessment-action-disabled={{{predicate} ? "true" : "false"}}' in matching[0]
     assert "disabled={spanishUnavailable || !markdownAvailable || artifactAction !== null}" in source
 
 
@@ -98,3 +110,23 @@ def test_backend_streams_exact_run_artifacts_and_keeps_browser_terminal_response
     assert 'not re.fullmatch(r"[0-9a-f]{64}", expected_hash)' in source
     assert "or expected_hash != observed_hash" in source
     assert "install_comprehensive_mobile_recovery_v1()" in package_init
+
+
+@pytest.mark.parametrize("old,new", [
+    ("const pdfActionDisabled = !pdfAvailable || artifactAction !== null;",
+     "const pdfActionDisabled = !pdfAvailable || Boolean(artifactAction);"),
+    ("const draftPdfActionDisabled = spanishUnavailable || pdfActionDisabled;",
+     "const draftPdfActionDisabled = pdfActionDisabled;"),
+    ("disabled={pdfActionDisabled}", "disabled={draftPdfActionDisabled}"),
+    ("disabled={draftPdfActionDisabled}", "disabled={pdfActionDisabled}"),
+    ('data-assessment-action-disabled={pdfActionDisabled ? "true" : "false"}',
+     'data-assessment-action-disabled={pdfActionDisabled ? "false" : "true"}'),
+])
+def test_terminal_action_contract_rejects_wrong_predicate_or_binding(tmp_path, monkeypatch, old, new):
+    source = WORKSPACE.read_text(encoding="utf-8")
+    assert source.count(old) == 1
+    mutated = tmp_path / "AssessmentWorkspace.tsx"
+    mutated.write_text(source.replace(old, new), encoding="utf-8")
+    monkeypatch.setitem(globals(), "WORKSPACE", mutated)
+    with pytest.raises(AssertionError):
+        test_terminal_report_actions_stream_artifacts_instead_of_requiring_embedded_pdf()
