@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.comprehensive_decision_grade_model_v5 import clear_unscored_architecture_aliases
+
 import re
 from copy import deepcopy
 from typing import Any
@@ -172,6 +174,7 @@ def _normalize_assessment(assessment: dict[str, Any], truth: dict[str, dict[str,
     denominator = 0.0
     adjusted_numerator = 0.0
     for section_id, section in sections.items():
+        clear_unscored_architecture_aliases(section)
         weight = SECTION_WEIGHTS.get(section_id, 0.0)
         raw = section.get("score_value", section.get("presented_score", section.get("score")))
         score = int(round(float(raw))) if isinstance(raw, (int, float)) and not isinstance(raw, bool) else None

@@ -123,6 +123,7 @@ def test_review_candidates_are_assurance_only_and_real_scores_exceed_90(monkeypa
         legacy,
         "_complexity",
         lambda context: {
+            **context, "snapshot_commit_sha": context["commit_sha"], "evidence_id": "test-complexity",
             "complexity_score": 78,
             "files_analyzed": 795,
             "risk_level": "moderate",
@@ -159,7 +160,7 @@ def test_verified_material_finding_still_reduces_only_its_category(monkeypatch) 
     monkeypatch.setattr(
         legacy,
         "_complexity",
-        lambda context: {"complexity_score": 78, "files_analyzed": 795, "risk_level": "moderate"},
+        lambda context: {**context, "snapshot_commit_sha": context["commit_sha"], "evidence_id": "test-complexity", "complexity_score": 78, "files_analyzed": 795, "risk_level": "moderate"},
     )
     monkeypatch.setattr(legacy, "_scan", lambda context: scan)
 
