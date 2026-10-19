@@ -2269,22 +2269,26 @@ def _structured_presentation_es(value: str) -> str | None:
     if rate_status is not None:
         return rate_status
 
-    match = re.fullmatch(r"Exact-source locators: (?P<count>\d+) present\.", value)
-    if match is not None:
-        return f"Localizadores de fuente exacta: {match.group('count')} presentes."
-
-    match = re.fullmatch(
-        r"Collection notes recorded: (?P<count>\d+); informational acquisition notes: (?P<info>\d+); "
-        r"remaining limitation notes: (?P<limits>\d+)\.", value,
-    )
-    if match is not None:
-        return (f"Notas de recopilación registradas: {match.group('count')}; "
-                f"notas informativas de adquisición: {match.group('info')}; "
-                f"notas de limitación restantes: {match.group('limits')}.")
-
-    match = re.fullmatch(r"Collection limitations recorded: (?P<count>\d+)\.", value)
-    if match is not None:
-        return f"Limitaciones de recopilación registradas: {match.group('count')}."
+    # Keep these literal capture/template rules in first-match order.
+    for pattern, template in (
+        (
+            r'Exact-source locators: (?P<count>\d+) present\.',
+            'Localizadores de fuente exacta: {count} presentes.',
+        ),
+        (
+            r'Collection notes recorded: (?P<count>\d+); informational acquisition notes: '
+            r'(?P<info>\d+); remaining limitation notes: (?P<limits>\d+)\.',
+            'Notas de recopilación registradas: {count}; notas informativas de adquisición: {info};'
+            ' notas de limitación restantes: {limits}.',
+        ),
+        (
+            r'Collection limitations recorded: (?P<count>\d+)\.',
+            'Limitaciones de recopilación registradas: {count}.',
+        ),
+    ):
+        match = re.fullmatch(pattern, value)
+        if match is not None:
+            return template.format_map(match.groupdict())
 
     match = re.fullmatch(
         r"Capability (?P<capability>Repository|Commits|Branches|Source tree|Source objects|"
@@ -2461,59 +2465,44 @@ def _structured_presentation_es(value: str) -> str | None:
             "justificación completa se conserva en el JSON canónico."
         )
 
-    match = re.fullmatch(r"Unique classified hotspots: (?P<count>\d+)\.", value)
-    if match is not None:
-        return f"Puntos críticos únicos clasificados: {match.group('count')}."
-
-    match = re.fullmatch(
-        r"Actionable production/report hotspots at complexity >=30: "
-        r"(?P<count>\d+)\.",
-        value,
-    )
-    if match is not None:
-        return (
-            "Puntos críticos accionables de producción o generación de informes "
-            f"con complejidad >=30: {match.group('count')}."
-        )
-
-    match = re.fullmatch(
-        r"Classification counts: (?P<counts>\{[^\r\n]*\})\.",
-        value,
-    )
-    if match is not None:
-        return f"Conteos por clasificación: {match.group('counts')}."
-
-    match = re.fullmatch(
-        r"Raw high-complexity region count retained for audit: (?P<count>\d+)\.",
-        value,
-    )
-    if match is not None:
-        return (
-            "Conteo sin procesar de regiones de alta complejidad conservado para "
-            f"auditoría: {match.group('count')}."
-        )
-
-    match = re.fullmatch(
-        r"Technical maturity remains based on exact-commit technical controls\. "
-        r"Evidence-Adjusted (?:readiness|technical score) is (?P<adjusted>\d+(?:\.\d+)?)/100 versus "
-        r"technical maturity (?P<technical>\d+(?:\.\d+)?)/100\. NICO retains "
-        r"(?P<review>\d+) review-required candidates and (?P<material>\d+) "
-        r"confirmed material findings as explicit review context\. Candidate volume, "
-        r"clustering and reviewer workload do not change numeric (?:security or readiness|technical) "
-        r"scores\.",
-        value,
-    )
-    if match is not None:
-        return (
-            "La madurez técnica sigue basándose en controles técnicos del commit exacto. "
-            f"La puntuación técnica ajustada por evidencia es {match.group('adjusted')}/100 "
-            f"frente a una madurez técnica de {match.group('technical')}/100. NICO "
-            f"conserva {match.group('review')} candidatos que requieren revisión y "
-            f"{match.group('material')} hallazgos materiales confirmados como contexto "
-            "explícito de revisión. El volumen de candidatos, la agrupación y la carga "
-            "de trabajo de revisión no modifican las puntuaciones numéricas de "
-            "los controles técnicos."
-        )
+    # Keep these literal capture/template rules in first-match order.
+    for pattern, template in (
+        (
+            r'Unique classified hotspots: (?P<count>\d+)\.',
+            'Puntos críticos únicos clasificados: {count}.',
+        ),
+        (
+            r'Actionable production/report hotspots at complexity >=30: (?P<count>\d+)\.',
+            'Puntos críticos accionables de producción o generación de informes con complejidad '
+            '>=30: {count}.',
+        ),
+        (
+            r'Classification counts: (?P<counts>\{[^\r\n]*\})\.',
+            'Conteos por clasificación: {counts}.',
+        ),
+        (
+            r'Raw high-complexity region count retained for audit: (?P<count>\d+)\.',
+            'Conteo sin procesar de regiones de alta complejidad conservado para auditoría: '
+            '{count}.',
+        ),
+        (
+            r'Technical maturity remains based on exact-commit technical controls\. '
+            r'Evidence-Adjusted (?:readiness|technical score) is (?P<adjusted>\d+(?:\.\d+)?)/100 '
+            r'versus technical maturity (?P<technical>\d+(?:\.\d+)?)/100\. NICO retains '
+            r'(?P<review>\d+) review-required candidates and (?P<material>\d+) confirmed material '
+            r'findings as explicit review context\. Candidate volume, clustering and reviewer '
+            r'workload do not change numeric (?:security or readiness|technical) scores\.',
+            'La madurez técnica sigue basándose en controles técnicos del commit exacto. La '
+            'puntuación técnica ajustada por evidencia es {adjusted}/100 frente a una madurez '
+            'técnica de {technical}/100. NICO conserva {review} candidatos que requieren revisión y'
+            ' {material} hallazgos materiales confirmados como contexto explícito de revisión. El '
+            'volumen de candidatos, la agrupación y la carga de trabajo de revisión no modifican '
+            'las puntuaciones numéricas de los controles técnicos.',
+        ),
+    ):
+        match = re.fullmatch(pattern, value)
+        if match is not None:
+            return template.format_map(match.groupdict())
 
     match = re.fullmatch(
         r"(?P<scanner>[A-Za-z0-9_.+-]+): not applicable; No supported Python "
@@ -2649,49 +2638,33 @@ def _structured_presentation_es(value: str) -> str | None:
     if match is not None:
         return _repository_unavailable_note_es(match)
 
-    match = re.fullmatch(
-        r"Workflow jobs for run (?P<run_id>[^\r\n]+) were returned without a "
-        r"jobs list\.",
-        value,
-    )
-    if match is not None:
-        return (
-            "La evidencia de trabajos del flujo de trabajo de la ejecución "
-            f"{match.group('run_id')} se devolvió sin una lista de trabajos."
-        )
-
-    match = re.fullmatch(
-        r"GitHub deployment evidence: observed=(?P<observed>\d+), "
-        r"success=(?P<success>\d+), non-success=(?P<non_success>\d+)\.",
-        value,
-    )
-    if match is not None:
-        return (
-            "Evidencia de despliegues de GitHub: "
-            f"observados={match.group('observed')}, exitosos={match.group('success')}, "
-            f"no exitosos={match.group('non_success')}."
-        )
-
-    match = re.fullmatch(
-        r"OSV lookup returned HTTP (?P<status>\d{3}); dependency vulnerability "
-        r"status is incomplete\.",
-        value,
-    )
-    if match is not None:
-        return (
-            f"La consulta a OSV devolvió HTTP {match.group('status')}; el estado de "
-            "vulnerabilidades de dependencias está incompleto."
-        )
-
-    match = re.fullmatch(
-        r"OSV lookup unavailable: (?P<detail>[^\r\n]+)",
-        value,
-    )
-    if match is not None:
-        return (
-            "La consulta a OSV no estaba disponible; detalle técnico original: "
-            f"{match.group('detail')}"
-        )
+    # Keep these literal capture/template rules in first-match order.
+    for pattern, template in (
+        (
+            r'Workflow jobs for run (?P<run_id>[^\r\n]+) were returned without a jobs list\.',
+            'La evidencia de trabajos del flujo de trabajo de la ejecución {run_id} se devolvió sin'
+            ' una lista de trabajos.',
+        ),
+        (
+            r'GitHub deployment evidence: observed=(?P<observed>\d+), success=(?P<success>\d+), '
+            r'non-success=(?P<non_success>\d+)\.',
+            'Evidencia de despliegues de GitHub: observados={observed}, exitosos={success}, no '
+            'exitosos={non_success}.',
+        ),
+        (
+            r'OSV lookup returned HTTP (?P<status>\d{3}); dependency vulnerability status is '
+            r'incomplete\.',
+            'La consulta a OSV devolvió HTTP {status}; el estado de vulnerabilidades de '
+            'dependencias está incompleto.',
+        ),
+        (
+            r'OSV lookup unavailable: (?P<detail>[^\r\n]+)',
+            'La consulta a OSV no estaba disponible; detalle técnico original: {detail}',
+        ),
+    ):
+        match = re.fullmatch(pattern, value)
+        if match is not None:
+            return template.format_map(match.groupdict())
 
     match = re.fullmatch(
         r"OSV returned (?P<count>\d+) vulnerability record\(s\) for "
