@@ -332,11 +332,26 @@ def compose_compact_client_pdf(
         + (len(human_evidence.pages) if human_evidence is not None else 0)
     )
     from nico.report_delivery_timing_v1 import record_report_delivery_failure_reason
+    from nico.pdf_cap_failure_diagnostics import attach_pdf_cap_diagnostic
+    retained_before_reflow = len(retained)
+
+    def cap_error(message: str, reason: str, reflow_attempted: bool) -> ValueError:
+        return attach_pdf_cap_diagnostic(ValueError(message), reason=reason,
+            reflow_attempted=reflow_attempted, counts={
+                "page_limit": MAX_CLIENT_PDF_PAGES, "base_pages": len(base.pages),
+                "retained_body_pages_before_reflow": retained_before_reflow,
+                "retained_body_pages_after_reflow": len(retained),
+                "register_pages": len(register.pages), "gate_pages": len(gate.pages),
+                "review_pages": review_count, "ci_boundary_pages": ci_boundary_count,
+                "human_evidence_pages": len(human_evidence.pages) if human_evidence is not None else 0,
+                "required_pages": reserved_count, "total_pages": len(retained) + reserved_count,
+            })
+
     if reserved_count > MAX_CLIENT_PDF_PAGES:
         record_report_delivery_failure_reason("pdf_required_pages_limit")
-        raise ValueError(
+        raise cap_error(
             "client-ready PDF required pages exceed the "
-            f"{MAX_CLIENT_PDF_PAGES}-page boundary"
+            f"{MAX_CLIENT_PDF_PAGES}-page boundary", "pdf_required_pages_limit", False,
         )
 
     total_page_count = len(retained) + reserved_count
@@ -355,9 +370,9 @@ def compose_compact_client_pdf(
         total_page_count = len(retained) + reserved_count
     if total_page_count > MAX_CLIENT_PDF_PAGES:
         record_report_delivery_failure_reason("pdf_total_pages_limit")
-        raise ValueError(
+        raise cap_error(
             "client-ready PDF cannot preserve every primary and required page within "
-            f"the {MAX_CLIENT_PDF_PAGES}-page boundary: {total_page_count}"
+            f"the {MAX_CLIENT_PDF_PAGES}-page boundary: {total_page_count}", "pdf_total_pages_limit", True,
         )
 
     selected_review_pages = list(review.pages) if review is not None else []

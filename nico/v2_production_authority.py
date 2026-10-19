@@ -346,7 +346,11 @@ def wrap_final_report_publication(
             # binding is insufficient because compatibility installers can rebind
             # process-global report helpers after an earlier assessment succeeds.
             terminal_language_authority = _reassert_terminal_report_language_authority()
-            published = finalize_report_package(source)
+            from nico.pdf_cap_failure_diagnostics import pdf_cap_identity
+            report_identity = source["report_package"]["json"].get("identity")
+            run_id = report_identity.get("run_id") if isinstance(report_identity, Mapping) else None
+            with pdf_cap_identity(run_id):
+                published = finalize_report_package(source)
         except Exception as exc:
             output = dict(source)
             output.update(
@@ -378,6 +382,14 @@ def wrap_final_report_publication(
                     "client_delivery_allowed": False,
                 }
             )
+            # Only fixed, validated diagnostic fields cross the retained-result boundary.
+            from nico.pdf_cap_failure_diagnostics import sanitize_pdf_cap_diagnostic
+            try:
+                diagnostic = sanitize_pdf_cap_diagnostic(getattr(exc, "pdf_cap_diagnostic", None))
+                if diagnostic is not None:
+                    output["v2_production_authority"]["pdf_cap_diagnostic"] = diagnostic
+            except Exception:
+                pass  # Diagnostics must never replace the original publication failure.
             return output
         render_elapsed = round(time.perf_counter() - render_started, 3)
         total_elapsed = round(time.perf_counter() - total_started, 3)
