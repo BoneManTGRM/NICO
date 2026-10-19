@@ -2839,6 +2839,15 @@ def _translate_presentation(value: Any) -> str:
             if segment != ""
         )
     stripped = text.strip()
+    # Direct canonical readers can run before the v88 wrapper is installed.
+    # Reuse only its full-match acceptance contract, preserving exact-SHA,
+    # comparison semantics and the complete source location.
+    from nico.comprehensive_spanish_exit_criteria_v88 import (
+        _COMPLEXITY_ACCEPTANCE_RE,
+        _translate_generated_complexity_contract,
+    )
+    if _COMPLEXITY_ACCEPTANCE_RE.fullmatch(stripped):
+        return _translate_generated_complexity_contract(stripped)
     from nico.comprehensive_coverage_reconciliation_v1 import COPY_ES
     from nico.comprehensive_human_evidence_report_v1 import _STAKEHOLDER_METADATA_SUMMARY
     if stripped == _STAKEHOLDER_METADATA_SUMMARY[0]:
