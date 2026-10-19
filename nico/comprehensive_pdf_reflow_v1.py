@@ -223,7 +223,14 @@ def _render_group(texts: list[str]) -> bytes:
                 # sparse groups fail closed and left production reports at 44 pages.
                 story.append(Paragraph(escaped, bullet))
             else:
-                story.append(Paragraph(escaped, body))
+                paragraph = Paragraph(escaped, body)
+                # The section title already keeps with its next paragraph. Extend
+                # that chain through the English Evidence label to its first bullet,
+                # so compaction cannot strand both headings above an evidence page.
+                if (title and line == "Evidence" and line_index + 1 < len(lines)
+                        and lines[line_index + 1].startswith(("-", "•"))):
+                    paragraph.keepWithNext = True
+                story.append(paragraph)
 
     document = SimpleDocTemplate(
         buffer,
