@@ -65,14 +65,37 @@ def test_short_table_heading_and_note_stay_with_only_row():
 
 
 def test_measured_start_preserves_wrapped_first_row():
-    stage={'structured_tables':[{'title':'WRAPPED_TITLE','columns':['Measure','Value'],
-        'rows':[['WRAPPED_FIRST', 'readable evidence '*60],['LAST','final value']]}]}
-    stream=io.BytesIO()
-    doc=SimpleDocTemplate(stream,pagesize=letter,leftMargin=40,rightMargin=40,topMargin=40,bottomMargin=40)
-    doc.build([Spacer(1,600),*report._source_pdf_tables(stage,spanish=False,width=doc.width)])
-    texts=[page.extract_text() for page in PdfReader(io.BytesIO(stream.getvalue())).pages]
-    assert all('WRAPPED_FIRST' in text for text in texts if 'WRAPPED_TITLE' in text)
-    assert ' '.join(texts).count('readable evidence') == 60
+    # Font registration is process-global: exercise the production embedded fonts
+    # in a fresh interpreter, independent of earlier renderer installers.
+    root=Path(__file__).resolve().parents[1]
+    env={**os.environ, 'PYTHONPATH':os.pathsep.join([str(root),str(root/'tests')])}
+    subprocess.run([sys.executable, '-c', """
+import io
+from pypdf import PdfReader
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Spacer
+from nico import comprehensive_report_package as report
+from nico.comprehensive_pdf_embedded_fonts_v1 import install_comprehensive_pdf_embedded_fonts_v1
+
+install_comprehensive_pdf_embedded_fonts_v1()
+expected='readable evidence '*60
+stage={'structured_tables':[{'title':'WRAPPED_TITLE','columns':['Measure','Value'],
+    'rows':[['WRAPPED_FIRST', expected],['LAST','final value']]}]}
+stream=io.BytesIO()
+doc=SimpleDocTemplate(stream,pagesize=letter,leftMargin=40,rightMargin=40,topMargin=40,bottomMargin=40)
+doc.build([Spacer(1,600),*report._source_pdf_tables(stage,spanish=False,width=doc.width)])
+texts=[page.extract_text() for page in PdfReader(io.BytesIO(stream.getvalue())).pages]
+assert len(texts)==2
+assert 'WRAPPED_TITLE' in texts[1] and 'WRAPPED_FIRST' in texts[1]
+assert all('WRAPPED_FIRST' in text for text in texts if 'WRAPPED_TITLE' in text)
+ordered=' '.join(' '.join(texts).split())
+assert ordered.count('WRAPPED_FIRST')==ordered.count('LAST')==1
+first_cell=ordered.split('WRAPPED_FIRST',1)[1].split('LAST',1)[0].strip()
+# Extraction may insert line breaks inside a pair. Normalize whitespace only;
+# exact equality still rejects any lost, duplicated, reordered or altered words.
+assert first_cell==' '.join(expected.split())
+assert ordered.split('LAST',1)[1].strip()=='final value Showing all 2 rows in full.'
+"""], cwd=root,env=env,check=True,capture_output=True,text=True,timeout=30)
 
 
 def test_actual_final_client_composition_uses_available_table_space(monkeypatch,tmp_path):
