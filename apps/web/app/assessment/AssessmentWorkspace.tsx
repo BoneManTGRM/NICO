@@ -28,11 +28,7 @@ import {
 } from "./assessmentModel";
 import type {Copy, Locale, Result, Section} from "./assessmentTypes";
 import {localizeExactSpanishText} from "./AssessmentSpanishLocalization";
-import {
-  REPORT_LOCALE_CHANGE_EVENT,
-  reportLanguageForRequest,
-  persistReportLocale,
-} from "./assessmentLocale";
+import {useReportActionState} from "./useReportActionState";
 import StrategicEvidenceForm from "./StrategicEvidenceForm";
 import {isAmbiguousIntakeOutcome} from "./assessmentRunRequests";
 import {useAssessmentClientMode} from "./useAssessmentClientMode";
@@ -157,22 +153,6 @@ function acceptedPdfIdentityFor(result: Result | null): {pdfSha256: string; repo
   };
 }
 
-function useReportActionState(locale: Locale) {
-  const [copied, setCopied] = useState(false);
-  const [artifactAction, setArtifactAction] = useState<"markdown" | "pdf" | null>(null);
-  const [requestedReportLanguage, setRequestedReportLanguage] = useState<ReportLanguage>(
-    reportLanguageForRequest(locale),
-  );
-  useEffect(() => {
-    const syncRequestedReportLanguage = () => {
-      setRequestedReportLanguage(reportLanguageForRequest(locale));
-    };
-    syncRequestedReportLanguage();
-    window.addEventListener(REPORT_LOCALE_CHANGE_EVENT, syncRequestedReportLanguage);
-    return () => window.removeEventListener(REPORT_LOCALE_CHANGE_EVENT, syncRequestedReportLanguage);
-  }, [locale]);
-  return {copied, setCopied, artifactAction, setArtifactAction, requestedReportLanguage};
-}
 
 function acceptedPdfView(
   result: Result | null,
@@ -413,8 +393,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     setHumanEvidence, setEngagementFieldValue, setEngagementFieldState, setError,
     run, retry, startNew,
   } = controller;
-  const {copied, setCopied, artifactAction, setArtifactAction, requestedReportLanguage} = useReportActionState(locale);
-  const [reportLocaleError, setReportLocaleError] = useState("");
+  const {copied, setCopied, artifactAction, setArtifactAction, requestedReportLanguage, reportLocaleError, chooseEnglishReport} = useReportActionState(locale);
   const {issueRef, runIssueRef} = useIssueFocus(issue);
   const {hasExactRun, ambiguousIntakeOutcome} = runBoundaryView(protectedRunId, result, issue);
 
@@ -696,22 +675,12 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         download
         data-assessment-localized-export="true"
       >{locale === "es-MX" ? "Descargar archivos del idioma seleccionado" : "Download files in selected language"} · {requestedReportLanguage}</a> : null}
-      {spanishUnavailable ? <p role="status">{locale === "es-MX" ? "La generación de informes en español no está disponible por ahora. Los archivos ya conservados siguen accesibles." : "New Spanish report generation is unavailable for now. Already frozen files remain accessible."} <button type="button" onClick={() => persistReportLocale("en-US")}>{locale === "es-MX" ? "Usar informe en inglés" : "Use English report"}</button></p> : null}
+      {spanishUnavailable ? <p role="status">{locale === "es-MX" ? "La generación de informes en español no está disponible por ahora. Los archivos ya conservados siguen accesibles." : "New Spanish report generation is unavailable for now. Already frozen files remain accessible."} <button type="button" onClick={chooseEnglishReport}>{locale === "es-MX" ? "Usar informe en inglés" : "Use English report"}</button></p> : null}
       {copied ? <span className="muted">{copy.copied}</span> : artifactStatus ? <span className="muted" role="status">{artifactStatus}</span> : null}
     </div>;
   }
 
 
-  function chooseEnglishReport() {
-    try {
-      persistReportLocale("en-US");
-      setReportLocaleError("");
-    } catch {
-      setReportLocaleError(locale === "es-MX"
-        ? "No se pudo cambiar el idioma del informe porque el navegador rechazó la actualización de la dirección. Tu selección anterior se conserva."
-        : "Could not change the report language because the browser rejected the address update. Your previous selection is unchanged.");
-    }
-  }
 
   function renderHero() {
     return (

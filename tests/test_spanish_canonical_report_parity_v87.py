@@ -1144,7 +1144,11 @@ SMALL_ENGLISH_GOLDEN = {'markdown': ('2e3018c77bf24e5a58e48edbc7639e9d5148391aaf
 # Only phase 3 moves from summary page 5 to canonical Functional QA page 26;
 # the other 37 outline entries are identical. Only its PDF fingerprints change.
 RICH_ENGLISH_GOLDEN = {'markdown': ('8c86eb0b33cec623ea5633369231a710f95c17633336d247ec87a0b347aeccf8', 21087), 'html': ('759661b3a63b0bc607ddc89bc039145d5acdbec8fc8abad72dc3842e7de557ac', 25762), 'pdf_base64': ('b30f02a3bace41f11a9f82245d4a4deb4b6d2487871bff00c03135637ab3457f', 285904), 'pdf_sha256': '3920b665e5adf450c4f255ae72da1c7bc372fd83dac5f5a089a33e3aaaf15f50', 'page_count': 47}
-PHASE9_ENGLISH_GOLDEN = {'markdown': ('61b1c6bc92b1e229427973dd5d4a60f69021e56a550101d53ad82832d838b437', 19676), 'html': ('c1d572381e90a1ab8b5e5d79228cc4ed94a9c52224005d1f1f2e7135642221ea', 24038), 'pdf_base64': ('99a44792a7f066fa348b4890d5cfa4f4fa617c48d55e3b8a08aafd163898f017', 182452), 'pdf_sha256': '31ba3377e08efb0c4d3000b15c3216057c5469390547d866c3e93f67b4e430d4', 'page_count': 22}
+# PR1816 differential against exact 42e9bd5b reproduces the prior golden.
+# Only scorecard page 6 drawing streams/text wrapping change in both languages;
+# Markdown, HTML, all other page streams, media boxes, page counts and outlines
+# remain identical. Full scorecard text now wraps within its columns.
+PHASE9_ENGLISH_GOLDEN = {'markdown': ('61b1c6bc92b1e229427973dd5d4a60f69021e56a550101d53ad82832d838b437', 19676), 'html': ('c1d572381e90a1ab8b5e5d79228cc4ed94a9c52224005d1f1f2e7135642221ea', 24038), 'pdf_base64': ('69175e67afb82390829b8acf7ff6264833ebb1956680aceaeb9e513b9d2a3401', 183048), 'pdf_sha256': '5468fe44cd36c984124e8a137c6f6479ec5acff21813e6bb9dcacd8b1c0a8468', 'page_count': 22}
 
 SPANISH_OUTLINE = {
     "Functional QA": "QA funcional",

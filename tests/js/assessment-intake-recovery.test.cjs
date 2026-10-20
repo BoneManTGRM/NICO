@@ -47,7 +47,7 @@ function harness(respond, locale='en') {
   const configure=()=>{const c=render();c.setRepository('owner/repo');c.setClient('Client');c.setProject('Project');c.setAuthorized(true);return render();};
   function clickEnglishFallback() {
     // Render the real hero JSX with the same browser preferences as the intake hook.
-    const source=fs.readFileSync(path.join(ROOT,'apps/web/app/assessment/AssessmentWorkspace.tsx'),'utf8');
+    const source=fs.readFileSync(path.join(ROOT,'apps/web/app/assessment/AssessmentWorkspace.tsx'),'utf8') + '\n' + fs.readFileSync(path.join(ROOT,'apps/web/app/assessment/useReportActionState.ts'),'utf8');
     const ast=ts.createSourceFile('workspace.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
     let hero, chooseEnglish;
     function visit(node){if(ts.isFunctionDeclaration(node)){if(node.name?.text==='renderHero')hero=node;if(node.name?.text==='chooseEnglishReport')chooseEnglish=node;}ts.forEachChild(node,visit);}

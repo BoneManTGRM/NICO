@@ -77,6 +77,7 @@ function setup({source=commit, canonicalTruth=truth, overrides={}, language='en'
     reportLanguageLabel:value=>value,
     canonicalReportLanguage:value=>value === "es-MX" ? "es-MX" : "en",
     persistReportLocale(value){context.requestedReportLanguage=value === "en-US" ? "en" : value;renderControls?.();},
+    chooseEnglishReport(){context.persistReportLocale("en-US");},
     copy:{runIdMissing:'Run identity missing',pdfMissing:'Bound PDF unavailable',copy:'Copy',
       downloadReviewPdf:'Download review PDF',downloadApprovedPdf:'Download approved PDF',newApprovalRequired:'New approval required'},
     setArtifactAction(value){actions.push(value);context.artifactAction=value;renderControls?.();},
