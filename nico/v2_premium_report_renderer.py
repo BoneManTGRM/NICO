@@ -424,6 +424,12 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
         markdown = markdown.replace(marker, f"{score_summary}\n{marker}", 1) if marker in markdown else f"{score_summary}\n{markdown}"
         title = f"NICO Comprehensive Technical Assessment — {_text(identity.get('repository'))}"
         rendered_html = _semantic_html(markdown, title)
+        # This by-value alias can predate the compact installer. Observe its actual
+        # inputs without rebinding it or changing the effective stage population.
+        from nico.pdf_cap_failure_diagnostics import record_render_arguments
+        from nico.comprehensive_final_report_compact_base_v1 import _COMPACT_FINAL_PDF
+        record_render_arguments(dict(identity), presentation_assessment, pdf_stages, pdf_stages,
+                                _COMPACT_FINAL_PDF.get(), boundary='premium_render_arguments')
         pdf_base64, pdf_error, original_page_count = _pdf(dict(identity), presentation_assessment, pdf_stages, generated_at)
         pdf_bytes = base64.b64decode(pdf_base64) if pdf_base64 else b""
         if pdf_bytes.startswith(b"%PDF"):
