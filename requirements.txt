@@ -6,7 +6,7 @@ pytest==9.1.1
 httpx==0.28.1
 requests==2.34.2
 reportlab==5.0.1
-pillow==12.3.0
+pillow==13.0.0
 idna==3.20
 pypdf==6.19.0
 python-multipart==0.0.32

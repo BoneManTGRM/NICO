@@ -6,9 +6,9 @@ NICO supports direct Python/Node development and a Docker Compose workflow.
 
 Direct setup:
 
-- Python 3.10 or newer
-- Node.js 20
-- npm 10
+- Python 3.11 or newer (required by Pillow 13; Python 3.10 is no longer supported)
+- Node.js 24
+- npm 10.8.2
 - Git
 
 Docker setup:

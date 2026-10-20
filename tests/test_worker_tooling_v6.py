@@ -18,8 +18,11 @@ def test_dockerfile_installs_worker_runtime_dependencies_and_isolates_semgrep():
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
     assert "git" in dockerfile
-    assert "nodejs" in dockerfile
-    assert "npm" in dockerfile
+    assert "FROM node:24-bookworm-slim AS node-runtime" in dockerfile
+    assert "COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node" in dockerfile
+    assert "COPY --from=node-runtime /usr/local/lib/node_modules /usr/local/lib/node_modules" in dockerfile
+    assert "ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm" in dockerfile
+    assert "ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx" in dockerfile
     assert "ARG NICO_ESLINT_VERSION=9.39.3" in dockerfile
     assert "ARG NICO_TYPESCRIPT_VERSION=6.0.3" in dockerfile
     assert '"eslint@${NICO_ESLINT_VERSION}"' in dockerfile

@@ -245,6 +245,7 @@ jobs:
         pip install "playwright==1.61.0"
         (cd apps/web && npm ci --ignore-scripts --no-audit --no-fund)
         node -e "if(require('./apps/web/node_modules/typescript').version !== '6.0.3') process.exit(1)"
+        python -c "from importlib.metadata import version; assert version('Pillow') == '13.0.0'; print('PDF regression runtime: Pillow', version('Pillow'))"
 
     - name: Run isolated test files
       env:
