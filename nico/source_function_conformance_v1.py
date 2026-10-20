@@ -4,10 +4,11 @@ from __future__ import annotations
 from collections import Counter
 from copy import deepcopy
 from typing import Any
+import re
 
 from nico.full_assessment_complexity_evidence import _is_source_path
 from nico.source_function_measurement_report_v1 import _bound
-from nico.source_function_measurements_v1 import _integer, _json
+from nico.source_function_measurements_v1 import _integer, _json, _path
 
 VERSION = 'nico.source-function-conformance.v1'
 KEY = 'source_function_conformance_v1'
@@ -46,9 +47,35 @@ def _qualified_coverage(repository: dict, complexity: dict, value: dict) -> dict
     analyzed = _paths(coverage.get('analyzed_source_paths'))
     if sampled != observed or not paths <= sampled or not supported <= analyzed or not analyzed <= paths:
         raise ValueError('coverage membership mismatch')
+    _external_coverage(coverage)
     _coverage_counts(coverage, paths, sampled, analyzed)
     _parser_population(coverage, files, supported)
     return deepcopy(coverage)
+
+
+def _external_coverage(coverage: dict) -> None:
+    if coverage.get('inventory_scope') != 'parent_repository_tree' or coverage.get('submodule_contents_acquired') is not False:
+        raise ValueError('external acquisition scope required')
+    for key, fields in (('submodule_entries', {'path', 'commit_sha'}),
+                        ('lfs_pointer_entries', {'path', 'oid', 'size_bytes'})):
+        entries = coverage.get(key)
+        if not isinstance(entries, list):
+            raise ValueError('explicit external inventory required')
+        seen = set()
+        for row in entries:
+            if not isinstance(row, dict) or set(row) != fields:
+                raise ValueError('invalid external inventory entry')
+            path = _path(row['path'])
+            if path in seen:
+                raise ValueError('duplicate external inventory entry')
+            seen.add(path)
+            if key == 'submodule_entries':
+                digest, pattern = row['commit_sha'], r'[0-9a-f]{40}'
+            else:
+                _integer(row['size_bytes'])
+                digest, pattern = row['oid'], r'sha256:[0-9a-f]{64}'
+            if not isinstance(digest, str) or not re.fullmatch(pattern, digest):
+                raise ValueError('invalid external object identity')
 
 
 def _coverage_counts(coverage: dict, paths: set[str], sampled: set[str], analyzed: set[str]) -> None:
@@ -70,7 +97,7 @@ def _parser_population(coverage: dict, files: list[dict], supported: set[str]) -
     for key in ('unavailable_paths', 'size_excluded_paths', 'symlink_paths_not_followed'):
         if any(_is_source_path(p) and p.lower().endswith(SUPPORTED) for p in _paths(coverage.get(key))):
             raise ValueError('eligible source acquisition incomplete')
-    if any(row['path'] in supported for row in coverage.get('lfs_pointer_entries', [])):
+    if any(row['path'] in supported for row in coverage['lfs_pointer_entries']):
         raise ValueError('eligible source is an unacquired LFS object')
     for row in files:
         if row['path'] in supported:
@@ -129,7 +156,7 @@ def build_conformance(context: dict, repository: dict, complexity: dict) -> dict
     result['exclusions'] = {
         'source_policy_paths': coverage['complexity_excluded_paths'],
         'unsupported_observed_paths': [row['path'] for row in value['files'] if not row['path'].lower().endswith(SUPPORTED)],
-        'submodule_entries': coverage.get('submodule_entries',[]),
+        'submodule_entries': deepcopy(coverage['submodule_entries']),
         'submodule_contents_acquired': False,
     }
     return result

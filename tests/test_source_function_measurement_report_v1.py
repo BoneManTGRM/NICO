@@ -37,7 +37,10 @@ def test_independent_binding_and_complete_population(monkeypatch, tmp_path):
     assert values['Complete observed files'] == 1
     assert values['Partial observed files'] == 0
     assert 'scoped conformance reported separately' in values['Status']
-    assert tables == architecture_data_flow_provider(context)['evidence']['structured_tables'][-len(tables):]
+    from nico.source_function_conformance_report_v1 import integrate_conformance
+    from nico.source_function_conformance_v1 import build_conformance
+    integrated = integrate_conformance(tables, build_conformance(context, repo, complexity))
+    assert integrated == architecture_data_flow_provider(context)['evidence']['structured_tables'][-len(integrated):]
 
 
 @pytest.mark.parametrize('mutation', ['absent', 'malformed', 'unbound', 'run_id', 'repository', 'customer_id', 'project_id', 'snapshot_id', 'snapshot_commit_sha', 'foreign_envelope', 'foreign_snapshot', 'foreign_repository', 'hash', 'inventory_subset', 'inventory_observation', 'missing_dimension', 'unavailable'])
@@ -143,14 +146,14 @@ def test_english_final_crossformat_and_artifacts(monkeypatch, tmp_path, bins):
     assert rows(tables)['CC maximum'] == (23 if bins == 1 else bins)
     assert rows(tables)['CC at least 21: functions'] == (1 if bins == 1 else bins - 20)
     summary = next(table for table in tables if table['title'].startswith('Complete observed population'))
-    assert len(summary['rows']) == 16
+    assert len(summary['rows']) == 14
     html_text = html.unescape(re.sub(r'<[^>]+>', ' ', result['html']))
     for label, value in summary['rows']:
         if re.fullmatch(r'CC [0-9]+: functions', label):
             continue
-        assert f'| {label} | {value} |' in result['markdown']
+        assert f'| {label} | {value} |' in html.unescape(result['markdown'])
         for rendered_text in (text, html_text):
-            assert re.search(re.escape(label) + r'\s+' + re.escape(str(value)) + r'\b', rendered_text), (label, value)
+            assert re.search(re.escape(label) + r'\s+' + re.escape(str(value)) + r'(?!\w)', ' '.join(rendered_text.split())), (label, value)
     if bins > 1:
         distribution = next(table for table in tables if table['title'].startswith('CC distribution'))
         assert len(distribution['rows']) == bins

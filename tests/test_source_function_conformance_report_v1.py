@@ -77,7 +77,7 @@ def test_final_crossformat_keeps_scoped_subscore_and_acceptance(monkeypatch,tmp_
         assert 'excluded from overall maturity' in output
         assert '50.0' in output
         assert 'Sum(CC-1)' in output
-        assert 'Absolute violations' in output
+        assert 'CC at least 21: functions' in output
     for name,data in [('report.pdf',pdf),('report.json',json.dumps(actual['json'],indent=2).encode()),('report.md',actual['markdown'].encode()),('report.html',actual['html'].encode()),('pdf-text.txt',text.encode())]:
         (tmp_path/name).write_bytes(data)
 
@@ -97,3 +97,57 @@ def test_current_five_section_scoring_ignores_additive_conformance(monkeypatch,t
         section=next(row for row in sections if row['id']==key)
         assert section['presented_score'] is None
     assert complexity.get('complexity_score') is None
+
+
+def test_integration_retains_every_observation_and_histogram_row(monkeypatch,tmp_path):
+    from nico.source_function_measurement_report_v1 import measurement_tables
+    from nico.source_function_conformance_report_v1 import integrate_conformance
+    from nico.source_function_conformance_v1 import build_conformance
+    files={'a.py':'def a(x):\n'+'    if x: pass\n'*20+'    return 0\n'}
+    for mixed in (False, True):
+        if mixed:
+            files['b.ts']='function b() { return 1; }'
+        context,repo,complexity=collected(monkeypatch,tmp_path,files=files)
+        original=measurement_tables(context,repo,complexity)
+        commitment=deepcopy(original)
+        value=build_conformance(context,repo,complexity)
+        value_before=deepcopy(value)
+        integrated=integrate_conformance(original,value)
+        assert original==commitment and value==value_before
+        for table in original:
+            retained=next(t for t in integrated if t['title']==table['title'])
+            assert retained['columns']==table['columns']
+            expanded=dict(retained['rows'])
+            aliases={
+                'Supplied eligible source / complete observed files': ('Supplied eligible source files','Complete observed files'),
+                'Partial observed / missing / unsupported files': ('Partial observed files','Missing files','Unsupported files'),
+                'Functions (enumerated; measured: CC, NESTING, LOC)': ('Enumerated functions','CC measured functions','NESTING measured functions','LOC measured functions'),
+                'Missing functions (CC, NESTING, LOC)': ('CC missing functions','NESTING missing functions','LOC missing functions'),
+            }
+            for compact, labels in aliases.items():
+                if compact in expanded:
+                    expanded.update({label:expanded[compact] for label in labels})
+            for original_row in table['rows']:
+                retained_row=[original_row[0],expanded[original_row[0]]]
+                if original_row[0] in ('Limitations','Status'):
+                    assert retained_row[0]==original_row[0] and retained_row[1].startswith(original_row[1])
+                else:
+                    assert retained_row==original_row
+        summaries=[t for t in integrated if t['title'].startswith('Complete observed population:')]
+        assert len(summaries)==len(value['languages'])
+        for summary in summaries:
+            assert sum(row[0]=='Sum(CC-1) in enumerated functions' for row in summary['rows'])==1
+            assert sum(row[0]=='CC at least 21: functions' for row in summary['rows'])==1
+            assert len([row for row in summary['rows'] if row[0].startswith('Function complexity conformance')])==1
+        combined=[t for t in integrated if t['title'].endswith('combined descriptive totals')]
+        if mixed:
+            assert len(combined)==1
+            assert integrated.index(combined[0]) > max(integrated.index(t) for t in summaries)
+            combined_rows=dict(combined[0]['rows'])
+            assert combined_rows['CC>20 absolute violations']==1
+            assert combined_rows['Enumerated functions']==2
+            assert combined_rows['Sum(CC-1) in enumerated functions']==20
+        else:
+            assert not combined
+            assert summaries[0]['rows'][-1][0]=='Combined descriptive totals'
+            assert 'Identical to the python complete population' in dict(summaries[0]['rows'])['Combined descriptive totals']

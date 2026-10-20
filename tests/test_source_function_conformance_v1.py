@@ -173,3 +173,67 @@ def test_coverage_counts_are_strict(monkeypatch,tmp_path,field,bad):
     inputs,_ = result(monkeypatch,tmp_path)
     inputs[2]['profile_coverage'][field]=bad
     assert build_conformance(*inputs)['status']=='unavailable'
+
+
+def test_self_consistent_histogram_rewrite_is_not_independent_evidence(monkeypatch,tmp_path):
+    from nico.source_function_measurements_v1 import _aggregate, _dimension
+    inputs,original=result(monkeypatch,tmp_path,source=function('a',21))
+    assert original['combined']['cc']['percentage']==0.0
+    assert original['combined']['cc']['sum_cc_minus_1']==20
+    context,repo,complexity=inputs
+    independent_before=deepcopy((context['commit_sha'],repo,complexity['profile_coverage']))
+    value=complexity[KEY]
+    value['files'][0]['metrics']['cc']=_dimension({'1':1},'cc')
+    value['aggregate']=_aggregate(value['files'])
+    assert (context['commit_sha'],repo,complexity['profile_coverage'])==independent_before
+    assert build_conformance(*inputs)['status']=='unavailable'
+
+
+def test_well_formed_forged_producer_hashes_are_not_authentication(monkeypatch,tmp_path):
+    inputs,_=result(monkeypatch,tmp_path)
+    producer=inputs[2][KEY]['producer_source_sha256']
+    inputs[2][KEY]['producer_source_sha256']={key:'f'*64 for key in producer}
+    assert build_conformance(*inputs)['status']=='unavailable'
+
+
+@pytest.mark.parametrize('field', ['lfs_pointer_entries','submodule_entries'])
+@pytest.mark.parametrize('bad', [None, {}, 'malformed', [None], [{}], ['path'], [{'path':'x'}]])
+def test_external_coverage_shapes_fail_closed(monkeypatch,tmp_path,field,bad):
+    inputs,_=result(monkeypatch,tmp_path)
+    for coverage in (inputs[1]['file_evidence']['profile_coverage'],inputs[2]['profile_coverage']):
+        coverage[field]=deepcopy(bad)
+    assert build_conformance(*inputs)['status']=='unavailable'
+
+
+@pytest.mark.parametrize('field', ['lfs_pointer_entries','submodule_entries','submodule_contents_acquired','inventory_scope'])
+def test_missing_external_coverage_is_not_empty(monkeypatch,tmp_path,field):
+    inputs,_=result(monkeypatch,tmp_path)
+    inputs[1]['file_evidence']['profile_coverage'].pop(field,None)
+    inputs[2]['profile_coverage'].pop(field,None)
+    assert build_conformance(*inputs)['status']=='unavailable'
+
+
+def test_legacy_observation_display_survives_unqualified_coverage(monkeypatch,tmp_path):
+    from nico.source_function_measurement_report_v1 import measurement_tables
+    inputs,_=result(monkeypatch,tmp_path)
+    context,repo,complexity=inputs
+    before=measurement_tables(context,repo,complexity)
+    complexity['profile_coverage']['submodule_entries']='malformed'
+    repo['file_evidence']['profile_coverage']['submodule_entries']='malformed'
+    assert build_conformance(*inputs)['status']=='unavailable'
+    assert measurement_tables(context,repo,complexity)==before
+
+
+def test_valid_explicit_external_inventories_are_not_function_credit(monkeypatch,tmp_path):
+    inputs,_=result(monkeypatch,tmp_path)
+    coverage=inputs[2]['profile_coverage']
+    coverage['submodule_entries']=[{'path':'external/library','commit_sha':'b'*40}]
+    coverage['lfs_pointer_entries']=[{'path':'assets/data.bin','oid':'sha256:'+'c'*64,'size_bytes':12}]
+    inputs[1]['file_evidence']['profile_coverage']=deepcopy(coverage)
+    value=build_conformance(*inputs)
+    assert value['status']=='qualified'
+    assert value['combined']['function_count']==2
+    assert value['exclusions']['submodule_contents_acquired'] is False
+    coverage['submodule_entries'].append(deepcopy(coverage['submodule_entries'][0]))
+    inputs[1]['file_evidence']['profile_coverage']=deepcopy(coverage)
+    assert build_conformance(*inputs)['status']=='unavailable'

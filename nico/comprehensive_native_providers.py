@@ -452,13 +452,13 @@ def architecture_data_flow_provider(context: dict[str, Any]) -> dict[str, Any]:
         evidence["source_observation"] = observation
         evidence["structured_tables"] = structured_tables(observation)
     from nico.source_function_conformance_v1 import KEY as CONFORMANCE_KEY, build_conformance
-    from nico.source_function_conformance_report_v1 import conformance_tables
+    from nico.source_function_conformance_report_v1 import integrate_conformance
     conformance = build_conformance(context, repo, complexity)
     evidence[CONFORMANCE_KEY] = conformance
     from nico.source_function_measurement_report_v1 import measurement_tables, UNAVAILABLE
     if observation is not None:
-        evidence["structured_tables"].extend(conformance_tables(conformance))
-        evidence["structured_tables"].extend(measurement_tables(context, repo, complexity))
+        evidence["structured_tables"].extend(integrate_conformance(
+            measurement_tables(context, repo, complexity), conformance))
     else:
         evidence["function_measurement_status"] = UNAVAILABLE
     return _result(
