@@ -128,6 +128,8 @@ def collect(kind, monkeypatch, tmp_path, files=None, *, truncated=False, missing
         "immutable_repository_snapshot": {"snapshot": snapshot},
         "repository_and_delivery_evidence": {
             "repository_evidence": repository, "complexity_evidence": complexity}}
+    from source_function_witness_fixture import bind_fixture_witness
+    bind_fixture_witness(monkeypatch, tmp_path, context, repository, complexity)
     return context, repository, complexity, store
 
 

@@ -141,6 +141,8 @@ def test_existing_payload_is_identical_when_optional_field_removed(monkeypatch):
     monkeypatch.setattr(module, 'build_optional_measurements', lambda *args: None)
     without_measurement = collector._build_complexity(files)
     optional = with_measurement.pop(KEY)
+    from nico.source_function_collection_v1 import KEY_COLLECTION
+    with_measurement.pop(KEY_COLLECTION)
     without_measurement.pop(KEY)
     assert json.dumps(with_measurement, sort_keys=True) == json.dumps(without_measurement, sort_keys=True)
     assert not any('score' in k or 'accept' in k for k in optional)

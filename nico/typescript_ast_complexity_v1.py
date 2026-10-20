@@ -395,7 +395,15 @@ def _build_complexity(files: dict[str, str]) -> dict[str, Any]:
     }
     from nico.source_function_measurements_v1 import KEY, build_optional_measurements
     measurements = build_optional_measurements(source_files, analyses, ast_result)
-    return {**_complexity_summary_payload(context), **_complexity_architecture_payload(context), KEY: measurements}
+    from nico.source_function_collection_v1 import KEY_COLLECTION, collect_contract
+    result = {**_complexity_summary_payload(context), **_complexity_architecture_payload(context), KEY: measurements}
+    if isinstance(measurements, dict) and measurements.get('status') != 'unavailable':
+        try:
+            result[KEY_COLLECTION] = collect_contract(source_files, analyses, ast_result, measurements)
+        except ValueError:
+            # Optional conformance proof cannot change legacy observations/acceptance.
+            pass
+    return result
 
 
 def install_typescript_ast_complexity_v1() -> dict[str, Any]:

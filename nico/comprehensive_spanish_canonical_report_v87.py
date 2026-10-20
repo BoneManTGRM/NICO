@@ -1811,6 +1811,7 @@ _PRESENTATION_PROSE_FIELDS = {
 }
 _RAW_CANONICAL_SUBTREES = {
     "supplied_human_evidence",
+    "source_function_conformance_v1",
     "source_observation",
     "structured_tables",
     "profile_coverage",

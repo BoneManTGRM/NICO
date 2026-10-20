@@ -10,7 +10,7 @@ from nico.source_function_measurements_v1 import KEY, validate_measurements
 
 UNAVAILABLE = "Function measurements unavailable: absent, invalid, or not independently bound to this engagement, snapshot and source inventory."
 LIMITS = (
-    "NOT SCORED. Observations concern enumerated functions in supplied source text only, not overall architecture qualification. "
+    "Observations concern enumerated functions in supplied source text only. Qualified CC<=20 conformance is reported separately and excluded from overall maturity; overall architecture quality remains unestablished. "
     "Complete means a file's enumerated population, not complete repository coverage. Partial parser observations are reported separately. "
     "Whole-source decision burden and module/class initializer residuals are unavailable; Python lambdas are not enumerated. "
     "Languages use different counting rules. Extraction can lower maximum CC without reducing sum(CC-1); neither is a calibrated quality score. "
@@ -56,7 +56,7 @@ def measurement_tables(context: dict, repository: dict, complexity: dict) -> lis
     files = value['files']
     counts = Counter(row['status'] for row in files)
     tables = [table('Function measurement scope', [
-        ['Status', 'Bound source observations; NOT SCORED'],
+        ['Status', 'Bound source observations; scoped conformance reported separately'],
         ['Supplied eligible source files', len(files)],
         ['Complete observed files', counts['measured']], ['Partial observed files', counts['partial']],
         ['Missing files', counts['missing']], ['Unsupported files', counts['unsupported']],

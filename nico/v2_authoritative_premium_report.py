@@ -111,7 +111,7 @@ def _sanitize_container(value: Any, completed: set[str]) -> Any:
         # Source observations and table coordinates are canonical evidence,
         # including empty cells. Prose cleanup must not shift later columns or
         # rewrite a source path that resembles a scanner-status sentence.
-        return {str(key): deepcopy(item) if key in {"source_observation", "structured_tables", "profile_coverage"}
+        return {str(key): deepcopy(item) if key in {"source_function_conformance_v1", "source_observation", "structured_tables", "profile_coverage"}
                 else _sanitize_container(item, completed) for key, item in value.items()}
     if isinstance(value, list):
         output = []

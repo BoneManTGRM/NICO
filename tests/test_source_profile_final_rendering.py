@@ -27,9 +27,11 @@ def collected_package(monkeypatch, tmp_path, *, spanish=False):
     canonical["identity"] = identity
     canonical["repository_evidence"] = repository
     canonical["complexity_evidence"] = complexity
+    from source_function_witness_fixture import architecture_from_persisted
+    architecture = architecture_from_persisted(context,repository,complexity,tmp_path)
     canonical["stage_summaries"] = [
         report._stage_summary("deployment_and_infrastructure", deployment_review_provider(context)),
-        report._stage_summary("architecture_and_data_flow", architecture_data_flow_provider(context)),
+        report._stage_summary("architecture_and_data_flow", architecture),
     ]
     return package, repository["architecture_evidence"]["source_observation"]
 
