@@ -75,6 +75,32 @@ def test_server_executor_reloads_reference_and_ignores_context_proofs(monkeypatc
     assert execute(context)['evidence'][RESULT_KEY]['status']=='unavailable'
 
 
+def test_compressed_storage_collection_save_reload(monkeypatch,tmp_path):
+    from nico.comprehensive_run_storage_codec_v1 import COMPRESSION_THRESHOLD_BYTES, ENVELOPE_KEY
+
+    context,repo,complexity=collected(monkeypatch,tmp_path)
+    # Real save() crosses the production threshold; no codec or threshold stub.
+    context['prior_stage_results'].setdefault('authorization_and_scope',{})['retained_test_payload']='x'*(COMPRESSION_THRESHOLD_BYTES+1)
+    store,path,_=persisted(context,repo,complexity,tmp_path)
+    with sqlite3.connect(path) as connection:
+        encoded=json.loads(connection.execute('SELECT payload FROM nico_comprehensive_runs').fetchone()[0])
+    assert ENVELOPE_KEY in encoded
+    restored=store.load(context['run_id'])
+    assert restored['stage_results']['repository_and_delivery_evidence']['complexity_evidence']==complexity
+    witness=load_witness(store,context)
+    assert witness is not None
+    app=FastAPI()
+    setattr(app.state,STORE_STATE_KEY,store)
+    setattr(app.state,PROVIDER_STATE_KEY,{'architecture_data_flow':architecture_data_flow_provider})
+    output=build_production_capability_executors(app)['architecture_data_flow'](context)['evidence'][RESULT_KEY]
+    assert output['status']=='qualified'
+    assert output['combined']['cc']['percentage']==100.0
+    # Row identity must still agree with the decoded canonical record.
+    with sqlite3.connect(path) as connection:
+        connection.execute("UPDATE nico_comprehensive_runs SET customer_id='foreign'")
+    assert load_witness(store,context) is None
+
+
 @pytest.mark.parametrize('fake',[None,{}, {'verified':True}, {'binding':'fake'}, True])
 def test_fake_witnesses_cannot_qualify(monkeypatch,tmp_path,fake):
     inputs,_,_,_=fixture(monkeypatch,tmp_path)

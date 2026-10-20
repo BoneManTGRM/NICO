@@ -4,7 +4,6 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-import json
 
 from nico.source_function_collection_v1 import validate_collection
 from nico.source_function_measurements_v1 import _json
@@ -40,7 +39,7 @@ def valid_witness(witness: object, context: dict, repository: dict, complexity: 
 def load_witness(store, context: dict) -> _Witness | None:
     """Store is supplied by server wiring only; never resolve it from context."""
     from nico.comprehensive_run_record import validate_comprehensive_run_record
-    from nico.comprehensive_run_store import ComprehensiveRunStore
+    from nico.comprehensive_run_store import ComprehensiveRunStore, _decode_run_payload
     if not isinstance(store, ComprehensiveRunStore):
         return None
 
@@ -48,7 +47,7 @@ def load_witness(store, context: dict) -> _Witness | None:
         # restore() initializes absent commitments. Reject first: this reader cannot write.
         if row[1] is None or row[2] is None:
             return None
-        payload = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+        payload = _decode_run_payload(row[0])
         if not isinstance(payload, dict) or validate_comprehensive_run_record(payload)['status'] != 'valid':
             return None
         identity = payload['identity']
