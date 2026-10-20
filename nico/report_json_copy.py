@@ -33,15 +33,30 @@ def deepcopy(value: Any, memo: Any = _MEMO_UNSET) -> Any:
     kind = type(value)
     if kind is str or kind is int or kind is float or kind is bool or kind is _NONE_TYPE:
         return value
+    return copy_with_tree_ownership(value)[0]
+
+
+def copy_with_tree_ownership(value: Any) -> tuple[Any, bool]:
+    """Copy and certify only plain JSON trees with no shared mutable containers.
+
+    A true flag lets an owner reuse subtrees of this private copy. Aliases,
+    cycles, custom types and depth fallback never receive that guarantee.
+    """
+    kind = type(value)
+    if kind is str or kind is int or kind is float or kind is bool or kind is _NONE_TYPE:
+        return value, True
 
     copies: dict[int, Any] = {}
+    unaliased_tree = True
 
     def clone(item: Any, depth: int = 0) -> Any:
+        nonlocal unaliased_tree
         kind = type(item)
         if kind is not dict and kind is not list:
             raise _UseLegacyCopy
         identity = id(item)
         if identity in copies:
+            unaliased_tree = False
             return copies[identity]
         if depth >= _FAST_DEPTH_LIMIT:
             raise _UseLegacyCopy
@@ -68,13 +83,14 @@ def deepcopy(value: Any, memo: Any = _MEMO_UNSET) -> Any:
         return result
 
     try:
-        return clone(value)
+        result = clone(value)
+        return result, unaliased_tree
     except (_UseLegacyCopy, RecursionError):
         pass
     # Leave the exception scope before legacy copying so its traceback and the
     # speculative graph do not remain deliberately retained during the fallback.
     copies.clear()
-    return _legacy_deepcopy(value)
+    return _legacy_deepcopy(value), False
 
 
-__all__ = ["deepcopy"]
+__all__ = ["deepcopy", "copy_with_tree_ownership"]
