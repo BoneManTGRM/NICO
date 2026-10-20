@@ -312,7 +312,7 @@ def test_exact_main_spanish_proof_requires_the_regressions_to_be_fixed() -> None
         "_configure_proof_repository(args.repository)",
         'report_language="es-MX"',
         'report_language="en"',
-        "0 < page_count <= MAX_CLIENT_PDF_PAGES",
+        "page_count > 0",
         "same_run_bilingual_pdf_verified",
         "actual_browser_intake_metadata_verified",
         "durable_engagement_metadata_verified_at_intake",
@@ -325,7 +325,7 @@ def test_exact_main_spanish_proof_requires_the_regressions_to_be_fixed() -> None
         'payload["access_method_verified_in_canonical_truth"] is True',
         'payload["authorized_scope_verified_in_canonical_truth"] is True',
         'payload["same_run_bilingual_pdf_verified"] is True',
-        'int(payload["spanish_pdf_page_count"]) <= MAX_CLIENT_PDF_PAGES',
-        'int(payload["english_pdf_page_count"]) <= MAX_CLIENT_PDF_PAGES',
+        'int(payload["spanish_pdf_page_count"]) > 0',
+        'int(payload["english_pdf_page_count"]) > 0',
     ):
         assert marker in workflow

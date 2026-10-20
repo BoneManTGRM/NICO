@@ -232,4 +232,5 @@ def test_compact_pdf_fails_closed_when_required_pages_exceed_page_budget() -> No
             gate_pdf,
             review_pdf=review_pdf,
             ci_boundary_pdf=ci_boundary_pdf,
+            page_limit=60,
         )

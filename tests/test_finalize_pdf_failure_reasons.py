@@ -46,7 +46,7 @@ def test_actual_page_budget_failures_remain_fail_closed(caplog,review_pages,reas
         with timing.report_delivery_timing('comprun_'+'a'*32,'es-MX'):
             with timing.report_delivery_failure_scope('pdf_compose'):
                 compose_compact_client_pdf(_pdf(['Primary evidence']),_pdf(['Register']),_pdf(['Gate']),
-                    review_pdf=_pdf(*[[f'Review page {i}'] for i in range(review_pages)]))
+                    review_pdf=_pdf(*[[f'Review page {i}'] for i in range(review_pages)]), page_limit=60)
     assert records(caplog)[0]['failure_reason']==reason
 
 
@@ -59,7 +59,7 @@ def test_success_has_no_failure_reason_and_sixty_pages_still_pass(caplog):
     with timing.report_delivery_timing('comprun_'+'a'*32,'en'):
         with timing.report_delivery_failure_scope('pdf_compose'):
             result=compose_compact_client_pdf(_pdf(['Primary evidence']),_pdf(['Register']),_pdf(['Gate']),
-                review_pdf=_pdf(*[[f'Review page {i}'] for i in range(57)]))
+                review_pdf=_pdf(*[[f'Review page {i}'] for i in range(57)]), page_limit=60)
     assert len(PdfReader(io.BytesIO(result)).pages)==60
     assert 'failure_reason' not in records(caplog)[0]
 

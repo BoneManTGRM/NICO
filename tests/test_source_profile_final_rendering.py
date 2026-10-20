@@ -85,7 +85,7 @@ def test_actual_final_package_retains_source_tables_and_bilingual_pdf(monkeypatc
     assert result["json"]["stage_summaries"][1]["structured_tables"] == retained_tables
     assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False
-    assert len(reader.pages) <= result["client_report_completion"]["client_pdf_page_boundary"]
+    assert result["client_report_completion"]["client_pdf_page_boundary"] is None
     (tmp_path / ("source-profile-es-MX.pdf" if spanish else "source-profile-en.pdf")).write_bytes(pdf)
     (tmp_path / ("source-profile-es-MX.json" if spanish else "source-profile-en.json")).write_text(json.dumps(result["json"], ensure_ascii=False, sort_keys=True))
 

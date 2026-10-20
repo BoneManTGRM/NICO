@@ -16,8 +16,6 @@ import platform
 import re
 from typing import Any, Iterator
 
-from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
-
 SCHEMA = "nico.pdf-cap-failure.v1"
 _IDENTITY = ContextVar("pdf_cap_failure_identity", default=None)
 _TRACE = ContextVar("pdf_cap_failure_boundaries", default=None)
@@ -202,7 +200,7 @@ def sanitize_pdf_cap_diagnostic(value: Any) -> dict[str, Any] | None:
     )) or value["total_pages"] != value["required_pages"] + value["retained_body_pages_after_reflow"]:
         return None
     before, after = value["retained_body_pages_before_reflow"], value["retained_body_pages_after_reflow"]
-    if not 0 < after <= before <= value["base_pages"] or value["page_limit"] != MAX_CLIENT_PDF_PAGES:
+    if not 0 < after <= before <= value["base_pages"] or value["page_limit"] < 1:
         return None
     if reason == "pdf_required_pages_limit":
         if value["required_pages"] <= value["page_limit"] or value["reflow_attempted"] or after != before:

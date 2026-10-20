@@ -166,7 +166,7 @@ def test_english_final_crossformat_and_artifacts(monkeypatch, tmp_path, bins):
         else:
             assert 'CC 40: functions' in text
     assert {k:v for k,v in result['json']['assessment'].items() if k != 'stage_summaries'} == {k:v for k,v in baseline_result['json']['assessment'].items() if k != 'stage_summaries'}
-    assert len(reader.pages) <= result['client_report_completion']['client_pdf_page_boundary']
+    assert result['client_report_completion']['client_pdf_page_boundary'] is None
     target = Path(os.environ.get('MEASUREMENT_ARTIFACT_DIR',str(tmp_path))) / f'bins-{bins}'
     target.mkdir(parents=True,exist_ok=True)
     for name, data in [('report.pdf',pdf),('report.json',json.dumps(result['json'],sort_keys=True,indent=2).encode()),('report.md',result['markdown'].encode()),('report.html',result['html'].encode()),('pdf-text.txt',text.encode())]:

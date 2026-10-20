@@ -8,7 +8,7 @@ from typing import Any
 
 from pypdf import PdfReader, PdfWriter
 
-from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY, ES_BOUNDARY, MAX_CLIENT_PDF_PAGES
+from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY, ES_BOUNDARY
 
 VERSION = "nico.client-pdf-compose.v3.11"
 CORE_REVIEW_COMPANION_PAGES = 8
@@ -200,16 +200,20 @@ def compose_compact_client_pdf(
     review_pdf: bytes | None = None,
     ci_boundary_pdf: bytes | None = None,
     human_evidence_pdf: bytes | None = None,
+    page_limit: int | None = None,
 ) -> bytes:
     """Retain one cover, the decision body, and every required client page.
 
     The legacy premium body can contain its own title page after the branded cover
     is applied. That second cover is not evidence and can introduce a second
     generated timestamp, so it is removed here. Review and CI/CD boundary pages
-    are reserved before the body budget is calculated and are never silently
-    truncated.
+    are included in full before any explicit caller budget is checked. They are
+    never silently truncated. Ordinary reports grow with retained evidence. ``page_limit`` is
+    an explicit legacy caller constraint, not a publication default.
     """
 
+    if page_limit is not None and (type(page_limit) is not int or page_limit < 1):
+        raise ValueError("explicit PDF page limit must be a positive integer or None")
     if not base_pdf.startswith(b"%PDF"):
         raise ValueError("compact client composition requires a valid base PDF")
     if not register_pdf.startswith(b"%PDF"):
@@ -340,7 +344,7 @@ def compose_compact_client_pdf(
     def cap_error(message: str, reason: str, reflow_attempted: bool) -> ValueError:
         return attach_pdf_cap_diagnostic(ValueError(message), reason=reason,
             reflow_attempted=reflow_attempted, counts={
-                "page_limit": MAX_CLIENT_PDF_PAGES, "base_pages": len(base.pages),
+                "page_limit": page_limit, "base_pages": len(base.pages),
                 "retained_body_pages_before_reflow": retained_before_reflow,
                 "retained_body_pages_after_reflow": len(retained),
                 "register_pages": len(register.pages), "gate_pages": len(gate.pages),
@@ -349,18 +353,18 @@ def compose_compact_client_pdf(
                 "required_pages": reserved_count, "total_pages": len(retained) + reserved_count,
             })
 
-    if reserved_count > MAX_CLIENT_PDF_PAGES:
+    if page_limit is not None and reserved_count > page_limit:
         record_report_delivery_failure_reason("pdf_required_pages_limit")
         raise cap_error(
             "client-ready PDF required pages exceed the "
-            f"{MAX_CLIENT_PDF_PAGES}-page boundary", "pdf_required_pages_limit", False,
+            f"{page_limit}-page boundary", "pdf_required_pages_limit", False,
         )
 
     total_page_count = len(retained) + reserved_count
-    if total_page_count > MAX_CLIENT_PDF_PAGES:
+    if page_limit is None or total_page_count > page_limit:
         # The same lossless, table-aware reflow runs at final navigation. Apply
-        # it before this intermediate budget as well, so readable translated
-        # prose is not rejected solely because sparse pages are still separate.
+        # it here as presentation cleanup, independent of the ordinary report
+        # length. Explicit legacy limits still fail closed after lossless reflow.
         from nico.comprehensive_pdf_reflow_v1 import compact_sparse_stage_pages
         body = PdfWriter()
         for page in retained:
@@ -370,18 +374,18 @@ def compose_compact_client_pdf(
         compacted, _proof = compact_sparse_stage_pages(buffer.getvalue())
         retained = list(PdfReader(io.BytesIO(compacted)).pages)
         total_page_count = len(retained) + reserved_count
-    if total_page_count > MAX_CLIENT_PDF_PAGES:
+    if page_limit is not None and total_page_count > page_limit:
         record_report_delivery_failure_reason("pdf_total_pages_limit")
         raise cap_error(
             "client-ready PDF cannot preserve every primary and required page within "
-            f"the {MAX_CLIENT_PDF_PAGES}-page boundary: {total_page_count}", "pdf_total_pages_limit", True,
+            f"the {page_limit}-page boundary: {total_page_count}", "pdf_total_pages_limit", True,
         )
 
     selected_review_pages = list(review.pages) if review is not None else []
     if review is not None and len(selected_review_pages) != required_review_count:
         raise ValueError(
             "client-ready PDF cannot preserve the complete Comprehensive review companion "
-            f"within the {MAX_CLIENT_PDF_PAGES}-page boundary"
+            "without losing required pages"
         )
 
     selected_ci_boundary_pages = (
@@ -390,7 +394,7 @@ def compose_compact_client_pdf(
     if len(selected_ci_boundary_pages) != required_ci_boundary_count:
         raise ValueError(
             "client-ready PDF cannot preserve the complete CI/CD boundary "
-            f"within the {MAX_CLIENT_PDF_PAGES}-page boundary"
+            "without losing required pages"
         )
 
     writer = PdfWriter()
@@ -411,10 +415,10 @@ def compose_compact_client_pdf(
     writer.write(output)
     pdf = output.getvalue()
     page_count = len(PdfReader(io.BytesIO(pdf)).pages)
-    if page_count > MAX_CLIENT_PDF_PAGES:
+    if page_limit is not None and page_count > page_limit:
         record_report_delivery_failure_reason("pdf_output_pages_limit")
         raise ValueError(
-            f"client-ready PDF exceeds the {MAX_CLIENT_PDF_PAGES}-page boundary: {page_count}"
+            f"client-ready PDF exceeds the {page_limit}-page boundary: {page_count}"
         )
     return pdf
 

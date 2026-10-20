@@ -233,7 +233,7 @@ def test_page_cap_still_rejects_overflow_without_dropping_conditions():
             writer.add_blank_page(width=612, height=792)
         result = io.BytesIO(); writer.write(result); return result.getvalue()
     with pytest.raises(ValueError, match='exceeds the 60-page boundary'):
-        compact.compose_compact_client_pdf(blank_pdf(59), blank_pdf(1), blank_pdf(1))
+        compact.compose_compact_client_pdf(blank_pdf(59), blank_pdf(1), blank_pdf(1), page_limit=60)
 
 
 def test_full_canonical_preview_context_is_read_only_and_authoritative():
