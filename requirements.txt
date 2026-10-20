@@ -1,14 +1,14 @@
 setuptools>=83,<85
-fastapi==0.142.2
+fastapi==0.143.0
 uvicorn==0.54.0
-pydantic==2.13.5
+pydantic==2.14.1
 pytest==9.1.1
 httpx==0.28.1
 requests==2.34.2
 reportlab==5.0.1
 pillow==13.0.0
 idna==3.20
-pypdf==6.19.0
+pypdf==6.20.1
 python-multipart==0.0.32
 psycopg[binary]>=3.3.4,<4
 pip-audit==2.10.1
