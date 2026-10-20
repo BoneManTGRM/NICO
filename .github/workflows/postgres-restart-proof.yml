@@ -70,6 +70,9 @@ jobs:
             --output audit-results/postgres-worker-job-proof.json
       - name: Prove authenticated worker receipt publication and durable polling
         run: python scripts/postgres_worker_protocol_proof.py --evidence audit-results/postgres-worker-protocol-proof.json
+      - name: Prove one-artifact qualification capacity on existing synthetic Postgres
+        timeout-minutes: 4
+        run: python scripts/postgres_review_pdf_capacity_proof.py --synthetic-ci-proof --output audit-results/postgres-review-pdf-capacity-proof.json
       - name: Prove retained review-PDF ledger ownership on existing Postgres
         run: python scripts/postgres_review_pdf_preparation_proof.py --output audit-results/postgres-review-pdf-preparation-proof.json
       - name: Prove synthetic full retained PDF lifecycle on existing Postgres
@@ -139,6 +142,17 @@ jobs:
           assert protocol["client_delivery_allowed"] is False
           assert len(protocol["checks"]) == 33
           assert all(value is True for value in protocol["checks"].values())
+          capacity = json.loads(Path("audit-results/postgres-review-pdf-capacity-proof.json").read_text())
+          from scripts.postgres_review_pdf_capacity_proof import REQUIRED_CHECKS, POSITIVE_CHECKS
+          assert capacity["status"] == "passed" and capacity["synthetic"] is True
+          assert capacity["live_production_claim"] is False
+          assert capacity["assessment_executed"] is False
+          assert capacity["client_delivery_allowed"] is False
+          assert capacity["successful_ready_publication_proven"] is True
+          assert set(capacity["checks"]) == set(REQUIRED_CHECKS) | set(POSITIVE_CHECKS)
+          assert all(value is True for value in capacity["checks"].values())
+          assert "postgresql://" not in json.dumps(capacity)
+          assert "NICO_TEST_DATABASE_URL" not in json.dumps(capacity)
           review_pdf = json.loads(Path("audit-results/postgres-review-pdf-preparation-proof.json").read_text())
           assert review_pdf["status"] == "passed"
           assert review_pdf["synthetic"] is True
@@ -158,7 +172,7 @@ jobs:
           assert lifecycle["actual_retained_report_timing"] is False
           assert lifecycle["assessment_executed"] is False
           assert lifecycle["client_delivery_allowed"] is False
-          assert lifecycle["commit_sha"] == review_pdf["commit_sha"]
+          assert lifecycle["commit_sha"] == review_pdf["commit_sha"] == capacity["commit_sha"]
           assert all(value is True for value in lifecycle["checks"].values())
           for key in ("fresh_process_retrieved_exact_bytes", "identity_hash_and_gates_verified",
                       "real_store_restore", "real_child_render", "locked_ready_publication",
@@ -181,6 +195,7 @@ jobs:
             audit-results/postgres-scanner-artifact-proof.json
             audit-results/postgres-worker-job-proof.json
             audit-results/postgres-worker-protocol-proof.json
+            audit-results/postgres-review-pdf-capacity-proof.json
             audit-results/postgres-review-pdf-preparation-proof.json
             audit-results/postgres-review-pdf-lifecycle-proof.json
           if-no-files-found: error

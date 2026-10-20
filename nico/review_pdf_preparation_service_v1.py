@@ -96,7 +96,8 @@ class ReviewPdfPreparationService:
         if not self.capacity.acquire(blocking=False):
             return None
         lease = None
-        state = {'physical_worker_exit_confirmed': True, 'pending_guards': []}
+        state = {'physical_worker_exit_confirmed': True, 'temporary_files_cleanup_confirmed': True,
+                 'pending_guards': []}
         guard = DeadlineGuard(900, stop)
         state['pending_guards'].append(guard)
         lease_done, lease_thread = None, None
@@ -189,6 +190,17 @@ class ReviewPdfPreparationService:
                         return False
                     Event().wait(.02)
                 if state.get('physical_worker_exit_confirmed'):
+                    # Dormant qualification-only ledgers require durable exit proof.
+                    # The ordinary runtime ledger has no such hook. A failed or
+                    # uncertain acknowledgement quarantines local capacity too.
+                    confirm_exit = getattr(self.jobs, 'confirm_execution_exit', None)
+                    if lease is not None and callable(confirm_exit):
+                        receipt_guard = DeadlineGuard(5, Event())
+                        try:
+                            receipt_guard.call(confirm_exit, identity, lease['lease_id'],
+                                               state=state, supervisor=lease_thread, timeout=5)
+                        except BaseException:
+                            return True  # Deliberately keep capacity; never infer release.
                     self.capacity.release()
                 return True
             if not release_when_finished(wait=False):
