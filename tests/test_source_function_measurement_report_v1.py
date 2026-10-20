@@ -36,7 +36,7 @@ def test_independent_binding_and_complete_population(monkeypatch, tmp_path):
     assert values['Sum(CC-1) in enumerated functions'] == 1
     assert values['Complete observed files'] == 1
     assert values['Partial observed files'] == 0
-    assert 'NOT SCORED' in values['Status']
+    assert 'scoped conformance reported separately' in values['Status']
     assert tables == architecture_data_flow_provider(context)['evidence']['structured_tables'][-len(tables):]
 
 
@@ -138,7 +138,7 @@ def test_english_final_crossformat_and_artifacts(monkeypatch, tmp_path, bins):
     text = '\n'.join(page.extract_text() or '' for page in reader.pages)
     assert result['json']['stage_summaries'][1]['structured_tables'] == tables
     for output in (result['markdown'],result['html'],text):
-        for phrase in ('Function measurement scope', 'Complete observed population', 'CC maximum', 'CC at least 21: functions', 'NOT SCORED', 'Sum(CC-1)'):
+        for phrase in ('Function measurement scope', 'Complete observed population', 'CC maximum', 'CC at least 21: functions', 'scoped conformance reported separately', 'Sum(CC-1)'):
             assert phrase in output
     assert rows(tables)['CC maximum'] == (23 if bins == 1 else bins)
     assert rows(tables)['CC at least 21: functions'] == (1 if bins == 1 else bins - 20)
