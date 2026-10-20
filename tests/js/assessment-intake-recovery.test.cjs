@@ -55,8 +55,8 @@ for(const locale of ['en','es-MX']) for(const code of ['specialist_authenticatio
     assert.equal(c.issue.runCreated,false);assert.equal(c.issue.code,code);assert.equal(c.issue.requestId,'request-denied');
     assert.equal(c.repository,'owner/repo');assert.equal(c.client,'Client');assert.equal(c.authorized,true);
     assert.equal(h.calls.filter(c=>c.method==='POST').length,1);
-    assert.equal(h.calls.find(c=>c.method==='POST').body.report_language,'en');
-    assert.equal(h.window.location.searchParams.get('report_locale'),'en-US');
+    assert.equal(h.calls.find(c=>c.method==='POST').body.report_language,locale);
+    assert.equal(h.window.location.searchParams.get('report_locale'),locale === 'es-MX' ? 'es-MX' : 'en-US');
     h.reload();await settle();assert.equal(h.render().phase,'idle');
   });
 }
@@ -235,4 +235,29 @@ test('transient exact status failure retries GET and preserves canonical identit
   let gets=0;const h=harness(c=>{assert.equal(c.method,'GET');return ++gets===1?Response.json({detail:{code:'temporarily_unavailable'}},{status:503}):Response.json(accepted('comprun_A'));});
   h.window.location.searchParams.set('run_id','comprun_A');h.reload();await settle();assert.equal(gets,2);assert.equal(h.render().phase,'review_required');
   assert.equal(h.render().result.run_id,'comprun_A');assert.equal(h.render().result.commit_sha,'a'.repeat(40));assert.equal(h.render().result.client_delivery_allowed,false);
+});
+
+for (const locale of ['en','es-MX']) for (const source of ['url','storage']) for (const choice of ['en-US','es-MX']) {
+  test(`intake preserves explicit ${choice} preference from ${source} on ${locale} UI`,async()=>{
+    const h=harness(c=>c.method==='POST'?denied('specialist_authentication_required'):missing(),locale);
+    h.storage.set('nico.report-locale.v1',source==='url' ? (choice==='en-US'?'es-MX':'en-US') : choice);
+    if(source==='url') h.window.location.searchParams.set('report_locale',choice);
+    await h.configure().run();
+    assert.equal(h.calls.find(c=>c.method==='POST').body.report_language,choice==='es-MX'?'es-MX':'en');
+    assert.equal(h.storage.get('nico.report-locale.v1'),choice);
+    assert.equal(h.window.location.searchParams.get('report_locale'),choice);
+    assert.equal(h.render().protectedRunId,'');
+  });
+}
+for (const locale of ['en','es-MX']) test(`unavailable Spanish is an explicit pre-reservation rejection (${locale})`,async()=>{
+  const h=harness(c=>c.method==='POST'?Response.json({detail:{code:'spanish_report_generation_unavailable',retryable:false}},{status:422}):missing(),locale);
+  h.window.location.searchParams.set('report_locale','es-MX');
+  await h.configure().run();
+  assert.equal(h.calls.find(c=>c.method==='POST').body.report_language,'es-MX');
+  assert.equal(h.render().issue.code,'spanish_report_generation_unavailable');
+  assert.equal(h.render().issue.runCreated,false);
+  assert.equal(h.render().issue.retryable,false);
+  assert.equal(h.render().protectedRunId,'');assert.equal(h.storage.has(KEY),false);
+  assert.equal(h.window.location.searchParams.get('report_locale'),'es-MX');
+  assert.equal(h.calls.filter(c=>c.method==='POST').length,1);
 });

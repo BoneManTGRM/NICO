@@ -128,6 +128,17 @@ def _browser_projection_can_dispatch_continuation(current: Mapping[str, Any]) ->
 
 
 def _translate_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, ValueError) and str(exc) == "spanish_report_generation_unavailable":
+        return HTTPException(
+            status_code=422,
+            detail={
+                "code": str(exc),
+                "message": "Spanish generation is unavailable; the requested language was not changed.",
+                "retryable": False,
+                "human_review_required": True,
+                "client_delivery_allowed": False,
+            },
+        )
     if isinstance(exc, ComprehensiveRunNotFound):
         return HTTPException(
             status_code=404,

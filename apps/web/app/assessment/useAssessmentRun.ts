@@ -8,7 +8,7 @@ import {
   type SetStateAction,
 } from "react";
 import {copyFor} from "./assessmentCopy";
-import {persistReportLocale} from "./assessmentLocale";
+import {persistReportLocale, reportLocaleForRequest} from "./assessmentLocale";
 import {AssessmentApiError, scopeId, terminal, wait} from "./assessmentModel";
 import {preserveRunIdentity, type RunIdentityFallback} from "./assessmentRunIdentity";
 import {
@@ -877,7 +877,8 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       ),
     );
     // Preference storage must not bypass the existing intake recovery checks.
-    try { persistReportLocale("en-US"); } catch { /* Recovery admission below owns storage failures. */ }
+    const reportLocale = reportLocaleForRequest(locale);
+    try { persistReportLocale(reportLocale); } catch { /* Recovery admission below owns storage failures. */ }
     const body: Record<string, unknown> = {
       run_id: reservedRunId,
       repository: normalizedRepository.repository,
@@ -893,7 +894,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       authorized: true,
       timeframe_days: 180,
       assessment_depth: "strategic",
-      report_language: "en",
+      report_language: reportLocale === "es-MX" ? "es-MX" : "en",
       human_evidence: compactStrategicHumanEvidence(humanEvidence),
       engagement_field_states: normalizedStates,
     };

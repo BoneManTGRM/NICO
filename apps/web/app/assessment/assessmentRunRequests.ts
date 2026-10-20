@@ -109,6 +109,7 @@ export function isDefiniteIntakeRejection(caught: unknown): boolean {
   ].includes(caught.code)) || (caught.status === 422 && [
     "invalid_explicit_commit_sha", "assessment_intake_body_unavailable",
     "assessment_intake_body_invalid_json", "assessment_intake_body_invalid",
+    "spanish_report_generation_unavailable",
   ].includes(caught.code));
 }
 
@@ -434,6 +435,12 @@ function preRunIssueMessage(
   copy: ReturnType<typeof copyFor>,
 ): string {
   const spanish = spanishCopy(copy);
+
+  if (code === "spanish_report_generation_unavailable") {
+    return spanish
+      ? "La generación en español no está disponible por ahora. No se creó una ejecución. Tu idioma se conservó; selecciona «Usar informe en inglés» si deseas continuar en inglés."
+      : "Spanish generation is unavailable for now. No run was created. Your language choice was preserved; select Use English report if you want to continue in English.";
+  }
 
   if (code === "specialist_authentication_required" || code === "specialist_session_invalid_or_expired") {
     return spanish

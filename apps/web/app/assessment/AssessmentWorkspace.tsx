@@ -705,7 +705,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     return (
         <section className={`hero ${workspaceStyles.hero}`}>
           <p className="eyebrow">{copy.heroEyebrow}</p>
-          <p role="note">{locale === "es-MX" ? "Los informes nuevos se generan en inglés. La generación en español no está disponible por ahora." : "New reports are generated in English. Spanish generation is unavailable for now."}</p>
+          <p role="note">{locale === "es-MX" ? "La generación en español no está disponible por ahora. Conservamos tu selección de idioma." : "Spanish generation is unavailable for now. Your language choice is preserved."} {requestedReportLanguage === "es-MX" ? <button type="button" onClick={() => persistReportLocale("en-US")}>{locale === "es-MX" ? "Usar informe en inglés" : "Use English report"}</button> : null}</p>
           <h1>{copy.title}</h1>
           {!compactMobile ? <>
             <p className={workspaceStyles.heroLead}>{copy.lead}</p>
