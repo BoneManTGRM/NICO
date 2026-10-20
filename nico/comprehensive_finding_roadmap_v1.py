@@ -234,7 +234,10 @@ def bind_final_finding_roadmap(canonical: Mapping[str, Any], *, raw_stages: Mapp
         packages.append(item)
 
     rank = {"finding_review_and_remediation": 0, "candidate_disposition": 1, "evidence_gap_resolution": 2}
-    packages.sort(key=lambda item: (rank[item["kind"]], _SEVERITY.get(item.get("retained_severity", "").casefold(), 5), item["package_id"]))
+    # Stable finding IDs order priority ties independently of run-bound package
+    # digests. Gaps lack an equivalent semantic identity; retain their old order.
+    packages.sort(key=lambda item: (rank[item["kind"]], _SEVERITY.get(item.get("retained_severity", "").casefold(), 5),
+                                    item["finding_id"] if item["kind"] == "finding_review_and_remediation" else item["package_id"]))
     for index, item in enumerate(packages, 1):
         item["advisory_order"] = index
         item["ordering_basis"] = "advisory_priority_only_dependencies_are_explicit"
