@@ -111,3 +111,46 @@ def test_intake_record_and_stage_keep_requested_locale_without_english_fallback(
     assert updated['stage_results'][COMPREHENSIVE_STAGES[0]]['report_language'] == language
     assert updated['human_review_required'] is True
     assert updated['client_delivery_allowed'] is False
+
+
+@pytest.mark.parametrize('language', ['es', 'es-MX', 'ES_mx', 'en', 'en-US'])
+def test_real_public_intake_preparation_and_language_gate_precede_reservation(monkeypatch, language):
+    from nico import comprehensive_api_routes as routes
+    from nico import ordinary_report_language_release_v1 as release
+    events = []
+    original_prepare = routes._prepare_public_intake_reservation_payload
+    original_gate = release.require_new_report_language
+
+    def prepare(payload):
+        events.append('prepare')
+        return original_prepare(payload)
+
+    def gate(value):
+        events.append(('gate', value))
+        return original_gate(value)
+
+    def reserve(request, prepared):
+        events.append(('reserve', prepared['report_language']))
+        return {'lease_owner': True}
+
+    def execute(request, reservation):
+        events.append('execute_double')
+        return {'isolated_test_only': True}
+
+    monkeypatch.setattr(routes, '_prepare_public_intake_reservation_payload', prepare)
+    monkeypatch.setattr(release, 'require_new_report_language', gate)
+    monkeypatch.setattr(routes, '_reserve_prepared_public_intake', reserve)
+    monkeypatch.setattr(routes, '_execute_public_intake_reservation', execute)
+    payload = {'repository': 'owner/fixture', 'run_id': 'comprun_' + 'c' * 32,
+               'authorized': True, 'authorization_confirmed': True, 'report_language': language}
+    if language.lower().startswith('es'):
+        with pytest.raises(ValueError, match='^spanish_report_generation_unavailable$'):
+            routes._intake(None, payload)
+        assert events == ['prepare', ('gate', language)]
+    else:
+        assert routes._intake(None, payload) == {'isolated_test_only': True}
+        assert events == ['prepare', ('gate', language), ('reserve', language), 'execute_double']
+    events.clear()
+    with pytest.raises(ValueError, match='explicit_authorization_required'):
+        routes._intake(None, {**payload, 'authorized': False})
+    assert events == ['prepare']

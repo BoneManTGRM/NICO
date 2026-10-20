@@ -414,6 +414,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     run, retry, startNew,
   } = controller;
   const {copied, setCopied, artifactAction, setArtifactAction, requestedReportLanguage} = useReportActionState(locale);
+  const [reportLocaleError, setReportLocaleError] = useState("");
   const {issueRef, runIssueRef} = useIssueFocus(issue);
   const {hasExactRun, ambiguousIntakeOutcome} = runBoundaryView(protectedRunId, result, issue);
 
@@ -701,11 +702,23 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
   }
 
 
+  function chooseEnglishReport() {
+    try {
+      persistReportLocale("en-US");
+      setReportLocaleError("");
+    } catch {
+      setReportLocaleError(locale === "es-MX"
+        ? "No se pudo cambiar el idioma del informe porque el navegador rechazó la actualización de la dirección. Tu selección anterior se conserva."
+        : "Could not change the report language because the browser rejected the address update. Your previous selection is unchanged.");
+    }
+  }
+
   function renderHero() {
     return (
         <section className={`hero ${workspaceStyles.hero}`}>
           <p className="eyebrow">{copy.heroEyebrow}</p>
-          <p role="note">{locale === "es-MX" ? "La generación en español no está disponible por ahora. Conservamos tu selección de idioma." : "Spanish generation is unavailable for now. Your language choice is preserved."} {requestedReportLanguage === "es-MX" ? <button type="button" onClick={() => persistReportLocale("en-US")}>{locale === "es-MX" ? "Usar informe en inglés" : "Use English report"}</button> : null}</p>
+          <p role="note">{locale === "es-MX" ? "La generación en español no está disponible por ahora. Conservamos tu selección de idioma." : "Spanish generation is unavailable for now. Your language choice is preserved."} {requestedReportLanguage === "es-MX" ? <button type="button" onClick={chooseEnglishReport}>{locale === "es-MX" ? "Usar informe en inglés" : "Use English report"}</button> : null}</p>
+          {reportLocaleError ? <p role="alert">{reportLocaleError}</p> : null}
           <h1>{copy.title}</h1>
           {!compactMobile ? <>
             <p className={workspaceStyles.heroLead}>{copy.lead}</p>

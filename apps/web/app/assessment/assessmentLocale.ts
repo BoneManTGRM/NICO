@@ -77,7 +77,6 @@ export function reportLanguageForRequest(uiLocale: Locale): "en" | "es-MX" {
 }
 
 export function persistReportLocale(locale: ReportLocale): void {
-  safeLocalStorageSet(REPORT_LOCALE_STORAGE_KEY, locale);
   if (typeof window !== "undefined") {
     const url = new URL(window.location.href);
     url.searchParams.set("report_locale", locale);
@@ -86,6 +85,9 @@ export function persistReportLocale(locale: ReportLocale): void {
       "",
       `${url.pathname}${url.search}${url.hash}`,
     );
+    // The URL wins preference resolution. Do not write a conflicting stored
+    // choice or announce success if its authoritative update was rejected.
+    safeLocalStorageSet(REPORT_LOCALE_STORAGE_KEY, locale);
     window.dispatchEvent(new CustomEvent(REPORT_LOCALE_CHANGE_EVENT, {detail: {locale}}));
   }
 }
