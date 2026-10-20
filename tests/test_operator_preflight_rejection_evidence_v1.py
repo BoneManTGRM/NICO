@@ -56,7 +56,13 @@ def test_spanish_operator_intake_stops_before_preflight_or_capture(monkeypatch, 
             runtime._operator_intake(request, data, 'synthetic-admin')
         translated = runtime.api_routes._translate_error(caught.value)
         assert translated.status_code == 422
-        assert translated.detail == 'spanish_report_generation_unavailable'
+        assert translated.detail == {
+            'code': 'spanish_report_generation_unavailable',
+            'message': 'Spanish generation is unavailable; the requested language was not changed.',
+            'retryable': False,
+            'human_review_required': True,
+            'client_delivery_allowed': False,
+        }
     with pytest.raises(HTTPException) as caught:
         runtime._operator_intake(request, data, 'unauthorized')
     assert caught.value.status_code == 403

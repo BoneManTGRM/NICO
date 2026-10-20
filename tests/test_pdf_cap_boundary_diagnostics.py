@@ -86,9 +86,9 @@ def test_bad_diagnostic_inputs_do_not_replace_original_error(monkeypatch):
 def test_composer_success_bytes_unchanged_and_no_trace_leak(caplog):
     from nico.client_pdf_compose_v2 import compose_compact_client_pdf
     base=_pdf(['Executive Decision Brief']); part=_pdf(['Required'])
-    expected=compose_compact_client_pdf(base,part,part)
+    expected=compose_compact_client_pdf(base,part,part, page_limit=60)
     with diagnostics.pdf_cap_identity('run'):
-        actual=compose_compact_client_pdf(base,part,part)
+        actual=compose_compact_client_pdf(base,part,part, page_limit=60)
         assert trace()['composer_input']['latest']=={'pages':1,'sha256':hashlib.sha256(base).hexdigest()}
     assert actual==expected
     assert trace()=={}
@@ -118,7 +118,7 @@ def test_real_boundary_hooks_capture_quality_repair_and_sanitizer_continuity(mon
     monkeypatch.setattr(rebuild,'_rewrite_phase2_review_truth_pdf',lambda pdf:pdf)
     monkeypatch.setattr(rebuild,'_reassert_terminal_report_language_authority',lambda:None)
     monkeypatch.setattr(completion,'finalize_client_report_package',lambda p:
-        compose_compact_client_pdf(base64.b64decode(p['pdf_base64']),register,gate))
+        compose_compact_client_pdf(base64.b64decode(p['pdf_base64']),register,gate, page_limit=60))
     with diagnostics.pdf_cap_identity('comprun_'+'b'*32), pytest.raises(ValueError) as caught:
         rebuild.rebuild_client_artifacts(package(premium))
     assert str(caught.value)=='client-ready PDF required pages exceed the 60-page boundary'

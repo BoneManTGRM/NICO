@@ -239,7 +239,12 @@ def test_accepted_source_and_cross_locale_draft_actions_remain_distinct() -> Non
     assert 'header("x-nico-artifact-sha256").toLowerCase() !== declaredSha' in bridge
     assert 'header("content-type").split(";", 1)[0].trim().toLowerCase() !== "application/pdf"' in bridge
     assert "responseLanguage !== acceptedPdfIdentity?.reportLanguage" in workspace
-    assert "REPORT_LOCALE_CHANGE_EVENT" in workspace
+    actions = source("apps/web/app/assessment/useReportActionState.ts")
+    assert 'from "./useReportActionState"' in workspace
+    assert "requestedReportLanguage, reportLocaleError, chooseEnglishReport} = useReportActionState(locale)" in workspace
+    assert "setRequestedReportLanguage(reportLanguageForRequest(locale))" in actions
+    assert "window.addEventListener(REPORT_LOCALE_CHANGE_EVENT, syncRequestedReportLanguage)" in actions
+    assert "window.removeEventListener(REPORT_LOCALE_CHANGE_EVENT, syncRequestedReportLanguage)" in actions
     assert 'data-report-language={acceptedPdfIdentity?.reportLanguage}' in workspace
     assert 'data-report-language={requestedReportLanguage}' in workspace
 

@@ -27,7 +27,6 @@ from comprehensive_production_run_handoff_v1 import (
     require_matching_canonical_truth_digest,
     source_binding_marker,
 )
-from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
 from nico.spanish_client_evidence_summary_contract_v1 import (
     client_evidence_summary_has_five_fields,
 )
@@ -542,10 +541,10 @@ def _fetch_localized_pdf(
 
     reader = PdfReader(io.BytesIO(pdf_bytes))
     page_count = len(reader.pages)
-    assert 0 < page_count <= MAX_CLIENT_PDF_PAGES, {
+    assert page_count > 0, {
         "report_language": report_language,
         "page_count": page_count,
-        "renderer_page_boundary": MAX_CLIENT_PDF_PAGES,
+        "renderer_page_boundary": None,
     }
     rendered = base._pdf_text(pdf_bytes)
     rendered_compact = " ".join(rendered.split())
@@ -589,7 +588,7 @@ def _fetch_localized_pdf(
         "size_bytes": len(pdf_bytes),
         "sha256": observed_sha,
         "page_count": page_count,
-        "renderer_page_boundary": MAX_CLIENT_PDF_PAGES,
+        "renderer_page_boundary": None,
         "signature_verified": True,
         "run_identity_verified": True,
         "commercial_metadata_verified": True,
@@ -876,7 +875,7 @@ def _verify_localized_spanish_terminal_artifacts(
         "terminal_state_before_localized_reads": terminal_state_before_localized_reads,
         "terminal_state_after_localized_reads": terminal_state_after_localized_reads,
         "terminal_state_unchanged_after_localized_reads": True,
-        "pdf_renderer_page_boundary": MAX_CLIENT_PDF_PAGES,
+        "pdf_renderer_page_boundary": None,
         **pending_human_review,
     }
 

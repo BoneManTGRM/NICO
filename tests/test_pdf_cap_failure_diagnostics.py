@@ -16,6 +16,7 @@ def test_required_page_failure_retains_bounded_counts():
             _pdf(["Executive Decision Brief"]),
             _pdf(*[["Register"] for _ in range(60)]),
             _pdf(["Gate"]),
+            page_limit=60,
         )
     assert type(caught.value) is ValueError
     assert str(caught.value) == "client-ready PDF required pages exceed the 60-page boundary"
@@ -31,7 +32,7 @@ def _total_failure():
     component = _pdf(["Required component"])
     with pytest.raises(ValueError) as caught:
         compose_compact_client_pdf(base, component, component, review_pdf=component,
-                                  ci_boundary_pdf=component, human_evidence_pdf=component)
+                                  ci_boundary_pdf=component, human_evidence_pdf=component, page_limit=60)
     assert type(caught.value) is ValueError
     assert str(caught.value) == "client-ready PDF cannot preserve every primary and required page within the 60-page boundary: 62"
     return caught.value
@@ -69,7 +70,7 @@ def test_success_reflow_keeps_bytes_and_never_collects_diagnostic(monkeypatch, c
 
     monkeypatch.setattr(reflow, "compact_sparse_stage_pages", compact)
     monkeypatch.setattr(diagnostic, "_runtime_identity", lambda: pytest.fail("success collected failure identity"))
-    result = compose_compact_client_pdf(base, component, component)
+    result = compose_compact_client_pdf(base, component, component, page_limit=60)
     assert len(PdfReader(io.BytesIO(result)).pages) == 60
     assert calls == [59]
     assert (base, component) == snapshot
@@ -78,7 +79,7 @@ def test_success_reflow_keeps_bytes_and_never_collects_diagnostic(monkeypatch, c
 
 @pytest.mark.parametrize("key,value", [("required_pages", 99), ("total_pages", 1),
     ("base_pages", True), ("register_pages", -1), ("review_pages", 1.5),
-    ("reflow_attempted", "true"), ("page_limit", 61),
+    ("reflow_attempted", "true"), ("page_limit", 0),
     ("retained_body_pages_before_reflow", 0)])
 def test_malformed_counts_rejected(key, value):
     from nico.pdf_cap_failure_diagnostics import sanitize_pdf_cap_diagnostic

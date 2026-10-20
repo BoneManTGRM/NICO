@@ -406,7 +406,6 @@ jobs:
           import subprocess
           from pathlib import Path
 
-          from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
           from scripts.comprehensive_production_run_handoff_v1 import SOURCE_SCHEMA, load_source_proof
 
           matrix = json.loads(Path("audit-results/fresh-browser-matrix/matrix.json").read_text())
@@ -559,9 +558,9 @@ jobs:
           assert payload["authorized_scope_verified_in_canonical_truth"] is True
           assert payload["same_run_bilingual_pdf_verified"] is True
           assert payload["same_run_bilingual_assessment_rerun"] is False
-          assert payload["pdf_renderer_page_boundary"] == MAX_CLIENT_PDF_PAGES
-          assert 0 < int(payload["spanish_pdf_page_count"]) <= MAX_CLIENT_PDF_PAGES
-          assert 0 < int(payload["english_pdf_page_count"]) <= MAX_CLIENT_PDF_PAGES
+          assert payload["pdf_renderer_page_boundary"] is None
+          assert int(payload["spanish_pdf_page_count"]) > 0
+          assert int(payload["english_pdf_page_count"]) > 0
           for key in (
               "client_name",
               "project_name",

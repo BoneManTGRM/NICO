@@ -45,7 +45,26 @@ function harness(respond, locale='en') {
   function render(){cursor=0;const result=hook(locale);if(!mounted){mounted=true;for(const effect of effects)effect();}return result;}
   render();
   const configure=()=>{const c=render();c.setRepository('owner/repo');c.setClient('Client');c.setProject('Project');c.setAuthorized(true);return render();};
-  return{render,configure,calls,storage,window,dispatch(type){for(const fn of listeners.get(type)||[])fn();},
+  function clickEnglishFallback() {
+    // Render the real hero JSX with the same browser preferences as the intake hook.
+    const source=fs.readFileSync(path.join(ROOT,'apps/web/app/assessment/AssessmentWorkspace.tsx'),'utf8') + '\n' + fs.readFileSync(path.join(ROOT,'apps/web/app/assessment/useReportActionState.ts'),'utf8');
+    const ast=ts.createSourceFile('workspace.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+    let hero, chooseEnglish;
+    function visit(node){if(ts.isFunctionDeclaration(node)){if(node.name?.text==='renderHero')hero=node;if(node.name?.text==='chooseEnglishReport')chooseEnglish=node;}ts.forEachChild(node,visit);}
+    visit(ast);assert.ok(hero);
+    const js=ts.transpileModule((chooseEnglish ? chooseEnglish.getText(ast) : '')+hero.getText(ast)+';globalThis.hero=renderHero();',{
+      compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+    const localeApi=load(path.join(ROOT,'apps/web/app/assessment/assessmentLocale.ts'));
+    const context={exports:{},locale,reportLocaleError:'',setReportLocaleError(value){context.reportLocaleError=value;},requestedReportLanguage:localeApi.reportLanguageForRequest(locale),
+      persistReportLocale:localeApi.persistReportLocale,copy:load(path.join(ROOT,'apps/web/app/assessment/assessmentCopy.ts')).copyFor(locale),
+      compactMobile:true,workspaceStyles:{},require(name){assert.equal(name,'react/jsx-runtime');return{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})};}};
+    vm.runInNewContext(js,context);
+    function nodes(value){if(!value||typeof value!=='object')return[];if(Array.isArray(value))return value.flatMap(nodes);return[value,...nodes(value.props?.children)];}
+    const button=nodes(context.hero).find(n=>n.type==='button');assert.ok(button);button.props.onClick();
+    vm.runInNewContext('globalThis.hero=renderHero();',context);
+    return nodes(context.hero).filter(n=>n.props?.role==='alert').map(n=>n.props.children);
+  }
+  return{render,configure,calls,storage,window,clickEnglishFallback,dispatch(type){for(const fn of listeners.get(type)||[])fn();},
     reload(){listeners.clear();state=[];cache=new Map();effects=[];mounted=false;hook=load(path.join(ROOT,'apps/web/app/assessment/useAssessmentRun.ts')).useAssessmentRun;return render();}};
 }
 for(const locale of ['en','es-MX']) for(const code of ['specialist_authentication_required','specialist_session_invalid_or_expired']) {
@@ -55,8 +74,8 @@ for(const locale of ['en','es-MX']) for(const code of ['specialist_authenticatio
     assert.equal(c.issue.runCreated,false);assert.equal(c.issue.code,code);assert.equal(c.issue.requestId,'request-denied');
     assert.equal(c.repository,'owner/repo');assert.equal(c.client,'Client');assert.equal(c.authorized,true);
     assert.equal(h.calls.filter(c=>c.method==='POST').length,1);
-    assert.equal(h.calls.find(c=>c.method==='POST').body.report_language,'en');
-    assert.equal(h.window.location.searchParams.get('report_locale'),'en-US');
+    assert.equal(h.calls.find(c=>c.method==='POST').body.report_language,locale);
+    assert.equal(h.window.location.searchParams.get('report_locale'),locale === 'es-MX' ? 'es-MX' : 'en-US');
     h.reload();await settle();assert.equal(h.render().phase,'idle');
   });
 }
@@ -235,4 +254,76 @@ test('transient exact status failure retries GET and preserves canonical identit
   let gets=0;const h=harness(c=>{assert.equal(c.method,'GET');return ++gets===1?Response.json({detail:{code:'temporarily_unavailable'}},{status:503}):Response.json(accepted('comprun_A'));});
   h.window.location.searchParams.set('run_id','comprun_A');h.reload();await settle();assert.equal(gets,2);assert.equal(h.render().phase,'review_required');
   assert.equal(h.render().result.run_id,'comprun_A');assert.equal(h.render().result.commit_sha,'a'.repeat(40));assert.equal(h.render().result.client_delivery_allowed,false);
+});
+
+for (const locale of ['en','es-MX']) for (const source of ['url','storage']) for (const choice of ['en-US','es-MX']) {
+  test(`intake preserves explicit ${choice} preference from ${source} on ${locale} UI`,async()=>{
+    const h=harness(c=>c.method==='POST'?denied('specialist_authentication_required'):missing(),locale);
+    h.storage.set('nico.report-locale.v1',source==='url' ? (choice==='en-US'?'es-MX':'en-US') : choice);
+    if(source==='url') h.window.location.searchParams.set('report_locale',choice);
+    await h.configure().run();
+    assert.equal(h.calls.find(c=>c.method==='POST').body.report_language,choice==='es-MX'?'es-MX':'en');
+    assert.equal(h.storage.get('nico.report-locale.v1'),choice);
+    assert.equal(h.window.location.searchParams.get('report_locale'),choice);
+    assert.equal(h.render().protectedRunId,'');
+  });
+}
+for (const locale of ['en','es-MX']) test(`unavailable Spanish is an explicit pre-reservation rejection (${locale})`,async()=>{
+  const h=harness(c=>c.method==='POST'?Response.json({detail:{code:'spanish_report_generation_unavailable',retryable:false}},{status:422}):missing(),locale);
+  h.window.location.searchParams.set('report_locale','es-MX');
+  await h.configure().run();
+  assert.equal(h.calls.find(c=>c.method==='POST').body.report_language,'es-MX');
+  assert.equal(h.render().issue.code,'spanish_report_generation_unavailable');
+  assert.equal(h.render().issue.runCreated,false);
+  assert.equal(h.render().issue.retryable,false);
+  assert.equal(h.render().protectedRunId,'');assert.equal(h.storage.has(KEY),false);
+  assert.equal(h.window.location.searchParams.get('report_locale'),'es-MX');
+  assert.equal(h.calls.filter(c=>c.method==='POST').length,1);
+});
+
+for(const locale of ['en','es-MX']) test(`explicit English fallback click then retry creates only the requested English intake (${locale})`,async()=>{
+  const h=harness(c=>c.method==='POST' ? c.body.report_language==='es-MX'
+    ? Response.json({detail:{code:'spanish_report_generation_unavailable',retryable:false}},{status:422})
+    : Response.json({...accepted(c.body.run_id),report_language:'en'}) : missing(),locale);
+  h.window.location.searchParams.set('report_locale','es-MX');await h.configure().run();
+  const firstId=h.calls.find(c=>c.method==='POST').body.run_id;
+  assert.equal(h.render().protectedRunId,'');assert.equal(h.render().issue.runCreated,false);
+  let changes=0;h.window.addEventListener('nico:report-locale-change',()=>{changes++;});
+  h.clickEnglishFallback();assert.equal(changes,1);assert.equal(h.calls.filter(c=>c.method==='POST').length,1);
+  assert.equal(h.storage.get('nico.report-locale.v1'),'en-US');
+  assert.equal(h.window.location.searchParams.get('report_locale'),'en-US');
+  await h.render().retry();
+  const posts=h.calls.filter(c=>c.method==='POST');assert.equal(posts.length,2);
+  assert.equal(posts[1].body.report_language,'en');assert.notEqual(posts[1].body.run_id,firstId);
+  assert.equal(h.render().result.report_language,'en');assert.equal(h.render().result.client_delivery_allowed,false);
+  assert.equal(h.render().result.human_review_required,true);
+});
+for(const [url,stored,expected] of [
+  ['es-MX','en-US','es-MX'],['en-US','es-MX','en'],['','es-MX','es-MX'],
+  [null,'ES-mx','es-MX'],[null,'es','es-MX'],[null,'en','en'],
+  ['fr','es-MX','en'],[null,'{malformed','en'],['  ES-MX  ','en-US','es-MX'],
+  [null,'','es-MX'],
+]) test(`locale normalization at intake URL=${url} stored=${stored}`,async()=>{
+  const h=harness(c=>c.method==='POST'?denied('specialist_authentication_required'):missing(),'es-MX');
+  if(url!==null)h.window.location.searchParams.set('report_locale',url);
+  h.storage.set('nico.report-locale.v1',stored);await h.configure().run();
+  assert.equal(h.calls.find(c=>c.method==='POST').body.report_language,expected);
+  assert.equal(h.storage.get('nico.report-locale.v1'),expected==='en'?'en-US':'es-MX');
+  assert.equal(h.calls.filter(c=>c.method==='POST').length,1);
+});
+
+for(const locale of ['en','es-MX']) test(`denied History makes explicit English fallback fail visibly without changing preference (${locale})`,async()=>{
+  const h=harness(c=>c.method==='POST'?Response.json({detail:{code:'spanish_report_generation_unavailable',retryable:false}},{status:422}):missing(),locale);
+  h.window.location.searchParams.set('report_locale','es-MX');await h.configure().run();
+  h.window.history.replaceState=()=>{throw Error('History denied');};
+  h.window.location.replace=url=>{h.window.location.href=new URL(url,h.window.location).href;};
+  let changes=0;h.window.addEventListener('nico:report-locale-change',()=>{changes++;});
+  let alerts;assert.doesNotThrow(()=>{alerts=h.clickEnglishFallback();});assert.equal(changes,0);
+  assert.equal(alerts.length,1);assert.match(alerts[0],locale==='es-MX'?/No se pudo cambiar/:/Could not change/);
+  assert.equal(h.storage.get('nico.report-locale.v1'),'es-MX');
+  assert.equal(h.window.location.searchParams.get('report_locale'),'es-MX');
+  assert.equal(h.calls.filter(c=>c.method==='POST').length,1);
+  await h.render().retry();
+  assert.ok(h.calls.filter(c=>c.method==='POST').every(c=>c.body.report_language==='es-MX'));
+  assert.equal(h.render().result,null);
 });

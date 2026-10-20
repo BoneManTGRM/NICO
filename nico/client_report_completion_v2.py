@@ -28,7 +28,6 @@ from nico.comprehensive_authoritative_scanner_truth_v62 import (
 from nico.comprehensive_client_ready_projection_v1 import (
     APPROVAL_STATUS,
     DELIVERY_STATUS,
-    MAX_CLIENT_PDF_PAGES,
     REPORT_FINALITY,
     VERSION as CLIENT_READY_VERSION,
     apply_automated_draft_truth,
@@ -223,10 +222,6 @@ def _validate_final_surfaces(
             raise ValueError(
                 f"client PDF exposed raw internal evidence field: {internal_marker}"
             )
-    if len(reader.pages) > MAX_CLIENT_PDF_PAGES:
-        raise ValueError(
-            f"client report exceeds the {MAX_CLIENT_PDF_PAGES}-page client boundary"
-        )
 
     # Report-owned locale selection must agree with the renderer. Retained
     # source titles or literal quotations can legitimately use another language.
@@ -300,8 +295,10 @@ def _validate_final_surfaces(
         "four_part_ci_cd_boundary_in_markdown": True,
         "four_part_ci_cd_boundary_in_html": True,
         "four_part_ci_cd_boundary_in_pdf": True,
-        "client_pdf_page_boundary": MAX_CLIENT_PDF_PAGES,
+        "client_pdf_page_boundary": None,
+        "client_pdf_length_policy": "evidence_sized",
         "client_pdf_page_count": page_count,
+        "client_review_page_range_enforced": False,
         "requested_client_review_page_range": [
             MIN_CLIENT_REVIEW_PAGES,
             MAX_CLIENT_REVIEW_PAGES,
@@ -313,7 +310,7 @@ def _validate_final_surfaces(
 
 
 def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
-    """Finalize a bounded client PDF while retaining full JSON/CSV evidence."""
+    """Finalize an evidence-sized client PDF while retaining full JSON/CSV evidence."""
 
     with report_delivery_phase_scope("finalize_core"):
         with report_delivery_phase_scope("finalize_prepare"):
@@ -397,7 +394,7 @@ def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]
             with report_delivery_failure_scope("pdf_gate_render"):
                 gate_pdf = render_evidence_review_gate_pdf(canonical, register, spanish=spanish)
 
-            # Reserve every required component inside the unchanged page budget.
+            # Include every required component without a fixed publication page ceiling.
             from nico.comprehensive_rendered_ci_boundary_producer_v79 import _boundary_pdf_page
             with report_delivery_failure_scope("pdf_ci_boundary_render"):
                 ci_boundary_pdf = _boundary_pdf_page(canonical, spanish=spanish)

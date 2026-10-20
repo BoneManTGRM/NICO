@@ -169,14 +169,14 @@ def test_final_composition_accepts_60_and_rejects_61_without_dropping_review_pag
     from nico.client_pdf_compose_v2 import compose_compact_client_pdf
     base,register,gate=_pdf(['Primary evidence']),_pdf(['Register']),_pdf(['Gate'])
     review=_pdf(*[[f'Review continuation {index}'] for index in range(57)])
-    combined=compose_compact_client_pdf(base,register,gate,review_pdf=review)
+    combined=compose_compact_client_pdf(base,register,gate,review_pdf=review, page_limit=60)
     reader=PdfReader(io.BytesIO(combined))
     assert len(reader.pages)==60
     text=' '.join(page.extract_text() for page in reader.pages)
     assert all(f'Review continuation {index}' in text for index in range(57))
     with pytest.raises(ValueError,match='60-page boundary'):
         compose_compact_client_pdf(base,register,gate,review_pdf=_pdf(
-            *[[f'Review continuation {index}'] for index in range(58)]))
+            *[[f'Review continuation {index}'] for index in range(58)]), page_limit=60)
 
 
 def test_finalizer_refreshes_actual_counts_hashes_without_changing_review_authority(monkeypatch):

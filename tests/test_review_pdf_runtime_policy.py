@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 from nico import review_pdf_preparation_api_v1 as api
 from nico import retained_pdf_exact_input_cache_v1 as cache
@@ -50,7 +51,27 @@ def test_regex_cache_does_not_change_same_code_policy(monkeypatch):
     re.purge()
     assert api.runtime_policy() == before
 
-def test_real_policy_matches_warm_render_and_fresh_process(monkeypatch):
+def test_real_policy_matches_warm_render_and_fresh_process():
+    # Warm production bindings belong to this comparison, not subsequent intake
+    # tests in the same pytest process. The child still checks both fresh seeds.
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from pytest import MonkeyPatch; "
+            "from tests.test_review_pdf_runtime_policy import _assert_real_policy_matches_fresh_process; "
+            "\nwith MonkeyPatch.context() as patch:\n"
+            "    _assert_real_policy_matches_fresh_process(patch)\n",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def _assert_real_policy_matches_fresh_process(monkeypatch):
     from scripts.postgres_review_pdf_lifecycle_proof import build_owned_record, runtime_for
     from nico.storage import PostgresAdapter
     monkeypatch.setenv('RAILWAY_GIT_COMMIT_SHA', 'e' * 40)

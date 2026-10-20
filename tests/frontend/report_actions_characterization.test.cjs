@@ -17,8 +17,17 @@ function visit(node) {
 }
 visit(parsed);
 assert.equal(declarations.length, 1);
+const actionSource = fs.readFileSync(path.join(root, 'apps/web/app/assessment/useReportActionState.ts'), 'utf8');
+const actionParsed = ts.createSourceFile('actions.ts', actionSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+const actionDeclarations = [];
+function visitAction(node) {
+  if (ts.isFunctionDeclaration(node) && node.name?.text === 'chooseEnglishReport') actionDeclarations.push(node.getText(actionParsed));
+  ts.forEachChild(node, visitAction);
+}
+visitAction(actionParsed);
+assert.equal(actionDeclarations.length, 1);
 const baseline = fs.readFileSync(path.join(__dirname, 'report_actions_before.txt'), 'utf8');
-const compiled = ts.transpileModule(declarations[0] + '\n' + baseline.replace('function renderReportActions()', 'function beforeReportActions()'), {
+const compiled = ts.transpileModule(actionDeclarations[0] + '\n' + declarations[0] + '\n' + baseline.replace('function renderReportActions()', 'function beforeReportActions()'), {
   compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX},
 }).outputText;
 
@@ -27,6 +36,8 @@ test('complete rendered trees and callback identities match the pre-change rende
   const callbacks = Object.fromEntries(['copyMarkdown', 'downloadApprovedPdf', 'downloadPdf', 'persistReportLocale'].map(name => [name, (...args) => calls.push({name, args})]));
   const scope = {
     ...callbacks, exports: {}, workspaceStyles: {reportActionBar: 'fixture'}, immutableCommit: 'a'.repeat(40),
+    reportLocaleError: '',
+    setReportLocaleError(value) { scope.reportLocaleError = value; },
     report: {canonical_truth_sha256: 'b'.repeat(64)},
     copy: {copy: 'Copy', copied: 'Copied', downloadReviewPdf: 'Review PDF', downloadApprovedPdf: 'Approved PDF', newApprovalRequired: 'Approval required'},
     reportLanguageLabel: value => `label:${value}`,
@@ -81,10 +92,13 @@ test('complete rendered trees and callback identities match the pre-change rende
         assert.equal(calls[0].args[0], event);
         assert.equal(calls[0].args[1], second);
       } else {
+        assert.equal(button.props.onClick, scope.chooseEnglishReport, 'Fallback must use the extracted locale handler');
+        scope.reportLocaleError = 'previous failure';
         button.props.onClick(event, second);
         assert.equal(calls.length, 1);
         assert.equal(calls[0].name, 'persistReportLocale');
         assert.deepStrictEqual(calls[0].args, ['en-US']);
+        assert.equal(scope.reportLocaleError, '');
       }
     }
     count++;

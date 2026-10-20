@@ -156,3 +156,14 @@ test('the mounted Spanish workspace displays the preserved limited-assurance sum
   assert.match(text(tree), /14 \/ 1140 \(1.23%\)/);
   assert.doesNotMatch(text(tree), /No se devolvió un resumen ejecutivo localizado/);
 });
+
+test('Spanish workspace offers an explicit English choice instead of silently changing locale', () => {
+  const tree = workspace({locale: 'es-MX'});
+  const hero = nodes(tree).find(n => n.type === 'section' && String(n.props.className).includes('hero'));
+  assert.match(text(hero), /Conservamos tu selección de idioma/);
+  assert.ok(nodes(hero).some(n => n.type === 'button' && text(n) === 'Usar informe en inglés'));
+  const english = workspace({locale: 'en'});
+  const englishHero = nodes(english).find(n => n.type === 'section' && String(n.props.className).includes('hero'));
+  assert.match(text(englishHero), /Your language choice is preserved/);
+  assert.ok(!nodes(englishHero).some(n => n.type === 'button' && text(n) === 'Use English report'));
+});

@@ -28,11 +28,7 @@ import {
 } from "./assessmentModel";
 import type {Copy, Locale, Result, Section} from "./assessmentTypes";
 import {localizeExactSpanishText} from "./AssessmentSpanishLocalization";
-import {
-  REPORT_LOCALE_CHANGE_EVENT,
-  reportLanguageForRequest,
-  persistReportLocale,
-} from "./assessmentLocale";
+import {useReportActionState} from "./useReportActionState";
 import StrategicEvidenceForm from "./StrategicEvidenceForm";
 import {isAmbiguousIntakeOutcome} from "./assessmentRunRequests";
 import {useAssessmentClientMode} from "./useAssessmentClientMode";
@@ -157,22 +153,6 @@ function acceptedPdfIdentityFor(result: Result | null): {pdfSha256: string; repo
   };
 }
 
-function useReportActionState(locale: Locale) {
-  const [copied, setCopied] = useState(false);
-  const [artifactAction, setArtifactAction] = useState<"markdown" | "pdf" | null>(null);
-  const [requestedReportLanguage, setRequestedReportLanguage] = useState<ReportLanguage>(
-    reportLanguageForRequest(locale),
-  );
-  useEffect(() => {
-    const syncRequestedReportLanguage = () => {
-      setRequestedReportLanguage(reportLanguageForRequest(locale));
-    };
-    syncRequestedReportLanguage();
-    window.addEventListener(REPORT_LOCALE_CHANGE_EVENT, syncRequestedReportLanguage);
-    return () => window.removeEventListener(REPORT_LOCALE_CHANGE_EVENT, syncRequestedReportLanguage);
-  }, [locale]);
-  return {copied, setCopied, artifactAction, setArtifactAction, requestedReportLanguage};
-}
 
 function acceptedPdfView(
   result: Result | null,
@@ -413,7 +393,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     setHumanEvidence, setEngagementFieldValue, setEngagementFieldState, setError,
     run, retry, startNew,
   } = controller;
-  const {copied, setCopied, artifactAction, setArtifactAction, requestedReportLanguage} = useReportActionState(locale);
+  const {copied, setCopied, artifactAction, setArtifactAction, requestedReportLanguage, reportLocaleError, chooseEnglishReport} = useReportActionState(locale);
   const {issueRef, runIssueRef} = useIssueFocus(issue);
   const {hasExactRun, ambiguousIntakeOutcome} = runBoundaryView(protectedRunId, result, issue);
 
@@ -695,17 +675,19 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         download
         data-assessment-localized-export="true"
       >{locale === "es-MX" ? "Descargar archivos del idioma seleccionado" : "Download files in selected language"} · {requestedReportLanguage}</a> : null}
-      {spanishUnavailable ? <p role="status">{locale === "es-MX" ? "La generación de informes en español no está disponible por ahora. Los archivos ya conservados siguen accesibles." : "New Spanish report generation is unavailable for now. Already frozen files remain accessible."} <button type="button" onClick={() => persistReportLocale("en-US")}>{locale === "es-MX" ? "Usar informe en inglés" : "Use English report"}</button></p> : null}
+      {spanishUnavailable ? <p role="status">{locale === "es-MX" ? "La generación de informes en español no está disponible por ahora. Los archivos ya conservados siguen accesibles." : "New Spanish report generation is unavailable for now. Already frozen files remain accessible."} <button type="button" onClick={chooseEnglishReport}>{locale === "es-MX" ? "Usar informe en inglés" : "Use English report"}</button></p> : null}
       {copied ? <span className="muted">{copy.copied}</span> : artifactStatus ? <span className="muted" role="status">{artifactStatus}</span> : null}
     </div>;
   }
+
 
 
   function renderHero() {
     return (
         <section className={`hero ${workspaceStyles.hero}`}>
           <p className="eyebrow">{copy.heroEyebrow}</p>
-          <p role="note">{locale === "es-MX" ? "Los informes nuevos se generan en inglés. La generación en español no está disponible por ahora." : "New reports are generated in English. Spanish generation is unavailable for now."}</p>
+          <p role="note">{locale === "es-MX" ? "La generación en español no está disponible por ahora. Conservamos tu selección de idioma." : "Spanish generation is unavailable for now. Your language choice is preserved."} {requestedReportLanguage === "es-MX" ? <button type="button" onClick={chooseEnglishReport}>{locale === "es-MX" ? "Usar informe en inglés" : "Use English report"}</button> : null}</p>
+          {reportLocaleError ? <p role="alert">{reportLocaleError}</p> : null}
           <h1>{copy.title}</h1>
           {!compactMobile ? <>
             <p className={workspaceStyles.heroLead}>{copy.lead}</p>

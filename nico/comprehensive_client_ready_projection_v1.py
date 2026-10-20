@@ -20,6 +20,7 @@ APPROVAL_SUFFIX = "AUTOMATED-DRAFT-PENDING-APPROVAL"
 EN_BOUNDARY = "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED"
 ES_BOUNDARY = "BORRADOR AUTOMATIZADO · APROBACIÓN HUMANA PENDIENTE · ENTREGA AL CLIENTE BLOQUEADA"
 MAX_EXECUTIVE_FINDINGS = 7
+# Historical explicit limit; ordinary callers default to evidence-sized reports.
 MAX_CLIENT_PDF_PAGES = 60
 
 _REGISTER_HEADINGS = (
@@ -720,7 +721,11 @@ def _finding_detail_page(text: str) -> bool:
     return False
 
 
-def compose_compact_client_pdf(base_pdf: bytes, register_pdf: bytes, gate_pdf: bytes) -> bytes:
+def compose_compact_client_pdf(
+    base_pdf: bytes, register_pdf: bytes, gate_pdf: bytes, *, page_limit: int | None = None,
+) -> bytes:
+    if page_limit is not None and (type(page_limit) is not int or page_limit < 1):
+        raise ValueError("explicit PDF page limit must be a positive integer or None")
     if not base_pdf.startswith(b"%PDF"):
         raise ValueError("compact client composition requires a valid base PDF")
     base = PdfReader(io.BytesIO(base_pdf))
@@ -752,8 +757,8 @@ def compose_compact_client_pdf(base_pdf: bytes, register_pdf: bytes, gate_pdf: b
     writer.write(output)
     pdf = output.getvalue()
     page_count = len(PdfReader(io.BytesIO(pdf)).pages)
-    if page_count > MAX_CLIENT_PDF_PAGES:
-        raise ValueError(f"client-ready PDF exceeds the {MAX_CLIENT_PDF_PAGES}-page boundary: {page_count}")
+    if page_limit is not None and page_count > page_limit:
+        raise ValueError(f"client-ready PDF exceeds the {page_limit}-page boundary: {page_count}")
     return pdf
 
 

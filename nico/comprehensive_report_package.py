@@ -1048,6 +1048,55 @@ def _semantic_html(markdown: str, title: str) -> str:
 .source-table{{overflow-x:auto;max-width:100%}}table{{width:100%;border-collapse:collapse;table-layout:fixed}}th,td{{border:1px solid #475569;padding:6px;text-align:left;vertical-align:top;overflow-wrap:anywhere}}th{{background:#0c4a6e}}</style></head><body><main><header><h1>{html.escape(title)}</h1>{badge}</header><article>{body}</article></main></body></html>"""
 
 
+def _scorecard_pdf_table(
+    sections: list[Any], *, width: float, localized: Callable[[str], str],
+) -> Any:
+    """Wrap complete scorecard cells inside the available PDF frame."""
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Paragraph, Table, TableStyle
+
+    cell = ParagraphStyle("ScorecardCell", fontName="Helvetica", fontSize=9,
+                          leading=12, textColor=colors.HexColor("#334155"))
+    header = ParagraphStyle("ScorecardHeader", parent=cell, fontName="Helvetica-Bold",
+                            textColor=colors.white)
+
+    def text(value: Any) -> str:
+        # Paragraph handles wrapping, including long unbroken identifiers. Do not
+        # shorten statuses or summaries to make the table fit a cosmetic budget.
+        return " ".join(str(value if value is not None else "").split())
+
+    rows = [[localized(label) for label in ("Control", "Status", "Score", "Summary")]]
+    for item in sections:
+        if not isinstance(item, dict):
+            continue
+        score = item.get("presented_score", item.get("score"))
+        rows.append([
+            text(item.get("label") or item.get("id")),
+            localized(text(item.get("presented_status") or item.get("status") or "unknown").upper()),
+            localized(f"{int(score)}/100" if isinstance(score, (int, float)) else "NOT SCORED"),
+            text(item.get("summary")),
+        ])
+    if len(rows) == 1:
+        rows.append([localized("Canonical scoring"), localized("PENDING"),
+                     localized("NOT SCORED"), localized("No canonical section scorecard was available.")])
+    paragraphs = [[Paragraph(html.escape(value), header if index == 0 else cell)
+                   for value in row] for index, row in enumerate(rows)]
+    table = Table(paragraphs, colWidths=[width * fraction for fraction in (.23, .23, .11, .43)],
+                  repeatRows=1, splitInRow=1, hAlign="LEFT")
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0c4a6e")),
+        ("GRID", (0, 0), (-1, -1), .35, colors.HexColor("#cbd5e1")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    return table
+
+
 def _pdf(
     identity: dict[str, Any],
     assessment: dict[str, Any],
@@ -1334,52 +1383,8 @@ def _pdf(
 
     sections = assessment.get("sections") if isinstance(assessment.get("sections"), list) else []
     story += [PageBreak(), p(localized("Canonical Technical Scorecard"), h1)]
-    score_rows = [[localized("Control"), localized("Status"), localized("Score"), localized("Summary")]]
-    for item in sections:
-        if not isinstance(item, dict):
-            continue
-        section_score = item.get("presented_score", item.get("score"))
-        section_label = (
-            f"{int(section_score)}/100"
-            if isinstance(section_score, (int, float))
-            else "NOT SCORED"
-        )
-        score_rows.append(
-            [
-                _text(item.get("label") or item.get("id"), 90),
-                localized(_text(item.get("presented_status") or item.get("status") or "unknown", 30).upper()),
-                localized(section_label),
-                _text(item.get("summary"), 240),
-            ]
-        )
-    if len(score_rows) == 1:
-        score_rows.append(
-            [localized("Canonical scoring"), localized("PENDING"), localized("NOT SCORED"), localized("No canonical section scorecard was available.")]
-        )
-    score_table = Table(
-        score_rows,
-        colWidths=[1.5 * inch, 0.75 * inch, 0.75 * inch, 4.45 * inch],
-        repeatRows=1,
-    )
-    score_table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0c4a6e")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd5e1")),
-                ("FONTSIZE", (0, 0), (-1, -1), 7.2),
-                ("LEADING", (0, 0), (-1, -1), 9.5),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
-                ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ]
-        )
-    )
-    story.append(score_table)
+    # SimpleDocTemplate's frame reserves six points of padding at each side.
+    story.append(_scorecard_pdf_table(sections, width=doc.width - 12, localized=localized))
 
     for item in sections:
         if not isinstance(item, dict):

@@ -21,6 +21,7 @@ from pypdf import PdfReader, PdfWriter
 VERSION = "nico.comprehensive-artifact-manifest-approval.v1"
 MANIFEST_SCHEMA = "nico.comprehensive-artifact-manifest.v1"
 APPROVAL_SCHEMA = "nico.comprehensive-exact-artifact-approval.v1"
+# Legacy explicit-limit compatibility only; ordinary manifests have no page ceiling.
 MAX_CLIENT_PDF_PAGES = 60
 
 _FINALIZER_MARKER = "__nico_artifact_manifest_finalizer_v1__"
@@ -660,10 +661,6 @@ def attach_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
     supplement = _render_manifest_approval_supplement(canonical, supplement_entries)
     final_pdf = _append_pdf(base_pdf, supplement)
     page_count = len(PdfReader(io.BytesIO(final_pdf)).pages)
-    if page_count > MAX_CLIENT_PDF_PAGES:
-        raise ValueError(
-            f"Comprehensive client package exceeds the {MAX_CLIENT_PDF_PAGES}-page hard boundary: {page_count}"
-        )
     pdf_sha256 = _sha256(final_pdf)
 
     run = _safe_filename(identity.get("run_id"), "run")
@@ -968,10 +965,6 @@ def rebind_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("Artifact manifest rebinding requires a valid Comprehensive PDF.") from exc
     if not pdf.startswith(b"%PDF") or page_count < 1:
         raise ValueError("Artifact manifest rebinding requires a valid Comprehensive PDF.")
-    if page_count > MAX_CLIENT_PDF_PAGES:
-        raise ValueError(
-            f"Comprehensive client package exceeds the {MAX_CLIENT_PDF_PAGES}-page hard boundary: {page_count}"
-        )
 
     from nico import comprehensive_manifest_navigation_v1 as navigation
 

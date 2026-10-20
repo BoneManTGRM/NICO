@@ -228,7 +228,7 @@ def test_preview_preservation_at_sixty_pages_and_fail_closed_overflow(spanish):
         for blob in (_pdf(*[[f'Primary evidence {i}'] for i in range(primary)]), preview):
             writer.append(PdfReader(io.BytesIO(blob)))
         output = io.BytesIO(); writer.write(output)
-        return compose_compact_client_pdf(output.getvalue(), _pdf(['Register']), _pdf(['Gate']))
+        return compose_compact_client_pdf(output.getvalue(), _pdf(['Register']), _pdf(['Gate']), page_limit=60)
     result = compose(60)
     reader = PdfReader(io.BytesIO(result))
     text = '\n'.join(page.extract_text() or '' for page in reader.pages)
