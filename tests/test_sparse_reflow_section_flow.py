@@ -47,7 +47,7 @@ def test_lossless_reflow_recovers_sixty_page_budget_and_still_rejects_sixty_one(
     protected = [['Executive Decision Brief', f'PRIMARY_{index:02d} retained decision'] for index in range(55)]
     base = _pdf(*protected, *sparse_pages(spanish))
     register, gate = _pdf(['REGISTER_REQUIRED']), _pdf(['GATE_REQUIRED'])
-    result = compose_compact_client_pdf(base, register, gate)
+    result = compose_compact_client_pdf(base, register, gate, page_limit=60)
     reader = PdfReader(io.BytesIO(result))
     assert len(reader.pages) == 60
     text = '\n'.join(page.extract_text() for page in reader.pages)
@@ -59,8 +59,23 @@ def test_lossless_reflow_recovers_sixty_page_budget_and_still_rejects_sixty_one(
     source = PdfReader(io.BytesIO(base))
     for before, after in zip(source.pages[:55], reader.pages[:55]):
         assert before.get_contents().get_data() == after.get_contents().get_data()
+    two_page_gate = _pdf(['GATE_REQUIRED'], ['SECOND_GATE_REQUIRED'])
     with pytest.raises(ValueError, match='cannot preserve every primary and required page'):
-        compose_compact_client_pdf(base, register, _pdf(['GATE_REQUIRED'], ['SECOND_GATE_REQUIRED']))
+        compose_compact_client_pdf(base, register, two_page_gate, page_limit=60)
+    # Ordinary reports have no implicit cap; retain the same evidence at 61 pages.
+    unlimited = PdfReader(io.BytesIO(compose_compact_client_pdf(base, register, two_page_gate)))
+    assert len(unlimited.pages) == 61
+    unlimited_text = '\n'.join(page.extract_text() for page in unlimited.pages)
+    for index in range(55):
+        assert unlimited_text.count(f'PRIMARY_{index:02d} ') == 1
+    for section in range(4):
+        for row in range(25):
+            assert unlimited_text.count(f'S{section}_ROW_{row:02d} ') == 1
+    assert unlimited_text.count('REGISTER_REQUIRED') == 1
+    assert unlimited_text.count('SECOND_GATE_REQUIRED') == 1
+    assert [line.strip() for line in unlimited_text.splitlines()].count('GATE_REQUIRED') == 1
+    for before, after in zip(source.pages[:55], unlimited.pages[:55]):
+        assert before.get_contents().get_data() == after.get_contents().get_data()
 
 
 def assert_text_geometry(pdf, path):

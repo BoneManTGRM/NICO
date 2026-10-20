@@ -1,5 +1,8 @@
 """Synthetic literal parity and real-renderer coverage; no production acceptance claim."""
 import itertools
+import subprocess
+import sys
+from pathlib import Path
 
 from nico import comprehensive_spanish_presentation_parity_v1 as parity
 from nico import comprehensive_spanish_canonical_report_v87 as canonical
@@ -33,7 +36,27 @@ def test_exact_legacy_replacement_semantics():
         assert helper(text, 'second', 'tercero') == 'tercero'
 
 
-def test_actual_localized_pdf_bytes_match_legacy(monkeypatch):
+def test_actual_localized_pdf_bytes_match_legacy():
+    # The real renderer fixture imports the production bootstrap, which installs
+    # process-global intake guards. Keep those bindings out of unrelated tests.
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from pytest import MonkeyPatch; "
+            "from tests.test_spanish_absent_literal_fast_path import _assert_localized_pdf_parity; "
+            "\nwith MonkeyPatch.context() as patch:\n"
+            "    _assert_localized_pdf_parity(patch)\n",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def _assert_localized_pdf_parity(monkeypatch):
     from tests.test_cross_locale_pdf_repeatability_v1 import _fixed_status, _pdf_observation
     from nico.comprehensive_spanish_final_report_runtime_cache_v94 import reset_comprehensive_spanish_final_report_runtime_cache_v94_for_tests as reset
     # Offline renderer equivalence; real release admission is tested separately.
