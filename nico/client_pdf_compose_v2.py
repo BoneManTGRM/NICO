@@ -218,6 +218,8 @@ def compose_compact_client_pdf(
         raise ValueError("compact client composition requires a valid gate PDF")
 
     base = PdfReader(io.BytesIO(base_pdf))
+    from nico.pdf_cap_failure_diagnostics import record_pdf_boundary
+    record_pdf_boundary('composer_input', base_pdf, pages=len(base.pages))
     review = _optional_pdf_reader(review_pdf, label="review companion")
     ci_boundary = _optional_pdf_reader(ci_boundary_pdf, label="CI/CD boundary")
     human_evidence = _optional_pdf_reader(human_evidence_pdf, label="human evidence")

@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from pypdf import PdfReader
+from nico.pdf_cap_failure_diagnostics import record_pdf_boundary
 
 from nico.canonical_section_status_v1 import normalize_report_package
 from nico.client_pdf_status_sanitizer_v1 import sanitize_client_pdf_status
@@ -230,9 +231,10 @@ def _sanitize_published_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     # This is the last mutable cross-format boundary before exact artifact hashes are
     # bound. Repair the narrow Phase 2 wording here so JSON/CSV/text/PDF cannot diverge.
     result = deepcopy(dict(_phase2_review_truth_node(package)))
-    pdf = sanitize_client_pdf_status(
-        base64.b64decode(str(result.get("pdf_base64") or ""))
-    )
+    pdf = base64.b64decode(str(result.get("pdf_base64") or ""))
+    record_pdf_boundary('sanitizer_input', pdf)
+    pdf = sanitize_client_pdf_status(pdf)
+    record_pdf_boundary('sanitizer_output', pdf)
     pdf = _rewrite_phase2_review_truth_pdf(pdf)
     markdown = _phase2_review_truth_text(
         sanitize_client_text_status(str(result.get("markdown") or ""))
@@ -629,6 +631,7 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
         prepared = _prepare_client_artifact_package(package)
         with report_delivery_phase_scope("artifact_render"):
             rendered = rebuild_single_pass_premium_artifacts(prepared)
+        record_pdf_boundary('premium_return', rendered.get('pdf_base64'), encoded=True)
 
         canonical = rendered.get("json") if isinstance(rendered.get("json"), Mapping) else {}
         repaired = (
