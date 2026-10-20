@@ -184,12 +184,20 @@ jobs:
 
     - name: Run Docker build check
       timeout-minutes: 20
+      shell: bash
       env:
         GITHUB_TOKEN: ${{ github.token }}
         DOCKER_BUILDKIT: "1"
       run: |
-        docker build --secret id=github_token,env=GITHUB_TOKEN -t nico-ci:ci .
-        docker run --rm --entrypoint sh nico-ci:ci -c 'test -w /data && command -v nico && command -v nico-api && python -c "from nico.api.production import app; assert app"'
+        docker_context=$(mktemp -d)
+        trap 'rm -rf -- "$docker_context"' EXIT
+        # Earlier npm install/build steps may rewrite the lockfile and emit
+        # host dependencies. Qualify only the exact committed source tree.
+        git archive HEAD | tar --extract -C "$docker_context"
+        timeout --kill-after=10s 720s docker build --secret id=github_token,env=GITHUB_TOKEN -t nico-ci:ci "$docker_context"
+        timeout --kill-after=10s 360s docker build -t nico-web-ci:ci "$docker_context/apps/web"
+        mkdir -p audit-results
+        timeout --kill-after=10s 90s bash scripts/qualify_docker_node_runtime.sh 2>&1 | tee audit-results/docker-node-qualification.log
 
     - name: Run file integrity regression test
       run: |
@@ -237,6 +245,7 @@ jobs:
         pip install "playwright==1.61.0"
         (cd apps/web && npm ci --ignore-scripts --no-audit --no-fund)
         node -e "if(require('./apps/web/node_modules/typescript').version !== '6.0.3') process.exit(1)"
+        python -c "from importlib.metadata import version; assert version('Pillow') == '13.0.0'; print('PDF regression runtime: Pillow', version('Pillow'))"
 
     - name: Run isolated test files
       env:

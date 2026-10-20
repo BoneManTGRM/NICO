@@ -155,5 +155,5 @@ def test_runtime_installer_binds_context_aware_osv_adapters() -> None:
 def test_requirements_pin_resolved_pillow_and_idna_versions() -> None:
     requirements = Path("requirements.txt").read_text(encoding="utf-8").splitlines()
 
-    assert "pillow==12.3.0" in requirements
+    assert "pillow==13.0.0" in requirements
     assert "idna==3.20" in requirements
