@@ -102,7 +102,7 @@ def test_current_five_section_scoring_ignores_additive_conformance(monkeypatch,t
 def test_integration_retains_every_observation_and_histogram_row(monkeypatch,tmp_path):
     from nico.source_function_measurement_report_v1 import measurement_tables
     from nico.source_function_conformance_report_v1 import integrate_conformance
-    from nico.source_function_conformance_v1 import build_conformance
+    from test_source_function_conformance_v1 import build_conformance
     files={'a.py':'def a(x):\n'+'    if x: pass\n'*20+'    return 0\n'}
     for mixed in (False, True):
         if mixed:

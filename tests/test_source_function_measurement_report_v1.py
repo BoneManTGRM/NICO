@@ -38,7 +38,7 @@ def test_independent_binding_and_complete_population(monkeypatch, tmp_path):
     assert values['Partial observed files'] == 0
     assert 'scoped conformance reported separately' in values['Status']
     from nico.source_function_conformance_report_v1 import integrate_conformance
-    from nico.source_function_conformance_v1 import build_conformance
+    from test_source_function_conformance_v1 import build_conformance
     integrated = integrate_conformance(tables, build_conformance(context, repo, complexity))
     assert integrated == architecture_data_flow_provider(context)['evidence']['structured_tables'][-len(integrated):]
 

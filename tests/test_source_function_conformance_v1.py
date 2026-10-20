@@ -4,7 +4,12 @@ import pytest
 
 from test_source_function_measurement_report_v1 import collected
 from nico.source_function_measurements_v1 import KEY
-from nico.source_function_conformance_v1 import build_conformance
+from nico.source_function_conformance_v1 import build_conformance as _build_conformance
+
+
+def build_conformance(context, repository, complexity):
+    from nico import source_function_witness_v1 as module
+    return _build_conformance(context, repository, complexity, witness=module.current_witness())
 
 
 def function(name, cc):
@@ -124,7 +129,7 @@ def test_mixed_language_collector_populations(monkeypatch, tmp_path):
 
 
 def test_recovered_counts_are_recomputed_not_fixed(monkeypatch,tmp_path):
-    from nico.source_function_measurements_v1 import build_measurements, bind_measurements
+    from source_function_witness_fixture import persist_parser_population
     files = {'a.py':function('a',1), 'b.ts':'function b() { return 0; }'}
     inputs, _ = result(monkeypatch,tmp_path,files=files)
     analyses = []
@@ -137,28 +142,25 @@ def test_recovered_counts_are_recomputed_not_fixed(monkeypatch,tmp_path):
                       'max_nesting':4 if i%2 else 5,'loc':10} for i in range(total)]
         analyses.append({'path':path,'language':language,'method':method,'status':'analyzed',
                          'declared_function_count':total,'functions':functions})
-    inputs[2][KEY] = build_measurements(files,analyses,{'parser_version':'synthetic-test'})
-    bind_measurements(inputs[2])
+    persist_parser_population(monkeypatch,tmp_path,inputs,files,analyses,{'parser_version':'synthetic-test'})
     value = build_conformance(*inputs)
     assert value['combined']['cc']['conforming'] == 12201
     assert value['combined']['cc']['measured_functions'] == 13029
     assert value['combined']['cc']['violations'] == 828
     assert value['combined']['cc']['percentage'] == 93.64
     analyses[0]['functions'][0]['cyclomatic_complexity'] = 21
-    inputs[2][KEY] = build_measurements(files,analyses,{'parser_version':'synthetic-test'})
-    bind_measurements(inputs[2])
+    persist_parser_population(monkeypatch,tmp_path,inputs,files,analyses,{'parser_version':'synthetic-test'})
     assert build_conformance(*inputs)['combined']['cc']['conforming'] == 12200
 
 
 def test_missing_nesting_is_not_joint_conformance(monkeypatch,tmp_path):
-    from nico.source_function_measurements_v1 import build_measurements, bind_measurements
+    from source_function_witness_fixture import persist_parser_population
     from nico.full_assessment_complexity_evidence import _analyze_python
     source = function('a',20)
     inputs, _ = result(monkeypatch,tmp_path,source=source)
     analysis = _analyze_python('src/a.py',source)
     analysis['functions'][0]['max_nesting'] = None
-    inputs[2][KEY] = build_measurements({'src/a.py':source},[analysis],{})
-    bind_measurements(inputs[2])
+    persist_parser_population(monkeypatch,tmp_path,inputs,{'src/a.py':source},[analysis],{})
     value = build_conformance(*inputs)
     assert value['status'] == 'qualified'
     assert value['combined']['cc']['percentage'] == 100.0
@@ -185,6 +187,9 @@ def test_self_consistent_histogram_rewrite_is_not_independent_evidence(monkeypat
     value=complexity[KEY]
     value['files'][0]['metrics']['cc']=_dimension({'1':1},'cc')
     value['aggregate']=_aggregate(value['files'])
+    from nico.source_function_measurements_v1 import _hash, _json
+    from nico.source_function_collection_v1 import KEY_COLLECTION
+    complexity[KEY_COLLECTION]['measurement_sha256']=_hash(_json(value))
     assert (context['commit_sha'],repo,complexity['profile_coverage'])==independent_before
     assert build_conformance(*inputs)['status']=='unavailable'
 
@@ -193,6 +198,10 @@ def test_well_formed_forged_producer_hashes_are_not_authentication(monkeypatch,t
     inputs,_=result(monkeypatch,tmp_path)
     producer=inputs[2][KEY]['producer_source_sha256']
     inputs[2][KEY]['producer_source_sha256']={key:'f'*64 for key in producer}
+    from nico.source_function_measurements_v1 import _hash, _json
+    from nico.source_function_collection_v1 import KEY_COLLECTION
+    inputs[2][KEY_COLLECTION]['producer_source_sha256']=deepcopy(inputs[2][KEY]['producer_source_sha256'])
+    inputs[2][KEY_COLLECTION]['measurement_sha256']=_hash(_json(inputs[2][KEY]))
     assert build_conformance(*inputs)['status']=='unavailable'
 
 
@@ -230,6 +239,8 @@ def test_valid_explicit_external_inventories_are_not_function_credit(monkeypatch
     coverage['submodule_entries']=[{'path':'external/library','commit_sha':'b'*40}]
     coverage['lfs_pointer_entries']=[{'path':'assets/data.bin','oid':'sha256:'+'c'*64,'size_bytes':12}]
     inputs[1]['file_evidence']['profile_coverage']=deepcopy(coverage)
+    from source_function_witness_fixture import bind_fixture_witness
+    bind_fixture_witness(monkeypatch,tmp_path,*inputs)
     value=build_conformance(*inputs)
     assert value['status']=='qualified'
     assert value['combined']['function_count']==2

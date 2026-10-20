@@ -1244,6 +1244,8 @@ def collect_snapshot_repository_evidence(
     }
     from nico.source_function_measurements_v1 import bind_measurements
     bind_measurements(complexity)
+    from nico.source_function_collection_v1 import bind_collection
+    bind_collection(complexity)
     if profile["unavailable"]:
         complexity["unavailable_data_notes"] = sorted(set(list(complexity.get("unavailable_data_notes") or []) + [f"{len(profile['unavailable'])} captured-commit profile item(s) were unavailable; complexity coverage is limited to readable sampled files."]))
     _persist(bundle, active_store, "snapshot-repository-evidence.json")

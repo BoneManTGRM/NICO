@@ -21,7 +21,7 @@ LIMITATIONS = (
     'Absolute violations and sum(CC-1) remain visible. Module/class initializer residuals and whole-source decision burden are unavailable; Python lambdas are not enumerated. '
     'Existing source exclusions remain outside the population; unsupported C++ receives no credit. '
     'Qualification requires a complete acquired eligible inventory; ambiguous content-based exclusions remain unavailable. '
-    'Text hashes bind decoded supplied source, not original repository bytes; authenticity relies on protected enclosing evidence and existing identity gates.'
+    'Text hashes bind decoded supplied source, not original repository bytes; authenticity relies on trusted server persistence, not cryptographic attestation or independently enforced completed-stage immutability.'
 )
 
 
@@ -131,19 +131,22 @@ def _population(files: list[dict]) -> dict:
     return result
 
 
-def build_conformance(context: dict, repository: dict, complexity: dict) -> dict:
+def build_conformance(context: dict, repository: dict, complexity: dict, *, witness=None) -> dict:
     """Pure projection: never mutate source evidence or legacy scoring inputs."""
     result = {'version': VERSION, 'status': 'unavailable', 'identity': None,
               'included_in_overall_maturity': False, 'architecture_quality_established': False,
               'delivery_velocity_established': False, 'languages': [], 'combined': None,
               'coverage': None, 'exclusions': {}, 'limitations': LIMITATIONS}
     try:
+        from nico.source_function_witness_v1 import valid_witness
+        if not valid_witness(witness, context, repository, complexity):
+            raise ValueError('independent persisted collection witness required')
         value = _bound(context, repository, complexity)
         if value is None:
             raise ValueError('measurements absent, invalid or independently unbound')
         coverage = _qualified_coverage(repository, complexity, value)
     except (ValueError, TypeError, KeyError, AttributeError):
-        result['reason'] = 'Complete independently bound acquisition and measured function histograms are required.'
+        result['reason'] = 'A verified collection contract from trusted server persistence, complete bound acquisition and measured function histograms are required.'
         return result
     files = [row for row in value['files'] if row['path'].lower().endswith(SUPPORTED)]
     combined = _population(files)
