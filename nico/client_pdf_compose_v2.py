@@ -361,10 +361,11 @@ def compose_compact_client_pdf(
         )
 
     total_page_count = len(retained) + reserved_count
-    if page_limit is None or total_page_count > page_limit:
-        # The same lossless, table-aware reflow runs at final navigation. Apply
-        # it here as presentation cleanup, independent of the ordinary report
-        # length. Explicit legacy limits still fail closed after lossless reflow.
+    reflow_threshold = 60 if page_limit is None else page_limit
+    if total_page_count > reflow_threshold:
+        # Preserve the existing small-report layout and avoid unnecessary reflow.
+        # This threshold triggers optional lossless cleanup, never rejection:
+        # ordinary reports may still exceed it after composition.
         from nico.comprehensive_pdf_reflow_v1 import compact_sparse_stage_pages
         body = PdfWriter()
         for page in retained:

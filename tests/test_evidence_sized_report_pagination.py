@@ -12,6 +12,22 @@ from nico.comprehensive_client_ready_projection_v1 import compose_compact_client
 from tests.test_client_pdf_compose_v2 import _pdf
 
 
+@pytest.mark.parametrize('primary', [1, 20, 58])
+def test_small_ordinary_reports_preserve_pages_without_reflow(monkeypatch, primary):
+    from nico import comprehensive_pdf_reflow_v1 as reflow
+
+    def unexpected_reflow(_pdf):
+        pytest.fail('Reports at or below 60 pages must not incur composition reflow')
+
+    monkeypatch.setattr(reflow, 'compact_sparse_stage_pages', unexpected_reflow)
+    base = _pdf(*[[f'PRIMARY_{i} immutable content'] for i in range(primary)])
+    register, gate = _pdf(['REGISTER_REQUIRED']), _pdf(['GATE_REQUIRED'])
+    result = compose_compact_client_pdf(base, register, gate)
+    expected = [page.extract_text() for pdf in (base, register, gate)
+                for page in PdfReader(io.BytesIO(pdf)).pages]
+    assert [page.extract_text() for page in PdfReader(io.BytesIO(result)).pages] == expected
+
+
 @pytest.mark.parametrize('primary,required', [(80, 2), (3, 90), (120, 80)])
 def test_ordinary_composition_preserves_large_primary_and_required_sets(primary, required):
     base = _pdf(*[[f'PRIMARY_{i:03d} P1 immutable evidence'] for i in range(primary)])
