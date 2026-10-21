@@ -12,11 +12,20 @@ from pypdf.generic import ByteStringObject, ContentStream, TextStringObject
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
+from nico.comprehensive_four_phase_pdf_v1 import PHASE_BOX_TOP_Y
 
 VERSION = "nico.comprehensive-manifest-navigation.v1.2"
 _MARKER = "__nico_comprehensive_manifest_navigation_v1__"
-# Reserve room for the four-phase table added to the first contents page.
-_TOC_ROWS_PER_PAGE = 28
+# Keep complete entries above the matrix on the final contents page. Derive
+# capacity from the actual panel boundary without shrinking text or row spacing.
+_TOC_FIRST_ROW_Y = 690.0
+_TOC_FONT_SIZE = 8.2
+_TOC_ROW_PITCH = 18.0
+_TOC_MIN_CLEARANCE = 6.0
+_TOC_ROWS_PER_PAGE = int(
+    (_TOC_FIRST_ROW_Y - _TOC_FONT_SIZE - PHASE_BOX_TOP_Y - _TOC_MIN_CLEARANCE)
+    // _TOC_ROW_PITCH
+) + 1
 _CONTEXT: ContextVar[dict[str, Any]] = ContextVar(
     "nico_comprehensive_manifest_navigation_context", default={}
 )
@@ -226,14 +235,14 @@ def _toc_page(entries: list[tuple[str, int]], total_pages: int) -> bytes:
         pdf.setStrokeColorRGB(0.80, 0.84, 0.89)
         pdf.line(48, 710, 564, 710)
         pdf.setFillColorRGB(0.20, 0.25, 0.33)
-        y = 690
+        y = _TOC_FIRST_ROW_Y
         for title, page_number in chunk:
-            fitted = _fit_title(title, max_width=445, font_name="Helvetica", font_size=8.2)
-            pdf.setFont("Helvetica", 8.2)
+            fitted = _fit_title(title, max_width=445, font_name="Helvetica", font_size=_TOC_FONT_SIZE)
+            pdf.setFont("Helvetica", _TOC_FONT_SIZE)
             pdf.drawString(54, y, fitted)
-            pdf.setFont("Helvetica-Bold", 8.2)
+            pdf.setFont("Helvetica-Bold", _TOC_FONT_SIZE)
             pdf.drawRightString(558, y, str(page_number))
-            y -= 18
+            y -= _TOC_ROW_PITCH
         pdf.setFont("Helvetica", 7)
         pdf.setFillColorRGB(0.39, 0.45, 0.55)
         pdf.drawString(48, 36, "NICO | evidence-bound technical review package")
