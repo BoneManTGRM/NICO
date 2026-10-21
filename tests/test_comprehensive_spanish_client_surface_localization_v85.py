@@ -112,7 +112,8 @@ def test_spanish_manifest_pdf_is_fully_localized_and_keeps_exact_artifacts() -> 
     assert "Aprobación humana: Pendiente" in extracted
     assert "Entrega al cliente: Bloqueada" in extracted
     assert ES_BOUNDARY in extracted
-    assert "nico-comprun_spanish_surface_localization-findings.csv" in extracted
+    # Readable text may wrap the literal without dropping any characters.
+    assert "nico-comprun_spanish_surface_localization-findings.csv" in "".join(extracted.split())
     assert "b" * 64 in extracted.replace("\n", "")
     assert "Client Artifact Manifest" not in extracted
     assert "Human Review and Exact-Artifact Approval Record" not in extracted

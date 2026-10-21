@@ -405,16 +405,16 @@ def _render_spanish_manifest(
         "ManifestBodyES",
         parent=styles["BodyText"],
         fontName="Helvetica",
-        fontSize=7.8,
-        leading=10.1,
+        fontSize=9,
+        leading=12,
         textColor=colors.HexColor("#334155"),
         spaceAfter=4,
     )
     small = ParagraphStyle(
         "ManifestSmallES",
         parent=body,
-        fontSize=6.7,
-        leading=8.3,
+        fontSize=9,
+        leading=12,
         textColor=colors.HexColor("#475569"),
         spaceAfter=2,
     )
@@ -430,8 +430,8 @@ def _render_spanish_manifest(
         spaceAfter=8,
     )
 
-    def p(value: Any, style: ParagraphStyle = body, limit: int = 1800) -> Paragraph:
-        return Paragraph(html.escape(_text(value, limit)), style)
+    def p(value: Any, style: ParagraphStyle = body) -> Paragraph:
+        return Paragraph(html.escape(" ".join(str(value or "").replace("\x7f", "-").split()).strip()), style)
 
     def footer(canvas: Any, doc: Any) -> None:
         canvas.saveState()
@@ -455,6 +455,7 @@ def _render_spanish_manifest(
     ]
     identity_table = Table(
         [[p(left, small), p(right, small)] for left, right in identity_rows],
+        splitInRow=1,
         colWidths=[1.55 * inch, 5.85 * inch],
     )
     identity_table.setStyle(
@@ -482,7 +483,8 @@ def _render_spanish_manifest(
             ]
         )
     artifact_table = Table(
-        [[p(cell, small, 900) for cell in row] for row in artifact_rows],
+        [[p(cell, small) for cell in row] for row in artifact_rows],
+        splitInRow=1,
         colWidths=[1.55 * inch, 2.65 * inch, 3.2 * inch],
         repeatRows=1,
     )
@@ -564,7 +566,8 @@ def _render_spanish_manifest(
         ["Notas del revisor", approval.get("reviewer_notes") or "Pendiente"],
     ]
     approval_table = Table(
-        [[p(left, small), p(right, small, 1000)] for left, right in approval_rows],
+        [[p(left, small), p(right, small)] for left, right in approval_rows],
+        splitInRow=1,
         colWidths=[1.85 * inch, 5.55 * inch],
     )
     approval_table.setStyle(

@@ -830,21 +830,104 @@ def attach_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
     return output
 
 
+def _flowing_manifest_block(texts: list[str]) -> tuple[int, int] | None:
+    """Identify only the renderer-owned, consecutively numbered supplement."""
+    footers = (
+        "NICO | exact-artifact review package | automated draft",
+        "NICO | paquete de revisión de artefactos exactos | borrador automatizado",
+    )
+    normalized = [" ".join(text.split()) for text in texts]
+    owned = [i for i, text in enumerate(normalized) if any(f in text for f in footers)]
+    if not owned:
+        return None  # Older supplements retain the strict legacy refresh path.
+    start, end = owned[0], owned[-1] + 1
+    if owned != list(range(start, end)):
+        raise ValueError("Pending PDF manifest ownership is not contiguous; regenerate this draft first.")
+    for ordinal, index in enumerate(owned, 1):
+        labels = re.findall(r"(?:Integrity(?: sheet)?|Integridad(?: hoja)?) (\d+)(?!\d)", normalized[index])
+        if labels != [str(ordinal)]:
+            raise ValueError("Pending PDF manifest ownership labels are invalid; regenerate this draft first.")
+    titles = ("Client Artifact Manifest", "Manifiesto de artefactos del cliente")
+    approvals = ("Human Review and Exact-Artifact Approval Record",
+                 "Registro de revisión humana y aprobación de artefactos exactos")
+    title_pages = [i for i in owned if any(t in normalized[i] for t in titles)]
+    approval_pages = [i for i in owned if any(t in normalized[i] for t in approvals)]
+    if title_pages != [start] or len(approval_pages) != 1 or approval_pages[0] <= start:
+        raise ValueError("Pending PDF manifest supplement boundary is invalid; regenerate this draft first.")
+    table_text = " ".join(normalized[start:approval_pages[0]])
+    if "SHA-256" not in table_text or not any(title in table_text for title in (
+        "Retained structured artifacts", "Artefactos estructurados preservados",
+        "Artefactos estructurados conservados",
+    )):
+        raise ValueError("Pending PDF manifest artifact table is missing; regenerate this draft first.")
+    if not any(marker in normalized[end - 1] for marker in (
+        "Automation cannot change this package to APPROVED FINAL or CLIENT DELIVERY AUTHORIZED.",
+        "La automatización no puede cambiar este paquete a FINAL APROBADO ni AUTORIZAR LA ENTREGA AL CLIENTE.",
+    )):
+        raise ValueError("Pending PDF manifest approval tail is missing; regenerate this draft first.")
+    return start, end
+
+
 @report_delivery_phase("manifest_refresh")
 def _refresh_visible_manifest(pdf: bytes, canonical: Mapping[str, Any], entries: list[dict[str, Any]]) -> bytes:
-    """Replace the owned manifest page before binding a changed pending draft.
+    """Replace the owned manifest supplement before binding a changed draft.
 
     The supplement is independent of its own PDF/JSON digests, but its table
     contains Markdown/HTML/CSV digests and must follow changes to those bytes.
-    Replace page contents in place so existing bookmark destinations survive.
+    Preserve page objects when pagination is unchanged; rebuild navigation when
+    a proven flowing supplement changes size. Ambiguous ownership fails closed.
     """
     from pypdf.generic import NameObject
-    from nico.comprehensive_manifest_navigation_v1 import _page_overlay
+    from nico.comprehensive_manifest_navigation_v1 import _page_overlay, _rewrite_local_page_labels
 
     reader = PdfReader(io.BytesIO(pdf))
     texts = list(extract_pdf_page_texts(pdf))
     if len(texts) != len(reader.pages):
         raise ValueError("manifest PDF text population mismatch")
+    block = _flowing_manifest_block(texts)
+    if block is not None:
+        start, end = block
+        compact = "".join("".join(text.split()) for text in texts[start:end])
+        if all(item.get("sha256") and item["sha256"] in compact for item in entries):
+            return pdf
+        replacement_bytes = _render_manifest_approval_supplement(canonical, entries)
+        replacement = PdfReader(io.BytesIO(replacement_bytes))
+        replacement_texts = list(extract_pdf_page_texts(replacement_bytes))
+        if _flowing_manifest_block(replacement_texts) != (0, len(replacement.pages)):
+            raise ValueError("Replacement manifest ownership cannot be established.")
+        if any(list(page.mediabox) != list(reader.pages[start].mediabox)
+               for page in replacement.pages):
+            raise ValueError("Pending PDF manifest page dimensions changed; regenerate this draft first.")
+        writer = PdfWriter()
+        if end - start == len(replacement.pages):
+            # Preserve every page object and bookmark destination when pagination
+            # is unchanged, including all approval continuation pages.
+            writer.clone_document_from_reader(reader)
+            writer.pdf_header = reader.pdf_header
+            for offset, source in enumerate(replacement.pages):
+                target = writer.pages[start + offset]
+                if list(target.mediabox) != list(source.mediabox):
+                    raise ValueError("Pending PDF manifest page dimensions changed; regenerate this draft first.")
+                target[NameObject("/Resources")] = source["/Resources"].clone(writer)
+                target.replace_contents(source.get_contents().clone(writer))
+                _rewrite_local_page_labels(target, writer)
+                from nico.comprehensive_semantic_navigation_v1 import _page_overlay as localized_page_overlay
+                spanish = _canonical_identity(canonical)["report_language"].casefold().startswith("es")
+                overlay = PdfReader(io.BytesIO(localized_page_overlay(
+                    start + offset + 1, len(reader.pages), spanish=spanish,
+                )))
+                target.merge_page(overlay.pages[0])
+            output = io.BytesIO()
+            writer.write(output)
+            return output.getvalue()
+        # Only the proven owned block is replaced. Rebuild contents, bookmarks
+        # and physical labels against the resulting actual page population.
+        from nico.comprehensive_semantic_navigation_v1 import semantic_renumber_and_outline
+        for page in [*reader.pages[:start], *replacement.pages, *reader.pages[end:]]:
+            writer.add_page(page)
+        output = io.BytesIO()
+        writer.write(output)
+        return semantic_renumber_and_outline(output.getvalue(), owned_toc_only=True)
     manifest_titles = ("Client Artifact Manifest", "Manifiesto de artefactos del cliente")
     table_titles = ("Retained structured artifacts", "Artefactos estructurados preservados",
                     "Artefactos estructurados conservados")
@@ -887,9 +970,10 @@ def _refresh_visible_manifest(pdf: bytes, canonical: Mapping[str, Any], entries:
 def rebind_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
     """Recompute a pending draft manifest after a pre-approval artifact update.
 
-    Refresh the visible artifact digest table in its existing PDF page, preserving
-    report pages and navigation. Then bind all final bytes and reset the exact
-    artifact lifecycle to pending. Approved editions are never changed here.
+    Refresh the owned visible supplement, preserving report body pages and
+    rebuilding navigation when its evidence-sized pagination changes. Then bind
+    all final bytes and reset the exact artifact lifecycle to pending. Approved
+    editions are never changed here.
     """
 
     output = deepcopy(dict(package))
@@ -1033,6 +1117,7 @@ def rebind_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
             ),
         ]
         pdf = _refresh_visible_manifest(pdf, canonical, entries)
+        page_count = len(PdfReader(io.BytesIO(pdf)).pages)
         pdf_entry = _artifact_entry(
             artifact_type="comprehensive_pdf",
             filename=f"nico-{run}-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf",
