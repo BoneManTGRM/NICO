@@ -6,6 +6,7 @@ from itertools import combinations
 from typing import Any, Callable, Mapping
 
 from nico.comprehensive_client_delivery_contract_v1 import canonical_sha256
+from nico.comprehensive_placeholder_sanitization_v1 import _plain_json_sanitization_tree
 
 
 VERSION = "nico.comprehensive_canonical_truth_hash_compat.v1"
@@ -135,6 +136,14 @@ def reconcile_known_post_render_hash_drift(
 
     canonical_copy = deepcopy(dict(canonical))
     if _canonical_hash(canonical_copy) == expected:
+        return output, False
+
+    # Current producers bind the full JSON digest. Recognizing that unchanged
+    # truth needs no historical reconstruction and bypasses no downstream checks.
+    # Keep every defensive copy; opaque/custom graphs retain the legacy path so
+    # probing the raw hash cannot introduce extra __str__ or mapping side effects.
+    if (_plain_json_sanitization_tree(canonical_copy)
+            and canonical_sha256(canonical_copy) == expected.casefold()):
         return output, False
 
     candidate = _reconstruct_exact_stored_truth(canonical_copy, expected)

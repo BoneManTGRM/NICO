@@ -4,6 +4,8 @@ import base64
 import hashlib
 from copy import deepcopy
 
+import pytest
+
 from nico import comprehensive_canonical_truth_hash_compat_v1 as compat
 from nico.comprehensive_canonical_truth_hash_compat_v1 import (
     reconcile_known_post_render_hash_drift,
@@ -313,3 +315,170 @@ def test_installed_compat_restores_affected_frozen_pdf_without_weakening_truth(m
     assert projection["assessment_rerun"] is False
     assert projection["human_review_required"] is True
     assert projection["client_delivery_allowed"] is False
+
+
+def _current_hash_status() -> dict:
+    status, canonical, _ = _historically_drifted_status()
+    canonical["rendered"] = {"html": "<p>retained</p>", "markdown": "retained", "pdf_base64": "retained"}
+    canonical["findings"] = [{"id": "finding-1", "severity": "low"}]
+    canonical["scanner_state_reconciled"] = True
+    status["reports"]["json"] = canonical
+    status["reports"]["canonical_truth_sha256"] = canonical_sha256(canonical)
+    assert canonical_sha256(canonical) != _canonical_hash(canonical)
+    return status
+
+
+@pytest.mark.parametrize("digest_form", ["exact", "uppercase", "whitespace"])
+def test_current_digest_skips_historical_reconstruction(monkeypatch, digest_form) -> None:
+    status = _current_hash_status()
+    digest = status["reports"]["canonical_truth_sha256"]
+    status["reports"]["canonical_truth_sha256"] = {
+        "exact": digest, "uppercase": digest.upper(), "whitespace": " \n" + digest + "\t",
+    }[digest_form]
+    before = deepcopy(status)
+    calls = []
+    def counted(value):
+        calls.append(value)
+        return deepcopy(value)
+    def unexpected(*args):
+        pytest.fail("already-valid current digest entered historical reconstruction")
+    monkeypatch.setattr(compat, "deepcopy", counted)
+    monkeypatch.setattr(compat, "_reconstruct_exact_stored_truth", unexpected)
+    output, recovered = reconcile_known_post_render_hash_drift(status)
+    assert recovered is False and output == before and status == before
+    assert len(calls) == 3  # Preserve all original defensive-copy transformations.
+    assert list(output) == list(status)
+    assert list(output["reports"]) == list(status["reports"])
+    assert list(output["reports"]["json"]) == list(status["reports"]["json"])
+    output["reports"]["json"]["findings"][0]["severity"] = "high"
+    assert status == before
+
+
+@pytest.mark.parametrize("path,value", [
+    (("rendered", "html"), "tampered"),
+    (("rendered", "markdown"), "tampered"),
+    (("rendered", "pdf_base64"), "tampered"),
+    (("identity", "commit_sha"), "b" * 40),
+    (("findings",), []),
+    (("assessment", "technical_score"), 100),
+    (("human_review_required",), False),
+    (("client_delivery_allowed",), True),
+    (("unknown_field",), "tampered"),
+])
+def test_current_digest_does_not_accept_tampered_truth(path, value) -> None:
+    from nico.comprehensive_api_controller import _canonical_truth_hash_integrity_bound
+    status = _current_hash_status()
+    node = status["reports"]["json"]
+    for key in path[:-1]:
+        node = node[key]
+    node[path[-1]] = value
+    before = deepcopy(status)
+    output, recovered = reconcile_known_post_render_hash_drift(status)
+    assert recovered is False and output == before and status == before
+    assert _canonical_truth_hash_integrity_bound(output["reports"]) is False
+
+
+@pytest.mark.parametrize("digest", [None, "", "not-a-hash", "f" * 63, "g" * 64, "0" * 64])
+def test_current_shortcut_does_not_repair_invalid_digest(digest) -> None:
+    from nico.comprehensive_api_controller import _canonical_truth_hash_integrity_bound
+    status = _current_hash_status()
+    if digest is None:
+        status["reports"].pop("canonical_truth_sha256")
+    else:
+        status["reports"]["canonical_truth_sha256"] = digest
+    output, recovered = reconcile_known_post_render_hash_drift(status)
+    assert recovered is False and output == status
+    assert _canonical_truth_hash_integrity_bound(output["reports"]) is False
+
+
+@pytest.mark.parametrize("field,value", [
+    ("pdf_sha256", "0" * 64),
+    ("pdf_base64", "invalid-base64"),
+    ("evidence_manifest_sha256", "0" * 64),
+    ("artifact_manifest", {"manifest_id": "incomplete-tampered-manifest"}),
+])
+def test_current_digest_does_not_bypass_artifact_integrity(field, value) -> None:
+    from nico.comprehensive_api_controller import (
+        _canonical_truth_hash_integrity_bound, _final_report_package_integrity_bound,
+    )
+    status = _current_hash_status()
+    assert _final_report_package_integrity_bound(status["reports"]) is True
+    status["reports"][field] = value
+    output, recovered = reconcile_known_post_render_hash_drift(status)
+    assert recovered is False and output == status
+    assert _canonical_truth_hash_integrity_bound(output["reports"]) is True
+    assert _final_report_package_integrity_bound(output["reports"]) is False
+
+
+def test_current_digest_shortcut_preserves_copy_hooks_and_aliases(monkeypatch) -> None:
+    class ChangingDict(dict):
+        def __deepcopy__(self, memo):
+            result = type(self)(generation=self["generation"] + 1)
+            memo[id(self)] = result
+            return result
+    status = _current_hash_status()
+    canonical = status["reports"]["json"]
+    canonical["changing"] = ChangingDict(generation=0)
+    shared = ["retained"]
+    canonical["left"] = canonical["right"] = shared
+    status["shared"] = shared
+    observed = []
+    original = compat._canonical_hash
+    def record(value):
+        observed.append(value["changing"]["generation"])
+        return original(value)
+    monkeypatch.setattr(compat, "_canonical_hash", record)
+    output, recovered = reconcile_known_post_render_hash_drift(status)
+    assert recovered is False
+    assert set(observed) == {3, 5}  # Initial hash, then recovery's two copies.
+    assert output["reports"]["json"]["changing"]["generation"] == 1
+    assert canonical["changing"]["generation"] == 0
+    assert output["shared"] is output["reports"]["json"]["left"]
+    assert output["shared"] is output["reports"]["json"]["right"]
+    output["shared"].append("changed")
+    assert shared == ["retained"]
+
+
+def test_current_digest_probe_does_not_stringify_opaque_values(monkeypatch) -> None:
+    calls = []
+    class Opaque:
+        def __str__(self):
+            calls.append("str")
+            return "opaque"
+    status = {"reports": {"json": {"opaque": Opaque()}, "canonical_truth_sha256": "0" * 64}}
+    def unexpected(*args):
+        pytest.fail("opaque canonical value entered current-hash probe")
+    monkeypatch.setattr(compat, "canonical_sha256", unexpected)
+    output, recovered = reconcile_known_post_render_hash_drift(status)
+    assert recovered is False and calls == ["str"]
+    assert output["reports"]["json"]["opaque"] is not status["reports"]["json"]["opaque"]
+
+
+@pytest.mark.parametrize("kind", ["mapping", "tuple", "cycle", "alias"])
+def test_non_tree_canonical_values_keep_legacy_path(monkeypatch, kind) -> None:
+    from collections import UserDict
+    value = {"retained": [1]}
+    if kind == "mapping":
+        value = UserDict(value)
+    elif kind == "tuple":
+        value = ([1],)
+    elif kind == "cycle":
+        value["self"] = value
+    else:
+        value["alias"] = value["retained"]
+    # The legacy hash skips this subtree, including the cycle. The new probe must
+    # not traverse it through a different serializer or introduce new exceptions.
+    status = {"reports": {"json": {"html": value}, "canonical_truth_sha256": "0" * 64}}
+    def unexpected(*args):
+        pytest.fail("non-tree canonical graph entered current-hash probe")
+    monkeypatch.setattr(compat, "canonical_sha256", unexpected)
+    output, recovered = reconcile_known_post_render_hash_drift(status)
+    assert recovered is False
+    result = output["reports"]["json"]["html"]
+    assert result is not value and type(result) is type(value)
+    if kind == "cycle":
+        assert result["self"] is result
+    elif kind == "alias":
+        assert result["alias"] is result["retained"]
+    else:
+        assert result == value
