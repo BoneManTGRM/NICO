@@ -822,6 +822,7 @@ def attach_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
             "human_review_status": "pending",
             "client_delivery_status": "blocked",
             "page_count": page_count,
+            "client_pdf_page_count": page_count,
             "digest_independent_manifest_supplement": True,
         }
     )
@@ -1170,6 +1171,7 @@ def rebind_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
             "human_review_status": "pending",
             "client_delivery_status": "blocked",
             "page_count": page_count,
+            "client_pdf_page_count": page_count,
             "digest_independent_manifest_supplement": True,
         }
     )
