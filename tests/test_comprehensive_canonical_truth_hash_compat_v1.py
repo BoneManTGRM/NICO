@@ -482,3 +482,45 @@ def test_non_tree_canonical_values_keep_legacy_path(monkeypatch, kind) -> None:
         assert result["alias"] is result["retained"]
     else:
         assert result == value
+
+
+@pytest.mark.parametrize("field", ["html", "markdown", "pdf_base64"])
+@pytest.mark.parametrize("kind", ["surrogate", "oversized_integer"])
+@pytest.mark.parametrize("unknown_drift", [False, True], ids=["recover", "reject"])
+def test_raw_serialization_failure_preserves_legacy_recovery(field, kind, unknown_drift) -> None:
+    import sys
+    if kind == "surrogate":
+        value, error = "\ud800", UnicodeEncodeError
+    else:
+        limit = sys.get_int_max_str_digits()
+        if not limit:
+            pytest.skip("runtime has no integer-to-string digit limit")
+        value, error = 10 ** limit, ValueError
+    original = {"id": "a", field: value}
+    expected = _canonical_hash(original)
+    canonical = {**original, "scanner_state_reconciled": True}
+    if unknown_drift:
+        canonical["unknown_drift"] = True
+    status = {"reports": {"json": canonical, "canonical_truth_sha256": expected}}
+    before = deepcopy(status)
+    with pytest.raises(error):
+        canonical_sha256(canonical)
+    output, recovered = reconcile_known_post_render_hash_drift(status)
+    assert status == before
+    assert recovered is not unknown_drift
+    assert output["reports"]["canonical_truth_sha256"] == expected
+    assert output["reports"]["json"] == (canonical if unknown_drift else original)
+    assert output is not status
+    assert output["reports"]["json"] is not canonical
+
+
+@pytest.mark.parametrize("boundary,error", [("probe", RuntimeError), ("recovery", ValueError)])
+def test_optional_probe_does_not_swallow_unrelated_errors(monkeypatch, boundary, error) -> None:
+    status = _current_hash_status()
+    if boundary == "recovery":
+        status["reports"]["canonical_truth_sha256"] = "0" * 64
+    def fail(*args):
+        raise error("unrelated failure")
+    monkeypatch.setattr(compat, "canonical_sha256" if boundary == "probe" else "_reconstruct_exact_stored_truth", fail)
+    with pytest.raises(error, match="unrelated failure"):
+        reconcile_known_post_render_hash_drift(status)
