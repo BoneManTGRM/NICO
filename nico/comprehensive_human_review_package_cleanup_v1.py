@@ -477,7 +477,7 @@ def _outline_title(text: str) -> str:
 
 
 def _filename_markup(value: Any) -> str:
-    raw = _text(value, 900)
+    raw = " ".join(str(value or "").replace("\x7f", "-").split()).strip()
     if not raw:
         return "Not available"
     chunks: list[str] = []
@@ -499,7 +499,7 @@ def _filename_markup(value: Any) -> str:
 
 
 def _digest_markup(value: Any) -> str:
-    raw = _text(value, 900)
+    raw = " ".join(str(value or "").replace("\x7f", "-").split()).strip()
     if re.fullmatch(r"[0-9a-fA-F]{64}", raw):
         return html.escape(raw[:32]) + "<br/>" + html.escape(raw[32:])
     return _filename_markup(
@@ -511,7 +511,7 @@ def render_manifest_approval_supplement(
     canonical: Mapping[str, Any],
     entries: list[dict[str, Any]],
 ) -> bytes:
-    """Render the existing two-page approval supplement with legible identifiers."""
+    """Render the flowing approval supplement with legible identifiers."""
 
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter
@@ -556,16 +556,16 @@ def render_manifest_approval_supplement(
         "CleanupManifestBody",
         parent=styles["BodyText"],
         fontName="Helvetica",
-        fontSize=7.8,
-        leading=10.1,
+        fontSize=9,
+        leading=12,
         textColor=colors.HexColor("#334155"),
         spaceAfter=4,
     )
     small = ParagraphStyle(
         "CleanupManifestSmall",
         parent=body,
-        fontSize=6.2,
-        leading=7.7,
+        fontSize=9,
+        leading=12,
         textColor=colors.HexColor("#475569"),
         spaceAfter=1,
     )
@@ -573,8 +573,8 @@ def render_manifest_approval_supplement(
         "CleanupManifestDigest",
         parent=small,
         fontName="Courier",
-        fontSize=5.4,
-        leading=6.6,
+        fontSize=9,
+        leading=12,
     )
     warning = ParagraphStyle(
         "CleanupManifestWarning",
@@ -589,7 +589,7 @@ def render_manifest_approval_supplement(
     )
 
     def p(value: Any, style: ParagraphStyle = body, *, markup: bool = False) -> Paragraph:
-        rendered = str(value or "") if markup else html.escape(_text(value, 1800))
+        rendered = str(value or "") if markup else html.escape(" ".join(str(value or "").replace("\x7f", "-").split()).strip())
         return Paragraph(rendered, style)
 
     def footer(canvas: Any, doc: Any) -> None:
@@ -609,6 +609,7 @@ def render_manifest_approval_supplement(
     ]
     identity_table = Table(
         [[p(left, small), p(right, small)] for left, right in identity_rows],
+        splitInRow=1,
         colWidths=[1.35 * inch, 6.05 * inch],
     )
     identity_table.setStyle(
@@ -636,6 +637,7 @@ def render_manifest_approval_supplement(
         )
     artifact_table = Table(
         artifact_rows,
+        splitInRow=1,
         colWidths=[1.25 * inch, 2.9 * inch, 3.25 * inch],
         repeatRows=1,
     )
@@ -669,6 +671,7 @@ def render_manifest_approval_supplement(
     ]
     approval_table = Table(
         [[p(left, small), p(right, small)] for left, right in approval_rows],
+        splitInRow=1,
         colWidths=[1.65 * inch, 5.75 * inch],
     )
     approval_table.setStyle(

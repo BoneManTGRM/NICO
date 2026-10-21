@@ -164,7 +164,7 @@ def _chunks(value: str, maximum: int, minimum_tail: int = 8) -> list[str]:
 
 
 def filename_markup(value: Any, maximum: int = 42) -> str:
-    raw = _text(value, 900)
+    raw = " ".join(str(value or "").replace("\x7f", "-").split()).strip()
     if not raw:
         return "Not available"
     extension = next((ext for ext in _EXTENSIONS if raw.casefold().endswith(ext)), "")
@@ -184,7 +184,7 @@ def filename_markup(value: Any, maximum: int = 42) -> str:
 
 
 def digest_markup(value: Any) -> str:
-    raw = _text(value, 900)
+    raw = " ".join(str(value or "").replace("\x7f", "-").split()).strip()
     if _HEX64.fullmatch(raw):
         return f"{raw[:32]}<br/>{raw[32:]}"
     return html.escape(raw or "Not available")
