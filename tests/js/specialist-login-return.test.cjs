@@ -188,3 +188,61 @@ for (const locale of ['en', 'es']) {
     });
   }
 }
+
+// Header language switching must select the page whose form has the requested
+// language, while treating returnTo as opaque query data until login validates it.
+const {localePreservingHref} = loadSource(path.join(WEB, 'app/assessment/assessmentLocale.ts'), {globals: {}, modules: {}});
+for (const [from, to, locale] of [
+  ['/specialist-login', '/es/specialist-login', 'es-MX'],
+  ['/es/specialist-login', '/specialist-login', 'en-US'],
+]) {
+  test(`header canonical login route: ${from} to ${to}`, async () => {
+    const destination = '/operations/final-review?run_id=comprun_saved&note=a%2Bb%26c#review';
+    const search = '?' + new URLSearchParams({returnTo: destination, lang: 'es-MX', report_locale: 'en-US'}) + '&tag=a&tag=b';
+    const href = localePreservingHref(from, search, '#sign-in', locale);
+    const url = new URL(href, 'https://nico.test');
+    assert.equal(url.pathname, to);
+    assert.equal(url.hash, '#sign-in');
+    assert.equal(url.searchParams.get('returnTo'), destination);
+    assert.equal(url.searchParams.has('lang'), false);
+    assert.equal(url.searchParams.get('report_locale'), 'en-US');
+    assert.deepEqual(url.searchParams.getAll('tag'), ['a', 'b']);
+    assert.equal(url.searchParams.has('tier'), false);
+    const page = loginPage(locale === 'es-MX' ? 'es' : 'en', url.search);
+    await page.mount();
+    assert.equal(find(page.render(), n => n.type === 'h1').props.children,
+      locale === 'es-MX' ? 'Acceso para especialistas en ciberseguridad' : 'Cybersecurity specialist access');
+    await page.submit();
+    assert.deepEqual(page.navigation, [['assign', destination]]);
+    // Re-evaluating restored URL state (back/forward) is deterministic.
+    assert.equal(localePreservingHref(from, search, '#sign-in', locale), href);
+    const reverse = new URL(localePreservingHref(to, url.search, url.hash, locale === 'es-MX' ? 'en-US' : 'es-MX'), url);
+    assert.equal(reverse.pathname, from);
+    assert.equal(reverse.search, url.search);
+    assert.equal(reverse.hash, url.hash);
+  });
+  for (const target of UNSAFE) {
+    test(`header ${locale}: switching never authorizes unsafe returnTo ${JSON.stringify(target)}`, async () => {
+      const url = new URL(localePreservingHref(from, queryFor(target), '', locale), 'https://nico.test');
+      const page = loginPage(locale === 'es-MX' ? 'es' : 'en', url.search, {getStatus: 200});
+      await page.mount(); await page.submit();
+      const fallback = `${locale === 'es-MX' ? '/es' : ''}/assessment?tier=comprehensive#assessment`;
+      assert.deepEqual(page.navigation, [['replace', fallback], ['assign', fallback]]);
+    });
+  }
+}
+for (const from of ['/assessment', '/assessment/saved', '/es/assessment', '/es/assessment/saved', '/es-mx', '/es-mx/saved']) {
+  for (const locale of ['en-US', 'es-MX']) {
+    test(`assessment route remains canonical: ${from} ${locale}`, () => {
+      const suffix = from.endsWith('/saved') ? '/saved' : '';
+      assert.equal(localePreservingHref(from, '?lang=es&run_id=comprun_saved&tier=express', '#review', locale),
+        `${locale === 'es-MX' ? '/es/assessment' : '/assessment'}${suffix}?run_id=comprun_saved&tier=comprehensive#review`);
+    });
+  }
+}
+test('unrelated and lookalike routes keep existing query-language behavior', () => {
+  for (const route of ['/operations', '/specialist-login-extra', '/es/specialist-login-extra']) {
+    assert.equal(localePreservingHref(route, '?x=1', '#section', 'es-MX'), `${route}?x=1&lang=es-MX#section`);
+    assert.equal(localePreservingHref(route, '?x=1&lang=es-MX', '#section', 'en-US'), `${route}?x=1#section`);
+  }
+});
