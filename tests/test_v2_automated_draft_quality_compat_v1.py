@@ -14,6 +14,9 @@ from nico.v2_automated_draft_quality_compat_v2 import (
     repair_rendered_report,
 )
 
+
+pytestmark = pytest.mark.usefixtures("preserve_legacy_report_quality_bindings")
+
 RUN_ID = "comprun_automated_draft_quality"
 COMMIT = "a" * 40
 
