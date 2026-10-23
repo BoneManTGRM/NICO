@@ -167,3 +167,27 @@ test('Spanish workspace offers an explicit English choice instead of silently ch
   assert.match(text(englishHero), /Your language choice is preserved/);
   assert.ok(!nodes(englishHero).some(n => n.type === 'button' && text(n) === 'Use English report'));
 });
+
+for (const locale of ['en', 'es-MX']) {
+  for (const status of ['__proto__', 'constructor']) {
+    test(`${locale}: inherited-name assessment statuses render as unknown text`, () => {
+      const React = fromWeb('react');
+      const {renderToStaticMarkup} = fromWeb('react-dom/server');
+      const copy = copyFor(locale);
+      const section = Object.freeze({score: 96, assurance_status: status, risk_disposition: status});
+      const before = JSON.stringify(section);
+      const view = sectionPresentation(section, copy);
+      const expected = locale === 'es-MX' ? copy.unknownStatus : status === '__proto__' ? 'Proto' : 'Constructor';
+      const rendered = renderToStaticMarkup(React.createElement('div', null,
+        React.createElement('span', null, view.assuranceLabel),
+        React.createElement('span', null, view.riskLabel)));
+      assert.equal(view.assuranceLabel, expected);
+      assert.equal(view.riskLabel, expected);
+      assert.ok(rendered.includes(expected));
+      assert.equal(view.assuranceTone, 'gray');
+      assert.equal(view.riskTone, 'gray');
+      assert.equal(view.score, '96/100');
+      assert.equal(JSON.stringify(section), before);
+    });
+  }
+}

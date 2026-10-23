@@ -145,7 +145,7 @@ function localizedBand(value: string, copy: Copy): string | null {
     informational: "Informativo",
   };
   const labels = spanish ? spanishLabels : english;
-  return labels[value] || null;
+  return Object.prototype.hasOwnProperty.call(labels, value) ? labels[value] : null;
 }
 
 export function formatStatus(status: unknown, copy: Copy): string {
