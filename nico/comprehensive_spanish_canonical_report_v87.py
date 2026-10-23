@@ -2841,6 +2841,9 @@ def _translate_presentation(value: Any) -> str:
             if segment != ""
         )
     stripped = text.strip()
+    from nico.report_score_explanation import LABELS_ES
+    if stripped in LABELS_ES:
+        return text.replace(stripped, LABELS_ES[stripped], 1)
     from nico.comprehensive_coverage_reconciliation_v1 import COPY_ES
     from nico.comprehensive_human_evidence_report_v1 import _STAKEHOLDER_METADATA_SUMMARY
     if stripped == _STAKEHOLDER_METADATA_SUMMARY[0]:
