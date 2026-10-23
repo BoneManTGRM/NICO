@@ -92,3 +92,29 @@ for (const locale of ['en', 'es-MX']) {
     });
   }
 }
+
+for (const locale of ['en', 'es-MX']) {
+  test(`${locale}: distinct editor values map to only their selected action fields`, async () => {
+    const value = index => `field ${index} \n extra`;
+    const details = {
+      assign: {target_id: value(2), assignee: value(3), specialist_role: value(4)},
+      disposition_candidate: {candidate_id: value(2), disposition: 'accepted_risk', rationale: value(3),
+        residual_risk: value(4), residual_risk_owner: value(5), escalation_resolution: value(6), escalation_owner: value(7)},
+      disposition_group: {cluster_id: value(2), disposition: 'accepted_risk', rationale: value(3),
+        residual_risk: value(4), residual_risk_owner: value(5), escalation_resolution: value(6), escalation_owner: value(7)},
+      quality_control: {candidate_id: value(2), qc_outcome: 'disagree', qc_note: value(3)},
+      request_evidence: {candidate_id: value(2), request_text: value(3), owner: value(4)},
+      resolve_evidence_request: {request_id: value(2), resolution_note: value(3), evidence_references: ['field 4', 'extra']},
+      stakeholder_evidence: {statement: value(2), source_role: value(3), evidence_reference: value(4)},
+    };
+    for (const action of ACTIONS) {
+      const h = harness(locale); await h.load(); h.action(action); h.fill();
+      if (action.startsWith('disposition_')) h.find(n => n.type === 'select')[1].props.onChange({target: {value: 'accepted_risk'}});
+      if (action === 'quality_control') h.find(n => n.type === 'select')[1].props.onChange({target: {value: 'disagree'}});
+      await h.submit();
+      const call = h.calls.find(c => c.init.method === 'POST');
+      assert.deepEqual(JSON.parse(call.init.body), {action, reviewer: value(0), reviewer_role: value(1),
+        review_authorized: true, authorization_confirmed: true, ...details[action]}, action);
+    }
+  });
+}
