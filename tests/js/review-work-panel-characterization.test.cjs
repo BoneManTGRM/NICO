@@ -118,3 +118,20 @@ for (const locale of ['en', 'es-MX']) {
     }
   });
 }
+
+for (const locale of ['en', 'es-MX']) {
+  for (const status of ['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'future_status']) {
+    test(`${locale}: unknown empirical status ${status} remains readable without approving delivery`, async () => {
+      const h = harness(locale, () => Response.json(payload({empirical_measurement: {
+        status, combined_specialist_hours: 0, four_combined_specialist_hours_empirically_proven: false,
+      }})));
+      await h.load();
+      const markup = h.html();
+      assert.ok(markup.includes(locale === 'es-MX' ? `Estado técnico: ${status}` : status));
+      assert.match(markup, /data-client-delivery-allowed="false"/);
+      assert.equal(h.calls.length, 1, 'displaying a status must not submit an action');
+      assert.equal(h.calls[0].init.method, 'GET');
+      assert.deepEqual(h.changed, []);
+    });
+  }
+}

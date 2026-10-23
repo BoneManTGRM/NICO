@@ -158,8 +158,9 @@ function empiricalStatus(value: unknown, locale: Locale): string {
     verified_within_four_hours: "Verificado dentro de cuatro horas",
     measured_over_four_hours: "Medido en más de cuatro horas",
   };
-  const label = labels[status];
-  return label || `Estado técnico: ${status}`;
+  return Object.prototype.hasOwnProperty.call(labels, status)
+    ? labels[status]
+    : `Estado técnico: ${status}`;
 }
 
 type ProjectionSummaryProps = {projection: Projection; locale: Locale};
