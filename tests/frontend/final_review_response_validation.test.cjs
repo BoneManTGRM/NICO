@@ -150,6 +150,8 @@ async function traces() {
 }
 module.exports = {traces, bindingChanges};
 // Fingerprints cover complete traces captured on main 024a67b6 before extraction.
+// Spanish traces now include the enabled preparation control and omit its old
+// unavailability paragraph; approval requests/state/downloads are unchanged.
 if (!process.env.NICO_CAPTURE_APPROVAL_TRACES) test('complete before/after approval traces match verified main', async () => {
   const expected = require('./final_review_response_traces.json');
   const actual = await traces();

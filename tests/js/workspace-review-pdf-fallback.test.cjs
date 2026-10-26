@@ -220,24 +220,18 @@ test('actual Workspace interrupted body does not hand off and explicit retry use
   assert.ok(s.calls.every(call=>call.init.method==='GET'));
 });
 
-test('Spanish generation is disabled repeatedly and English selection restores download',async()=>{
-  const s=setup({language:'es-MX',fetchImpl:validResponse});
-  assert.equal(s.button.disabled,true);
-  await s.handler(); await s.handler();
-  assert.equal(s.calls.length,0);
-  s.context.requestedReportLanguage='en';
-  s.renderControls();
+test('Spanish selected over English source uses the same verified pending download',async()=>{
+  const s=setup({language:'es-MX'});
   assert.equal(s.button.disabled,false);
   await s.handler();
   assert.equal(s.calls.length,1);
   assert.equal(s.downloads.length,1);
-  s.context.requestedReportLanguage='es-MX';s.renderControls();
-  await s.handler();assert.equal(s.calls.length,1);
+  assert.match(s.downloads[0].filename,/-es-MX-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf$/);
 });
 test('frozen Spanish source remains selectable',()=>{
   const s=setup({language:'es-MX'});
   s.context.result.report_language='es-MX';
   s.renderControls();
   assert.equal(s.button.disabled,false);
-  assert.equal(s.container.attrs['data-assessment-spanish-generation-unavailable'],'false');
+  assert.equal(s.container.attrs['data-assessment-spanish-generation-unavailable'],undefined);
 });

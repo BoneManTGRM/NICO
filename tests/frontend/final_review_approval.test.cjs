@@ -827,15 +827,53 @@ test('Spanish edition cannot hydrate an English authorized report from the same 
   assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
 });
 
-test('Spanish preparation is unavailable without any request or decision', async () => {
-  const h = harness({edition: 'es-MX', get: async () => response(fixture(true)), post: async () => response(fixture(false))});
-  h.change('Operator password', 'unit-test-not-a-secret');
-  for (let i = 0; i < 2; i++) {
-    await assert.rejects(h.click('Prepare Spanish final assessment report'), /Disabled button/);
-  }
-  assert.match(h.text(), /New Spanish generation is unavailable/);
-  assert.equal(h.requests.length, 0);
-  assert.equal(h.downloads.length, 0);
+for (const locale of ['en', 'es-MX']) test(`${locale}: explicit Spanish preparation binds source identity without approval`, async () => {
+  const source=fixture(false, true, 'en');
+  const h = harness({locale, edition: 'es-MX', get: async () => response(source), post: async () => response(fixture(false, true, 'es-MX'))});
+  const label=locale==='en'?'Prepare Spanish final assessment report':'Preparar informe final en español';
+  await assert.rejects(h.click(label), /Disabled button/);
+  assert.equal(h.requests.length,0);
+  h.change(locale==='en'?'Operator password':'Contraseña del operador', 'unit-test-not-a-secret');
+  await h.click(label);
+  assert.deepEqual(h.requests.map(r=>r.method),['GET','POST']);
+  assert.ok(h.requests[0].url.endsWith('/comprun_unit_fixture'));
+  assert.ok(h.requests[1].url.endsWith('/comprun_unit_fixture/localized-editions/es-MX'));
+  assert.deepEqual(JSON.parse(JSON.stringify(h.requests[1].body)),{
+    preparation_authorized:true,authorization_confirmed:true,expected_artifact_identity:source.review_artifact_identity,
+  });
+  assert.equal(h.requests[1].headers['X-NICO-Admin-Token'],'unit-test-not-a-secret');
+  assert.equal(h.downloads.length,0);
+  assert.equal(h.button(h.approveLabel).props.disabled,true);
+});
+test('Spanish preparation rejects mismatched source before mutation',async()=>{
+  const source=fixture();source.review_artifact_identity.run_id='comprun_other';
+  const h=harness({edition:'es-MX',get:async()=>response(source)});
+  h.change('Operator password','unit-test-not-a-secret');
+  await h.click('Prepare Spanish final assessment report');
+  assert.deepEqual(h.requests.map(r=>r.method),['GET']);
+  assert.equal(h.downloads.length,0);
+});
+test('Spanish preparation rejects an unready source before mutation',async()=>{
+  const source=fixture();delete source.reports.pdf_base64;
+  const h=harness({edition:'es-MX',get:async()=>response(source)});
+  h.change('Operator password','unit-test-not-a-secret');
+  await h.click('Prepare Spanish final assessment report');
+  assert.deepEqual(h.requests.map(r=>r.method),['GET']);
+  assert.ok(!h.button(h.approveLabel) || h.button(h.approveLabel).props.disabled);
+});
+test('Spanish preparation dispatches once while a source read is pending',async()=>{
+  let release;
+  const h=harness({edition:'es-MX',get:()=>new Promise(resolve=>{release=resolve;}),
+    post:async()=>response(fixture(false,true,'es-MX'))});
+  h.change('Operator password','unit-test-not-a-secret');
+  const prepare=h.button('Prepare Spanish final assessment report').props.onClick;
+  const pending=prepare();
+  await prepare();
+  assert.equal(h.requests.length,1);
+  release(response(fixture()));
+  await pending;
+  assert.deepEqual(h.requests.map(r=>r.method),['GET','POST']);
+  assert.equal(h.downloads.length,0);
 });
 
 for (const locale of ['en', 'es-MX']) test(`${locale}: retained approval does not instruct a first approval again`, async () => {

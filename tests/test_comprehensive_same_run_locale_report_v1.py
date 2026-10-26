@@ -1220,6 +1220,23 @@ def test_alternate_locale_calls_full_production_assembler_and_invalidates_approv
 
     monkeypatch.setattr(phase17, "rebuild_client_artifacts", assemble)
 
+    # This unit seam supplies a deliberately incomplete PDF to inspect assembler
+    # inputs and approval invalidation. Production bootstrap may have installed
+    # outer real-PDF navigation; exercise the declared core seam here only. The
+    # real composed test below retains every installed production wrapper.
+    import inspect
+
+    render_target = subject._render_target
+    seen = set()
+    while hasattr(render_target, "_nico_previous"):
+        assert id(render_target) not in seen, "Renderer wrapper chain must be acyclic"
+        seen.add(id(render_target))
+        render_target = render_target._nico_previous
+    core = inspect.unwrap(render_target)
+    assert core.__name__ == "_render_target"
+    assert Path(core.__code__.co_filename).resolve() == Path(subject.__file__).resolve()
+    monkeypatch.setattr(subject, "_render_target", render_target)
+
     result = subject.build_same_run_locale_report(status, "es-MX")
 
     assert len(calls) == 1

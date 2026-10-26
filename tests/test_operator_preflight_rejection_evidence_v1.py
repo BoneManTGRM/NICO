@@ -36,8 +36,8 @@ def test_missing_reference_retains_declared_status_before_acquisition(monkeypatc
 
 
 @pytest.mark.parametrize('provider', ['github', 'gitlab'])
-@pytest.mark.parametrize('language', ['es', 'es-MX', 'ES_mx'])
-def test_spanish_operator_intake_stops_before_preflight_or_capture(monkeypatch, provider, language):
+@pytest.mark.parametrize('language', ['fr', 'es-ES', 'en-invalid'])
+def test_unsupported_operator_intake_stops_before_preflight_or_capture(monkeypatch, provider, language):
     monkeypatch.setattr(runtime, 'require_admin_write', lambda token: (token == 'synthetic-admin', {}))
     def forbidden(*args, **kwargs):
         pytest.fail('Unavailable language reached acquisition or controller')
@@ -52,13 +52,13 @@ def test_spanish_operator_intake_stops_before_preflight_or_capture(monkeypatch, 
             'expected_commit_sha': 'a' * 40, 'authorized': True,
             'authorization_confirmed': True, 'report_language': language}
     for _ in range(3):
-        with pytest.raises(ValueError, match='^spanish_report_generation_unavailable$') as caught:
+        with pytest.raises(ValueError, match='^unsupported_report_language$') as caught:
             runtime._operator_intake(request, data, 'synthetic-admin')
         translated = runtime.api_routes._translate_error(caught.value)
         assert translated.status_code == 422
         assert translated.detail == {
-            'code': 'spanish_report_generation_unavailable',
-            'message': 'Spanish generation is unavailable; the requested language was not changed.',
+            'code': 'unsupported_report_language',
+            'message': 'Unsupported report language; the requested language was not changed.',
             'retryable': False,
             'human_review_required': True,
             'client_delivery_allowed': False,
@@ -70,3 +70,46 @@ def test_spanish_operator_intake_stops_before_preflight_or_capture(monkeypatch, 
         runtime._operator_intake(request, {**data, 'authorized': False}, 'synthetic-admin')
     with pytest.raises(ValueError, match='raw_provider_credentials_prohibited'):
         runtime._operator_intake(request, {**data, 'token': 'synthetic-only'}, 'synthetic-admin')
+
+
+@pytest.mark.parametrize('provider', ['github', 'gitlab'])
+@pytest.mark.parametrize('submitted,canonical', [('en', 'en'), ('en-US', 'en'),
+    ('es', 'es-MX'), ('es-MX', 'es-MX'), ('ES_mx', 'es-MX')])
+def test_supported_operator_locale_reaches_preflight_without_bypassing_guards(
+    monkeypatch, provider, submitted, canonical,
+):
+    monkeypatch.setattr(runtime, 'require_admin_write', lambda token: (token == 'synthetic-admin', {}))
+    observed = []
+    class PreflightReached(Exception):
+        pass
+    def preflight(self, context, **kwargs):
+        observed.append((context, kwargs))
+        raise PreflightReached
+    def forbidden(*args, **kwargs):
+        pytest.fail('Qualification must stop before acquisition or controller')
+    monkeypatch.setattr(ProviderRolloutRegistry, 'preflight', preflight)
+    monkeypatch.setattr(runtime, 'capture_repository_snapshot', forbidden)
+    monkeypatch.setattr(runtime, 'capture_hosted_provider_snapshot', forbidden)
+    monkeypatch.setattr(runtime.api_routes, '_controller', forbidden)
+    state = SimpleNamespace()
+    setattr(state, STATE_KEY, ProviderRolloutRegistry())
+    request = SimpleNamespace(app=SimpleNamespace(state=state))
+    payload = dict(provider=provider, repository='owner/synthetic-fixture',
+        expected_commit_sha='a' * 40, authorized=True,
+        authorization_confirmed=True, report_language=submitted)
+    with pytest.raises(PreflightReached):
+        runtime._operator_intake(request, payload, 'synthetic-admin')
+    assert len(observed) == 1
+    assert observed[0][0]['locale'] == canonical
+    assert observed[0][1]['operator_authorized'] is True
+    assert payload['report_language'] == submitted
+    observed.clear()
+    with pytest.raises(HTTPException) as caught:
+        runtime._operator_intake(request, payload, 'unauthorized')
+    assert caught.value.status_code == 403
+    for missing_flag in ('authorized', 'authorization_confirmed'):
+        with pytest.raises(ValueError, match='^explicit_authorization_required$'):
+            runtime._operator_intake(request, {**payload, missing_flag: False}, 'synthetic-admin')
+    with pytest.raises(ValueError, match='^raw_provider_credentials_prohibited$'):
+        runtime._operator_intake(request, {**payload, 'token': 'synthetic-only'}, 'synthetic-admin')
+    assert observed == []

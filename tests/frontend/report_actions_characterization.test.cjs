@@ -1,5 +1,6 @@
 'use strict';
 // Isolated actual TSX renderer, not browser/production evidence.
+// Baseline retains all readiness/approval behavior, updated only for bilingual generation.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');

@@ -45,8 +45,8 @@ function harness(respond, locale='en') {
   function render(){cursor=0;const result=hook(locale);if(!mounted){mounted=true;for(const effect of effects)effect();}return result;}
   render();
   const configure=()=>{const c=render();c.setRepository('owner/repo');c.setClient('Client');c.setProject('Project');c.setAuthorized(true);return render();};
-  function clickEnglishFallback() {
-    // Render the real hero JSX with the same browser preferences as the intake hook.
+  function chooseEnglishPreference() {
+    // Exercise the existing explicit preference handler independently of the removed release-block banner.
     const source=fs.readFileSync(path.join(ROOT,'apps/web/app/assessment/AssessmentWorkspace.tsx'),'utf8') + '\n' + fs.readFileSync(path.join(ROOT,'apps/web/app/assessment/useReportActionState.ts'),'utf8');
     const ast=ts.createSourceFile('workspace.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
     let hero, chooseEnglish;
@@ -60,11 +60,12 @@ function harness(respond, locale='en') {
       compactMobile:true,workspaceStyles:{},require(name){assert.equal(name,'react/jsx-runtime');return{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})};}};
     vm.runInNewContext(js,context);
     function nodes(value){if(!value||typeof value!=='object')return[];if(Array.isArray(value))return value.flatMap(nodes);return[value,...nodes(value.props?.children)];}
-    const button=nodes(context.hero).find(n=>n.type==='button');assert.ok(button);button.props.onClick();
+    assert.ok(!nodes(context.hero).some(n=>n.type==='button'), 'Hero must not offer an English-only generation fallback');
+    vm.runInNewContext('chooseEnglishReport();',context);
     vm.runInNewContext('globalThis.hero=renderHero();',context);
     return nodes(context.hero).filter(n=>n.props?.role==='alert').map(n=>n.props.children);
   }
-  return{render,configure,calls,storage,window,clickEnglishFallback,dispatch(type){for(const fn of listeners.get(type)||[])fn();},
+  return{render,configure,calls,storage,window,chooseEnglishPreference,dispatch(type){for(const fn of listeners.get(type)||[])fn();},
     reload(){listeners.clear();state=[];cache=new Map();effects=[];mounted=false;hook=load(path.join(ROOT,'apps/web/app/assessment/useAssessmentRun.ts')).useAssessmentRun;return render();}};
 }
 for(const locale of ['en','es-MX']) for(const code of ['specialist_authentication_required','specialist_session_invalid_or_expired']) {
@@ -98,6 +99,38 @@ test('lost POST response recovers actual accepted run through exact GET',async()
   await h.configure().run();assert.equal(h.render().phase,'review_required');assert.equal(h.render().result.run_id,id);
   const saved=JSON.parse(h.storage.get('nico.comprehensive.exact-run.v1.'+id));assert.equal(saved.intakeState,'accepted');
   assert.equal(h.calls.filter(c=>c.method==='POST').length,1);
+});
+for(const locale of ['en','es-MX']) test(`HTTP 200 intake reservation stays pending until exact GET establishes acceptance (${locale})`,async()=>{
+  let id,releaseGet;
+  const h=harness(c=>{
+    if(c.method==='POST'){
+      id=c.body.run_id;
+      return Response.json({run_id:id,repository:'owner/repo',operation:'intake_pending',intake_reserved:true,
+        status:'running',terminal:false,canonical_status:'intake_pending'});
+    }
+    return new Promise(resolve=>{releaseGet=resolve;});
+  },locale);
+  const pending=h.configure().run();await settle();
+  assert.equal(h.render().protectedRunId,id);
+  assert.equal(JSON.parse(h.storage.get(KEY)).intakeState,'pending');
+  assert.equal(JSON.parse(h.storage.get('nico.comprehensive.exact-run.v1.'+id)).intakeState,'pending');
+  assert.equal(h.calls.filter(c=>c.method==='POST').length,1);
+  assert.ok(releaseGet);
+  releaseGet(Response.json(accepted(id)));await pending;
+  assert.equal(JSON.parse(h.storage.get('nico.comprehensive.exact-run.v1.'+id)).intakeState,'accepted');
+  assert.equal(h.calls.filter(c=>c.method==='POST').length,1);
+});
+for(const locale of ['en','es-MX']) test(`HTTP 200 failed reservation retains nonaccepted exact identity (${locale})`,async()=>{
+  const h=harness(c=>c.method==='POST'?Response.json({run_id:c.body.run_id,repository:'owner/repo',
+    operation:'intake_failed',intake_reserved:true,status:'failed',canonical_status:'intake_failed',
+    terminal:true,failure_code:'provider_unavailable',retryable:false}):missing(),locale);
+  await h.configure().run();
+  const id=h.calls.find(c=>c.method==='POST').body.run_id;
+  assert.equal(JSON.parse(h.storage.get('nico.comprehensive.exact-run.v1.'+id)).intakeState,'pending');
+  assert.equal(h.render().protectedRunId,id);
+  assert.equal(h.render().phase,'failed');
+  assert.equal(h.calls.filter(c=>c.method==='POST').length,1);
+  assert.ok(!h.render().issue || h.render().issue.runCreated!==true);
 });
 test('accepted run survives expired-session status failure and refresh',async()=>{
   let id,expired=false;const h=harness(c=>{if(c.method==='POST'){id=c.body.run_id;return Response.json(accepted(id));}return expired?denied('specialist_session_invalid_or_expired'):Response.json(accepted(id));});
@@ -281,7 +314,7 @@ for (const locale of ['en','es-MX']) test(`unavailable Spanish is an explicit pr
   assert.equal(h.calls.filter(c=>c.method==='POST').length,1);
 });
 
-for(const locale of ['en','es-MX']) test(`explicit English fallback click then retry creates only the requested English intake (${locale})`,async()=>{
+for(const locale of ['en','es-MX']) test(`explicit English preference then retry creates only the requested English intake (${locale})`,async()=>{
   const h=harness(c=>c.method==='POST' ? c.body.report_language==='es-MX'
     ? Response.json({detail:{code:'spanish_report_generation_unavailable',retryable:false}},{status:422})
     : Response.json({...accepted(c.body.run_id),report_language:'en'}) : missing(),locale);
@@ -289,7 +322,7 @@ for(const locale of ['en','es-MX']) test(`explicit English fallback click then r
   const firstId=h.calls.find(c=>c.method==='POST').body.run_id;
   assert.equal(h.render().protectedRunId,'');assert.equal(h.render().issue.runCreated,false);
   let changes=0;h.window.addEventListener('nico:report-locale-change',()=>{changes++;});
-  h.clickEnglishFallback();assert.equal(changes,1);assert.equal(h.calls.filter(c=>c.method==='POST').length,1);
+  h.chooseEnglishPreference();assert.equal(changes,1);assert.equal(h.calls.filter(c=>c.method==='POST').length,1);
   assert.equal(h.storage.get('nico.report-locale.v1'),'en-US');
   assert.equal(h.window.location.searchParams.get('report_locale'),'en-US');
   await h.render().retry();
@@ -312,13 +345,13 @@ for(const [url,stored,expected] of [
   assert.equal(h.calls.filter(c=>c.method==='POST').length,1);
 });
 
-for(const locale of ['en','es-MX']) test(`denied History makes explicit English fallback fail visibly without changing preference (${locale})`,async()=>{
+for(const locale of ['en','es-MX']) test(`denied History makes explicit English preference fail visibly without changing preference (${locale})`,async()=>{
   const h=harness(c=>c.method==='POST'?Response.json({detail:{code:'spanish_report_generation_unavailable',retryable:false}},{status:422}):missing(),locale);
   h.window.location.searchParams.set('report_locale','es-MX');await h.configure().run();
   h.window.history.replaceState=()=>{throw Error('History denied');};
   h.window.location.replace=url=>{h.window.location.href=new URL(url,h.window.location).href;};
   let changes=0;h.window.addEventListener('nico:report-locale-change',()=>{changes++;});
-  let alerts;assert.doesNotThrow(()=>{alerts=h.clickEnglishFallback();});assert.equal(changes,0);
+  let alerts;assert.doesNotThrow(()=>{alerts=h.chooseEnglishPreference();});assert.equal(changes,0);
   assert.equal(alerts.length,1);assert.match(alerts[0],locale==='es-MX'?/No se pudo cambiar/:/Could not change/);
   assert.equal(h.storage.get('nico.report-locale.v1'),'es-MX');
   assert.equal(h.window.location.searchParams.get('report_locale'),'es-MX');

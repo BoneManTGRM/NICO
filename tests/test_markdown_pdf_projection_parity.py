@@ -24,12 +24,6 @@ def test_regenerated_markdown_matches_the_pdf_manifest_byte_set(language):
         "_nico_force_pending_draft_artifact_regeneration": True,
     }
     before = deepcopy(status)
-    if language == "es-MX":
-        for builder in (locale.build_same_run_locale_markdown_projection, locale.build_same_run_locale_report):
-            with pytest.raises(ValueError, match="spanish_report_generation_unavailable"):
-                builder(status, language)
-        assert status == before
-        return
     copied = locale.build_same_run_locale_markdown_projection(status, language)
     rendered = locale.build_same_run_locale_report(status, language)
     pdf = PdfReader(io.BytesIO(base64.b64decode(rendered["report"]["pdf_base64"])))

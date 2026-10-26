@@ -1,5 +1,7 @@
 // Complete host-tree characterization captured on 856d57de before extraction.
 // Includes every prop/aria/disabled/action attribute and exact technical JSON.
+// Bilingual enablement changes only editionChanged/runChanged preparation controls;
+// all other captured presentation fingerprints remain unchanged.
 const assert = require('node:assert/strict');
 const {test} = require('node:test');
 const {harness, fixture, authorizedFixture, response, digest} = require('./helpers/final-review-traces.cjs');

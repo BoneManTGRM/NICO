@@ -943,6 +943,51 @@ def _verify_excluded_engagement_ui(page: Any) -> dict[str, Any]:
     }
 
 
+def _submit_and_verify_spanish_intake(page: Any, *, frontend_origin: str) -> str:
+    """Observe acceptance; a browser-persisted pending ID is not a backend run."""
+    expected_url = f"{frontend_origin}/api/nico/assessment/comprehensive-intake"
+    with page.expect_response(
+        lambda response: (
+            response.request.method == "POST"
+            and response.url == expected_url
+        ),
+        timeout=180_000,
+    ) as pending:
+        page.locator(base.recovery.ACTION_SELECTOR).click()
+    response = pending.value
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+    if not response.ok:
+        detail = payload.get("detail") if isinstance(payload, dict) else None
+        code = detail.get("code") if isinstance(detail, dict) else None
+        # Never retain arbitrary server text, response bodies, or credentials.
+        safe_code = (
+            code
+            if code in ("spanish_report_generation_unavailable", "unsupported_report_language")
+            else "unclassified_intake_rejection"
+        )
+        raise AssertionError(
+            f"Spanish intake rejected: HTTP {int(response.status)} "
+            f"(code={safe_code}); backend acceptance not established"
+        )
+    operation = payload.get("operation") if isinstance(payload, dict) else None
+    assert (operation in ("intake_started", "intake_idempotent_reuse")
+            and payload.get("intake_reserved") is not True), (
+        "intake response does not establish backend acceptance"
+    )
+    run_id = payload.get("run_id") if isinstance(payload, dict) else None
+    valid_identity = (
+        isinstance(run_id, str)
+        and run_id.startswith("comprun_")
+        and len(run_id) == 40
+        and all(character in "0123456789abcdef" for character in run_id[8:])
+    )
+    assert valid_identity, "accepted intake response lacks a valid run identity"
+    return run_id
+
+
 def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
     """Run the real compact-mobile intake with distinctive commercial metadata."""
 
@@ -1023,10 +1068,14 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
                 PROOF_AUTHORIZED_SCOPE
             )
         page.locator(base.recovery.AUTHORIZATION_SELECTOR).check()
-        page.locator(base.recovery.ACTION_SELECTOR).click()
+        accepted_run_id = _submit_and_verify_spanish_intake(
+            page, frontend_origin=origin,
+        )
 
-        run_id, initial_stored = base.recovery._wait_for_run_id(page, 180.0)
+        run_id = accepted_run_id
         args.proof_run_id = run_id
+        browser_run_id, initial_stored = base.recovery._wait_for_run_id(page, 180.0)
+        assert browser_run_id == run_id, "browser and accepted intake run identities differ"
         assert base.recovery._start_count(requests) == 1
         languages = base._intake_languages(requests)
         assert languages == ["es-MX"], (

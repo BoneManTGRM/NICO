@@ -393,7 +393,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     setHumanEvidence, setEngagementFieldValue, setEngagementFieldState, setError,
     run, retry, startNew,
   } = controller;
-  const {copied, setCopied, artifactAction, setArtifactAction, requestedReportLanguage, reportLocaleError, chooseEnglishReport} = useReportActionState(locale);
+  const {copied, setCopied, artifactAction, setArtifactAction, requestedReportLanguage, reportLocaleError} = useReportActionState(locale);
   const {issueRef, runIssueRef} = useIssueFocus(issue);
   const {hasExactRun, ambiguousIntakeOutcome} = runBoundaryView(protectedRunId, result, issue);
 
@@ -616,8 +616,6 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
   }
 
   function renderReportActions() {
-    const spanishUnavailable = requestedReportLanguage === "es-MX"
-      && (canonicalReportLanguage(result?.report_language) !== "es-MX" || !pdfAvailable);
     const requestedLanguageLabel = reportLanguageLabel(requestedReportLanguage, copy);
     const acceptedLanguageLabel = acceptedPdfIdentity
       ? reportLanguageLabel(acceptedPdfIdentity.reportLanguage, copy)
@@ -629,11 +627,10 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
       ? `${copy.copy} · ${requestedLanguageLabel} · ${copy.newApprovalRequired}`
       : `${copy.copy} · ${requestedLanguageLabel}`;
     const pdfActionDisabled = !pdfAvailable || artifactAction !== null;
-    const draftPdfActionDisabled = spanishUnavailable || pdfActionDisabled;
+    const draftPdfActionDisabled = pdfActionDisabled;
     return <div
       className={`report-actions ${workspaceStyles.reportActionBar}`}
       data-assessment-report-actions="true"
-      data-assessment-spanish-generation-unavailable={spanishUnavailable ? "true" : "false"}
       data-assessment-report-ready={reportReady ? "true" : "false"}
       data-assessment-pdf-available={pdfAvailable ? "true" : "false"}
       data-assessment-locale-reapproval-required={approvedLocaleMismatch ? "true" : "false"}
@@ -646,7 +643,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         type="button"
         data-assessment-markdown-kind={exactApprovedPdfAvailable && !approvedLocaleMismatch ? "accepted-source-rendering" : "localized-draft-pending-approval"}
         data-report-language={requestedReportLanguage}
-        disabled={spanishUnavailable || !markdownAvailable || artifactAction !== null}
+        disabled={!markdownAvailable || artifactAction !== null}
         onClick={copyMarkdown}
       >{markdownLabel}</button>
       {exactApprovedPdfAvailable ? <button
@@ -670,12 +667,11 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         download
         data-assessment-retained-export="true"
       >{locale === "es-MX" ? "Descargar archivos originales y manifiesto" : "Download retained files and manifest"}</a> : null}
-      {reportReady && result?.run_id && !spanishUnavailable ? <a
+      {reportReady && result?.run_id ? <a
         href={`/api/nico/assessment/comprehensive-run/${encodeURIComponent(result.run_id)}/localized-report/${encodeURIComponent(requestedReportLanguage)}/evidence-package`}
         download
         data-assessment-localized-export="true"
       >{locale === "es-MX" ? "Descargar archivos del idioma seleccionado" : "Download files in selected language"} · {requestedReportLanguage}</a> : null}
-      {spanishUnavailable ? <p role="status">{locale === "es-MX" ? "La generación de informes en español no está disponible por ahora. Los archivos ya conservados siguen accesibles." : "New Spanish report generation is unavailable for now. Already frozen files remain accessible."} <button type="button" onClick={chooseEnglishReport}>{locale === "es-MX" ? "Usar informe en inglés" : "Use English report"}</button></p> : null}
       {copied ? <span className="muted">{copy.copied}</span> : artifactStatus ? <span className="muted" role="status">{artifactStatus}</span> : null}
     </div>;
   }
@@ -686,7 +682,6 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     return (
         <section className={`hero ${workspaceStyles.hero}`}>
           <p className="eyebrow">{copy.heroEyebrow}</p>
-          <p role="note">{locale === "es-MX" ? "La generación en español no está disponible por ahora. Conservamos tu selección de idioma." : "Spanish generation is unavailable for now. Your language choice is preserved."} {requestedReportLanguage === "es-MX" ? <button type="button" onClick={chooseEnglishReport}>{locale === "es-MX" ? "Usar informe en inglés" : "Use English report"}</button> : null}</p>
           {reportLocaleError ? <p role="alert">{reportLocaleError}</p> : null}
           <h1>{copy.title}</h1>
           {!compactMobile ? <>
