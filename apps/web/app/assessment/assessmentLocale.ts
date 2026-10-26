@@ -108,7 +108,10 @@ export function localePreservingHref(
     || pathname.startsWith("/es-mx/");
 
   let targetPath = pathname;
-  if (assessmentRoute) {
+  if (pathname === "/specialist-login" || pathname === "/es/specialist-login") {
+    targetPath = spanish ? "/es/specialist-login" : "/specialist-login";
+    params.delete("lang");
+  } else if (assessmentRoute) {
     const sourcePrefix = pathname.startsWith("/es/assessment")
       ? "/es/assessment"
       : pathname.startsWith("/es-mx")

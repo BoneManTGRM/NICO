@@ -53,6 +53,7 @@ jobs:
       STATUS_CONTEXT: NICO Spanish Comprehensive Production Proof
       PYTHONUNBUFFERED: "1"
       NICO_SPANISH_PROOF_TELEMETRY_SECONDS: "30"
+      NICO_PROOF_CHROMIUM_CHANNEL: "chrome"
       NICO_PROOF_HEADED_CHROMIUM: "1"
       NICO_PROOF_NATIVE_VISIBILITY: "1"
 
@@ -160,7 +161,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check --no-cache-dir \
-            . "playwright==1.61.0" "pypdf==6.15.0" "pytest==9.1.1" "PyYAML==6.0.3"
+            . "playwright==1.61.0" "pypdf==6.21.2" "pytest==9.1.1" "PyYAML==6.0.3"
           python scripts/prepare_playwright_native_visibility_v1.py
           if [ -f /etc/apt/apt-mirrors.txt ]; then
             printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
@@ -178,6 +179,19 @@ jobs:
             'Acquire::https::Timeout "20";' \
             | sudo tee /etc/apt/apt.conf.d/99nico-ci-network >/dev/null
           timeout --signal=TERM --kill-after=30s 12m python -m playwright install --with-deps chromium webkit
+
+      - name: Verify installed Chrome before production proof
+        run: |
+          set -euo pipefail
+          test -x /opt/google/chrome/chrome
+          test -r /etc/apparmor.d/chrome
+          command -v xvfb-run
+          command -v xauth
+          printf '%s\n' 'browser_channel=chrome' 'apparmor_profile_present=true'
+          readlink -f /opt/google/chrome/chrome
+          /opt/google/chrome/chrome --version
+          stat -c '%n owner=%U group=%G mode=%a' /opt/google/chrome/chrome /etc/apparmor.d/chrome
+          sha256sum /opt/google/chrome/chrome /etc/apparmor.d/chrome
 
       - name: Verify Spanish proof entrypoint before assessment
         run: |

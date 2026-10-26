@@ -36,6 +36,7 @@ ACTIVE_RUN_STORAGE_KEY = "nico.comprehensive.active-run.v1"
 BROWSER_PROJECTION_HEADER = "X-NICO-Browser-Projection"
 BROWSER_PROJECTION_VALUE = "terminal-manifest-v1"
 HEADED_CHROMIUM_ENV = "NICO_PROOF_HEADED_CHROMIUM"
+CHROMIUM_CHANNEL_ENV = "NICO_PROOF_CHROMIUM_CHANNEL"
 NATIVE_VISIBILITY_ENV = "NICO_PROOF_NATIVE_VISIBILITY"
 NATIVE_VISIBILITY_RUNTIME = "nico.playwright_native_visibility.v1"
 WEBKIT_NATIVE_VISIBILITY_ENV = "NICO_PROOF_WEBKIT_NATIVE_VISIBILITY"
@@ -458,7 +459,13 @@ def _launch_chromium(playwright: Any) -> Any:
         raise RuntimeError(
             "headed_chromium_proof_requires_native_visibility_runtime"
         )
-    return playwright.chromium.launch(headless=not headed)
+    channel = os.getenv(CHROMIUM_CHANNEL_ENV, "")
+    if channel not in {"", "chrome"}:
+        raise RuntimeError("nico_proof_chromium_channel_invalid")
+    options: dict[str, Any] = {"headless": not headed, "chromium_sandbox": True}
+    if channel:
+        options["channel"] = channel
+    return playwright.chromium.launch(**options)
 
 
 def _launch_webkit(playwright: Any) -> Any:

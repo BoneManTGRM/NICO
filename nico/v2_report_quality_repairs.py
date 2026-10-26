@@ -362,11 +362,24 @@ def _scorecard_page(canonical: Mapping[str, Any]) -> bytes:
         bottomMargin=0.62 * inch,
         invariant=1,
     )
+    from nico.report_score_explanation import LABELS_ES, score_explanation
+    from nico.comprehensive_engagement_metadata_v1 import reportlab_literal_markup
+
+    localize = (lambda value: LABELS_ES.get(value, value)) if _is_spanish(canonical) else (lambda value: value)
+    explanation_style = ParagraphStyle(
+        "QualityScoreExplanation", parent=styles["BodyText"],
+        fontName="Helvetica", fontSize=9.2, leading=13.5, spaceAfter=6,
+    )
+    explanation = [localize("Technical-to-adjusted score explanation"),
+                   *score_explanation(assessment, localize)]
     doc.build(
         [
             Spacer(1, 0.05 * inch),
             Paragraph("Canonical Technical Scorecard", title),
             table,
+            Spacer(1, 0.1 * inch),
+            *[Paragraph(reportlab_literal_markup(line, len(line)), explanation_style)
+              for line in explanation],
         ]
     )
     return buffer.getvalue()

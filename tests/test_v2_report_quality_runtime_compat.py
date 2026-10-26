@@ -3,12 +3,17 @@ from __future__ import annotations
 import base64
 import io
 
+import pytest
+
 from pypdf import PdfReader
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY
 from nico.v2_automated_draft_quality_compat_v2 import repair_rendered_report
+
+
+pytestmark = pytest.mark.usefixtures("preserve_legacy_report_quality_bindings")
 
 
 def _package(title: str) -> dict:

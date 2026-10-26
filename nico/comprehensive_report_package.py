@@ -829,6 +829,10 @@ def _markdown(
         "",
         f"## {localized('Technical Scorecard')}",
     ]
+    from nico.report_score_explanation import score_explanation
+    lines += [f"**{localized('Technical-to-adjusted score explanation')}**",
+              *[f"- {markdown_literal_markup(line, len(line))}"
+                for line in score_explanation(assessment, localized)], ""]
     sections = assessment.get("sections") if isinstance(assessment.get("sections"), list) else []
     if sections:
         for item in sections:
@@ -1385,6 +1389,11 @@ def _pdf(
     story += [PageBreak(), p(localized("Canonical Technical Scorecard"), h1)]
     # SimpleDocTemplate's frame reserves six points of padding at each side.
     story.append(_scorecard_pdf_table(sections, width=doc.width - 12, localized=localized))
+    from nico.report_score_explanation import score_explanation
+    story += [p(localized("Technical-to-adjusted score explanation"), h2)]
+    from nico.comprehensive_engagement_metadata_v1 import reportlab_literal_markup
+    story += [Paragraph(reportlab_literal_markup(line, len(line)), body)
+              for line in score_explanation(assessment, localized)]
 
     for item in sections:
         if not isinstance(item, dict):

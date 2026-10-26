@@ -3,12 +3,17 @@ from __future__ import annotations
 import base64
 import io
 
+import pytest
+
 from pypdf import PdfReader
 
 from nico.comprehensive_client_ready_projection_v1 import EN_BOUNDARY
 from nico.v2_automated_draft_quality_compat_v2 import repair_rendered_report
 from nico.v2_report_quality_repairs import repair_canonical_truth
 
+
+
+pytestmark = pytest.mark.usefixtures("preserve_legacy_report_quality_bindings")
 
 SHA = "a" * 40
 RUN_ID = "comprun_quality"

@@ -47,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check --no-cache-dir \
-            "pypdf>=5,<7" \
+            "pypdf>=6.21.2,<7" \
             "reportlab>=4,<5"
           python -m py_compile \
             nico/phase1_completion_report_contract_v1.py \

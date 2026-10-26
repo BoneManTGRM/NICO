@@ -1245,6 +1245,34 @@ _PRESENTATION_REPLACEMENTS += (
         "La evidencia de secretos con conocimiento del historial se separó en hallazgos materiales verificados, candidatos que requieren revisión, marcadores explícitos de ejemplo y observaciones ajenas a producción.",
     ),
     (
+        'Static-analysis evidence is reported separately from analyzer execution coverage.',
+        'La evidencia de análisis estático se informa por separado de la cobertura de ejecución de los analizadores.',
+    ),
+    (
+        'TypeScript analysis completed with verified retained evidence for the exact commit.',
+        'El análisis de TypeScript se completó con evidencia conservada verificada para el commit exacto.',
+    ),
+    (
+        'TypeScript analysis failed; no completed analysis is claimed.',
+        'El análisis de TypeScript falló; no se afirma que el análisis se haya completado.',
+    ),
+    (
+        'TypeScript analysis was unavailable; no completed analysis is claimed.',
+        'El análisis de TypeScript no estuvo disponible; no se afirma que el análisis se haya completado.',
+    ),
+    (
+        'TypeScript analysis was not run or no execution evidence was retained.',
+        'El análisis de TypeScript no se ejecutó o no se conservó evidencia de ejecución.',
+    ),
+    (
+        'TypeScript analysis completion is not verified by retained evidence.',
+        'La finalización no está verificada por la evidencia conservada del análisis de TypeScript.',
+    ),
+    (
+        'TypeScript analysis is proven not applicable; no execution credit is claimed.',
+        'Se demostró que el análisis de TypeScript no es aplicable; no se atribuye crédito de ejecución.',
+    ),
+    (
         "Bandit, Semgrep, ESLint, and TypeScript evidence were evaluated independently against the exact immutable commit.",
         "La evidencia de Bandit, Semgrep, ESLint y TypeScript se evaluó de forma independiente contra el commit inmutable exacto.",
     ),
@@ -2813,6 +2841,9 @@ def _translate_presentation(value: Any) -> str:
             if segment != ""
         )
     stripped = text.strip()
+    from nico.report_score_explanation import LABELS_ES
+    if stripped in LABELS_ES:
+        return text.replace(stripped, LABELS_ES[stripped], 1)
     from nico.comprehensive_coverage_reconciliation_v1 import COPY_ES
     from nico.comprehensive_human_evidence_report_v1 import _STAKEHOLDER_METADATA_SUMMARY
     if stripped == _STAKEHOLDER_METADATA_SUMMARY[0]:

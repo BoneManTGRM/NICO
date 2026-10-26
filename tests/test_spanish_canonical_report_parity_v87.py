@@ -1141,17 +1141,20 @@ install_comprehensive_spanish_client_surface_localization_v86()
 # Combined PR1820/PR1821 differential against exact 2630076: only rich contents
 # pages 2-3 and the final two manifest/approval page streams change. Markdown,
 # HTML, body evidence, truth, outlines and page counts remain unchanged.
-SMALL_ENGLISH_GOLDEN = {'markdown': ('2e3018c77bf24e5a58e48edbc7639e9d5148391aaf6b970e8a860de6e048d302', 19596), 'html': ('67d3ba039634db1d75b07cc1f037051a65b71b1674eb1108de3c77bb594dba99', 23977), 'pdf_base64': ('f1ef232b0c3bfca58d82e0bd2c5aa61039630dd3705bd76c6e40807d9507966b', 183248), 'pdf_sha256': 'c5a0cb2bccb14357df979f08f796ed26e5af5867fb098ee650ff34f288a02cd2', 'page_count': 22}
+# Score-explanation differential against a7bb8fd: existing headings, outlines,
+# evidence, scores, gates and page counts are identical. Only the literal-safe
+# explanation and dependent artifact hashes change. All assertions remain active.
+SMALL_ENGLISH_GOLDEN = {'html': ('1edb72e7c9f43b8b2921c0a0047ec70091532e7c084d77594e05d691f93d89c5', 24212), 'markdown': ('cdac8b0cb19c96ee1638dbe7729c626c67b2758ed82096d5b670213467fb7679', 19799), 'page_count': 22, 'pdf_base64': ('5bfb370531f9587ddaeba27c759808d04a058f742badd455e2e070dd304f01ec', 183724), 'pdf_sha256': 'a42eeeb0276d51bd0881deda76cda953e3a6d1ff5028a6f4e59e7a4b0a859e12'}
 # PR1779: isolated 644b -> 82315628 rich EN/es comparison preserves Markdown,
 # HTML, all 47 page texts/drawing streams/media boxes, canonical truth and gates.
 # Only phase 3 moves from summary page 5 to canonical Functional QA page 26;
 # the other 37 outline entries are identical. Only its PDF fingerprints change.
-RICH_ENGLISH_GOLDEN = {'markdown': ('8c86eb0b33cec623ea5633369231a710f95c17633336d247ec87a0b347aeccf8', 21087), 'html': ('759661b3a63b0bc607ddc89bc039145d5acdbec8fc8abad72dc3842e7de557ac', 25762), 'pdf_base64': ('dde99d1373ccc13cd92aaf318bd87a31121a29903fb4f5e9a2a5d893ecc7a2c1', 285312), 'pdf_sha256': 'eff549c6a89fff2e27a0915c0046ea935fd2e228d80fd2ac8374d6f5b05fbb4c', 'page_count': 47}
+RICH_ENGLISH_GOLDEN = {'html': ('0ba5425ac385bc5307ded94bb6862179a538b92b093290e04316df684bf6ac65', 25997), 'markdown': ('458f49d0206b1776605f233b022c43ccd5533b13fa35c853c75f94ac2dff0523', 21290), 'page_count': 47, 'pdf_base64': ('f30b7533fdef307d6fa9b0467bd2898bddf51ec56d4db4be106351727e9b1a90', 285788), 'pdf_sha256': '9d58dd328860dd3277614788a0ecec83f6d8a7c24f00e6274ac07cf3978a67c5'}
 # PR1816 differential against exact 42e9bd5b reproduces the prior golden.
 # Only scorecard page 6 drawing streams/text wrapping change in both languages;
 # Markdown, HTML, all other page streams, media boxes, page counts and outlines
 # remain identical. Full scorecard text now wraps within its columns.
-PHASE9_ENGLISH_GOLDEN = {'markdown': ('61b1c6bc92b1e229427973dd5d4a60f69021e56a550101d53ad82832d838b437', 19676), 'html': ('c1d572381e90a1ab8b5e5d79228cc4ed94a9c52224005d1f1f2e7135642221ea', 24038), 'pdf_base64': ('3dda58f6748ff44b78456f0a2476f9c36b2e1960478ca7fb28c9d5b0164c5067', 182464), 'pdf_sha256': '2e8967035e7ab45790bf9cbb6169b259f891f0184fc3b39c1193c749af6d350e', 'page_count': 22}
+PHASE9_ENGLISH_GOLDEN = {'html': ('8b88c58f2fc745e7f543321f100b56dd3b67e6d34db694fcde9cad3745498e0f', 24273), 'markdown': ('053c24aea0e39a4925504e23aa129df8b5749c08f59381afa25af8f5077c6007', 19879), 'page_count': 22, 'pdf_base64': ('d5541848757c36130dbc1efce371c61e031c319f19cc87b3ff20264360a35505', 182968), 'pdf_sha256': '88e1ab2d64c9e9e32309c33d24139913bd32b313d701ccf8c9d93a9f91db8e53'}
 
 SPANISH_OUTLINE = {
     "Functional QA": "QA funcional",
@@ -1541,6 +1544,20 @@ for result in (small_spanish[0], rich_spanish[0], phase9_spanish[0]):
     assert pdf_text.count("Analizadores aplicables incompletos:") == 1
     assert "Ã" not in pdf_text
     assert "\x00" not in pdf_text
+
+# Each terminal format retains exactly one honest unavailable-contract explanation.
+# Valid supplied deductions are separately exercised through the installed stack.
+from nico.report_score_explanation import UNAVAILABLE, LABELS_ES
+for triple, spanish_locale in (
+    (small_english_before, False), (small_spanish, True),
+    (rich_english, False), (rich_spanish, True),
+    (phase9_english, False), (phase9_spanish, True),
+):
+    result, _, pages = triple
+    explanation = LABELS_ES[UNAVAILABLE] if spanish_locale else UNAVAILABLE
+    assert result["markdown"].count(explanation) == 1
+    assert result["html"].count(explanation) == 1
+    assert "\n".join(pages).count(explanation) == 1
 
 small_result, _, small_pages = small_spanish
 small_pdf_text = "\n".join(small_pages)

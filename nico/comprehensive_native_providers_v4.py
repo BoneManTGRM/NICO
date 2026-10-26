@@ -137,6 +137,24 @@ def _incomplete_tools(scan: Mapping[str, Any], tools: tuple[str, ...]) -> list[s
     return [tool for tool in tools if tool not in absent and not _tool_complete(results.get(tool))]
 
 
+def _static_analysis_summary(scan: Mapping[str, Any]) -> str:
+    record = _tool_results(scan).get("typescript")
+    status = str((record or {}).get("status") or "").strip().casefold()
+    if "typescript" in _not_applicable_tools(scan, ("typescript",)):
+        detail = "TypeScript analysis is proven not applicable; no execution credit is claimed."
+    elif _tool_complete(record):
+        detail = "TypeScript analysis completed with verified retained evidence for the exact commit."
+    elif status in {"failed", "error", "timed_out", "timeout"}:
+        detail = "TypeScript analysis failed; no completed analysis is claimed."
+    elif status == "unavailable":
+        detail = "TypeScript analysis was unavailable; no completed analysis is claimed."
+    elif record is None or status in {"not_run", "not_started", "skipped"}:
+        detail = "TypeScript analysis was not run or no execution evidence was retained."
+    else:
+        detail = "TypeScript analysis completion is not verified by retained evidence."
+    return "Static-analysis evidence is reported separately from analyzer execution coverage.\n" + detail
+
+
 def _scanner_section(
     section_id: str,
     label: str,
@@ -246,9 +264,7 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
         "Static Analysis",
         scan,
         _STATIC_TOOLS,
-        summary=(
-            "Bandit, Semgrep, ESLint, and TypeScript evidence were evaluated independently against the exact immutable commit."
-        ),
+        summary=_static_analysis_summary(scan),
         material_weight=16,
         material_cap=64,
     )

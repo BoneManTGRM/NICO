@@ -119,7 +119,11 @@ def test_review_work_controls_localize_visible_enum_labels_without_mutating_valu
     assert "DISPOSITIONS.map" in panel
     assert "QC_OUTCOMES.map" in panel
     assert "disposition," in panel
-    assert "qc_outcome: qcOutcome" in panel
+    payload = source(WORK_PANEL.with_name("reviewActionPayload.ts"))
+    assert 'from "./reviewActionPayload"' in panel
+    assert "buildReviewActionPayload(action, {" in panel
+    assert "disposition," in payload
+    assert "qc_outcome: qcOutcome" in payload
     assert '<option value="confirmed">confirmed</option>' not in panel
     assert '<option value="agree">agree</option>' not in panel
 

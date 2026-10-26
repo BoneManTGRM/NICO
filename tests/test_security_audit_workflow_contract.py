@@ -70,9 +70,9 @@ def test_pypdf_security_floor_excludes_cve_2026_71852_affected_pin() -> None:
         for requirement in requirements
         if requirement.startswith("pypdf==")
     )
-    assert _semver_core(pinned_pypdf) >= (6, 15, 0)
+    assert _semver_core(pinned_pypdf) >= (6, 21, 2)
     assert "pypdf==6.14.2" not in requirements
-    assert '"pypdf>=6.15.0,<7"' in pyproject
+    assert '"pypdf>=6.21.2,<7"' in pyproject
     assert '"pypdf>=6.14.2,<7"' not in pyproject
 
 
@@ -127,3 +127,23 @@ def test_hardening_dispatch_inputs_are_passed_through_environment() -> None:
     assert '--expected-sha "${EXPECTED_SHA}"' in source
     assert "--expected-sha '${{ inputs.expected_sha }}'" not in source
     assert "test '${{ steps.acceptance.outcome }}'" not in source
+
+
+def test_active_workflow_pypdf_requirements_exclude_vulnerable_versions():
+    import re
+    for path in (ROOT / ".github/workflows").glob("*.yml"):
+        for spec in re.findall(r'pypdf((?:==|>=)[^"\s\\]+)', path.read_text()):
+            accepted = SpecifierSet(spec)
+            assert "6.21.2" in accepted, (path, spec)
+            for vulnerable in ("5.9.0", "6.15.0", "6.19.0", "6.21.1"):
+                assert vulnerable not in accepted, (path, spec, vulnerable)
+
+
+def test_next_security_patch_is_locked_for_app_and_next_runtime():
+    package = json.loads(PACKAGE.read_text())
+    lock = json.loads((PACKAGE.parent / "package-lock.json").read_text())
+    assert _semver_core(package["dependencies"]["next"]) >= (16, 4, 3)
+    assert lock["packages"][""]["dependencies"]["next"] == package["dependencies"]["next"]
+    for name, entry in lock["packages"].items():
+        if name == "node_modules/next" or name.startswith("node_modules/@next/"):
+            assert entry["version"] == package["dependencies"]["next"], name

@@ -2,6 +2,7 @@
 
 import {FormEvent, useEffect, useMemo, useState} from "react";
 import {savedRun, useReviewScope, reviewResponse, reviewError, ambiguousWrite, reconciliationMessage, type WorkspaceProps} from "./reviewWorkspaceState";
+import {buildReviewActionPayload, type ReviewAction as Action} from "./reviewActionPayload";
 import ReviewSessionNotice from "./ReviewSessionNotice";
 import EvidenceRequests from "./EvidenceRequests";
 import QualityControlRecords from "./QualityControlRecords";
@@ -9,18 +10,6 @@ import styles from "./review-work.module.css";
 
 type Locale = "en" | "es-MX";
 type JsonRecord = Record<string, unknown>;
-type Action =
-  | "assign"
-  | "disposition_candidate"
-  | "disposition_group"
-  | "quality_control"
-  | "request_evidence"
-  | "resolve_evidence_request"
-  | "stakeholder_evidence"
-  | "start_session"
-  | "stop_session"
-  | "complete_empirical_study";
-
 type Projection = {
   run_id?: string;
   repository?: string;
@@ -169,8 +158,9 @@ function empiricalStatus(value: unknown, locale: Locale): string {
     verified_within_four_hours: "Verificado dentro de cuatro horas",
     measured_over_four_hours: "Medido en más de cuatro horas",
   };
-  const label = labels[status];
-  return label || `Estado técnico: ${status}`;
+  return Object.prototype.hasOwnProperty.call(labels, status)
+    ? labels[status]
+    : `Estado técnico: ${status}`;
 }
 
 type ProjectionSummaryProps = {projection: Projection; locale: Locale};
@@ -275,34 +265,6 @@ export default function ReviewWorkPanel({runId, refresh = 0, isCurrent, onChange
     }
   }
 
-  function actionPayload(): JsonRecord {
-    const common: JsonRecord = {
-      action,
-      reviewer: reviewer.trim(),
-      reviewer_role: reviewerRole.trim(),
-      review_authorized: true,
-      authorization_confirmed: true,
-    };
-    if (action === "assign") return {...common, target_id: targetId.trim(), assignee: assignee.trim(), specialist_role: specialistRole.trim()};
-    if (action === "disposition_candidate" || action === "disposition_group") {
-      return {
-        ...common,
-        ...(action === "disposition_candidate" ? {candidate_id: targetId.trim()} : {cluster_id: targetId.trim()}),
-        disposition,
-        rationale: rationale.trim(),
-        residual_risk: residualRisk.trim(),
-        residual_risk_owner: residualRiskOwner.trim(),
-        escalation_resolution: escalationResolution.trim(),
-        escalation_owner: escalationOwner.trim(),
-      };
-    }
-    if (action === "quality_control") return {...common, candidate_id: targetId.trim(), qc_outcome: qcOutcome, qc_note: qcNote.trim()};
-    if (action === "request_evidence") return {...common, candidate_id: targetId.trim(), request_text: requestText.trim(), owner: requestOwner.trim()};
-    if (action === "resolve_evidence_request") return {...common, request_id: targetId.trim(), resolution_note: resolutionNote.trim(), evidence_references: evidenceReferences.split("\n").map((item) => item.trim()).filter(Boolean)};
-    if (action === "stakeholder_evidence") return {...common, statement: stakeholderStatement.trim(), source_role: sourceRole.trim(), evidence_reference: evidenceReference.trim()};
-    return common;
-  }
-
   async function submit(event?: FormEvent): Promise<void> {
     event?.preventDefault();
     if (!runId.trim() || !projection || scope.pending.current || !reviewer.trim() || !reviewerRole.trim()) return;
@@ -317,7 +279,13 @@ export default function ReviewWorkPanel({runId, refresh = 0, isCurrent, onChange
         cache: "no-store",
         credentials: "same-origin",
         headers: {"Content-Type": "application/json", Accept: "application/json"},
-        body: JSON.stringify(actionPayload()),
+        body: JSON.stringify(buildReviewActionPayload(action, {
+          reviewer, reviewerRole, targetId, disposition,
+          rationale, residualRisk, residualRiskOwner, escalationResolution,
+          escalationOwner, assignee, specialistRole, qcOutcome,
+          qcNote, requestText, requestOwner, resolutionNote,
+          evidenceReferences, stakeholderStatement, sourceRole, evidenceReference,
+        })),
       });
       const next = await reviewResponse(response, runId, locale);
       if (scope.current(token)) {setProjection(next); onChanged?.(runId);}
