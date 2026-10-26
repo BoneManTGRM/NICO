@@ -17,6 +17,7 @@ IOS_WORKFLOW = ROOT / ".github/workflows/ios-webkit-paint-proof.yml"
 
 
 def _load_recovery(monkeypatch: Any) -> ModuleType:
+    monkeypatch.delenv("NICO_PROOF_CHROMIUM_CHANNEL", raising=False)
     playwright = ModuleType("playwright")
     sync_api = ModuleType("playwright.sync_api")
     sync_api.Browser = object
@@ -734,3 +735,64 @@ def test_chromium_launcher_propagates_sandbox_failure_without_fallback(
         )
     assert caught.value is failure
     assert calls == [{"headless": not headed, "chromium_sandbox": True}]
+
+@pytest.mark.parametrize("headed", [False, True])
+def test_explicit_installed_chrome_preserves_sandbox_and_propagates_failure(monkeypatch, headed):
+    recovery = _load_recovery(monkeypatch)
+    monkeypatch.setenv("NICO_PROOF_CHROMIUM_CHANNEL", "chrome")
+    monkeypatch.delenv(recovery.HEADED_CHROMIUM_ENV, raising=False)
+    if headed:
+        _enable_native_chromium(monkeypatch, recovery)
+        monkeypatch.setenv("DISPLAY", ":99")
+    calls = []
+    failure = RuntimeError("synthetic_installed_chrome_unavailable")
+    def launch(**kwargs):
+        calls.append(kwargs)
+        raise failure
+    with pytest.raises(RuntimeError) as caught:
+        recovery._launch_chromium(SimpleNamespace(chromium=SimpleNamespace(launch=launch)))
+    assert caught.value is failure
+    assert calls == [{"headless": not headed, "chromium_sandbox": True, "channel": "chrome"}]
+
+
+@pytest.mark.parametrize("channel", ["chromium", "chrome-beta", "msedge", "--no-sandbox", " chrome "])
+def test_chromium_channel_rejects_unapproved_values_before_launch(monkeypatch, channel):
+    recovery = _load_recovery(monkeypatch)
+    monkeypatch.setenv("NICO_PROOF_CHROMIUM_CHANNEL", channel)
+    monkeypatch.delenv(recovery.HEADED_CHROMIUM_ENV, raising=False)
+    calls = []
+    with pytest.raises(RuntimeError, match="nico_proof_chromium_channel_invalid"):
+        recovery._launch_chromium(SimpleNamespace(chromium=SimpleNamespace(launch=lambda **kw: calls.append(kw))))
+    assert calls == []
+
+
+def test_hosted_visibility_selects_existing_chrome_without_security_repair():
+    import yaml
+    workflow = yaml.safe_load(MOBILE_WORKFLOW.read_text())
+    steps = workflow["jobs"]["contract"]["steps"]
+    proof = next(s for s in steps if s["name"] == "Prove headed Chromium visibility before merge")
+    assert proof["env"]["NICO_PROOF_CHROMIUM_CHANNEL"] == "chrome"
+    setup = next(s for s in steps if s["name"] == "Prepare installed Chrome contract runtime")["run"]
+    assert "python scripts/prepare_playwright_native_visibility_v1.py" in setup
+    assert "test -x /opt/google/chrome/chrome" in setup
+    assert "test -r /etc/apparmor.d/chrome" in setup
+    assert "/opt/google/chrome/chrome --version" in setup
+    assert "sha256sum /opt/google/chrome/chrome /etc/apparmor.d/chrome" in setup
+    for forbidden in ("sudo", "sysctl", "chmod", "chown", "--no-sandbox", "playwright install"):
+        assert forbidden not in setup
+
+@pytest.mark.parametrize("channel", ["", "chrome"])
+def test_chromium_channel_returns_browser_without_extra_launch_arguments(monkeypatch, channel):
+    recovery = _load_recovery(monkeypatch)
+    monkeypatch.setenv("NICO_PROOF_CHROMIUM_CHANNEL", channel)
+    monkeypatch.delenv(recovery.HEADED_CHROMIUM_ENV, raising=False)
+    browser = object()
+    calls = []
+    def launch(**kwargs):
+        calls.append(kwargs)
+        return browser
+    assert recovery._launch_chromium(SimpleNamespace(chromium=SimpleNamespace(launch=launch))) is browser
+    expected = {"headless": True, "chromium_sandbox": True}
+    if channel:
+        expected["channel"] = "chrome"
+    assert calls == [expected]

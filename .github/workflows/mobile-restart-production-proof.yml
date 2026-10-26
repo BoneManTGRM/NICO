@@ -88,7 +88,7 @@ jobs:
           assert 'test_installed_headed_chromium_observes_real_browser_visibility' in workflow
           PY
 
-      - name: Install pinned headed Chromium contract runtime
+      - name: Prepare installed Chrome contract runtime
         if: github.event_name == 'pull_request'
         timeout-minutes: 15
         run: |
@@ -96,26 +96,21 @@ jobs:
           python -m pip install --disable-pip-version-check --no-cache-dir \
             . "playwright==1.61.0" "pypdf==6.15.0" "pytest==9.1.1" "PyYAML==6.0.3"
           python scripts/prepare_playwright_native_visibility_v1.py
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
-          fi
-          for apt_source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
-            [ -f "${apt_source}" ] || continue
-            sudo sed -i \
-              -e 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
-              -e 's|https://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
-              "${apt_source}"
-          done
-          printf '%s\n' \
-            'Acquire::Retries "3";' \
-            'Acquire::http::Timeout "20";' \
-            'Acquire::https::Timeout "20";' \
-            | sudo tee /etc/apt/apt.conf.d/99nico-ci-network >/dev/null
-          timeout --signal=TERM --kill-after=30s 12m python -m playwright install --with-deps chromium
+          # Use the image's packaged Chrome and existing Ubuntu profile unchanged.
+          test -x /opt/google/chrome/chrome
+          test -r /etc/apparmor.d/chrome
+          command -v xvfb-run
+          command -v xauth
+          printf '%s\n' 'browser_channel=chrome' 'apparmor_profile_present=true'
+          readlink -f /opt/google/chrome/chrome
+          /opt/google/chrome/chrome --version
+          stat -c '%n owner=%U group=%G mode=%a' /opt/google/chrome/chrome /etc/apparmor.d/chrome
+          sha256sum /opt/google/chrome/chrome /etc/apparmor.d/chrome
 
       - name: Prove headed Chromium visibility before merge
         if: github.event_name == 'pull_request'
         env:
+          NICO_PROOF_CHROMIUM_CHANNEL: "chrome"
           NICO_PROOF_HEADED_CHROMIUM: "1"
           NICO_PROOF_NATIVE_VISIBILITY: "1"
         run: |
