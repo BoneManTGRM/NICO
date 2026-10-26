@@ -796,3 +796,33 @@ def test_chromium_channel_returns_browser_without_extra_launch_arguments(monkeyp
     if channel:
         expected["channel"] = "chrome"
     assert calls == [expected]
+
+@pytest.mark.parametrize("workflow_path,job_name", [
+    (MOBILE_WORKFLOW, "live-production"),
+    (SPANISH_WORKFLOW, "spanish-comprehensive"),
+])
+def test_shared_launcher_production_jobs_require_installed_chrome(workflow_path, job_name):
+    import yaml
+    job = yaml.safe_load(workflow_path.read_text())["jobs"][job_name]
+    assert job["env"]["NICO_PROOF_CHROMIUM_CHANNEL"] == "chrome"
+    assert job["env"]["NICO_PROOF_HEADED_CHROMIUM"] == "1"
+    assert job["env"]["NICO_PROOF_NATIVE_VISIBILITY"] == "1"
+    steps = job["steps"]
+    preflight = next(s for s in steps if s["name"] == "Verify installed Chrome before production proof")
+    assert "if" not in preflight and not preflight.get("continue-on-error", False)
+    source = preflight["run"]
+    for required in ("set -euo pipefail", "test -x /opt/google/chrome/chrome",
+                     "test -r /etc/apparmor.d/chrome", "command -v xvfb-run", "command -v xauth",
+                     "/opt/google/chrome/chrome --version",
+                     "sha256sum /opt/google/chrome/chrome /etc/apparmor.d/chrome"):
+        assert required in source
+    for forbidden in ("sudo", "sysctl", "chmod", "chown", "--no-sandbox", "playwright install"):
+        assert forbidden not in source
+    preflight_index = steps.index(preflight)
+    launches = [i for i, s in enumerate(steps) if any(
+        line.strip().startswith("xvfb-run -a python scripts/" + entry)
+        for line in s.get("run", "").splitlines()
+        for entry in ("mobile_restart_authenticated_live_acceptance_v1.py",
+                      "spanish_comprehensive_authenticated_live_acceptance_v1.py",
+                      "spanish_comprehensive_authenticated_existing_run_recovery_v1.py"))]
+    assert launches and all(preflight_index < i for i in launches)
