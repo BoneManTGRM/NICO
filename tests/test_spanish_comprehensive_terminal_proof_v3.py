@@ -431,5 +431,5 @@ def test_production_workflow_preflights_entrypoint_before_assessment() -> None:
     )
     assert install < preflight < assessment
     install_block = workflow[install:preflight]
-    assert '. "playwright==1.61.0" "pypdf==6.15.0"' in install_block
+    assert '. "playwright==1.61.0" "pypdf==6.21.2"' in install_block
     assert 'run_name=f"nico_spanish_proof_import_preflight_{script.stem}"' in workflow
