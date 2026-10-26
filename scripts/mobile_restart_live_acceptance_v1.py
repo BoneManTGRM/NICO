@@ -458,7 +458,7 @@ def _launch_chromium(playwright: Any) -> Any:
         raise RuntimeError(
             "headed_chromium_proof_requires_native_visibility_runtime"
         )
-    return playwright.chromium.launch(headless=not headed)
+    return playwright.chromium.launch(headless=not headed, chromium_sandbox=True)
 
 
 def _launch_webkit(playwright: Any) -> Any:

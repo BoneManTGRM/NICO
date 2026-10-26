@@ -371,12 +371,12 @@ def test_chromium_launcher_is_headed_only_when_explicitly_requested(
 ) -> None:
     recovery = _load_recovery(monkeypatch)
     monkeypatch.delenv(recovery.HEADED_CHROMIUM_ENV, raising=False)
-    calls: list[bool] = []
+    calls: list[dict[str, Any]] = []
 
     class Chromium:
         @staticmethod
-        def launch(*, headless: bool) -> object:
-            calls.append(headless)
+        def launch(**kwargs: Any) -> object:
+            calls.append(kwargs)
             return object()
 
     playwright = SimpleNamespace(chromium=Chromium())
@@ -385,7 +385,10 @@ def test_chromium_launcher_is_headed_only_when_explicitly_requested(
     monkeypatch.setenv("DISPLAY", ":99")
     recovery._launch_chromium(playwright)
 
-    assert calls == [True, False]
+    assert calls == [
+        {"headless": True, "chromium_sandbox": True},
+        {"headless": False, "chromium_sandbox": True},
+    ]
 
 
 def test_chromium_launcher_rejects_invalid_mode_or_missing_display(
@@ -707,3 +710,27 @@ def test_installed_webkit_observes_real_browser_visibility() -> None:
             assert page.evaluate("() => document.visibilityState") == "visible"
         finally:
             browser.close()
+
+
+@pytest.mark.parametrize("headed", [False, True])
+def test_chromium_launcher_propagates_sandbox_failure_without_fallback(
+    monkeypatch: Any, headed: bool,
+) -> None:
+    recovery = _load_recovery(monkeypatch)
+    monkeypatch.delenv(recovery.HEADED_CHROMIUM_ENV, raising=False)
+    if headed:
+        _enable_native_chromium(monkeypatch, recovery)
+        monkeypatch.setenv("DISPLAY", ":99")
+    calls: list[dict[str, Any]] = []
+    failure = RuntimeError("synthetic_sandbox_unavailable")
+
+    def launch(**kwargs: Any) -> object:
+        calls.append(kwargs)
+        raise failure
+
+    with pytest.raises(RuntimeError) as caught:
+        recovery._launch_chromium(
+            SimpleNamespace(chromium=SimpleNamespace(launch=launch))
+        )
+    assert caught.value is failure
+    assert calls == [{"headless": not headed, "chromium_sandbox": True}]
