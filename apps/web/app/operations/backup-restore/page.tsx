@@ -1,6 +1,8 @@
 "use client";
 
-import {useState} from "react";
+import {useRef, useState} from "react";
+import EvidenceFileImport from "./EvidenceFileImport";
+import {EvidenceImport, SubmissionGuard, evidenceInstant, localDateTime, matchesRecorded, requireMatchingSchema, sampledNote, submissionKey} from "./evidenceImport";
 
 const API_URL = (process.env.NEXT_PUBLIC_NICO_API_URL || "").replace(/\/$/, "");
 
@@ -37,11 +39,6 @@ function statusClass(value?: string) {
   return "status gray";
 }
 
-function toIso(value: string): string {
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
-}
-
 function localNow(): string {
   const value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
   return value.toISOString().slice(0, 16);
@@ -55,6 +52,11 @@ export default function BackupRestoreOperationsPage() {
   const [provider, setProvider] = useState("Railway PostgreSQL");
   const [summary, setSummary] = useState<EvidenceSummary | null>(null);
   const [loading, setLoading] = useState(false);
+  const [summaryScope, setSummaryScope] = useState("");
+  const [imported, setImported] = useState<EvidenceImport | null>(null);
+  const [importedScope, setImportedScope] = useState("");
+  const inFlight = useRef(false);
+  const submissions = useRef(new SubmissionGuard());
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -77,6 +79,33 @@ export default function BackupRestoreOperationsPage() {
   const [applicationRead, setApplicationRead] = useState(false);
   const [restoreNote, setRestoreNote] = useState("");
 
+  function applyImport(evidence: EvidenceImport) {
+    if (inFlight.current) return;
+    requireMatchingSchema(evidence, summaryScope === query() ? summary?.schema_contract_sha256 : undefined);
+    setImported(evidence);
+    setImportedScope(query());
+    setProvider(evidence.provider);
+    setBackupCompletedAt(localDateTime(evidence.backup.completed_at));
+    setBackupReference(evidence.backup.backup_reference_sha256);
+    setBackupSuccessful(evidence.backup.successful);
+    setEncrypted(evidence.backup.encrypted_at_rest_verified);
+    setSeparatedCopy(evidence.backup.separated_copy_verified);
+    setRetentionDays(evidence.backup.retention_days);
+    setPitrApplicable(evidence.backup.pitr_applicable);
+    setPitrHours(evidence.backup.pitr_window_hours);
+    setBackupNote("Imported bounded evidence; supporting backup claims require operator review before submission.");
+    setRestoreCompletedAt(localDateTime(evidence.restore.completed_at));
+    setRestoreSourceReference(evidence.restore.source_backup_reference_sha256);
+    setRestoredRecordHash(evidence.restore.restored_record_set_sha256);
+    setRestoreSuccessful(evidence.restore.successful);
+    setIsolatedTarget(evidence.restore.isolated_nonproduction_target_verified);
+    setRequiredTables(evidence.restore.required_tables_verified);
+    setApplicationRead(evidence.restore.application_read_verified);
+    setRestoreNote(sampledNote(evidence));
+    setError("");
+    setMessage("Evidence applied locally. Review the forms, record the backup first, then record the matching restore. Nothing has been submitted.");
+  }
+
   function query() {
     return new URLSearchParams({
       customer_id: customerId.trim() || "default_customer",
@@ -91,7 +120,8 @@ export default function BackupRestoreOperationsPage() {
   }
 
   async function refresh() {
-    if (!API_URL || !adminToken.trim() || loading) return;
+    if (!API_URL || !adminToken.trim() || inFlight.current) return;
+    inFlight.current = true;
     setLoading(true);
     setError("");
     setMessage("");
@@ -102,18 +132,30 @@ export default function BackupRestoreOperationsPage() {
       });
       const data = await readJson(response) as EvidenceSummary;
       setSummary(data);
+      setSummaryScope(query());
       if (data.schema_contract_sha256) {
         setMessage("Current backup and restore evidence loaded. The schema-contract hash may be used only after an isolated restore has actually been verified against that contract.");
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Backup/restore status could not be loaded.");
     } finally {
+      inFlight.current = false;
       setLoading(false);
     }
   }
 
   async function submitBackup() {
-    if (!API_URL || !adminToken.trim() || actor.trim().length < 2 || loading) return;
+    if (!API_URL || !adminToken.trim() || actor.trim().length < 2 || inFlight.current) return;
+    if (imported && (importedScope !== query() || summaryScope !== query() || summary?.schema_contract_sha256 !== imported.schema_contract_sha256)) {
+      setError("Refresh status for this scope. Re-import and confirm if the scope changed; imported evidence must match its confirmed scope and current schema contract."); return;
+    }
+    const completed = evidenceInstant(backupCompletedAt, imported?.backup.completed_at);
+    const key = submissionKey("backup", query(), completed, backupReference.trim());
+    if ((summaryScope === query() && matchesRecorded(summary?.latest_backup, completed, backupReference.trim().toLowerCase())) || !submissions.current.begin(key)) {
+      setError("This backup was recorded or its submission outcome is unresolved. Refresh and review existing evidence before any further submission."); return;
+    }
+    inFlight.current = true;
+    let recorded = false;
     setLoading(true);
     setError("");
     setMessage("");
@@ -122,7 +164,7 @@ export default function BackupRestoreOperationsPage() {
         method: "POST",
         headers: {"Content-Type": "application/json", "X-NICO-Admin-Token": adminToken},
         body: JSON.stringify({
-          completed_at: toIso(backupCompletedAt),
+          completed_at: completed,
           provider,
           backup_reference_sha256: backupReference.trim().toLowerCase(),
           successful: backupSuccessful,
@@ -137,18 +179,36 @@ export default function BackupRestoreOperationsPage() {
         cache: "no-store",
       });
       const data = await readJson(response);
+      recorded = data.status === "recorded";
+      if (!recorded) throw new Error("The backup response did not confirm recording. Refresh and review evidence; do not submit again.");
       setSummary(data.backup_restore || null);
-      setRestoreSourceReference(backupReference.trim().toLowerCase());
+      setSummaryScope(query());
+      if (!restoreSourceReference.trim()) setRestoreSourceReference(backupReference.trim().toLowerCase());
       setMessage("Bounded backup evidence recorded. NICO did not create, access, or download a backup.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Backup evidence could not be recorded.");
     } finally {
+      submissions.current.finish(key, recorded);
+      inFlight.current = false;
       setLoading(false);
     }
   }
 
   async function submitRestore() {
-    if (!API_URL || !adminToken.trim() || actor.trim().length < 2 || !summary?.schema_contract_sha256 || loading) return;
+    if (!API_URL || !adminToken.trim() || actor.trim().length < 2 || !summary?.schema_contract_sha256 || inFlight.current) return;
+    if (summaryScope !== query() || (imported && (importedScope !== query() || summary.schema_contract_sha256 !== imported.schema_contract_sha256))) {
+      setError("Refresh status for this scope. Re-import and confirm if the scope changed; imported evidence must match its confirmed scope and current schema contract."); return;
+    }
+    if (!summary.latest_backup?.present || summary.latest_backup.backup_reference_sha256 !== restoreSourceReference.trim().toLowerCase()) {
+      setError("Record or load the matching backup before recording this restore."); return;
+    }
+    const completed = evidenceInstant(restoreCompletedAt, imported?.restore.completed_at);
+    const key = submissionKey("restore", query(), completed, restoreSourceReference.trim(), restoredRecordHash.trim());
+    if (matchesRecorded(summary.latest_restore_drill, completed, restoreSourceReference.trim().toLowerCase(), restoredRecordHash.trim().toLowerCase()) || !submissions.current.begin(key)) {
+      setError("This restore was recorded or its submission outcome is unresolved. Refresh and review existing evidence before any further submission."); return;
+    }
+    inFlight.current = true;
+    let recorded = false;
     setLoading(true);
     setError("");
     setMessage("");
@@ -157,7 +217,7 @@ export default function BackupRestoreOperationsPage() {
         method: "POST",
         headers: {"Content-Type": "application/json", "X-NICO-Admin-Token": adminToken},
         body: JSON.stringify({
-          completed_at: toIso(restoreCompletedAt),
+          completed_at: completed,
           provider,
           source_backup_reference_sha256: restoreSourceReference.trim().toLowerCase(),
           restored_record_set_sha256: restoredRecordHash.trim().toLowerCase(),
@@ -172,11 +232,16 @@ export default function BackupRestoreOperationsPage() {
         cache: "no-store",
       });
       const data = await readJson(response);
+      recorded = data.status === "recorded";
+      if (!recorded) throw new Error("The restore response did not confirm recording. Refresh and review evidence; do not submit again.");
       setSummary(data.backup_restore || null);
+      setSummaryScope(query());
       setMessage("Bounded isolated restore-drill evidence recorded. NICO did not execute a restore, failover, rollback, or production mutation.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Restore-drill evidence could not be recorded.");
     } finally {
+      submissions.current.finish(key, recorded);
+      inFlight.current = false;
       setLoading(false);
     }
   }
@@ -192,16 +257,19 @@ export default function BackupRestoreOperationsPage() {
       <div className="section-head"><div><p className="eyebrow">Operator access</p><h2>Evidence scope</h2></div><span className={statusClass(summary?.status)}>{summary?.status || "not checked"}</span></div>
       <p className="warning-box">The admin token remains only in live React memory. Do not paste database URLs, credentials, backup URLs, archive contents, provider response bodies, or connection strings. Notes are hashed and are not retained.</p>
       <div className="form-grid">
-        <label>Customer ID<input value={customerId} onChange={(event) => setCustomerId(event.target.value)} /></label>
-        <label>Project ID<input value={projectId} onChange={(event) => setProjectId(event.target.value)} /></label>
-        <label>Operator or reviewer<input value={actor} onChange={(event) => setActor(event.target.value)} /></label>
-        <label>Provider label<input value={provider} onChange={(event) => setProvider(event.target.value)} /></label>
-        <label>NICO admin token<input type="password" autoComplete="off" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} /></label>
+        <label>Customer ID<input disabled={loading} value={customerId} onChange={(event) => setCustomerId(event.target.value)} /></label>
+        <label>Project ID<input disabled={loading} value={projectId} onChange={(event) => setProjectId(event.target.value)} /></label>
+        <label>Operator or reviewer<input disabled={loading} value={actor} onChange={(event) => setActor(event.target.value)} /></label>
+        <label>Provider label<input disabled={loading} value={provider} onChange={(event) => setProvider(event.target.value)} /></label>
+        <label>NICO admin token<input disabled={loading} type="password" autoComplete="off" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} /></label>
       </div>
       <button type="button" className="primary-button" disabled={!API_URL || !adminToken.trim() || loading} onClick={refresh}>{loading ? "Checking evidence..." : "Refresh backup and restore status"}</button>
       {error ? <p className="error-box">{error}</p> : null}
       {message ? <p className="summary-box">{message}</p> : null}
     </section>
+
+    <EvidenceFileImport scope={query()} schema={summaryScope === query() ? summary?.schema_contract_sha256 : undefined} disabled={loading} onConfirm={applyImport}/>
+    {imported ? <p className="warning-box">{sampledNote(imported)} Each submission still requires your explicit action. Re-importing does not reset recorded or unresolved submissions.</p> : null}
 
     {summary ? <section className="section panel">
       <div className="section-head"><div><p className="eyebrow">Current evidence</p><h2>{summary.backup_restore_ready ? "Backup and restore evidence verified" : "Evidence remains incomplete"}</h2></div><span className={statusClass(summary.status)}>{summary.status}</span></div>
@@ -228,15 +296,15 @@ export default function BackupRestoreOperationsPage() {
     <section className="section panel">
       <div className="section-head"><div><p className="eyebrow">Step 1</p><h2>Record real backup evidence</h2></div><span className="status gray">No backup execution</span></div>
       <div className="form-grid">
-        <label>Backup completed at<input type="datetime-local" value={backupCompletedAt} onChange={(event) => setBackupCompletedAt(event.target.value)} /></label>
-        <label>Backup reference SHA-256<input value={backupReference} onChange={(event) => setBackupReference(event.target.value)} placeholder="64 lowercase hexadecimal characters" /></label>
-        <label>Retention days<input type="number" min={0} max={3650} value={retentionDays} onChange={(event) => setRetentionDays(Number(event.target.value))} /></label>
-        <label>Point-in-time recovery hours<input type="number" min={0} max={87600} disabled={!pitrApplicable} value={pitrHours} onChange={(event) => setPitrHours(Number(event.target.value))} /></label>
-        <label><input type="checkbox" checked={backupSuccessful} onChange={(event) => setBackupSuccessful(event.target.checked)} /> Backup completed successfully</label>
-        <label><input type="checkbox" checked={encrypted} onChange={(event) => setEncrypted(event.target.checked)} /> Encryption at rest verified</label>
-        <label><input type="checkbox" checked={separatedCopy} onChange={(event) => setSeparatedCopy(event.target.checked)} /> Provider-separated or offsite copy verified</label>
-        <label><input type="checkbox" checked={pitrApplicable} onChange={(event) => setPitrApplicable(event.target.checked)} /> Point-in-time recovery applies</label>
-        <label>Review note<textarea value={backupNote} onChange={(event) => setBackupNote(event.target.value)} placeholder="Do not include secrets or provider URLs. The note is hashed and not retained." /></label>
+        <label>Backup completed at<input disabled={loading} type="datetime-local" step="0.001" value={backupCompletedAt} onChange={(event) => setBackupCompletedAt(event.target.value)} /></label>
+        <label>Backup reference SHA-256<input disabled={loading} value={backupReference} onChange={(event) => setBackupReference(event.target.value)} placeholder="64 lowercase hexadecimal characters" /></label>
+        <label>Retention days<input disabled={loading} type="number" min={0} max={3650} value={retentionDays} onChange={(event) => setRetentionDays(Number(event.target.value))} /></label>
+        <label>Point-in-time recovery hours<input type="number" min={0} max={87600} disabled={loading || !pitrApplicable} value={pitrHours} onChange={(event) => setPitrHours(Number(event.target.value))} /></label>
+        <label><input disabled={loading} type="checkbox" checked={backupSuccessful} onChange={(event) => setBackupSuccessful(event.target.checked)} /> Backup completed successfully</label>
+        <label><input disabled={loading} type="checkbox" checked={encrypted} onChange={(event) => setEncrypted(event.target.checked)} /> Encryption at rest verified</label>
+        <label><input disabled={loading} type="checkbox" checked={separatedCopy} onChange={(event) => setSeparatedCopy(event.target.checked)} /> Provider-separated or offsite copy verified</label>
+        <label><input disabled={loading} type="checkbox" checked={pitrApplicable} onChange={(event) => setPitrApplicable(event.target.checked)} /> Point-in-time recovery applies</label>
+        <label>Review note<textarea disabled={loading} value={backupNote} onChange={(event) => setBackupNote(event.target.value)} placeholder="Do not include secrets or provider URLs. The note is hashed and not retained." /></label>
       </div>
       <button type="button" className="primary-button" disabled={!adminToken.trim() || actor.trim().length < 2 || backupReference.trim().length !== 64 || loading} onClick={submitBackup}>Record backup evidence</button>
     </section>
@@ -245,15 +313,15 @@ export default function BackupRestoreOperationsPage() {
       <div className="section-head"><div><p className="eyebrow">Step 2</p><h2>Record isolated restore-drill evidence</h2></div><span className="status red">Never production</span></div>
       <p className="warning-box">Submit this only after a backup was restored into an isolated non-production target and the current schema, required tables, and application reads were actually verified.</p>
       <div className="form-grid">
-        <label>Restore drill completed at<input type="datetime-local" value={restoreCompletedAt} onChange={(event) => setRestoreCompletedAt(event.target.value)} /></label>
-        <label>Source backup reference SHA-256<input value={restoreSourceReference} onChange={(event) => setRestoreSourceReference(event.target.value)} placeholder="Must match the latest recorded backup" /></label>
-        <label>Restored record-set SHA-256<input value={restoredRecordHash} onChange={(event) => setRestoredRecordHash(event.target.value)} placeholder="Safe hash only; no record data" /></label>
-        <label>Current schema-contract SHA-256<input readOnly value={summary?.schema_contract_sha256 || "Load current status first"} /></label>
-        <label><input type="checkbox" checked={restoreSuccessful} onChange={(event) => setRestoreSuccessful(event.target.checked)} /> Restore completed successfully</label>
-        <label><input type="checkbox" checked={isolatedTarget} onChange={(event) => setIsolatedTarget(event.target.checked)} /> Isolated non-production target verified</label>
-        <label><input type="checkbox" checked={requiredTables} onChange={(event) => setRequiredTables(event.target.checked)} /> Required tables verified</label>
-        <label><input type="checkbox" checked={applicationRead} onChange={(event) => setApplicationRead(event.target.checked)} /> Application read verification passed</label>
-        <label>Review note<textarea value={restoreNote} onChange={(event) => setRestoreNote(event.target.value)} placeholder="Do not include secrets or provider URLs. The note is hashed and not retained." /></label>
+        <label>Restore drill completed at<input disabled={loading} type="datetime-local" step="0.001" value={restoreCompletedAt} onChange={(event) => setRestoreCompletedAt(event.target.value)} /></label>
+        <label>Source backup reference SHA-256<input disabled={loading} value={restoreSourceReference} onChange={(event) => setRestoreSourceReference(event.target.value)} placeholder="Must match the latest recorded backup" /></label>
+        <label>Restored record-set SHA-256<input disabled={loading} value={restoredRecordHash} onChange={(event) => setRestoredRecordHash(event.target.value)} placeholder="Safe hash only; no record data" /></label>
+        <label>Current schema-contract SHA-256<input disabled={loading} readOnly value={summary?.schema_contract_sha256 || "Load current status first"} /></label>
+        <label><input disabled={loading} type="checkbox" checked={restoreSuccessful} onChange={(event) => setRestoreSuccessful(event.target.checked)} /> Restore completed successfully</label>
+        <label><input disabled={loading} type="checkbox" checked={isolatedTarget} onChange={(event) => setIsolatedTarget(event.target.checked)} /> Isolated non-production target verified</label>
+        <label><input disabled={loading} type="checkbox" checked={requiredTables} onChange={(event) => setRequiredTables(event.target.checked)} /> Required tables verified</label>
+        <label><input disabled={loading} type="checkbox" checked={applicationRead} onChange={(event) => setApplicationRead(event.target.checked)} /> Application read verification passed</label>
+        <label>Review note<textarea disabled={loading} value={restoreNote} onChange={(event) => setRestoreNote(event.target.value)} placeholder="Do not include secrets or provider URLs. The note is hashed and not retained." /></label>
       </div>
       <button type="button" className="primary-button" disabled={!adminToken.trim() || actor.trim().length < 2 || restoreSourceReference.trim().length !== 64 || restoredRecordHash.trim().length !== 64 || !summary?.schema_contract_sha256 || loading} onClick={submitRestore}>Record isolated restore-drill evidence</button>
     </section>

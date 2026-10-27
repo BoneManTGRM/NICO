@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NICO bounded backup/restore evidence import v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "provider",
+    "schema_contract_sha256",
+    "backup",
+    "restore",
+    "verification"
+  ],
+  "properties": {
+    "format": {
+      "const": "nico.backup-restore-evidence-import.v1"
+    },
+    "provider": {
+      "const": "Railway PostgreSQL"
+    },
+    "schema_contract_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "backup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "completed_at",
+        "backup_reference_sha256",
+        "successful",
+        "encrypted_at_rest_verified",
+        "separated_copy_verified",
+        "retention_days",
+        "pitr_applicable",
+        "pitr_window_hours"
+      ],
+      "properties": {
+        "completed_at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{3})?Z$",
+          "format": "date-time"
+        },
+        "backup_reference_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "successful": {
+          "type": "boolean"
+        },
+        "encrypted_at_rest_verified": {
+          "type": "boolean"
+        },
+        "separated_copy_verified": {
+          "type": "boolean"
+        },
+        "retention_days": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3650
+        },
+        "pitr_applicable": {
+          "type": "boolean"
+        },
+        "pitr_window_hours": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 87600
+        }
+      }
+    },
+    "restore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "completed_at",
+        "source_backup_reference_sha256",
+        "restored_record_set_sha256",
+        "successful",
+        "isolated_nonproduction_target_verified",
+        "required_tables_verified",
+        "application_read_verified"
+      ],
+      "properties": {
+        "completed_at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{3})?Z$",
+          "format": "date-time"
+        },
+        "source_backup_reference_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "restored_record_set_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "successful": {
+          "type": "boolean"
+        },
+        "isolated_nonproduction_target_verified": {
+          "type": "boolean"
+        },
+        "required_tables_verified": {
+          "type": "boolean"
+        },
+        "application_read_verified": {
+          "type": "boolean"
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "sample_count",
+        "full_bootstrap_or_http_verified"
+      ],
+      "properties": {
+        "method": {
+          "const": "nico.restore.unreviewed-application-sample.v1"
+        },
+        "sample_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "full_bootstrap_or_http_verified": {
+          "const": false
+        }
+      }
+    }
+  }
+}
