@@ -2203,6 +2203,10 @@ def _repository_unavailable_note_es(match: re.Match[str]) -> str:
 
 
 def _structured_presentation_es(value: str) -> str | None:
+    from nico.comprehensive_spanish_function_measurement_copy_v1 import translate_function_measurement_copy
+    measurement = translate_function_measurement_copy(value)
+    if measurement is not None:
+        return measurement
     source_sample = re.fullmatch(
         r"(?P<anchor>repository_evidence\.code_signal_evidence\.risk_pattern_samples\[\d+\]: "
         r"[A-Za-z0-9_@./+\-]+:\d+(?::\d+)?: [A-Za-z0-9_.\-]+ — )"
@@ -2841,6 +2845,10 @@ def _translate_presentation(value: Any) -> str:
             if segment != ""
         )
     stripped = text.strip()
+    from nico.comprehensive_spanish_function_measurement_copy_v1 import translate_function_measurement_copy
+    measurement = translate_function_measurement_copy(stripped)
+    if measurement is not None:
+        return text.replace(stripped, measurement, 1)
     from nico.report_score_explanation import LABELS_ES
     if stripped in LABELS_ES:
         return text.replace(stripped, LABELS_ES[stripped], 1)
@@ -3520,11 +3528,18 @@ def _render_inputs(
 ) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]], str]:
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
     assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
+    from nico.comprehensive_commercial_ship_projection_v1 import _project_stage
     stages = [
-        item
+        deepcopy(dict(item))
         for item in canonical.get("stage_summaries") or []
         if isinstance(item, Mapping)
     ]
+    for stage in stages:
+        # Borrow only the display-status qualifier. The commercial projection
+        # also rewrites page counts and deployment prose, which may be supplied
+        # literals here and must reach localization unchanged.
+        if "status" in stage:
+            stage["status"] = _project_stage(stage)["status"]
     generated_at = str(
         identity.get("generated_at")
         or identity.get("generation_timestamp")

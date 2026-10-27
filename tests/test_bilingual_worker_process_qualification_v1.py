@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from tests.owned_worker_environment import owned_worker_environment
 
 
 def test_bilingual_worker_artifacts_repeat_across_fresh_hash_seeds(tmp_path, record_property):
@@ -18,10 +19,8 @@ def test_bilingual_worker_artifacts_repeat_across_fresh_hash_seeds(tmp_path, rec
     for seed in ('0', '1'):
         child_root = tmp_path / seed
         child_root.mkdir()
-        environment = {key: os.environ[key] for key in ('PATH', 'LANG', 'PYTHONPATH') if key in os.environ}
+        environment = owned_worker_environment(root, child_root, os.environ)
         environment.update({
-            'PYTHONPATH': str(root) + os.pathsep + environment.get('PYTHONPATH', ''),
-            'NICO_HOME': str(child_root), 'NICO_SQLITE_PATH': str(child_root / 'nico.sqlite3'),
             'RAILWAY_GIT_COMMIT_SHA': 'a' * 40, 'NICO_RELEASE_COMMIT_SHA': 'a' * 40,
             'NICO_FRONTEND_BUILD_COMMIT_SHA': 'b' * 40,
             'RAILWAY_DEPLOYMENT_ID': 'synthetic-worker-qualification',

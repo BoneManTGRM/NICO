@@ -96,10 +96,25 @@ def test_boolean_totals_are_not_numeric_contracts(field):
     assert score_explanation(a) == [UNAVAILABLE]
 
 
-def test_explicit_deductions_can_exceed_technical_with_zero_floor():
+@pytest.mark.parametrize("locale", ["en", "es-MX"])
+def test_explicit_deductions_can_exceed_technical_with_zero_floor(locale):
     a = assessment((0, 3, 4, 0), technical=2)
-    assert "Retained formula: 2 - 0 - 3 - 4 - 0 = 0" in score_explanation(a)
-    assert "Evidence-adjusted score: 0/100" in score_explanation(a)
+    before = deepcopy(a)
+    tr = spanish._translate_presentation if locale == "es-MX" else lambda s: s
+    lines = score_explanation(a, tr)
+    assert f'{tr("Score calculation with zero floor")}: max(0, 2 - 0 - 3 - 4 - 0) = 0' in lines
+    assert tr("Deductions exceed the technical score; the adjusted score is floored at zero.") in lines
+    assert f'{tr("Evidence-adjusted score")}: 0/100' in lines
+    assert not any('2 - 0 - 3 - 4 - 0 = 0' in line for line in lines)
+    identity = {"run_id": "comprun_floor", "repository": "owned/synthetic", "commit_sha": "a" * 40}
+    markdown = report._markdown(identity, a, [], "2026-01-01", localize_presentation=tr)
+    encoded, error, _ = report._pdf(identity, a, [], "2026-01-01", localize_presentation=tr)
+    assert error is None
+    pdf_text = " ".join(page.extract_text() for page in PdfReader(io.BytesIO(base64.b64decode(encoded))).pages)
+    for surface in (markdown, pdf_text):
+        assert "max(0, 2 - 0 - 3 - 4 - 0) = 0" in surface
+        assert '2 - 0 - 3 - 4 - 0 = 0' not in surface
+    assert a == before
 
 
 @pytest.mark.parametrize("locale", ["en", "es-MX"])
@@ -168,7 +183,7 @@ def test_terminal_scorecard_replacement_renders_supplied_deductions(locale, valu
     assert canonical == before
 
 
-def test_installed_terminal_paths_retain_valid_contract_explanation_in_both_locales():
+def test_installed_terminal_paths_retain_valid_contract_explanation_in_both_locales(tmp_path):
     import subprocess
     import sys
     from pathlib import Path
@@ -206,7 +221,61 @@ for locale in ('en', 'es-MX'):
     assert result['human_review_required'] is True
     assert result['client_delivery_allowed'] is False
 '''
-    completed = subprocess.run([sys.executable, "-c", script],
-                               cwd=Path(__file__).resolve().parents[1],
+    import os
+    from tests.owned_worker_environment import owned_worker_environment
+    root = Path(__file__).resolve().parents[1]
+    completed = subprocess.run([sys.executable, "-c", script], cwd=root,
+                               env=owned_worker_environment(root, tmp_path, os.environ),
                                capture_output=True, text=True, timeout=120)
     assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+@pytest.mark.parametrize('locale', ['en', 'es-MX'])
+def test_phase1_produced_contract_reaches_report_explanation_without_repair(locale):
+    from nico.phase1_completion_truth_v1 import normalize_phase1_scoring_result
+    from tests.test_phase1_completion_truth_v1 import _payload
+
+    produced = normalize_phase1_scoring_result(
+        _payload(candidate_penalty=18, raw_penalty=2, execution_penalty=4))
+    a = produced['assessment']
+    before = deepcopy(produced)
+    tr = spanish._translate_presentation if locale == 'es-MX' else lambda s: s
+    identity = {'run_id': 'comprun_phase1_score', 'repository': 'owned/synthetic', 'commit_sha': 'a' * 40}
+    md = report._markdown(identity, a, [], '2026-01-01', localize_presentation=tr)
+    encoded, error, pages = report._pdf(identity, a, [], '2026-01-01', localize_presentation=tr)
+    assert error is None and pages > 0
+    text = '\n'.join(p.extract_text() for p in PdfReader(io.BytesIO(base64.b64decode(encoded))).pages)
+    for surface in (md, text):
+        assert '93 - 2 - 4 = 87' in surface
+        assert f'{tr("Missing raw-payload deduction")}: 2' in surface
+        assert f'{tr("Incomplete-analyzer deduction")}: 4' in surface
+        assert tr(UNAVAILABLE) not in surface
+        assert tr('Candidate-volume deduction') not in surface
+        assert tr('Analyzer names unavailable in the retained contract') in surface
+    assert produced == before
+
+
+def test_native_scoring_output_normalization_emits_explainable_retained_contract(monkeypatch):
+    from nico import comprehensive_native_providers as legacy
+    from nico import comprehensive_native_providers_v5 as provider
+    from nico.phase1_completion_truth_v1 import normalize_phase1_scoring_result
+    from tests.test_comprehensive_native_providers_v2 import _context, _repo, _scan
+
+    # Supply owned evidence at the acquisition seams; exercise actual scoring and
+    # its completion normalizer without manufacturing an explanation contract.
+    monkeypatch.setattr(legacy, '_repo', lambda _: _repo())
+    monkeypatch.setattr(legacy, '_scan', lambda _: _scan())
+    monkeypatch.setattr(legacy, '_complexity', lambda _: {})
+    scored = provider.canonical_scoring_provider(_context())
+    before = deepcopy(scored)
+    produced = normalize_phase1_scoring_result(scored)
+    a = produced['assessment']
+    contract = a['score_contract']
+    assert contract['score_formula'] == a['score_formula'] == produced['evidence']['score_formula']
+    assert f'Retained formula: {contract["score_formula"]}' in score_explanation(a)
+    assert contract['assurance_penalty'] == (
+        contract['missing_raw_payload_penalty'] + contract['incomplete_analyzer_penalty'])
+    assert contract['candidate_volume_penalty'] == 0
+    assert scored == before
+    assert produced['phase1_scoring_truth']['human_approval_created'] is False
+    assert produced['phase1_scoring_truth']['client_delivery_allowed'] is False

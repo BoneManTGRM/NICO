@@ -32,12 +32,16 @@ def _fresh_offline_observation(status, language, seed):
         "status,language=json.load(sys.stdin);"
         "print('NICO_RENDER_QUALIFICATION='+json.dumps(_offline_observation(status,language),sort_keys=True))"
     )
-    result = subprocess.run(
-        [sys.executable, "-c", code], input=json.dumps([status, language]),
-        text=True, capture_output=True, timeout=180, check=False,
-        env={**{key: os.environ[key] for key in ("PATH", "LANG", "PYTHONPATH") if key in os.environ},
-             "PYTHONHASHSEED": seed},
-    )
+    import tempfile
+    from pathlib import Path
+    from tests.owned_worker_environment import owned_worker_environment
+    with tempfile.TemporaryDirectory(prefix="nico-render-observation-") as temporary:
+        environment = owned_worker_environment(Path(__file__).resolve().parents[1], Path(temporary), os.environ)
+        environment["PYTHONHASHSEED"] = seed
+        result = subprocess.run(
+            [sys.executable, "-c", code], input=json.dumps([status, language]),
+            text=True, capture_output=True, timeout=180, check=False, env=environment,
+        )
     assert result.returncode == 0, result.stderr
     observations = [line.removeprefix("NICO_RENDER_QUALIFICATION=")
                     for line in result.stdout.splitlines()

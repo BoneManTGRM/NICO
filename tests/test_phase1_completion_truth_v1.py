@@ -118,3 +118,30 @@ def test_public_home_has_one_comprehensive_product_route() -> None:
     assert "tier=express" not in source
     assert 'params.get("legacy")' not in source
     assert "Opening NICO Comprehensive" in source
+
+
+def test_refreshed_contract_retains_authoritative_formula_without_mutating_input():
+    from copy import deepcopy
+    from nico.report_score_explanation import score_explanation
+
+    for raw, incomplete in ((0, 0), (2, 4), (90, 4)):
+        for retained_formula in (None, '93 - 18 - 2 - 4 = 69'):
+            payload = _payload(candidate_penalty=18, raw_penalty=raw, execution_penalty=incomplete)
+            if retained_formula is not None:
+                payload['assessment']['score_contract']['score_formula'] = retained_formula
+            before = deepcopy(payload)
+            result = normalize_phase1_scoring_result(payload)
+            assessment = result['assessment']
+            formula = f'93 - {raw} - {incomplete} = {max(0, 93 - raw - incomplete)}'
+            assert assessment['score_contract']['score_formula'] == formula
+            assert assessment['score_formula'] == result['evidence']['score_formula'] == formula
+            if raw + incomplete > 93:
+                assert f'Score calculation with zero floor: max(0, 93 - {raw} - {incomplete}) = 0' in score_explanation(assessment)
+            else:
+                assert f'Retained formula: {formula}' in score_explanation(assessment)
+            assert assessment['score_contract']['candidate_volume_penalty'] == 0
+            assert assessment['score_contract']['assurance_penalty'] == raw + incomplete
+            assert payload == before
+            assert normalize_phase1_scoring_result(result) == result
+            assert result['phase1_scoring_truth']['human_approval_created'] is False
+            assert result['phase1_scoring_truth']['client_delivery_allowed'] is False

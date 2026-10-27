@@ -136,6 +136,9 @@ def normalize_phase1_scoring_result(payload: Mapping[str, Any]) -> dict[str, Any
     assessment["score_formula"] = (
         f"{technical} - {payload_penalty} - {execution_penalty} = {evidence_adjusted}"
     )
+    # The retained contract must describe the same refreshed deductions as the
+    # assessment; read-only report explanations intentionally never repair it.
+    contract["score_formula"] = assessment["score_formula"]
 
     maturity = deepcopy(
         dict(assessment.get("maturity_signal"))

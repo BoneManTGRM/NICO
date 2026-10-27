@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import html
 import io
 import unicodedata
 from copy import deepcopy
@@ -37,6 +36,12 @@ def _spanish_status(value: Any) -> str:
         "review limited": "Revisión limitada",
         "evidence evaluated": "Evidencia evaluada",
         "verified": "Verificada",
+        "not scored": "Sin puntuación",
+        "pending": "Pendiente",
+        "unknown": "Desconocido",
+        "exceptional": "Excepcional",
+        "provisional strong": "Fuerte provisional",
+        "provisional moderate": "Moderado provisional",
     }
     return translated.get(raw.casefold(), raw.title() or "Pendiente")
 
@@ -62,7 +67,7 @@ def _spanish_scorecard_page(canonical: Mapping[str, Any]) -> bytes:
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import inch
-    from reportlab.platypus import LongTable, Paragraph, SimpleDocTemplate, Spacer, TableStyle
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
     from nico.comprehensive_spanish_presentation_parity_v1 import _safe_es
 
     assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
@@ -85,82 +90,30 @@ def _spanish_scorecard_page(canonical: Mapping[str, Any]) -> bytes:
         textColor=colors.HexColor("#0f172a"),
         spaceAfter=12,
     )
-    cell = ParagraphStyle(
-        "LocalizedQualityScorecardCell",
-        parent=styles["BodyText"],
-        fontName="Helvetica",
-        fontSize=6.8,
-        leading=8.6,
-        textColor=colors.HexColor("#334155"),
-        wordWrap="CJK",
-    )
-    header = ParagraphStyle(
-        "LocalizedQualityScorecardHeader",
-        parent=cell,
-        fontName="Helvetica-Bold",
-        textColor=colors.white,
-    )
+    # Use the same complete columns, score precedence and flowing layout as the
+    # canonical renderer. The former Spanish-only table discarded summaries and
+    # substituted execution/assurance for canonical status.
+    from nico.comprehensive_report_package import _scorecard_pdf_table
 
-    def paragraph(value: Any, style: ParagraphStyle = cell) -> Paragraph:
-        return Paragraph(html.escape(_text(value)), style)
+    labels = {"Control": "Control", "Status": "Estado", "Score": "Puntuación",
+              "Summary": "Resumen", "NOT SCORED": "SIN PUNTUACIÓN",
+              "GRAY": "GRIS", "GREEN": "VERDE", "YELLOW": "AMARILLO", "RED": "ROJO"}
+    def localize(value: str) -> str:
+        return labels.get(value, _spanish_status(value).upper())
 
-    rows: list[list[Any]] = [
-        [
-            paragraph("Control", header),
-            paragraph("Puntuación", header),
-            paragraph("Ejecución", header),
-            paragraph("Garantía", header),
-        ]
-    ]
-    for section in sections:
-        score = section.get(
-            "score_value",
-            section.get("presented_score", section.get("score")),
-        )
-        score_label = (
-            f"{int(round(score))}/100"
-            if isinstance(score, (int, float)) and not isinstance(score, bool)
-            else "SIN PUNTUACIÓN"
-        )
-        execution = _spanish_status(
-            section.get("execution_status")
-            or section.get("presented_status")
-            or section.get("status")
-        )
-        rows.append(
-            [
-                paragraph(_safe_es(section.get("label") or section.get("id"))),
-                paragraph(score_label),
-                paragraph(execution),
-                paragraph(_spanish_assurance(section)),
-            ]
-        )
-
-    table = LongTable(
-        rows,
-        colWidths=[2.35 * inch, 1.05 * inch, 1.25 * inch, 2.75 * inch],
-        repeatRows=1,
-        splitByRow=1,
-    )
-    table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#075985")),
-                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd5e1")),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                (
-                    "ROWBACKGROUNDS",
-                    (0, 1),
-                    (-1, -1),
-                    [colors.white, colors.HexColor("#f8fafc")],
-                ),
-                ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ]
-        )
-    )
+    from nico.comprehensive_spanish_canonical_report_v87 import _render_inputs
+    # The replacement receives retained canonical truth, which may still contain
+    # English authored summaries. Reuse the canonical literal-aware projection.
+    _, localized_assessment, _, _ = _render_inputs(canonical)
+    projected = [dict(section) for section in localized_assessment.get("sections") or []
+                 if isinstance(section, Mapping)]
+    # Match the existing English final-repair display rule, not the earlier
+    # intermediate table's truncation. Only copied presentation rows are rounded.
+    for section in projected:
+        score = section.get("presented_score", section.get("score"))
+        section["presented_score"] = (int(round(score))
+            if isinstance(score, (int, float)) and not isinstance(score, bool) else None)
+    table = _scorecard_pdf_table(projected, width=7.4 * inch - 12, localized=localize)
     document = SimpleDocTemplate(
         buffer,
         pagesize=letter,
@@ -190,7 +143,19 @@ def _spanish_scorecard_page(canonical: Mapping[str, Any]) -> bytes:
               for line in explanation],
         ]
     )
-    return buffer.getvalue()
+    # Mark the complete generated block so later rebinding can replace all owned
+    # continuation pages without guessing from body text.
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import NameObject, NumberObject
+    reader = PdfReader(io.BytesIO(buffer.getvalue()))
+    writer = PdfWriter()
+    for index, page in enumerate(reader.pages):
+        page[NameObject("/NICOScorecardPage")] = NumberObject(index)
+        page[NameObject("/NICOScorecardPages")] = NumberObject(len(reader.pages))
+        writer.add_page(page)
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
 
 
 def _replace_spanish_scorecard(
@@ -212,19 +177,36 @@ def _replace_spanish_scorecard(
     reader = PdfReader(io.BytesIO(pdf))
     writer = PdfWriter()
     replaced = False
-    for page in reader.pages:
-        page_text = page.extract_text() or ""
-        normalized = _normalized(page_text)
-        is_scorecard = (
-            "cuadro de puntuacion tecnica" in normalized
-            or "canonical technical scorecard" in normalized
-        )
+    index = 0
+    while index < len(reader.pages):
+        page = reader.pages[index]
+        normalized = _normalized(page.extract_text() or "")
+        is_scorecard = ("cuadro de puntuacion tecnica" in normalized
+                        or "canonical technical scorecard" in normalized)
         if not replaced and is_scorecard:
+            count = 1
+            if "/NICOScorecardPages" in page:
+                count = int(page["/NICOScorecardPages"])
+                if count < 1 or index + count > len(reader.pages) or any(
+                    reader.pages[index + offset].get("/NICOScorecardPage") != offset
+                    or reader.pages[index + offset].get("/NICOScorecardPages") != count
+                    for offset in range(count)
+                ):
+                    raise ValueError("localized scorecard block ownership is inconsistent")
+            elif index + 1 < len(reader.pages):
+                next_lines = (reader.pages[index + 1].extract_text() or "").splitlines()
+                # Older unmarked continuation tables cannot safely be deleted as
+                # a guessed range. Require their owner to provide a bound block.
+                lines = [_normalized(line) for line in next_lines[:6]]
+                if "control" in lines and any(label in lines for label in ("resumen", "summary", "garantia")):
+                    raise ValueError("unmarked localized scorecard continuation ownership unavailable")
             for replacement_page in replacement.pages:
                 writer.add_page(replacement_page)
+            index += count
             replaced = True
         else:
             writer.add_page(page)
+            index += 1
 
     if not replaced:
         raise ValueError("localized canonical scorecard page was not found for safe replacement")
@@ -237,6 +219,7 @@ def _replace_spanish_scorecard(
 def _validate_spanish_scorecard(
     pdf: bytes,
     sections: list[Mapping[str, Any]],
+    canonical: Mapping[str, Any] | None = None,
 ) -> None:
     from pypdf import PdfReader
     from nico.comprehensive_spanish_presentation_parity_v1 import _safe_es
@@ -244,23 +227,30 @@ def _validate_spanish_scorecard(
     if not sections:
         return
     reader = PdfReader(io.BytesIO(pdf))
-    scorecard_pages = []
-    for page in reader.pages:
-        text = page.extract_text() or ""
-        normalized = _normalized(text)
-        if "cuadro de puntuacion tecnica" in normalized:
-            scorecard_pages.append(text)
-    if len(scorecard_pages) != 1:
+    texts = [page.extract_text() or "" for page in reader.pages]
+    starts = [index for index, text in enumerate(texts)
+              if "cuadro de puntuacion tecnica" in _normalized(text)]
+    if len(starts) != 1:
         raise ValueError("final Spanish premium PDF must contain exactly one technical scorecard")
-
-    scorecard_text = scorecard_pages[0]
+    expected = _spanish_scorecard_page(canonical or {"assessment": {"sections": sections}})
+    expected_reader = PdfReader(io.BytesIO(expected))
+    stop = starts[0] + len(expected_reader.pages)
+    if stop > len(texts):
+        raise ValueError("final Spanish premium PDF truncated the technical scorecard")
+    scorecard_text = "\n".join(texts[starts[0]:stop])
+    # Check complete rendered content, including summaries and continuation rows,
+    # within the renderer-owned page range rather than anywhere in the report.
+    from collections import Counter
+    import re
+    def tokens(value: str) -> Counter:
+        return Counter(re.findall(r"\w+", _normalized(value)))
+    expected_tokens = tokens("\n".join(page.extract_text() or "" for page in expected_reader.pages))
+    if expected_tokens - tokens(scorecard_text):
+        raise ValueError("Spanish scorecard omitted canonical presentation content")
     for section in sections:
         label = _safe_es(section.get("label") or section.get("id"))
-        score = section.get(
-            "score_value",
-            section.get("presented_score", section.get("score")),
-        )
-        if label and label not in scorecard_text:
+        score = section.get("presented_score", section.get("score"))
+        if label and re.sub(r"\s+", "", _normalized(label)) not in re.sub(r"\s+", "", _normalized(scorecard_text)):
             raise ValueError(f"Spanish scorecard omitted canonical control row: {label}")
         if isinstance(score, (int, float)) and not isinstance(score, bool):
             score_label = f"{int(round(score))}/100"
@@ -291,7 +281,7 @@ def repair_localized_rendered_report(package: Mapping[str, Any]) -> dict[str, An
         expected_sections=[],
         spanish=True,
     )
-    _validate_spanish_scorecard(pdf, sections)
+    _validate_spanish_scorecard(pdf, sections, canonical)
 
     markdown = _normalize_final_text(str(result.get("markdown") or ""), spanish=True)
     rendered_html = _normalize_final_text(str(result.get("html") or ""), spanish=True)
