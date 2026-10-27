@@ -64,7 +64,12 @@ def render_phase1_evidence_review_gate_pdf(
     maturity = assessment.get("maturity_signal") if isinstance(assessment.get("maturity_signal"), Mapping) else {}
     technical_score = assessment.get("technical_score", maturity.get("technical_score", maturity.get("score")))
     adjusted_score = assessment.get("canonical_evidence_adjusted_score", assessment.get("evidence_adjusted_score"))
-    scanners = [item for item in canonical.get("scanner_execution_records") or [] if isinstance(item, Mapping)]
+    from nico.client_report_completion_v1 import _scanner_records
+
+    # Summary counts use the complete retained population, including exclusions.
+    # scanner_execution_summary still denies exclusions execution credit.
+    required_scanners, excluded_scanners = _scanner_records(canonical)
+    scanners = required_scanners + excluded_scanners
     completed_scanners = sum(1 for item in scanners if item.get("completed") is True)
     review, _, categories = projection._candidate_summary(canonical)
     triage = _find(canonical, "technical_triage")

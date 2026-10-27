@@ -4,8 +4,30 @@ from __future__ import annotations
 import re
 
 from nico.source_function_measurement_report_v1 import LIMITS, UNAVAILABLE
+from nico.source_function_conformance_report_v1 import CONFORMANCE_LIMITATIONS
+from nico.source_function_conformance_v1 import LIMITATIONS as CONFORMANCE_DETAILS
 
 COPY_ES = {
+    CONFORMANCE_LIMITATIONS: (
+        'La velocidad de entrega no está establecida. La calificación requiere archivos elegibles de Python/JS/TS adquiridos completamente; C++ no compatible no recibe crédito. '
+        'Los totales combinados son descriptivos. CC<=20 y nesting<=4 son marginales separados, sin inferencia conjunta. '
+        'La dilución mediante funciones triviales puede aumentar la proporción sin reducir la carga de decisiones; nunca se debe inferir una mejora únicamente de la proporción.'
+    ),
+    CONFORMANCE_DETAILS: (
+        'La conformidad de complejidad de funciones mide CC<=20 únicamente en funciones enumeradas; se excluye de la madurez general. '
+        'No establece la calidad arquitectónica ni la velocidad de entrega. Los lenguajes utilizan reglas de conteo diferentes; los totales combinados son descriptivos. '
+        'Nesting<=4 es una medida marginal separada; no puede inferirse conformidad conjunta de CC y anidamiento. '
+        'La extracción de funciones auxiliares y la dilución mediante funciones triviales pueden aumentar el porcentaje sin reducir la carga de decisiones; nunca se debe inferir una mejora únicamente de la proporción. '
+        'Las infracciones absolutas y sum(CC-1) permanecen visibles. Los residuos de inicializadores de módulos y clases y la carga de decisiones de todo el código fuente no están disponibles; no se enumeran las funciones lambda de Python. '
+        'Las exclusiones existentes del código fuente quedan fuera de la población; C++ no compatible no recibe crédito. '
+        'La calificación requiere un inventario elegible adquirido por completo; las exclusiones ambiguas basadas en contenido siguen sin estar disponibles. '
+        'Los hashes de texto vinculan el código fuente proporcionado y decodificado, no los bytes originales del repositorio; la autenticidad depende de la persistencia confiable del servidor, no de una certificación criptográfica ni de la inmutabilidad de etapas completadas aplicada de forma independiente.'
+    ),
+    # Exact authored failure reason from source_function_conformance_v1.build_conformance.
+    'A verified collection contract from trusted server persistence, complete bound acquisition and measured function histograms are required.':
+        'Se requiere un contrato de recopilación verificado mediante persistencia confiable del servidor, adquisición vinculada completa e histogramas de funciones medidas.',
+    'Conformance limitations': 'Limitaciones de conformidad',
+    'Conformance qualification': 'Calificación de conformidad',
     LIMITS: (
         'Las observaciones se refieren únicamente a las funciones enumeradas en el código fuente proporcionado. '
         'La conformidad calificada con CC<=20 se informa por separado y se excluye de la madurez general; la calidad arquitectónica general sigue sin establecerse. '
@@ -35,6 +57,14 @@ COPY_ES = {
 def translate_function_measurement_copy(value: str) -> str | None:
     if value in COPY_ES:
         return COPY_ES[value]
+    # integrate_conformance composes only these authored status bases. Do not
+    # substring-replace arbitrary supplied prose that happens to mention them.
+    for base in (UNAVAILABLE, 'Bound source observations; scoped conformance reported separately'):
+        for state, label in (('unavailable', 'no disponible'), ('qualified', 'calificada'), ('not_applicable', 'no aplicable')):
+            if value == base + '; function complexity conformance: ' + state:
+                return COPY_ES[base] + '; conformidad de complejidad de funciones: ' + label
+    if value == LIMITS + ' ' + CONFORMANCE_LIMITATIONS:
+        return COPY_ES[LIMITS] + ' ' + COPY_ES[CONFORMANCE_LIMITATIONS]
     match = re.fullmatch(r'(CC|NESTING|LOC) (measured functions|missing functions|maximum)', value)
     if match:
         dimension = {'CC':'CC','NESTING':'ANIDAMIENTO','LOC':'LOC'}[match[1]]
