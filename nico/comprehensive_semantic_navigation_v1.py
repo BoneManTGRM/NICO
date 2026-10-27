@@ -63,7 +63,7 @@ _SCORECARD_PLAIN_STATUS = re.compile(
     r"strong|moderate|weak|exceptional|pending|unknown|not\s+scored|"
     r"green|yellow|red|gray|verde|amarillo|rojo|gris|sin\s+puntuaci[oó]n|"
     r"provisional\s+(?:strong|moderate)|"
-    r"sólido|solido|moderado|débil|debil|excepcional|pendiente|"
+    r"sólido|solido|fuerte|moderado|débil|debil|excepcional|pendiente|"
     r"desconocido|(?:fuerte|moderado)\s+provisional|no\s+calificado|provisional\s+(?:sólido|solido|moderado)"
     r")(?:\s+[—-])?(?:\s+\d{1,3}(?:\.\d+)?(?:/100)?)?$",
     re.I,

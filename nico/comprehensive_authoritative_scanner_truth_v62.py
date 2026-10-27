@@ -478,10 +478,28 @@ def _synchronize_evidence_score_aliases(
     if "evidence_penalty_points" in output:
         output["evidence_penalty_points"] = evidence_penalty
     if "score_formula" in output:
-        output["score_formula"] = (
-            f"{technical_score} - {payload_penalty} - {execution_penalty} = "
-            f"{evidence_adjusted}"
-        )
+        if output.get("scoring_model_version") == "technical-minus-named-assurance-deductions.v1":
+            # This synchronizer changes evidence deductions, not the declared
+            # scoring model. Keep named terms explicit; missing/contradictory
+            # retained deductions must remain unavailable to the strict renderer.
+            candidate = output.get("candidate_volume_penalty")
+            others = output.get("other_assurance_penalties")
+            if (type(candidate) is int and candidate == 0
+                    and isinstance(others, Mapping)
+                    and all(isinstance(key, str) and key.strip()
+                            and type(amount) is int and amount == 0
+                            for key, amount in others.items())
+                    and type(output.get("other_assurance_penalty_total", 0)) is int
+                    and output.get("other_assurance_penalty_total", 0) == 0):
+                output["score_formula"] = (
+                    f"{technical_score} - {candidate} - {payload_penalty} - "
+                    f"{execution_penalty} - {sum(others.values())} = {evidence_adjusted}"
+                )
+        else:
+            output["score_formula"] = (
+                f"{technical_score} - {payload_penalty} - {execution_penalty} = "
+                f"{evidence_adjusted}"
+            )
     return output
 
 

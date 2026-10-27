@@ -562,6 +562,38 @@ def _module_id_from_stage(stage_id: str) -> str:
     return suffix
 
 
+def localize_engagement_state_lines(stage: Mapping[str, Any], engagement: Any, *, spanish: bool) -> dict[str, Any]:
+    """Localize only verified generated state sentinels in a presentation copy."""
+    output = deepcopy(dict(stage))
+    if output.get("stage_id") != "client_evidence_summary":
+        return output
+    generated_lines: dict[str, str] = {}
+    # State-rendered sentinels are authored display text, not supplied values.
+    # Require verified metadata and an empty excluded field before localizing
+    # these exact rows; genuine client literals and rationale stay untouched.
+    verified = _verified_engagement(engagement)
+    states = verified.get("field_states") or {}
+    for key, labels in _ENGAGEMENT_LABELS.items():
+        field = "client_name" if key == "customer_name" else key
+        state = states.get(field) or {}
+        if (state.get("state") != "excluded_from_scope"
+                or state.get("value") is not None or verified.get(field)):
+            continue
+        from nico.canonical_state_rendering_v1 import render_canonical_state
+        target = render_canonical_state("excluded_from_scope", "es-MX" if spanish else "en")
+        for prefix in (_CLIENT_LITERAL_EN_PREFIX, _CLIENT_LITERAL_ES_PREFIX):
+            for label in labels:
+                for sentinel in ("Excluded from scope", "Excluido del alcance"):
+                    generated_lines[prefix + label + ": " + sentinel] = (
+                        (_CLIENT_LITERAL_ES_PREFIX if spanish else _CLIENT_LITERAL_EN_PREFIX)
+                        + labels[int(spanish)] + ": " + target)
+    output["evidence"] = [
+        generated_lines.get(line, line) if isinstance(line, str) else line
+        for line in output.get("evidence") or []
+    ]
+    return output
+
+
 def _localize_retained_stage(
     stage: Mapping[str, Any],
     *,

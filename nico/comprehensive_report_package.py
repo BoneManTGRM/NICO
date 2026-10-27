@@ -1090,7 +1090,19 @@ def _scorecard_pdf_table(
                      localized("NOT SCORED"), localized("No canonical section scorecard was available.")])
     paragraphs = [[Paragraph(html.escape(value), header if index == 0 else cell)
                    for value in row] for index, row in enumerate(rows)]
-    table = Table(paragraphs, colWidths=[width * fraction for fraction in (.23, .23, .11, .43)],
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    column_widths = [width * fraction for fraction in (.23, .23, .11, .43)]
+    # Keep authored score words intact (notably Spanish PUNTUACIÓN) at 9pt.
+    # Only borrow the necessary space from the already-flowing summary column.
+    score_word_width = max(
+        stringWidth(word, style.fontName, style.fontSize)
+        for label, style in ((localized("Score"), header), (localized("NOT SCORED"), cell))
+        for word in label.split()
+    )
+    extra = max(0, score_word_width + 10.1 - column_widths[2])
+    column_widths[2] += extra
+    column_widths[3] -= extra
+    table = Table(paragraphs, colWidths=column_widths,
                   repeatRows=1, splitInRow=1, hAlign="LEFT")
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0c4a6e")),
