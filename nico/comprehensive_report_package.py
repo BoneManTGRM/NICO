@@ -1404,24 +1404,26 @@ def _pdf(
     sections = assessment.get("sections") if isinstance(assessment.get("sections"), list) else []
     scorecard_start, scorecard_end = Spacer(0, 0), Spacer(0, 0)
     scorecard_pages: dict[str, int] = {}
-    if localize_presentation is not None:
-        def record_scorecard_page(flowable: Any) -> None:
-            if flowable is scorecard_start:
-                scorecard_pages["start"] = doc.page - 1
-            elif flowable is scorecard_end:
-                scorecard_pages["end"] = doc.page - 1
-        doc.afterFlowable = record_scorecard_page
-    story += [PageBreak(), *([scorecard_start] if localize_presentation is not None else []),
+    def record_scorecard_page(flowable: Any) -> None:
+        if flowable is scorecard_start:
+            scorecard_pages["start"] = doc.page - 1
+        elif flowable is scorecard_end:
+            scorecard_pages["end"] = doc.page - 1
+    doc.afterFlowable = record_scorecard_page
+    story += [PageBreak(), scorecard_start,
               p(localized("Canonical Technical Scorecard"), h1)]
     # SimpleDocTemplate's frame reserves six points of padding at each side.
     story.append(_scorecard_pdf_table(sections, width=doc.width - 12, localized=localized))
     from nico.report_score_explanation import score_explanation
-    story += [p(localized("Technical-to-adjusted score explanation"), h2)]
     from nico.comprehensive_engagement_metadata_v1 import reportlab_literal_markup
-    story += [Paragraph(reportlab_literal_markup(line, len(line)), body)
-              for line in score_explanation(assessment, localized)]
-    if localize_presentation is not None:
-        story.append(scorecard_end)
+    # Move a page-sized explanation as a unit; KeepTogether releases oversized
+    # content for normal paragraph splitting rather than shrinking or truncating.
+    story.append(KeepTogether([
+        p(localized("Technical-to-adjusted score explanation"), h2),
+        *[Paragraph(reportlab_literal_markup(line, len(line)), body)
+          for line in score_explanation(assessment, localized)],
+    ]))
+    story.append(scorecard_end)
 
     for item in sections:
         if not isinstance(item, dict):
@@ -1572,22 +1574,21 @@ def _pdf(
 
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
     pdf_bytes = buffer.getvalue()
-    if localize_presentation is not None:
-        # Ownership comes from the actual layout, including flowing table and
-        # explanation continuations, never inferred from body text or page caps.
-        from pypdf import PdfReader, PdfWriter
-        from pypdf.generic import NameObject, NumberObject
-        reader = PdfReader(io.BytesIO(pdf_bytes))
-        start, end = scorecard_pages["start"], scorecard_pages["end"]
-        if not 0 <= start <= end < len(reader.pages):
-            raise ValueError("localized scorecard layout ownership unavailable")
-        writer = PdfWriter(clone_from=reader)
-        for index in range(start, end + 1):
-            writer.pages[index][NameObject("/NICOScorecardPage")] = NumberObject(index - start)
-            writer.pages[index][NameObject("/NICOScorecardPages")] = NumberObject(end - start + 1)
-        marked = io.BytesIO()
-        writer.write(marked)
-        pdf_bytes = marked.getvalue()
+    # Ownership comes from the actual layout, including flowing table and
+    # explanation continuations, never inferred from body text or page caps.
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import NameObject, NumberObject
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    start, end = scorecard_pages["start"], scorecard_pages["end"]
+    if not 0 <= start <= end < len(reader.pages):
+        raise ValueError("scorecard layout ownership unavailable")
+    writer = PdfWriter(clone_from=reader)
+    for index in range(start, end + 1):
+        writer.pages[index][NameObject("/NICOScorecardPage")] = NumberObject(index - start)
+        writer.pages[index][NameObject("/NICOScorecardPages")] = NumberObject(end - start + 1)
+    marked = io.BytesIO()
+    writer.write(marked)
+    pdf_bytes = marked.getvalue()
     page_count = 0
     try:
         from pypdf import PdfReader

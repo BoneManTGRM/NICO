@@ -93,7 +93,7 @@ def comprehensive_release_provenance() -> dict[str, Any]:
     }
 
 
-def _provenance_lines(provenance: dict[str, Any]) -> list[tuple[str, str]]:
+def _provenance_lines(provenance: dict[str, Any], *, spanish: bool = False) -> list[tuple[str, str]]:
     scanner = provenance.get("scanner_versions") if isinstance(provenance.get("scanner_versions"), dict) else {}
     lines = [
         ("Backend source commit", str(provenance.get("backend_build_commit") or "unavailable")),
@@ -141,13 +141,34 @@ def _provenance_lines(provenance: dict[str, Any]) -> list[tuple[str, str]]:
         raw = row.get("raw_artifact") or {}
         receipt = (row.get("execution_provenance") or {}).get("execution_receipt") or {}
         config = row.get("configuration") or {}
+        def atom(value: Any, fallback: str = "unavailable") -> str:
+            value = str(value or fallback)
+            return ({"completed": "completado", "not_applicable": "no aplicable",
+                     "unavailable": "no disponible", "unknown": "desconocido",
+                     "available": "disponible", "verified": "verificado",
+                     "not_recorded": "no registrado",
+                     "retained_receipt_integrity_verified": "integridad del comprobante conservado verificada"}
+                    .get(value, value) if spanish else value)
+
+        def retained(value: Any) -> str:
+            # Identifiers, versions and digests are never passed through translation.
+            return str(value) if value else atom(None)
+
+        def flag(value: Any) -> str:
+            return ("Sí" if value is True else "No") if spanish else str(value is True)
+
+        availability_key = "disponibilidad" if spanish else "availability"
+        status_key = "estado" if spanish else "status"
+        receipt_status = atom(receipt.get("status"), "not_recorded")
+        if not spanish:
+            receipt_status = receipt_status.replace("_", " ")
         lines.extend([
-            ("Actual scanner version", f"{name}: {row.get('scanner_version') or 'unavailable'}"),
-            ("Scanner execution status", f"{name}: {row.get('execution_status') or 'unknown'}; execution evidence verified={row.get('execution_evidence_verified') is True}; retained CI evidence verified={row.get('retained_ci_evidence_verified') is True}; execution observed for this report={row.get('execution_observed') is True}; inapplicability evidence verified={row.get('inapplicability_evidence_verified') is True}"),
-            ("Raw artifact SHA-256", f"{name}: {raw.get('sha256') or 'unavailable'}; availability={raw.get('availability') or 'unavailable'}"),
-            ("Execution receipt SHA-256", f"{name}: {receipt.get('receipt_sha256') or 'unavailable'}; status={str(receipt.get('status') or 'not_recorded').replace('_', ' ')}"),
-            ("Configuration SHA-256", f"{name}: {config.get('generated_config_sha256') or 'unavailable'}; full configuration verified=False"),
-            ("Command identity SHA-256", f"{name}: {config.get('retained_command_intent_sha256') or 'unavailable'}"),
+            ("Actual scanner version", f"{name}: {retained(row.get('scanner_version'))}"),
+            ("Scanner execution status", f"{name}: {atom(row.get('execution_status'), 'unknown')}; execution evidence verified={flag(row.get('execution_evidence_verified'))}; retained CI evidence verified={flag(row.get('retained_ci_evidence_verified'))}; execution observed for this report={flag(row.get('execution_observed'))}; inapplicability evidence verified={flag(row.get('inapplicability_evidence_verified'))}"),
+            ("Raw artifact SHA-256", f"{name}: {retained(raw.get('sha256'))}; {availability_key}={atom(raw.get('availability'))}"),
+            ("Execution receipt SHA-256", f"{name}: {retained(receipt.get('receipt_sha256'))}; {status_key}={receipt_status}"),
+            ("Configuration SHA-256", f"{name}: {retained(config.get('generated_config_sha256'))}; full configuration verified={flag(False)}"),
+            ("Command identity SHA-256", f"{name}: {retained(config.get('retained_command_intent_sha256'))}"),
         ])
     return lines
 
@@ -251,7 +272,7 @@ def _append_provenance_pdf(
         page.drawString(54, 738, localize("Scanner evidence (continued)"))
         return 710
 
-    for label, value in _provenance_lines(provenance):
+    for label, value in _provenance_lines(provenance, spanish=localize("NICO Release Provenance") != "NICO Release Provenance"):
         value = localize(value)
         if y < 96:
             y = continuation()
@@ -318,7 +339,7 @@ def _bind_release_provenance(package: Any) -> None:
             provenance = comprehensive_release_provenance()
         localize = _presentation_localizer(localize_presentation)
         lines = ["", f"## {localize('NICO Release Provenance')}", ""]
-        lines.extend(f"- **{localize(label)}:** `{localize(value)}`" for label, value in _provenance_lines(provenance))
+        lines.extend(f"- **{localize(label)}:** `{localize(value)}`" for label, value in _provenance_lines(provenance, spanish=localize("NICO Release Provenance") != "NICO Release Provenance"))
         lines.extend(["", localize(_SCANNER_VERSION_BOUNDARY), "", localize(str(provenance.get("truth_boundary") or "")), ""])
         return markdown.rstrip() + "\n" + "\n".join(lines)
 

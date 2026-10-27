@@ -67,7 +67,7 @@ def _spanish_scorecard_page(canonical: Mapping[str, Any]) -> bytes:
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import inch
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+    from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer
     from nico.comprehensive_spanish_presentation_parity_v1 import _safe_es
 
     assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
@@ -139,8 +139,8 @@ def _spanish_scorecard_page(canonical: Mapping[str, Any]) -> bytes:
             Paragraph("Cuadro de puntuación técnica", title),
             table,
             Spacer(1, 0.1 * inch),
-            *[Paragraph(reportlab_literal_markup(line, len(line)), explanation_style)
-              for line in explanation],
+            KeepTogether([Paragraph(reportlab_literal_markup(line, len(line)), explanation_style)
+                          for line in explanation]),
         ]
     )
     # Mark the complete generated block so later rebinding can replace all owned
@@ -156,6 +156,10 @@ def _spanish_scorecard_page(canonical: Mapping[str, Any]) -> bytes:
     output = io.BytesIO()
     writer.write(output)
     return output.getvalue()
+
+
+class _ScorecardOwnershipUnavailable(ValueError):
+    """Legacy pages cannot establish a safe replacement range."""
 
 
 def _replace_spanish_scorecard(
@@ -184,22 +188,11 @@ def _replace_spanish_scorecard(
         is_scorecard = ("cuadro de puntuacion tecnica" in normalized
                         or "canonical technical scorecard" in normalized)
         if not replaced and is_scorecard:
-            count = 1
-            if "/NICOScorecardPages" in page:
-                count = int(page["/NICOScorecardPages"])
-                if count < 1 or index + count > len(reader.pages) or any(
-                    reader.pages[index + offset].get("/NICOScorecardPage") != offset
-                    or reader.pages[index + offset].get("/NICOScorecardPages") != count
-                    for offset in range(count)
-                ):
-                    raise ValueError("localized scorecard block ownership is inconsistent")
-            elif index + 1 < len(reader.pages):
-                next_lines = (reader.pages[index + 1].extract_text() or "").splitlines()
-                # Older unmarked continuation tables cannot safely be deleted as
-                # a guessed range. Require their owner to provide a bound block.
-                lines = [_normalized(line) for line in next_lines[:6]]
-                if "control" in lines and any(label in lines for label in ("resumen", "summary", "garantia")):
-                    raise ValueError("unmarked localized scorecard continuation ownership unavailable")
+            from nico.v2_report_quality_repairs import _owned_scorecard_page_count
+            count = _owned_scorecard_page_count(reader, index)
+            if count is None:
+                raise _ScorecardOwnershipUnavailable(
+                    "unmarked localized scorecard continuation ownership unavailable")
             for replacement_page in replacement.pages:
                 writer.add_page(replacement_page)
             index += count
@@ -273,7 +266,11 @@ def repair_localized_rendered_report(package: Mapping[str, Any]) -> dict[str, An
     if not raw.startswith(b"%PDF"):
         raise ValueError("localized report quality repair requires a valid PDF")
 
-    scorecard_pdf, replaced, sections = _replace_spanish_scorecard(raw, canonical)
+    try:
+        scorecard_pdf, replaced, sections = _replace_spanish_scorecard(raw, canonical)
+    except _ScorecardOwnershipUnavailable:
+        from nico.v2_report_quality_repairs import _repair_unavailable
+        return _repair_unavailable(package)
     pdf, finality_replacements = _replace_pdf_text(scorecard_pdf, spanish=True)
     _validate_final_pdf(
         pdf,

@@ -79,6 +79,8 @@ def install_automated_draft_quality_compat() -> dict[str, Any]:
 def repair_rendered_report(package: Mapping[str, Any]) -> dict[str, Any]:
     install_automated_draft_quality_compat()
     result = base.repair_rendered_report(package)
+    if result.get("report_quality_repair_status") == "unavailable":
+        return result
     contract = dict(result.get("premium_report_renderer") or {})
     contract["automated_draft_quality_compat_version"] = VERSION
     contract["legacy_status_draft_detection_narrowed"] = True
@@ -90,6 +92,8 @@ def repair_rendered_report(package: Mapping[str, Any]) -> dict[str, Any]:
 def repair_localized_rendered_report(package: Mapping[str, Any]) -> dict[str, Any]:
     install_automated_draft_quality_compat()
     result = base.repair_localized_rendered_report(package)
+    if result.get("report_quality_repair_status") == "unavailable":
+        return result
     contract = dict(result.get("premium_report_renderer") or {})
     contract["automated_draft_quality_compat_version"] = VERSION
     contract["legacy_status_draft_detection_narrowed"] = True

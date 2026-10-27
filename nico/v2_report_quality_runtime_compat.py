@@ -13,6 +13,7 @@ from nico.v2_report_quality_repairs import (
     _replace_pdf_text,
     _scorecard_page,
     _normalize_final_text,
+    _owned_scorecard_page_count,
 )
 
 _SCORECARD_TITLES = (
@@ -48,14 +49,21 @@ def repair_rendered_report(package: Mapping[str, Any]) -> dict[str, Any]:
     writer = PdfWriter()
     replaced = False
     replacement_pages = PdfReader(io.BytesIO(_scorecard_page(canonical))).pages if sections else []
-    for page in reader.pages:
+    index = 0
+    while index < len(reader.pages):
+        page = reader.pages[index]
         text = page.extract_text() or ""
         if sections and not replaced and _is_scorecard_page(text):
+            count = _owned_scorecard_page_count(reader, index)
+            if count is None:
+                return quality._repair_unavailable(package)
             for replacement_page in replacement_pages:
                 writer.add_page(replacement_page)
             replaced = True
+            index += count
         else:
             writer.add_page(page)
+            index += 1
     if sections and not replaced:
         observed = [" ".join((page.extract_text() or "").split())[:160] for page in reader.pages[:6]]
         raise ValueError(f"technical scorecard page was not found for safe replacement; observed={observed}")

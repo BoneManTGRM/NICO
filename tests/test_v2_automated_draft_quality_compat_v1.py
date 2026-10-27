@@ -171,24 +171,21 @@ def test_runtime_repair_preserves_scorecard_identity_and_draft_posture() -> None
         page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
     )
 
-    assert result["report_finality"] == "automated_draft"
+    assert result["report_quality_repair_status"] == "unavailable"
+    assert result["pdf_base64"] == package["pdf_base64"]
+    assert result["json"] == package["json"]
     assert result["approval_status"] == "pending_human_approval"
     assert result["delivery_status"] == "blocked_pending_human_approval"
     assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False
-    assert result["json"]["report_finality"] == "automated_draft"
-    assert "AUTOMATED DRAFT" in extracted
-    assert "FINAL REPORT" not in extracted
-    assert "complete only as a draft" not in extracted.casefold()
-    assert " · DRAFT" not in extracted
+    assert "complete only as a draft" in extracted.casefold()
+    assert " · DRAFT" in extracted
     assert "Canonical Technical Scorecard" in extracted
     assert "Code Quality" in extracted
     assert "88/100" in extracted
     assert RUN_ID in extracted
     assert COMMIT in extracted
     contract = result["premium_report_renderer"]
-    assert contract["automated_draft_is_valid_unapproved_state"] is True
-    assert contract["legacy_bare_draft_language_absent"] is True
-    assert contract["unapproved_finality_language_absent"] is True
-    assert contract["legacy_status_draft_detection_narrowed"] is True
-    assert contract["extended_legacy_status_phrases_normalized"] is True
+    assert contract["scorecard_rows_verified"] is False
+    assert contract["original_pdf_bytes_preserved"] is True
+    assert not contract.get("automated_draft_is_valid_unapproved_state")
