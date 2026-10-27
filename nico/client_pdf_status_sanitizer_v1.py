@@ -65,9 +65,8 @@ _PRESERVED_CLIENT_MARKERS = (
     "puerta de revision humana y aceptacion",
     "puerta de revision y aceptacion humana",
 )
+_GENERIC_EVIDENCE_LABELS = ("retained evidence", "evidencia conservada")
 _RAW_INTERNAL_MARKERS = (
-    "retained evidence",
-    "evidencia conservada",
     "stage_execution.",
     "artifact_schema",
     "human_evidence_",
@@ -106,8 +105,12 @@ def _drop_internal_page(text: str) -> bool:
         return True
     if "report_contract_reason" in normalized or "comprehensive_final_report_semantic_contract_failed" in normalized:
         return True
-    marker_count = sum(normalized.count(marker) for marker in _RAW_INTERNAL_MARKERS)
-    return marker_count >= 2
+    structural_count = sum(normalized.count(marker) for marker in _RAW_INTERNAL_MARKERS)
+    # Legitimate client sections share these headings after sparse-page reflow.
+    # Repetition alone cannot establish internal-page ownership. Keep the legacy
+    # threshold when an internal field/path marker actually supplies that evidence.
+    label_count = sum(normalized.count(label) for label in _GENERIC_EVIDENCE_LABELS)
+    return structural_count > 0 and structural_count + label_count >= 2
 
 
 def _replace_text(value: str) -> str:
