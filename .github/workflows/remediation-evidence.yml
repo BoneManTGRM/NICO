@@ -72,8 +72,13 @@ jobs:
           set +e
           bandit -r . -f json -o remediation-evidence/bandit.json
           echo "$?" > remediation-evidence/bandit.exit
-          semgrep scan --json --config auto . > remediation-evidence/semgrep.json 2> remediation-evidence/semgrep.stderr
-          echo "$?" > remediation-evidence/semgrep.exit
+          # Keep the scanner's own in-progress JSON outside its source target.
+          semgrep_capture_dir=$(mktemp -d "${RUNNER_TEMP:?}/nico-semgrep-capture.XXXXXX") || exit 1
+          semgrep scan --json --config auto . > "$semgrep_capture_dir/semgrep.json" 2> "$semgrep_capture_dir/semgrep.stderr"
+          semgrep_exit=$?
+          printf '%s\n' "$semgrep_exit" > "$semgrep_capture_dir/semgrep.exit"
+          mv "$semgrep_capture_dir/semgrep.json" "$semgrep_capture_dir/semgrep.stderr" "$semgrep_capture_dir/semgrep.exit" remediation-evidence/ || exit 1
+          rmdir "$semgrep_capture_dir" || exit 1
           (cd apps/web && npm run lint) > remediation-evidence/typescript.log 2>&1
           echo "$?" > remediation-evidence/typescript.exit
           exit 0
