@@ -87,3 +87,33 @@ test('server schema change after confirmation blocks both imported submissions',
 test('oversized file is rejected before reading content',async()=>{
  const h=harness('EvidenceFileImport.tsx',{scope:'same',disabled:false,onConfirm(){throw Error('unexpected');}});let reads=0;await h.choose({size:16385,text(){reads++;return Promise.resolve('{}');}});assert.equal(reads,0);assert.match(h.text(),/16 KiB/);
 });
+function observedReceipt() {
+ const x=fixture();x.backup.encrypted_at_rest_verified=true;x.restore.isolated_nonproduction_target_verified=true;
+ x.evidence_basis={backup_separation:'separate_storage_from_source_volume',encryption_at_rest:'provider_documentation_only',target_isolation:'separate_service_same_environment',network_isolation_verified:false,provider_default_tcp_proxy_present:true,completion_time:'observed_after_bounded_verification',verifier_window_start_utc:'2026-01-01T12:04:52.000Z',verifier_window_end_utc:'2026-01-01T12:04:59.000Z'};return x;
+}
+test('material evidence limitations survive preview, confirmation and both POST notes',async()=>{
+ let current=summary();const h=setup(async(url,init)=>{if(init.method!=='POST')return {ok:true,json:async()=>current};const body=JSON.parse(init.body);if(url.includes('backup-evidence'))current={...current,latest_backup:{present:true,...body}};return {ok:true,json:async()=>({status:'recorded',backup_restore:current})};});
+ await h.click('Refresh backup');await h.choose(observedReceipt());assert.match(h.text(),/provider documentation only/);assert.match(h.text(),/same provider environment; network isolation not verified/);assert.match(h.text(),/TCP proxy present/);assert.match(h.text(),/not an exact verifier timestamp/);h.click('Confirm and fill');
+ await h.click('Record backup evidence');await h.click('Record isolated');const backup=JSON.parse(h.calls[1].init.body),restore=JSON.parse(h.calls[2].init.body);
+ assert.match(backup.note,/no independent cryptographic inspection/);assert.match(backup.note,/geographic\/offsite independence was not verified/);assert.match(restore.note,/same provider environment; network isolation not verified/);assert.match(restore.note,/2026-01-01T12:04:52.000Z to 2026-01-01T12:04:59.000Z/);assert.match(restore.note,/observation after verification/);assert.match(restore.note,/whole-database equivalence were not tested/);assert.ok(backup.note.length<=1000);assert.ok(restore.note.length<=1000);
+});
+for(const [name,change] of [
+ ['unknown separation basis',x=>x.evidence_basis.backup_separation='private location'],['unverified separation overclaim',x=>{x.evidence_basis.backup_separation='unverified';x.backup.separated_copy_verified=true;}],
+ ['unknown basis field',x=>x.evidence_basis.note='secret'],['unknown encryption basis',x=>x.evidence_basis.encryption_at_rest='https://private'],
+ ['false encryption basis',x=>x.evidence_basis.encryption_at_rest='unverified'],['false isolation basis',x=>x.evidence_basis.target_isolation='unverified'],
+ ['network isolation overclaim',x=>x.evidence_basis.network_isolation_verified=true],['proxy not boolean',x=>x.evidence_basis.provider_default_tcp_proxy_present='yes'],
+ ['unknown time basis',x=>x.evidence_basis.completion_time='estimated'],['window reversed',x=>x.evidence_basis.verifier_window_start_utc='2026-01-01T12:04:59.999Z'],
+ ['window after observation',x=>x.evidence_basis.verifier_window_end_utc='2026-01-01T12:05:01.000Z'],['window before backup',x=>x.evidence_basis.verifier_window_start_utc='2025-01-01T00:00:00.000Z'],
+ ['window invalid date',x=>x.evidence_basis.verifier_window_start_utc='2026-02-30T00:00:00.000Z'],['false exact timestamp',x=>x.evidence_basis.completion_time='exact_verifier_timestamp'],
+ ['whole database overclaim',x=>x.verification.whole_database_verified=true],['missing limitations',x=>delete x.evidence_basis],['old version without limitations',x=>x.format='nico.backup-restore-evidence-import.v1']
+])test('reject limitation mismatch: '+name,()=>{const x=observedReceipt();change(x);assert.throws(()=>parser.parseEvidenceImport(JSON.stringify(x)));});
+test('explicit exact verifier timestamp requires a matching window end',()=>{const x=observedReceipt();x.evidence_basis.completion_time='exact_verifier_timestamp';x.evidence_basis.verifier_window_end_utc=x.restore.completed_at;parser.parseEvidenceImport(JSON.stringify(x));assert.match(parser.sampledNote(x),/Exact verifier completion timestamp/);});
+
+for(const label of ['Backup completed at','Restore drill completed at'])test('imported timing edits block both posts: '+label,async()=>{
+ const current={...summary(),latest_backup:{present:true,backup_reference_sha256:fixture().backup.backup_reference_sha256}};
+ const h=setup(async()=>({ok:true,json:async()=>current}));await h.click('Refresh backup');await h.choose(observedReceipt());h.click('Confirm and fill');h.set(label,'2026-01-01T01:00:00.000');await h.click('Record backup evidence');await h.click('Record isolated');assert.equal(h.calls.length,1);assert.match(h.text(),/Re-import corrected evidence/);
+});
+test('exact timing note cannot become stale after editing completion time',async()=>{
+ const x=observedReceipt();x.evidence_basis.completion_time='exact_verifier_timestamp';x.evidence_basis.verifier_window_end_utc=x.restore.completed_at;
+ const current={...summary(),latest_backup:{present:true,backup_reference_sha256:x.backup.backup_reference_sha256}};const h=setup(async()=>({ok:true,json:async()=>current}));await h.click('Refresh backup');await h.choose(x);h.click('Confirm and fill');h.set('Restore drill completed at','2026-01-01T12:05:01.000');await h.click('Record isolated');assert.equal(h.calls.length,1);assert.match(h.text(),/nothing was submitted/);
+});

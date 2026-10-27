@@ -2,7 +2,7 @@
 
 import {useRef, useState} from "react";
 import EvidenceFileImport from "./EvidenceFileImport";
-import {EvidenceImport, SubmissionGuard, evidenceInstant, localDateTime, matchesRecorded, requireMatchingSchema, sampledNote, submissionKey} from "./evidenceImport";
+import {EvidenceImport, SubmissionGuard, backupEvidenceNote, evidenceInstant, localDateTime, matchesRecorded, requireImportedTiming, requireMatchingSchema, sampledNote, submissionKey} from "./evidenceImport";
 
 const API_URL = (process.env.NEXT_PUBLIC_NICO_API_URL || "").replace(/\/$/, "");
 
@@ -93,7 +93,7 @@ export default function BackupRestoreOperationsPage() {
     setRetentionDays(evidence.backup.retention_days);
     setPitrApplicable(evidence.backup.pitr_applicable);
     setPitrHours(evidence.backup.pitr_window_hours);
-    setBackupNote("Imported bounded evidence; supporting backup claims require operator review before submission.");
+    setBackupNote(backupEvidenceNote(evidence));
     setRestoreCompletedAt(localDateTime(evidence.restore.completed_at));
     setRestoreSourceReference(evidence.restore.source_backup_reference_sha256);
     setRestoredRecordHash(evidence.restore.restored_record_set_sha256);
@@ -149,6 +149,10 @@ export default function BackupRestoreOperationsPage() {
     if (imported && (importedScope !== query() || summaryScope !== query() || summary?.schema_contract_sha256 !== imported.schema_contract_sha256)) {
       setError("Refresh status for this scope. Re-import and confirm if the scope changed; imported evidence must match its confirmed scope and current schema contract."); return;
     }
+    if (imported) {
+      try {requireImportedTiming(imported, backupCompletedAt, restoreCompletedAt);}
+      catch {setError("Imported dates are bound to the verification window. Re-import corrected evidence to change them; nothing was submitted."); return;}
+    }
     const completed = evidenceInstant(backupCompletedAt, imported?.backup.completed_at);
     const key = submissionKey("backup", query(), completed, backupReference.trim());
     if ((summaryScope === query() && matchesRecorded(summary?.latest_backup, completed, backupReference.trim().toLowerCase())) || !submissions.current.begin(key)) {
@@ -201,6 +205,10 @@ export default function BackupRestoreOperationsPage() {
     }
     if (!summary.latest_backup?.present || summary.latest_backup.backup_reference_sha256 !== restoreSourceReference.trim().toLowerCase()) {
       setError("Record or load the matching backup before recording this restore."); return;
+    }
+    if (imported) {
+      try {requireImportedTiming(imported, backupCompletedAt, restoreCompletedAt);}
+      catch {setError("Imported dates are bound to the verification window. Re-import corrected evidence to change them; nothing was submitted."); return;}
     }
     const completed = evidenceInstant(restoreCompletedAt, imported?.restore.completed_at);
     const key = submissionKey("restore", query(), completed, restoreSourceReference.trim(), restoredRecordHash.trim());
@@ -269,7 +277,7 @@ export default function BackupRestoreOperationsPage() {
     </section>
 
     <EvidenceFileImport scope={query()} schema={summaryScope === query() ? summary?.schema_contract_sha256 : undefined} disabled={loading} onConfirm={applyImport}/>
-    {imported ? <p className="warning-box">{sampledNote(imported)} Each submission still requires your explicit action. Re-importing does not reset recorded or unresolved submissions.</p> : null}
+    {imported ? <p className="warning-box">{backupEvidenceNote(imported)} {sampledNote(imported)} Imported dates remain bound to the file; re-import corrected evidence to change them. Each submission still requires your explicit action. Re-importing does not reset recorded or unresolved submissions.</p> : null}
 
     {summary ? <section className="section panel">
       <div className="section-head"><div><p className="eyebrow">Current evidence</p><h2>{summary.backup_restore_ready ? "Backup and restore evidence verified" : "Evidence remains incomplete"}</h2></div><span className={statusClass(summary.status)}>{summary.status}</span></div>

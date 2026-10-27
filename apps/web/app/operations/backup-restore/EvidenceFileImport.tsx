@@ -1,6 +1,6 @@
 "use client";
 import {useRef, useState} from "react";
-import {EvidenceImport, MAX_IMPORT_BYTES, localDateTime, parseEvidenceImport, requireMatchingSchema, sampledNote} from "./evidenceImport";
+import {EvidenceImport, MAX_IMPORT_BYTES, backupEvidenceNote, localDateTime, parseEvidenceImport, requireMatchingSchema, sampledNote} from "./evidenceImport";
 
 export default function EvidenceFileImport({schema, scope, disabled, onConfirm}: {
   schema?: string; scope: string; disabled: boolean; onConfirm: (evidence: EvidenceImport) => void;
@@ -61,7 +61,8 @@ export default function EvidenceFileImport({schema, scope, disabled, onConfirm}:
       <p style={{overflowWrap: "anywhere"}}>Schema contract: {preview.schema_contract_sha256}</p>
       <h4>Backup</h4>{details(preview.backup)}
       <h4>Matching restore</h4>{details(preview.restore)}
-      <p className="warning-box">{sampledNote(preview)} Import does not independently verify these claims or grant approval or delivery authority.</p>
+      <p>Verification window in local time: {localDateTime(preview.evidence_basis.verifier_window_start_utc)} to {localDateTime(preview.evidence_basis.verifier_window_end_utc)} ({Intl.DateTimeFormat().resolvedOptions().timeZone}). The UTC window is preserved below.</p>
+      <p className="warning-box">{backupEvidenceNote(preview)} {sampledNote(preview)} Import does not independently verify these claims or grant approval or delivery authority.</p>
       {previewScope !== scope ? <p role="alert">The customer/project scope changed. Select the file again and review it for this scope.</p> : null}
       {!schema ? <p>Load current evidence status first, then return to this preview.</p> : schema !== preview.schema_contract_sha256 ? <p role="alert">Schema mismatch. These fields cannot be applied.</p> : null}
       <button type="button" className="primary-button" disabled={disabled || reading || previewScope !== scope || schema !== preview.schema_contract_sha256} onClick={confirm}>Confirm and fill forms — no submission</button>

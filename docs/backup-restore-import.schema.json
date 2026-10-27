@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "NICO bounded backup/restore evidence import v1",
+  "title": "NICO bounded backup/restore evidence import v2",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -9,11 +9,12 @@
     "schema_contract_sha256",
     "backup",
     "restore",
-    "verification"
+    "verification",
+    "evidence_basis"
   ],
   "properties": {
     "format": {
-      "const": "nico.backup-restore-evidence-import.v1"
+      "const": "nico.backup-restore-evidence-import.v2"
     },
     "provider": {
       "const": "Railway PostgreSQL"
@@ -115,7 +116,8 @@
       "required": [
         "method",
         "sample_count",
-        "full_bootstrap_or_http_verified"
+        "full_bootstrap_or_http_verified",
+        "whole_database_verified"
       ],
       "properties": {
         "method": {
@@ -128,6 +130,68 @@
         },
         "full_bootstrap_or_http_verified": {
           "const": false
+        },
+        "whole_database_verified": {
+          "const": false
+        }
+      }
+    },
+    "evidence_basis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "encryption_at_rest",
+        "target_isolation",
+        "network_isolation_verified",
+        "provider_default_tcp_proxy_present",
+        "completion_time",
+        "verifier_window_start_utc",
+        "verifier_window_end_utc",
+        "backup_separation"
+      ],
+      "properties": {
+        "encryption_at_rest": {
+          "enum": [
+            "provider_documentation_only",
+            "direct_inspection",
+            "unverified"
+          ]
+        },
+        "target_isolation": {
+          "enum": [
+            "separate_service_same_environment",
+            "separate_environment",
+            "unverified"
+          ]
+        },
+        "network_isolation_verified": {
+          "const": false
+        },
+        "provider_default_tcp_proxy_present": {
+          "type": "boolean"
+        },
+        "completion_time": {
+          "enum": [
+            "observed_after_bounded_verification",
+            "exact_verifier_timestamp"
+          ]
+        },
+        "verifier_window_start_utc": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{3})?Z$",
+          "format": "date-time"
+        },
+        "verifier_window_end_utc": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{3})?Z$",
+          "format": "date-time"
+        },
+        "backup_separation": {
+          "enum": [
+            "separate_storage_from_source_volume",
+            "independently_verified_offsite_copy",
+            "unverified"
+          ]
         }
       }
     }

@@ -1,5 +1,5 @@
 {
-  "format": "nico.backup-restore-evidence-import.v1",
+  "format": "nico.backup-restore-evidence-import.v2",
   "provider": "Railway PostgreSQL",
   "schema_contract_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "backup": {
@@ -24,6 +24,17 @@
   "verification": {
     "method": "nico.restore.unreviewed-application-sample.v1",
     "sample_count": 3,
-    "full_bootstrap_or_http_verified": false
+    "full_bootstrap_or_http_verified": false,
+    "whole_database_verified": false
+  },
+  "evidence_basis": {
+    "encryption_at_rest": "unverified",
+    "target_isolation": "unverified",
+    "network_isolation_verified": false,
+    "provider_default_tcp_proxy_present": false,
+    "completion_time": "observed_after_bounded_verification",
+    "verifier_window_start_utc": "2026-01-01T12:04:50.000Z",
+    "verifier_window_end_utc": "2026-01-01T12:04:59.000Z",
+    "backup_separation": "unverified"
   }
 }
