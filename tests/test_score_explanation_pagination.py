@@ -223,3 +223,66 @@ def test_phase17_stops_unavailable_repair_before_finalization(tmp_path):
         cwd=root, env=owned_worker_environment(root, tmp_path, os.environ),
         capture_output=True, text=True, timeout=120)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def _spanish_ambiguous_package():
+    from pypdf import PdfWriter
+    from nico.v2_localized_report_quality_repairs import _spanish_scorecard_page
+    assessment = _assessment('es-MX', True)
+    assessment['sections'] = assessment['sections'][:1]
+    canonical = {'report_language': 'es-MX', 'assessment': assessment}
+    reader = PdfReader(io.BytesIO(_spanish_scorecard_page(canonical)))
+    assert len(reader.pages) > 1
+    assert 'Control' not in reader.pages[1].extract_text().splitlines()[:6]
+    writer = PdfWriter()
+    for page in reader.pages:
+        del page['/NICOScorecardPage']
+        del page['/NICOScorecardPages']
+        writer.add_page(page)
+    output = io.BytesIO(); writer.write(output)
+    return {'json': canonical, 'pdf_base64': base64.b64encode(output.getvalue()).decode('ascii')}
+
+
+def test_spanish_unmarked_explanation_continuation_requires_ownership():
+    from nico.v2_localized_report_quality_repairs import _replace_spanish_scorecard
+    package = _spanish_ambiguous_package()
+    with pytest.raises(ValueError, match='continuation ownership unavailable'):
+        _replace_spanish_scorecard(base64.b64decode(package['pdf_base64']), package['json'])
+
+
+@pytest.mark.parametrize('entrypoint', ['localized', 'v1', 'v2', 'v3'])
+def test_spanish_unmarked_explanation_propagates_unavailable(entrypoint):
+    import importlib
+    module = ('nico.v2_localized_report_quality_repairs' if entrypoint == 'localized'
+              else 'nico.v2_automated_draft_quality_compat_' + entrypoint)
+    package = _spanish_ambiguous_package()
+    before = deepcopy(package)
+    result = importlib.import_module(module).repair_localized_rendered_report(package)
+    assert result['report_quality_repair_status'] == 'unavailable'
+    assert result['pdf_base64'] == before['pdf_base64']
+    assert result['json'] == before['json']
+    assert result['premium_report_renderer']['scorecard_rows_verified'] is False
+    assert not result['premium_report_renderer'].get('automated_draft_is_valid_unapproved_state')
+    assert result['client_delivery_allowed'] is False
+    assert result['human_review_required'] is True
+    assert package == before
+
+
+def test_spanish_terminal_unmarked_single_page_stays_supported():
+    from pypdf import PdfWriter
+    from nico.v2_localized_report_quality_repairs import _spanish_scorecard_page, _replace_spanish_scorecard
+    assessment = _assessment('es-MX', False)
+    assessment['sections'] = assessment['sections'][:1]
+    canonical = {'report_language': 'es-MX', 'assessment': assessment}
+    reader = PdfReader(io.BytesIO(_spanish_scorecard_page(canonical)))
+    assert len(reader.pages) == 1
+    writer = PdfWriter()
+    page = reader.pages[0]
+    del page['/NICOScorecardPage']; del page['/NICOScorecardPages']
+    writer.add_page(page)
+    output = io.BytesIO(); writer.write(output)
+    repaired, replaced, sections = _replace_spanish_scorecard(output.getvalue(), canonical)
+    assert replaced is True
+    assert sections == assessment['sections']
+    assert len(PdfReader(io.BytesIO(repaired)).pages) == 1
+    assert '92 - 0 - 0 - 0 - 0 = 92' in PdfReader(io.BytesIO(repaired)).pages[0].extract_text()
