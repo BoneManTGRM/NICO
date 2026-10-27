@@ -537,6 +537,7 @@ type FinalReviewAccessPanelProps = {
   error: string;
   notice: string;
   loadStatus: (event?: FormEvent) => Promise<void>;
+  prepareSpanishEdition: () => Promise<void>;
   onEditionChange: (event: ChangeEvent<HTMLSelectElement>) => void;
   onReviewerChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onReviewerRoleChange: (event: ChangeEvent<HTMLInputElement>) => void;
@@ -545,7 +546,7 @@ type FinalReviewAccessPanelProps = {
 };
 
 function FinalReviewAccessPanel({
-  locale, copy, artifactEdition, loading, reviewer, reviewerRole, adminToken, runId, operatorReady, result, reviewerQueueHref, error, notice, loadStatus, onEditionChange, onReviewerChange, onReviewerRoleChange, onAdminTokenChange, onRunIdChange,
+  locale, copy, artifactEdition, loading, reviewer, reviewerRole, adminToken, runId, operatorReady, result, reviewerQueueHref, error, notice, loadStatus, prepareSpanishEdition, onEditionChange, onReviewerChange, onReviewerRoleChange, onAdminTokenChange, onRunIdChange,
 }: FinalReviewAccessPanelProps) {
   return <section className={styles.panel}>
       <div className={styles.stepHeading}><span className={styles.stepNumber}>1</span><div><p className={styles.kicker}>{copy.secureAccess}</p><h2>{copy.identifyReviewer}</h2><p>{copy.identityAttached}</p></div></div>
@@ -569,8 +570,7 @@ function FinalReviewAccessPanel({
         </div></details>
       </form>
       {artifactEdition === "es-MX" ? <div className={styles.downloadActions}>
-        <p>{locale === "es-MX" ? "La generación en español no está disponible por ahora. Cargue una edición ya conservada con los controles existentes." : "New Spanish generation is unavailable for now. Load an already frozen edition using the existing controls."}</p>
-        <button className={styles.secondary} type="button" disabled>{locale === "es-MX" ? "Preparar informe final en español" : "Prepare Spanish final assessment report"}</button>
+        <button className={styles.secondary} type="button" disabled={loading || !operatorReady} onClick={prepareSpanishEdition}>{locale === "es-MX" ? "Preparar informe final en español" : "Prepare Spanish final assessment report"}</button>
       </div> : null}
       <p className={styles.securityNote}>{copy.security}</p>
       <p className={styles.securityNote}>{copy.optionalReviewerMetadata}</p>
@@ -744,6 +744,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
   const approvalInFlight = useRef(false);
   const selectionVersion = useRef(0);
   const uncertainDecision = useRef<ReviewResponse | null>(null);
+  const preparationInFlight = useRef(false);
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
@@ -964,6 +965,32 @@ export default function ComprehensiveFinalReviewWorkspace() {
       setResult(null);
       setError(caught instanceof Error ? caught.message : copy.loadFailed);
     } finally {
+      setLoading(false);
+    }
+  }
+
+  async function prepareSpanishEdition(): Promise<void> {
+    if (!operatorReady || loading || preparationInFlight.current || artifactEdition !== "es-MX") return;
+    preparationInFlight.current = true;
+    const selection = selectionVersion.current;
+    setLoading(true); setError(""); setNotice("");
+    setResult(null); setConfirmed(false); setDownloadedArtifactDigest("");
+    try {
+      const source = await requestJson(canonicalUrl(`/assessment/comprehensive-run/${encodeURIComponent(runId.trim())}`), {headers: headers()});
+      const identity = asRecord(source.review_artifact_identity);
+      if (selection !== selectionVersion.current) return;
+      if (identity.run_id !== runId.trim() || !reviewPdfAvailable(source)) throw new Error(copy.invalidPdf);
+      const prepared = await requestJson(statusUrl(), {
+        method: "POST", headers: headers(true),
+        body: JSON.stringify({preparation_authorized: true, authorization_confirmed: true, expected_artifact_identity: identity}),
+      });
+      if (selection !== selectionVersion.current) return;
+      setResult(prepared);
+      setNotice(reviewLoadNotice(prepared, locale));
+    } catch (caught) {
+      if (selection === selectionVersion.current) setError(caught instanceof Error ? caught.message : copy.loadFailed);
+    } finally {
+      preparationInFlight.current = false;
       setLoading(false);
     }
   }
@@ -1237,6 +1264,7 @@ export default function ComprehensiveFinalReviewWorkspace() {
       error={error}
       notice={notice}
       loadStatus={loadStatus}
+      prepareSpanishEdition={prepareSpanishEdition}
       onEditionChange={onEditionChange}
       onReviewerChange={onReviewerChange}
       onReviewerRoleChange={onReviewerRoleChange}

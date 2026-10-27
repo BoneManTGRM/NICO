@@ -5,10 +5,13 @@ import sqlite3
 import pytest
 from fastapi import FastAPI
 
+# Load the declared production bootstrap before runtime fixtures install report
+# wrappers; a delayed import otherwise initializes it after those side effects.
+from tests.test_cross_locale_pdf_repeatability_v1 import _fixed_status
+
 
 @pytest.mark.parametrize('source_language,target_language', [('en','es-MX'),('es-MX','en')])
 def test_installed_render_cache_requires_stable_live_policy(tmp_path,monkeypatch,source_language,target_language):
-    from tests.test_cross_locale_pdf_repeatability_v1 import _fixed_status
     from nico.comprehensive_run_record import create_comprehensive_run_record, apply_comprehensive_stage_result, _record_hash
     from nico.comprehensive_orchestration_contract import COMPREHENSIVE_STAGES
     from nico.comprehensive_run_store import ComprehensiveRunStore
@@ -54,20 +57,6 @@ def test_installed_render_cache_requires_stable_live_policy(tmp_path,monkeypatch
         return result
     monkeypatch.setattr(cache,'finish_retained_pdf',observe_finish)
     before=hashlib.sha256(database.read_bytes()).hexdigest()
-    if target_language == 'es-MX':
-        from fastapi import HTTPException
-        def forbidden(*args, **kwargs):
-            pytest.fail('Unavailable Spanish must not render or enter the cache')
-        monkeypatch.setattr(locale, '_render_target', forbidden)
-        for _ in range(2):
-            with pytest.raises(HTTPException) as caught:
-                endpoint(identity['run_id'], target_language)
-            assert caught.value.status_code == 409
-            assert caught.value.detail['reason'] == 'spanish_report_generation_unavailable'
-        assert tickets == []
-        assert len(restores) == len(renders) == 2
-        assert hashlib.sha256(database.read_bytes()).hexdigest() == before
-        return
     first=endpoint(identity['run_id'],target_language)
     assert first.headers['x-nico-localized-artifact-requires-new-approval']=='true'
     assert first.headers['x-nico-localized-artifact-approval-invalidated']=='true'

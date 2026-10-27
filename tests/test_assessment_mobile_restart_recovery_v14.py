@@ -71,7 +71,7 @@ def test_terminal_report_actions_stream_artifacts_instead_of_requiring_embedded_
     assert "await response.arrayBuffer()" in source
     assert 'new Blob([bytes], {type: "application/pdf"})' in source
     assert "const pdfActionDisabled = !pdfAvailable || artifactAction !== null;" in source
-    assert "const draftPdfActionDisabled = spanishUnavailable || pdfActionDisabled;" in source
+    assert "const draftPdfActionDisabled = pdfActionDisabled;" in source
     # Bind checks to each actual PDF button, not an unrelated matching expression.
     buttons = re.findall(r"<button\b.*?</button>", source, re.DOTALL)
     for kind, predicate in (("accepted-edition", "pdfActionDisabled"),
@@ -80,7 +80,24 @@ def test_terminal_report_actions_stream_artifacts_instead_of_requiring_embedded_
         assert len(matching) == 1
         assert f"disabled={{{predicate}}}" in matching[0]
         assert f'data-assessment-action-disabled={{{predicate} ? "true" : "false"}}' in matching[0]
-    assert "disabled={spanishUnavailable || !markdownAvailable || artifactAction !== null}" in source
+    assert "disabled={!markdownAvailable || artifactAction !== null}" in source
+    assert "Boolean(report?.pdf_base64 || report?.pdf_available)" in source
+    assert "Boolean(report?.markdown || report?.markdown_available)" in source
+    assert "if (!pdfAvailable || artifactAction) return;" in source
+    assert "if (!exactApprovedPdfAvailable || artifactAction) return;" in source
+    assert "{exactApprovedPdfAvailable ? <button" in source
+    assert "{!exactApprovedPdfAvailable || approvedLocaleMismatch ? <button" in source
+    for binding in (
+        'data-run-id={String(result?.run_id || "")}',
+        'data-canonical-truth-sha256={String(report?.canonical_truth_sha256 || "")}',
+        'data-requested-report-language={requestedReportLanguage}',
+        "responseRunId !== runId",
+        "responseLanguage !== acceptedPdfIdentity?.reportLanguage",
+        "observedSha256 !== acceptedPdfSha256",
+        "artifactHeader !== acceptedPdfSha256",
+        "acceptedHeader !== acceptedPdfSha256",
+    ):
+        assert binding in source
 
 
 def test_same_origin_proxy_allows_artifacts_and_forwards_bounded_projection() -> None:
@@ -115,8 +132,15 @@ def test_backend_streams_exact_run_artifacts_and_keeps_browser_terminal_response
 @pytest.mark.parametrize("old,new", [
     ("const pdfActionDisabled = !pdfAvailable || artifactAction !== null;",
      "const pdfActionDisabled = !pdfAvailable || Boolean(artifactAction);"),
-    ("const draftPdfActionDisabled = spanishUnavailable || pdfActionDisabled;",
-     "const draftPdfActionDisabled = pdfActionDisabled;"),
+    ("const draftPdfActionDisabled = pdfActionDisabled;",
+     "const draftPdfActionDisabled = false;"),
+    ("const draftPdfActionDisabled = pdfActionDisabled;",
+     "const draftPdfActionDisabled = requestedReportLanguage === 'es-MX' || pdfActionDisabled;"),
+    ("Boolean(report?.pdf_base64 || report?.pdf_available)", "Boolean(report?.pdf_base64)"),
+    ("disabled={!markdownAvailable || artifactAction !== null}", "disabled={false}"),
+    ("{!exactApprovedPdfAvailable || approvedLocaleMismatch ? <button",
+     "{!exactApprovedPdfAvailable ? <button"),
+    ("observedSha256 !== acceptedPdfSha256", "observedSha256 !== artifactHeader"),
     ("disabled={pdfActionDisabled}", "disabled={draftPdfActionDisabled}"),
     ("disabled={draftPdfActionDisabled}", "disabled={pdfActionDisabled}"),
     ('data-assessment-action-disabled={pdfActionDisabled ? "true" : "false"}',

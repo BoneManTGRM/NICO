@@ -1504,7 +1504,8 @@ def _operator_intake(request: Request, payload: Mapping[str, Any], token: str) -
     customer_id = _required(payload.get("customer_id") or "default_customer", "customer_id")
     project_id = _required(payload.get("project_id") or "default_project", "project_id")
     assessment_depth = _required(payload.get("assessment_depth") or "strategic", "assessment_depth")
-    report_language = _required(payload.get("report_language") or "en", "report_language")
+    from nico.ordinary_report_language_release_v1 import normalize_new_report_language
+    report_language = normalize_new_report_language(payload.get("report_language"))
     organization = _text(payload.get("provider_organization"))
     provider_project = _text(payload.get("provider_project"))
     repository = canonical_repository_label(provider, provider_repository, organization=organization, project=provider_project)

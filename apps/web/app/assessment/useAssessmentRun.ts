@@ -43,6 +43,7 @@ import {
 } from "./engagementFieldState";
 import {
   isIntakeReservationPending,
+  isIntakeReservationProjection,
   reserveComprehensiveRunId,
 } from "./assessmentRecoveryIdentity";
 import {
@@ -434,7 +435,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       : fallback?.engagementFieldStates ?? engagementFieldStates;
     writePersistedRun({
       version: 1,
-      intakeState: "accepted",
+      intakeState: isIntakeReservationProjection(runResult) ? "pending" : "accepted",
       runId,
       repository: String(runResult.repository || fallback?.repository || repository || ""),
       client: clientValue,
@@ -673,7 +674,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
         code: "assessment_poll_budget_exhausted",
         requestId: "",
         retryable: true,
-        runCreated: true,
+        runCreated: !isIntakeReservationProjection(current),
       });
     } finally {
       if (activeContinuationRunId.current === continuationRunId) {
@@ -995,7 +996,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
           return;
         }
       }
-      const runCreated = Boolean(acceptedRun?.run_id);
+      const runCreated = Boolean(acceptedRun?.run_id) && !isIntakeReservationProjection(acceptedRun);
       applyIssue(caught, runCreated);
       if (acceptedRun) {
         persistExactRun(acceptedRun, scope, startedAt);

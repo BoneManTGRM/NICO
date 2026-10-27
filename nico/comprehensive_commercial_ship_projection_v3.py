@@ -747,6 +747,8 @@ def install_comprehensive_commercial_ship_projection_v3() -> dict[str, Any]:
             "status": "already_installed",
             "version": VERSION,
             "bound": True,
+            "deployment_metric_detection_order_independent": True,
+            "toc_page_labels_and_bookmarks_rebuilt_after_compaction": True,
             "final_assembled_source_pdf_preserved": True,
             "sparse_stage_reflow_before_final_navigation": True,
             "localized_sparse_stage_reflow_supported": True,

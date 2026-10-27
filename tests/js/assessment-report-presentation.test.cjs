@@ -157,15 +157,13 @@ test('the mounted Spanish workspace displays the preserved limited-assurance sum
   assert.doesNotMatch(text(tree), /No se devolvió un resumen ejecutivo localizado/);
 });
 
-test('Spanish workspace offers an explicit English choice instead of silently changing locale', () => {
-  const tree = workspace({locale: 'es-MX'});
-  const hero = nodes(tree).find(n => n.type === 'section' && String(n.props.className).includes('hero'));
-  assert.match(text(hero), /Conservamos tu selección de idioma/);
-  assert.ok(nodes(hero).some(n => n.type === 'button' && text(n) === 'Usar informe en inglés'));
-  const english = workspace({locale: 'en'});
-  const englishHero = nodes(english).find(n => n.type === 'section' && String(n.props.className).includes('hero'));
-  assert.match(text(englishHero), /Your language choice is preserved/);
-  assert.ok(!nodes(englishHero).some(n => n.type === 'button' && text(n) === 'Use English report'));
+test('bilingual workspace has no English-only generation exclusion', () => {
+  for (const locale of ['en', 'es-MX']) {
+    const tree=workspace({locale});
+    const hero=nodes(tree).find(n=>n.type==='section' && String(n.props.className).includes('hero'));
+    assert.doesNotMatch(text(hero), /unavailable for now|no está disponible por ahora/);
+    assert.ok(!nodes(hero).some(n=>n.type==='button' && /Use English report|Usar informe en inglés/.test(text(n))));
+  }
 });
 
 for (const locale of ['en', 'es-MX']) {

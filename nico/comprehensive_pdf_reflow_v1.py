@@ -281,8 +281,15 @@ def _preserves_text(original_texts: list[str], replacement_pdf: bytes) -> bool:
     from pypdf import PdfReader
 
     reader = PdfReader(io.BytesIO(replacement_pdf))
-    replacement = _normal(" ".join(_page_text(page) for page in reader.pages)).casefold()
+    replacement_text = "\n".join(_page_text(page) for page in reader.pages)
+    replacement = _normal(replacement_text).casefold()
     for text in original_texts:
+        # Repeated interior spaces can be submitted evidence (names, paths, code).
+        # Normalized comparison cannot prove those literals survived reflow. Keep
+        # the original pages whenever the exact line is no longer extractable.
+        for raw in text.splitlines():
+            if re.search(r"\S {2,}\S", raw) and raw.strip() not in replacement_text:
+                return False
         for line in _content_lines(text):
             normalized = _normal(line).casefold()
             if len(normalized) < 3:

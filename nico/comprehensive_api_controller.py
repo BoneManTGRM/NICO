@@ -1022,8 +1022,8 @@ class ComprehensiveApiController:
 
     def start(self, payload: dict[str, Any]) -> dict[str, Any]:
         body = self._object(payload)
-        from nico.ordinary_report_language_release_v1 import require_new_report_language
-        require_new_report_language(body.get("report_language"))
+        from nico.ordinary_report_language_release_v1 import normalize_new_report_language
+        report_language = normalize_new_report_language(body.get("report_language"))
         repository = self._required(body.get("repository"), "repository")
         commit_sha = self._required(body.get("commit_sha"), "commit_sha")
         run_id = self._required(body.get("run_id"), "run_id")
@@ -1036,10 +1036,6 @@ class ComprehensiveApiController:
         assessment_depth = self._required(
             body.get("assessment_depth") or "strategic",
             "assessment_depth",
-        )
-        report_language = self._required(
-            body.get("report_language") or "en",
-            "report_language",
         )
         repository_provider = str(body.get("repository_provider") or "").strip()
         provider_access_mode = str(body.get("provider_access_mode") or "").strip()

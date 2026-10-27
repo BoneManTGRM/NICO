@@ -272,18 +272,27 @@ def test_zero_candidate_source_ledger_remains_numeric_and_bound():
     assert service._store.record["accepted_edition"] == approved_source["accepted_edition"]
 
 
-def test_release_blocks_new_spanish_but_reuses_valid_frozen_edition(source, monkeypatch):
+def test_release_admits_new_spanish_and_reuses_valid_frozen_edition(source, monkeypatch):
     root = deepcopy(source._store.record)
     run_id = root["identity"]["run_id"]
     payload = {"preparation_authorized": True, "authorization_confirmed": True,
                "expected_artifact_identity": review_artifact_identity(root)}
-    with pytest.raises(ValueError, match="spanish_report_generation_unavailable"):
-        subject.prepare_localized_edition(source, run_id, "es-MX", payload)
-    assert source._store.record == root
-    _prepare(source)
+    _, retained, draft = subject.prepare_localized_edition(source, run_id, "es-MX", payload)
+    assert draft["identity"]["report_language"] == "es-MX"
+    assert draft["client_delivery_allowed"] is False
+    assert draft["status"] == "review_required"
+    assert draft["human_review_required"] is True
+    assert draft["human_review_completed"] is False
+    assert report_package_from_record(draft)["json"]["identity"]["report_language"] == "es-MX"
+    for key in ("identity", "stage_results", "accepted_edition", "review_history", "client_delivery_allowed"):
+        assert source._store.record[key] == root[key]
+    frozen = deepcopy(source._store.record)
     def forbidden(*args, **kwargs):
         pytest.fail("Existing edition must not render")
     from nico import comprehensive_same_run_locale_report_v1 as locale_report
     monkeypatch.setattr(locale_report, "_assemble_target", forbidden)
     payload["expected_artifact_identity"] = review_artifact_identity(source._store.record)
-    subject.prepare_localized_edition(source, run_id, "es-MX", payload)
+    _, reused, readback = subject.prepare_localized_edition(source, run_id, "es-MX", payload)
+    assert reused == retained
+    assert report_package_from_record(readback) == report_package_from_record(draft)
+    assert source._store.record == frozen
