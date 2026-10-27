@@ -108,14 +108,46 @@ def test_retained_provenance_renders_in_all_report_formats(persisted_case, monke
         })
     result = build_canonical_report_source(context)
     assert result['status'] == 'complete', str(result)
+    original_package = copy.deepcopy(result['report_package'])
+    original_record = copy.deepcopy(persisted_case.record)
+    raw_files = {path.relative_to(persisted_case.raw_root): path.read_bytes()
+                 for path in persisted_case.raw_root.rglob('*') if path.is_file()}
+    assert raw_files
     package = rebuild_client_artifacts(result['report_package'])
+    assert result['report_package'] == original_package
+    assert persisted_case.record == original_record
+    assert {path.relative_to(persisted_case.raw_root): path.read_bytes()
+            for path in persisted_case.raw_root.rglob('*') if path.is_file()} == raw_files
     retained = package['json']['assessment']['nico_release_provenance']['scanner_execution_evidence']
     assert retained['verification_status'] == 'verified'
     assert retained['scanner_records'][0]['execution_observed'] is False
     assert retained['scanner_records'][0]['retained_ci_evidence_verified'] is True
     pdf = PdfReader(io.BytesIO(base64.b64decode(package['pdf_base64'])))
     text = '\n'.join(page.extract_text() for page in pdf.pages)
-    label = 'retained CI evidence verified=True' if language == 'en' else 'evidencia de CI conservada verificada=True'
+    label = 'retained CI evidence verified=True' if language == 'en' else 'evidencia de CI conservada verificada=Sí'
     for rendered in (package['markdown'], package['html'], text):
         assert label in rendered
+        false_label = ('execution observed for this report=False' if language == 'en'
+                       else 'ejecución observada para este informe=No')
+        assert false_label in ' '.join(rendered.split())
+        if language == 'es-MX':
+            assert 'evidencia de CI conservada verificada=True' not in rendered
         assert persisted_case.record['raw_artifact_sha256'] in rendered
+
+    # Unknown display states remain explicit; raw enums/nulls are not rewritten.
+    for state in (None, 'unknown', 'future_status_preserve'):
+        probe = copy.deepcopy(retained)
+        probe['scanner_records'][0]['execution_status'] = state
+        probe['scanner_records'][0]['retained_ci_evidence_verified'] = None
+        before_probe = copy.deepcopy(probe)
+        lines = release_provenance_lines({'scanner_execution_evidence': probe}, spanish=language == 'es-MX')
+        display = ' '.join(value for _, value in lines)
+        expected_state = (state if state == 'future_status_preserve' else
+                          ('desconocido' if language == 'es-MX' else 'unknown'))
+        assert f": {expected_state};" in display
+        # Verification is not established by an unknown/null value.
+        assert ('retained CI evidence verified=No' if language == 'es-MX'
+                else 'retained CI evidence verified=False') in display
+        assert probe == before_probe
+    assert retained['scanner_records'][0]['execution_observed'] is False
+    assert retained['scanner_records'][0]['retained_ci_evidence_verified'] is True
