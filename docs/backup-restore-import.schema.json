@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NICO bounded backup/restore evidence import v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "provider",
+    "schema_contract_sha256",
+    "backup",
+    "restore",
+    "verification",
+    "evidence_basis"
+  ],
+  "properties": {
+    "format": {
+      "const": "nico.backup-restore-evidence-import.v2"
+    },
+    "provider": {
+      "const": "Railway PostgreSQL"
+    },
+    "schema_contract_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "backup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "completed_at",
+        "backup_reference_sha256",
+        "successful",
+        "encrypted_at_rest_verified",
+        "separated_copy_verified",
+        "retention_days",
+        "pitr_applicable",
+        "pitr_window_hours"
+      ],
+      "properties": {
+        "completed_at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{3})?Z$",
+          "format": "date-time"
+        },
+        "backup_reference_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "successful": {
+          "type": "boolean"
+        },
+        "encrypted_at_rest_verified": {
+          "type": "boolean"
+        },
+        "separated_copy_verified": {
+          "type": "boolean"
+        },
+        "retention_days": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3650
+        },
+        "pitr_applicable": {
+          "type": "boolean"
+        },
+        "pitr_window_hours": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 87600
+        }
+      }
+    },
+    "restore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "completed_at",
+        "source_backup_reference_sha256",
+        "restored_record_set_sha256",
+        "successful",
+        "isolated_nonproduction_target_verified",
+        "required_tables_verified",
+        "application_read_verified"
+      ],
+      "properties": {
+        "completed_at": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{3})?Z$",
+          "format": "date-time"
+        },
+        "source_backup_reference_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "restored_record_set_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "successful": {
+          "type": "boolean"
+        },
+        "isolated_nonproduction_target_verified": {
+          "type": "boolean"
+        },
+        "required_tables_verified": {
+          "type": "boolean"
+        },
+        "application_read_verified": {
+          "type": "boolean"
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "sample_count",
+        "full_bootstrap_or_http_verified",
+        "whole_database_verified"
+      ],
+      "properties": {
+        "method": {
+          "const": "nico.restore.unreviewed-application-sample.v1"
+        },
+        "sample_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "full_bootstrap_or_http_verified": {
+          "const": false
+        },
+        "whole_database_verified": {
+          "const": false
+        }
+      }
+    },
+    "evidence_basis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "encryption_at_rest",
+        "target_isolation",
+        "network_isolation_verified",
+        "provider_default_tcp_proxy_present",
+        "completion_time",
+        "verifier_window_start_utc",
+        "verifier_window_end_utc",
+        "backup_separation"
+      ],
+      "properties": {
+        "encryption_at_rest": {
+          "enum": [
+            "provider_documentation_only",
+            "direct_inspection",
+            "unverified"
+          ]
+        },
+        "target_isolation": {
+          "enum": [
+            "separate_service_same_environment",
+            "separate_environment",
+            "unverified"
+          ]
+        },
+        "network_isolation_verified": {
+          "const": false
+        },
+        "provider_default_tcp_proxy_present": {
+          "type": "boolean"
+        },
+        "completion_time": {
+          "enum": [
+            "observed_after_bounded_verification",
+            "exact_verifier_timestamp"
+          ]
+        },
+        "verifier_window_start_utc": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{3})?Z$",
+          "format": "date-time"
+        },
+        "verifier_window_end_utc": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{3})?Z$",
+          "format": "date-time"
+        },
+        "backup_separation": {
+          "enum": [
+            "separate_storage_from_source_volume",
+            "independently_verified_offsite_copy",
+            "unverified"
+          ]
+        }
+      }
+    }
+  }
+}

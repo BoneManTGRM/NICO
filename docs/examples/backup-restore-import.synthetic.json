@@ -1,0 +1,40 @@
+{
+  "format": "nico.backup-restore-evidence-import.v2",
+  "provider": "Railway PostgreSQL",
+  "schema_contract_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "backup": {
+    "completed_at": "2026-01-01T07:51:16.234Z",
+    "backup_reference_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "successful": false,
+    "encrypted_at_rest_verified": false,
+    "separated_copy_verified": false,
+    "retention_days": 0,
+    "pitr_applicable": false,
+    "pitr_window_hours": 0
+  },
+  "restore": {
+    "completed_at": "2026-01-01T12:05:00.000Z",
+    "source_backup_reference_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "restored_record_set_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "successful": false,
+    "isolated_nonproduction_target_verified": false,
+    "required_tables_verified": false,
+    "application_read_verified": false
+  },
+  "verification": {
+    "method": "nico.restore.unreviewed-application-sample.v1",
+    "sample_count": 3,
+    "full_bootstrap_or_http_verified": false,
+    "whole_database_verified": false
+  },
+  "evidence_basis": {
+    "encryption_at_rest": "unverified",
+    "target_isolation": "unverified",
+    "network_isolation_verified": false,
+    "provider_default_tcp_proxy_present": false,
+    "completion_time": "observed_after_bounded_verification",
+    "verifier_window_start_utc": "2026-01-01T12:04:50.000Z",
+    "verifier_window_end_utc": "2026-01-01T12:04:59.000Z",
+    "backup_separation": "unverified"
+  }
+}
