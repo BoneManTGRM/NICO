@@ -639,6 +639,8 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
             if _is_spanish(canonical)
             else repair_rendered_report(rendered)
         )
+        if repaired.get("report_quality_repair_status") == "unavailable":
+            raise ValueError("report quality repair unavailable: scorecard ownership unknown")
         # Reconcile once more after report-quality repair, then sanitize every
         # mutable rendered surface before the exact-artifact finalizer computes the
         # PDF, Markdown, HTML, canonical JSON, and detached-manifest digests. No

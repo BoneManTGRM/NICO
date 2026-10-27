@@ -67,7 +67,7 @@ def _spanish_scorecard_page(canonical: Mapping[str, Any]) -> bytes:
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import inch
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+    from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer
     from nico.comprehensive_spanish_presentation_parity_v1 import _safe_es
 
     assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
@@ -139,8 +139,8 @@ def _spanish_scorecard_page(canonical: Mapping[str, Any]) -> bytes:
             Paragraph("Cuadro de puntuación técnica", title),
             table,
             Spacer(1, 0.1 * inch),
-            *[Paragraph(reportlab_literal_markup(line, len(line)), explanation_style)
-              for line in explanation],
+            KeepTogether([Paragraph(reportlab_literal_markup(line, len(line)), explanation_style)
+                          for line in explanation]),
         ]
     )
     # Mark the complete generated block so later rebinding can replace all owned
