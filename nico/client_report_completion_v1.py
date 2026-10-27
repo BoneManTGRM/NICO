@@ -153,12 +153,26 @@ def _insert_register(markdown: str, register_markdown: str) -> str:
 
 def _scanner_records(canonical: Mapping[str, Any]) -> tuple[list[Mapping[str, Any]], list[Mapping[str, Any]]]:
     assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
-    applicable = canonical.get("scanner_execution_records") or assessment.get("scanner_execution_records") or []
-    not_applicable = canonical.get("not_applicable_scanner_records") or assessment.get("not_applicable_scanner_records") or []
-    return (
-        [item for item in applicable if isinstance(item, Mapping)],
-        [item for item in not_applicable if isinstance(item, Mapping)],
-    )
+    # The authoritative population includes exclusions. Split aliases can be
+    # absent or stale in retained presentation views; never use them to override
+    # the full requested population or count exclusions as required executions.
+    for owner in (canonical, assessment):
+        requested = owner.get("requested_scanner_records")
+        if isinstance(requested, list):
+            records = [item for item in requested if isinstance(item, Mapping)]
+            return (
+                [item for item in records if item.get("applicable") is not False],
+                [item for item in records if item.get("applicable") is False],
+            )
+    execution = canonical.get("scanner_execution_records") or assessment.get("scanner_execution_records") or []
+    excluded = canonical.get("not_applicable_scanner_records") or assessment.get("not_applicable_scanner_records") or []
+    required = [item for item in execution if isinstance(item, Mapping) and item.get("applicable") is not False]
+    not_applicable = [item for item in excluded if isinstance(item, Mapping)]
+    for item in execution:
+        if isinstance(item, Mapping) and item.get("applicable") is False and item not in not_applicable:
+            not_applicable.append(item)
+    return required, not_applicable
+
 
 
 def scanner_provenance_markdown(canonical: Mapping[str, Any], *, spanish: bool) -> str:

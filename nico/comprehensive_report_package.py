@@ -426,6 +426,10 @@ def _source_cell(value: Any, *, spanish: bool) -> str:
         return ("Sí" if value else "No") if spanish else ("Yes" if value else "No")
     text = str(value)
     if spanish:
+        from nico.comprehensive_spanish_function_measurement_copy_v1 import translate_function_measurement_copy
+        authored = translate_function_measurement_copy(text)
+        if authored is not None:
+            return authored
         from nico.comprehensive_coverage_reconciliation_v1 import COPY_ES
         if text in COPY_ES:
             return COPY_ES[text]
@@ -1386,7 +1390,17 @@ def _pdf(
     ]
 
     sections = assessment.get("sections") if isinstance(assessment.get("sections"), list) else []
-    story += [PageBreak(), p(localized("Canonical Technical Scorecard"), h1)]
+    scorecard_start, scorecard_end = Spacer(0, 0), Spacer(0, 0)
+    scorecard_pages: dict[str, int] = {}
+    if localize_presentation is not None:
+        def record_scorecard_page(flowable: Any) -> None:
+            if flowable is scorecard_start:
+                scorecard_pages["start"] = doc.page - 1
+            elif flowable is scorecard_end:
+                scorecard_pages["end"] = doc.page - 1
+        doc.afterFlowable = record_scorecard_page
+    story += [PageBreak(), *([scorecard_start] if localize_presentation is not None else []),
+              p(localized("Canonical Technical Scorecard"), h1)]
     # SimpleDocTemplate's frame reserves six points of padding at each side.
     story.append(_scorecard_pdf_table(sections, width=doc.width - 12, localized=localized))
     from nico.report_score_explanation import score_explanation
@@ -1394,6 +1408,8 @@ def _pdf(
     from nico.comprehensive_engagement_metadata_v1 import reportlab_literal_markup
     story += [Paragraph(reportlab_literal_markup(line, len(line)), body)
               for line in score_explanation(assessment, localized)]
+    if localize_presentation is not None:
+        story.append(scorecard_end)
 
     for item in sections:
         if not isinstance(item, dict):
@@ -1544,6 +1560,22 @@ def _pdf(
 
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
     pdf_bytes = buffer.getvalue()
+    if localize_presentation is not None:
+        # Ownership comes from the actual layout, including flowing table and
+        # explanation continuations, never inferred from body text or page caps.
+        from pypdf import PdfReader, PdfWriter
+        from pypdf.generic import NameObject, NumberObject
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        start, end = scorecard_pages["start"], scorecard_pages["end"]
+        if not 0 <= start <= end < len(reader.pages):
+            raise ValueError("localized scorecard layout ownership unavailable")
+        writer = PdfWriter(clone_from=reader)
+        for index in range(start, end + 1):
+            writer.pages[index][NameObject("/NICOScorecardPage")] = NumberObject(index - start)
+            writer.pages[index][NameObject("/NICOScorecardPages")] = NumberObject(end - start + 1)
+        marked = io.BytesIO()
+        writer.write(marked)
+        pdf_bytes = marked.getvalue()
     page_count = 0
     try:
         from pypdf import PdfReader

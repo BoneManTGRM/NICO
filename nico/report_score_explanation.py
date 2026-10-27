@@ -12,6 +12,8 @@ LABELS_ES = {
     "Incomplete-analyzer deduction": "Deducción por analizadores incompletos",
     "Other named deductions": "Otras deducciones identificadas",
     "Retained formula": "Fórmula conservada",
+    "Score calculation with zero floor": "Cálculo de puntuación con límite inferior de cero",
+    "Deductions exceed the technical score; the adjusted score is floored at zero.": "Las deducciones superan la puntuación técnica; la puntuación ajustada tiene un límite inferior de cero.",
     "Incomplete analyzers recorded by the contract": "Analizadores incompletos registrados en el contrato",
     "Analyzer names unavailable in the retained contract": "Nombres de analizadores no disponibles en el contrato conservado",
 }
@@ -80,6 +82,13 @@ def score_explanation(assessment: Mapping, localize: Callable[[str], str] = lamb
             lines.append(f'{localize("Incomplete analyzers recorded by the contract")}: {", ".join(names)}')
         else:
             lines.append(localize("Analyzer names unavailable in the retained contract"))
-    lines += [f'{localize("Retained formula")}: {formula}',
-              f'{localize("Evidence-adjusted score")}: {adjusted}/100']
+    if total > technical:
+        # Validate the retained legacy formula above unchanged, but do not present
+        # its clamped result as ordinary subtraction (which would be negative).
+        subtraction = " - ".join(map(str, [technical, *penalties]))
+        lines += [f'{localize("Score calculation with zero floor")}: max(0, {subtraction}) = {adjusted}',
+                  localize("Deductions exceed the technical score; the adjusted score is floored at zero.")]
+    else:
+        lines.append(f'{localize("Retained formula")}: {formula}')
+    lines.append(f'{localize("Evidence-adjusted score")}: {adjusted}/100')
     return lines

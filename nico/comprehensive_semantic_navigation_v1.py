@@ -60,10 +60,11 @@ _TECHNICAL_SCORECARD_PAGE_MARKERS = (
 )
 _SCORECARD_PLAIN_STATUS = re.compile(
     r"^(?:"
-    r"strong|moderate|weak|exceptional|pending|not\s+scored|"
+    r"strong|moderate|weak|exceptional|pending|unknown|not\s+scored|"
+    r"green|yellow|red|gray|verde|amarillo|rojo|gris|sin\s+puntuaci[oó]n|"
     r"provisional\s+(?:strong|moderate)|"
     r"sólido|solido|moderado|débil|debil|excepcional|pendiente|"
-    r"no\s+calificado|provisional\s+(?:sólido|solido|moderado)"
+    r"desconocido|(?:fuerte|moderado)\s+provisional|no\s+calificado|provisional\s+(?:sólido|solido|moderado)"
     r")(?:\s+[—-])?(?:\s+\d{1,3}(?:\.\d+)?(?:/100)?)?$",
     re.I,
 )
@@ -188,7 +189,8 @@ def _scorecard_table_followup(next_nonempty: str) -> bool:
 
     Real semantic control sections in NICO use richer status lines such as
     ``STRONG · 96/100`` or ``PROVISIONAL STRONG · HUMAN REVIEW REQUIRED``. Scorecard
-    table rows use plain status/score cells, and the final row may have no following
+    table rows use plain status/score cells (including color bands and Spanish
+    unscored labels), and the final row may have no following
     extracted line at all. Treat only those bounded forms as table context so a real
     compacted section on the same physical page remains eligible for navigation.
     """
