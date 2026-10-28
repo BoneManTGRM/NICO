@@ -85,6 +85,9 @@ for (const locale of ['en', 'es-MX']) test(`active run has an actionable same-ru
   assert.equal(paused.issue?.retryable, true);
   assert.equal(paused.issue?.runCreated, true);
   assert.equal(paused.issue?.code, 'assessment_poll_budget_exhausted');
+  assert.equal(paused.issue?.title, locale === 'en' ? 'Automatic status checks paused' : 'Consultas automáticas pausadas');
+  assert.equal(paused.result.progress_percent, active.progress_percent);
+  assert.equal(paused.result.terminal, false);
   assert.equal(paused.result.run_id, RUN);
   assert.equal(h.window.location.searchParams.get('run_id'), RUN);
   assert.ok(h.storage.has('nico.comprehensive.active-run.v1'));

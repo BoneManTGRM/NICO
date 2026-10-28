@@ -27,3 +27,17 @@ Future qualification must exercise source mutations, ambiguous identities, cross
 ## Verification limits
 
 Local tests use synthetic nonsecret records. No live 1,675-candidate register has been inspected by this change. Hosted CI and physical browser qualification remain separate. No percentage reduction, production speedup or completed investigation is claimed.
+
+## Exact-run export handoff
+
+For the current owner assessment, expected identity is run `comprun_0da8971c6ad81e7c7101e1192770658d`, repository `BoneManTGRM/NICO`, commit `67a60dd646a6d26bde2fa46cd157e3033450fbe7`. This is an expected binding supplied by the parent, not an independent inspection of the exported candidates.
+
+Existing protected source paths are `/api/nico/assessment/comprehensive-run/{run_id}/localized-report/{en|es-MX}/evidence-package`. `localized_evidence_package` uses the same-run assembler, validates exact artifact hashes and returns a review ZIP with canonical JSON, detached manifest and artifact identity. `scripts/comprehensive_production_export_retention_v1.py` already documents the consumer checks. The path is documentation for the parent's authorized export; it does not authorize retrying denied access.
+
+Retain the response's run/commit/report/language/canonical-truth/artifact SHA headers, ZIP bytes, member hashes and artifact identity. Verify `assessment_rerun=false` and pending human approval/client-delivery-blocked lifecycle. Match the canonical `identity` and `assessment.canonical_scanner_finding_register`, including record counts, `findings`, technical triage and `review_workload_clusters`. A PDF or Markdown summary alone cannot supply this register. An existing review-work projection additionally supplies current human dispositions, independent QC and open evidence requests; do not reconstruct a ledger from a report's count.
+
+For each candidate, inventory identity, category/scanner/rule, occurrence count, source provider/repository/SHA/path/line, retained evidence quality, triage algorithm/version/status, supporting evidence/counterevidence/proof gaps and cluster membership. Missing fields remain missing. Keep private exports private and exclude raw credential values from reviewer summaries. Source locators alone are insufficient for new investigation: exact source bytes or trusted retained context and their binding must also be available. Do not mark the 1,675 UI count as 1,675 unique vulnerabilities or as an independently reconciled record count.
+
+## Polling-status copy
+
+Browser polling remains capped at 360 attempts with the same final exact-run reconciliation and manual same-run resume. Only `assessment_poll_budget_exhausted` uses “Automatic status checks paused” / “Consultas automáticas pausadas” in the issue and status badge. Genuine server timeouts retain their existing labels. No progress percentage, terminal status, timing, backend execution, acceptance or retry behavior changes.

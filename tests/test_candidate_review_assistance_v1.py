@@ -15,6 +15,7 @@ def candidate(**extra):
         'evidence_quality': 'exact_source',
         'technical_triage_source_type': 'deterministic_contextual_analysis',
         'technical_triage_status': 'fresh_proposal',
+        'technical_triage_model_or_version': 'nico.deterministic-contextual-triage.v2',
         'technical_triage_verdict': 'not_actionable',
         'technical_triage_confidence': 'high',
         'evidence_used': ['executable=False'],
@@ -123,3 +124,32 @@ def test_projection_respects_existing_individual_review(changes):
     projection = review_work_projection(record)
     assert projection['candidates'][0]['individual_attention_required'] is True
     assert projection['review_assistance']['queue'][0]['recommendation'] != 'review_nonblocking_proposal'
+
+
+@pytest.mark.parametrize('extra', [
+    {'technical_triage_model_or_version': None}, {'technical_triage_model_or_version': 'unknown'},
+    {'evidence_used': ['']}, {'evidence_used': [None]}, {'evidence_used': [{}]},
+    {'source_repository': 'other/repository'},
+])
+def test_incomplete_or_foreign_provenance_remains_unresolved(extra):
+    packet = build_review_assistance([candidate(**extra)], SCOPE)['queue'][0]
+    assert packet['recommendation'] == 'resolve_evidence_gaps'
+    assert packet['limitations']
+
+
+def test_fingerprint_binds_run_source_and_evidence_without_leaking_content():
+    baseline = build_review_assistance([candidate()], SCOPE)['queue'][0]['input_sha256']
+    assert build_review_assistance([candidate()], {**SCOPE, 'run_id': 'run2'})['queue'][0]['input_sha256'] != baseline
+    assert build_review_assistance([candidate(evidence_used=['different'])], SCOPE)['queue'][0]['input_sha256'] != baseline
+    assert build_review_assistance([candidate(source_commit_sha='b' * 40)], SCOPE)['queue'][0]['input_sha256'] != baseline
+
+
+@pytest.mark.parametrize('provider', [None, 'gitlab', 'unknown'])
+def test_never_guesses_provider_source_link(provider):
+    assert build_review_assistance([candidate(source_provider=provider)], SCOPE)['queue'][0]['source_url'] is None
+
+
+def test_missing_run_identity_cannot_support_nonblocking_proposal():
+    result = build_review_assistance([candidate()], {k: v for k, v in SCOPE.items() if k != 'run_id'})
+    assert result['queue'][0]['recommendation'] == 'resolve_evidence_gaps'
+    assert 'run_scope_unverified' in result['queue'][0]['limitations']

@@ -669,7 +669,7 @@ export function useAssessmentRun(locale: Locale): AssessmentRunController {
       setMessage("");
       setIssue({
         kind: "service_unavailable",
-        title: copy.phases.timed_out,
+        title: copy.pollingPausedTitle,
         message: copy.pollingPausedMessage,
         code: "assessment_poll_budget_exhausted",
         requestId: "",

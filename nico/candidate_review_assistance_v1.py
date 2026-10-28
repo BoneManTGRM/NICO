@@ -10,6 +10,8 @@ import json
 import re
 from urllib.parse import quote
 
+from nico.candidate_technical_triage_v1 import ALGORITHM_VERSION
+
 VERSION = 'nico.candidate-review-assistance.v1'
 
 
@@ -22,6 +24,8 @@ def _source_link(row, scope):
     repository = _text(scope.get('repository'))
     path = _text(row.get('source_path') or row.get('path'))
     if not re.fullmatch(r'[0-9a-f]{40}', sha) or sha != scope.get('commit_sha'):
+        return None
+    if row.get('source_repository') not in (None, '', repository):
         return None
     if row.get('source_provider') != 'github':
         return None
@@ -52,6 +56,8 @@ def build_review_assistance(rows: Sequence[Mapping], scope: Mapping) -> dict:
             continue
         candidate_id = _text(row.get('candidate_id'))
         limitations = []
+        if not _text(scope.get('run_id')):
+            limitations.append('run_scope_unverified')
         if not candidate_id or ids[candidate_id] != 1:
             limitations.append('duplicate_candidate_identity')
         source_url = _source_link(row, scope)
@@ -64,12 +70,14 @@ def build_review_assistance(rows: Sequence[Mapping], scope: Mapping) -> dict:
         if (row.get('evidence_changed') or row.get('lineage_status') == 'carried_forward_evidence_changed'
                 or row.get('evidence_change_state') in {'changed', 'materially_changed', 'significant_change'}):
             limitations.append('evidence_changed')
-        if row.get('technical_triage_source_type') != 'deterministic_contextual_analysis':
+        if (row.get('technical_triage_source_type') != 'deterministic_contextual_analysis'
+                or row.get('technical_triage_model_or_version') != ALGORITHM_VERSION):
             limitations.append('analysis_not_current_deterministic')
         if row.get('technical_triage_status') != 'fresh_proposal':
             limitations.append('analysis_unavailable')
         evidence = row.get('evidence_used')
-        if not isinstance(evidence, list) or not evidence:
+        if (not isinstance(evidence, list) or not evidence
+                or not all(isinstance(item, str) and item.strip() for item in evidence)):
             limitations.append('supporting_evidence_missing')
         gaps = row.get('technical_triage_proof_gaps', row.get('proof_gaps', []))
         if not isinstance(gaps, list) or gaps:

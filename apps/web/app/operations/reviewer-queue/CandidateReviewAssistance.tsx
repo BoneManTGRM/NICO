@@ -23,6 +23,7 @@ const recommendations: Record<string, [string, string]> = {
   review_nonblocking_proposal: ["Review retained nonblocking proposal", "Revisar propuesta conservada de no bloqueo"],
 };
 const limitations: Record<string, [string, string]> = {
+  run_scope_unverified: ["Exact run identity missing", "Falta la identidad de la ejecución exacta"],
   existing_individual_review_required: ["Existing controls require individual review", "Los controles existentes requieren revisión individual"],
   duplicate_candidate_identity: ["Candidate identity is missing or duplicated", "Falta la identidad del candidato o está duplicada"],
   source_identity_or_location_unverified: ["Exact source link unavailable", "Enlace al código exacto no disponible"],
@@ -51,9 +52,9 @@ export default function CandidateReviewAssistance({value, locale}: {value: Assis
     <ol start={current * 25 + 1}>
       {value.queue.slice(current * 25, current * 25 + 25).map(packet => <li key={`${packet.record_index}:${packet.candidate_id}`}>
         <details data-review-assistance-candidate={packet.candidate_id}>
-          <summary><code>{packet.candidate_id}</code> — {(recommendations[packet.recommendation] ?? recommendations.resolve_evidence_gaps)[language]}</summary>
+          <summary><code>{packet.candidate_id}</code> — {(Object.hasOwn(recommendations, packet.recommendation) ? recommendations[packet.recommendation] : recommendations.resolve_evidence_gaps)[language]}</summary>
           {packet.source_url && /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/blob\/[0-9a-f]{40}\//.test(packet.source_url) ? <p><a href={packet.source_url} target="_blank" rel="noopener noreferrer">{es ? "Abrir ubicación del código exacto" : "Open exact source location"}</a></p> : null}
-          <ul>{packet.limitations.map(code => <li key={code}>{(limitations[code] ?? ["Additional evidence review required", "Se requiere revisión adicional de evidencia"])[language]}</li>)}</ul>
+          <ul>{packet.limitations.map(code => <li key={code}>{(Object.hasOwn(limitations, code) ? limitations[code] : ["Additional evidence review required", "Se requiere revisión adicional de evidencia"])[language]}</li>)}</ul>
           <p>{es ? "Grupo de revisión existente" : "Existing review group"}: <code>{packet.existing_review_profile_cluster_id || "—"}</code></p>
           <p>{es ? "Huella de los datos de entrada" : "Input fingerprint"}: <code>{packet.input_sha256}</code></p>
         </details>

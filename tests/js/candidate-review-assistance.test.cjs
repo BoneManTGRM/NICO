@@ -19,3 +19,18 @@ for (const locale of ['en', 'es-MX']) {
     assert.equal(h.calls.length, 1, 'navigation must not submit dispositions or fetch source');
   });
 }
+for (const locale of ['en', 'es-MX']) {
+  test(`${locale}: unknown labels and unsafe links cannot imply clearance`, async () => {
+    const h = harness(locale, () => Response.json(payload({review_assistance: {
+      artifact_schema: 'nico.candidate-review-assistance.v1', pending_record_count: 1,
+      queue: [{candidate_id: 'A', record_index: 0, recommendation: '__proto__',
+        limitations: ['constructor'], source_url: 'javascript:alert(1)', input_sha256: 'a'.repeat(64),
+        existing_review_profile_cluster_id: ''}],
+    }})));
+    await h.load();
+    assert.match(h.html(), locale === 'en' ? /Resolve evidence gaps before disposition/ : /Resolver brechas de evidencia antes de decidir/);
+    assert.match(h.html(), locale === 'en' ? /Additional evidence review required/ : /Se requiere revisión adicional de evidencia/);
+    assert.equal(h.find(n => n.type === 'a' && String(n.props.href).startsWith('javascript:')).length, 0);
+    assert.equal(h.calls.length, 1);
+  });
+}

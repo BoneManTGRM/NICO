@@ -55,7 +55,7 @@ function nodes(node) {
   if (!node || typeof node !== 'object') return [];
   return Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
 }
-function workspace({locale = 'en', scanner = 'complete', running = true, report = false, compactMobile = false} = {}) {
+function workspace({locale = 'en', scanner = 'complete', running = true, report = false, compactMobile = false, phase = null, issue = null} = {}) {
   const result = {run_id: 'comprun_presentation_fixture', commit_sha: commit, terminal: !running,
     current_stage: 'cross_format_truth_verification', human_review_required: true, client_delivery_allowed: false,
     record: {stage_results: {dependency_security_static_analysis: {status: scanner}}},
@@ -63,8 +63,8 @@ function workspace({locale = 'en', scanner = 'complete', running = true, report 
       sections: [{id: 'code_audit', score: 96, status: 'strong'}]},
     ...(report ? {reports: {report_id: 'report_fixture', pdf_available: true}} : {})};
   const controller = {service: 'comprehensive', repository: 'owner/control', client: '', project: '',
-    authorized: true, humanEvidence: {}, engagementFieldStates: {client_name: {state: 'not_supplied'}, project_name: {state: 'not_supplied'}}, phase: running ? 'running' : 'review_required',
-    result, running, protectedRunId: result.run_id, message: '', error: '', issue: null, attempt: 1, elapsed: 1};
+    authorized: true, humanEvidence: {}, engagementFieldStates: {client_name: {state: 'not_supplied'}, project_name: {state: 'not_supplied'}}, phase: phase || (running ? 'running' : 'review_required'),
+    result, running, protectedRunId: result.run_id, message: '', error: '', issue, attempt: 1, elapsed: 1};
   const render = loadModules(controller, compactMobile)('AssessmentWorkspace.tsx').default;
   return render({locale});
 }
@@ -188,4 +188,21 @@ for (const locale of ['en', 'es-MX']) {
       assert.equal(JSON.stringify(section), before);
     });
   }
+}
+
+for (const locale of ['en', 'es-MX']) {
+  test(`${locale}: browser poll pause badge stays distinct from server timeout`, () => {
+    const copy = copyFor(locale);
+    const paused = workspace({locale, running: false, phase: 'timed_out', issue: {
+      code: 'assessment_poll_budget_exhausted', runCreated: true, retryable: true,
+      title: copy.pollingPausedTitle, message: copy.pollingPausedMessage,
+    }});
+    const badges = nodes(paused).filter(n => n.type === 'span').map(text);
+    assert.ok(badges.includes(copy.pollingPausedTitle));
+    assert.ok(!badges.includes(copy.phases.timed_out));
+    const timeout = workspace({locale, running: false, phase: 'timed_out'});
+    const serverBadges = nodes(timeout).filter(n => n.type === 'span').map(text);
+    assert.ok(serverBadges.includes(copy.phases.timed_out));
+    assert.ok(!serverBadges.includes(copy.pollingPausedTitle));
+  });
 }

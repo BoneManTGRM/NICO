@@ -854,7 +854,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
           <p className="eyebrow">{copy.state}</p>
           <h2 title={result?.run_id}>{result?.run_id ? compactIdentifier(result.run_id, 18, 8) : copy.phases[phase]}</h2>
         </div>
-        <span className={statusClass(phase)}>{internalReview.operatorApprovalCompleted ? copy.operatorApproved : copy.phases[phase]}</span>
+        <span className={statusClass(phase)}>{internalReview.operatorApprovalCompleted ? copy.operatorApproved : issue?.code === "assessment_poll_budget_exhausted" ? copy.pollingPausedTitle : copy.phases[phase]}</span>
       </div>
 
       {/* issue ? <div legacy source contract; run-created issues remain in the exact-run panel. */}
