@@ -139,6 +139,20 @@ def parse_static_findings(name: str, stdout: str) -> tuple[list[dict[str, Any]],
         warning = f"{name} analyzer diagnostics have an invalid shape; capture is incomplete."
     elif diagnostics:
         warning = f"{name} reported {len(diagnostics)} analyzer diagnostics; capture is incomplete."
+    if name == "semgrep" and "time" in payload:
+        timing = payload["time"]
+        timeout_warning = None
+        if not isinstance(timing, dict):
+            timeout_warning = "semgrep timing diagnostics have an invalid shape; capture is incomplete."
+        elif "fixpoint_timeouts" in timing:
+            timeouts = timing["fixpoint_timeouts"]
+            if not isinstance(timeouts, list) or any(not isinstance(item, dict) for item in timeouts):
+                timeout_warning = "semgrep fixpoint timeout diagnostics have an invalid shape; capture is incomplete."
+            elif timeouts:
+                # Count records, not unique failures or security findings. Never
+                # expose diagnostic messages, paths, or other nested contents.
+                timeout_warning = f"semgrep reported {len(timeouts)} fixpoint timeout records; capture is incomplete."
+        warning = " ".join(filter(None, [warning, timeout_warning])) or None
     if name in _STATIC_TOOLS:
         valid = []
         for item in payload["results"]:
