@@ -1,0 +1,16 @@
+# Dormant Spanish family freeze: correctness checkpoint
+
+The retained ordinary report failure recorded in `report-bundle-shipping-plan.md` is `pdf_total_pages_limit` after lossless sparse reflow. The installed single-PDF boundary still rejects oversized reports. Multi-volume composition/transport and this complete-family freeze remain explicit, uninstalled APIs. This checkpoint does not enable Spanish generation or exports, raise the 60-page per-volume bound, remove findings, or set a new speed target.
+
+A frozen source digest and a frozen localized digest alone did not establish parity between them. The preserved freezer previously compared only run/repository/commit identity and then validated the localized family in isolation. It could accept a changed ledger/tenant/depth identity, score, or omitted source finding/stage. The correction compares those immutable identity fields and reuses the installed same-run assembler's `_assessment_truth_projection` before any page construction or family freeze. It does not translate text, modify evidence, reset approval, or weaken any validator. The existing projection compares declared assessment truth; it is not a general natural-language equivalence proof.
+
+The inherited complete-family work selects pages once, binds an independent selected-page inventory, constructs all navigation, validates the collective final surfaces, then freezes the complete family. Missing/reordered/duplicated pages, incomplete construction, missing PDF semantics and later mutation fail closed. Each volume remains at most 60 pages. Legacy single-PDF approval/delivery/retrieval boundaries continue rejecting v2, including attempts to present Volume 1 as the complete report. Whole-family approval and installed retrieval are still required before activation.
+
+Verification on main673ac17c plus the preserved draft: seven source-drift controls first failed, then passed with the correction. Focused family/transport/core/composer/completion/locale/parity/retained-export suites pass in isolated processes. A fixed English baseline probe against exact main has identical final PDF, Markdown, HTML, canonical JSON, completion metadata, v1 composed PDF and retained ZIP hashes. These are fixture results, not retained production-report acceptance.
+
+Known remaining boundaries:
+- The exact later failed Spanish input and detailed receipt were not available in this executor. The earlier retained archive transfer was unsuccessful; no unsupported recovery route is used. The recorded page-limit diagnosis is source/handoff evidence, not a fresh installed replay.
+- Existing family canonical/text and core PDF byte bounds are 4MiB. The older parent-reported canonical archive member was about70.6MB, so that earlier input cannot simply be fed to this freezer. The later input's size and applicable representation must be established before any capacity change; no evidence may be truncated to fit.
+- The installed wrapper chain, localized family persistence/retrieval/UI, hard worker qualification, whole-family approval and delivery, and actual retained-report acceptance remain incomplete. Follow the existing shipping plan; do not treat this checkpoint as a deployable Spanish release.
+
+No infrastructure, runtime settings, English release admission, source database, C++, or database-pilot work is included.
