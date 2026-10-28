@@ -26,11 +26,11 @@ Future qualification must exercise source mutations, ambiguous identities, cross
 
 ## Verification limits
 
-Local tests use synthetic nonsecret records. No live 1,675-candidate register has been inspected by this change. Hosted CI and physical browser qualification remain separate. No percentage reduction, production speedup or completed investigation is claimed.
+Regression tests use synthetic nonsecret records. A separately retained authorized export has now been checked offline; its private bytes are not repository fixtures. Hosted CI and physical browser qualification remain separate. No percentage reduction, production speedup or completed investigation is claimed.
 
 ## Exact-run export handoff
 
-For the current owner assessment, expected identity is run `comprun_0da8971c6ad81e7c7101e1192770658d`, repository `BoneManTGRM/NICO`, commit `67a60dd646a6d26bde2fa46cd157e3033450fbe7`. This is an expected binding supplied by the parent, not an independent inspection of the exported candidates.
+For the current owner assessment, expected identity is run `comprun_0da8971c6ad81e7c7101e1192770658d`, repository `BoneManTGRM/NICO`, commit `67a60dd646a6d26bde2fa46cd157e3033450fbe7`. The authorized export was independently checked against this binding, its detached manifest and all eight artifact hashes and sizes.
 
 Existing protected source paths are `/api/nico/assessment/comprehensive-run/{run_id}/localized-report/{en|es-MX}/evidence-package`. `localized_evidence_package` uses the same-run assembler, validates exact artifact hashes and returns a review ZIP with canonical JSON, detached manifest and artifact identity. `scripts/comprehensive_production_export_retention_v1.py` already documents the consumer checks. The path is documentation for the parent's authorized export; it does not authorize retrying denied access.
 
@@ -41,3 +41,11 @@ For each candidate, inventory identity, category/scanner/rule, occurrence count,
 ## Polling-status copy
 
 Browser polling remains capped at 360 attempts with the same final exact-run reconciliation and manual same-run resume. Only `assessment_poll_budget_exhausted` uses “Automatic status checks paused” / “Consultas automáticas pausadas” in the issue and status badge. Genuine server timeouts retain their existing labels. No progress percentage, terminal status, timing, backend execution, acceptance or retry behavior changes.
+
+## Offline source observation and report disclosures
+
+`candidate_source_observations_v1` is a bounded offline helper, not a new production endpoint or automatic review action. Its caller must obtain a blob OID from a trusted exact-commit Git tree. It verifies the blob bytes, repository/path/commit binding and candidate line before describing Python AST structure. It never executes source or copies code, string literals or credential values. Repository/path metadata is retained for provenance. Unsupported rules, historical source mismatches and missing evidence remain unresolved. Structural matches are not findings of safety or exploitability; all recommendations still require human review.
+
+The authorized 1,675-record export contained 1,583 Bandit, 24 OSV, 11 Gitleaks and 57 TruffleHog candidates. A bounded pass over 251 exact-commit source files observed expected structures at 1,229 candidate lines; 339 required unsupported rule semantics, 15 did not match the expected exact-line structure and 92 were outside that pass. None was dismissed, approved or used to change scores. Existing clustering already provided 687 groups; these are not newly achieved workload savings. The helper is not yet integrated as automatic live source investigation in the UI.
+
+Final summary renderers disclose the complete canonical finding-register path and population, distinguish retained raw counts from confirmed material findings, and show SHA-matched consecutive-pass requirements separately from execution completion. Missing compact counts remain unavailable rather than becoming zero. Generated Spanish summary translations match only known authored statements. Explicit report locale remains independent of UI language.

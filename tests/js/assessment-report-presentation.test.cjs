@@ -206,3 +206,10 @@ for (const locale of ['en', 'es-MX']) {
     assert.ok(!serverBadges.includes(copy.pollingPausedTitle));
   });
 }
+
+test('exact generated static and unscored summaries translate without upgrading changed claims', () => {
+  const summary = 'Static-analysis evidence is reported separately from analyzer execution coverage. TypeScript analysis completed with verified retained evidence for the exact commit.';
+  assert.match(localizeExactSpanishText(summary), /TypeScript se completó/);
+  assert.match(localizeExactSpanishText('Unscored controls are excluded from maturity; any resulting mean change is not evidence of improved source quality.'), /no demuestra una mejora/);
+  assert.equal(localizeExactSpanishText(summary.replace('completed with verified', 'failed without verified')), null);
+});

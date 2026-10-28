@@ -199,6 +199,17 @@ def _normalize_scanner_record(value: Mapping[str, Any]) -> dict[str, Any]:
     record["raw_finding_count"] = len(findings)
     record["client_actionable_finding_count"] = len(actionable)
 
+    if record.get("compact_record") is True and record.get("raw_findings_embedded") is False and not findings:
+        # Compact records deliberately omit payloads; an empty embedded list does
+        # not establish zero scanner candidates or their client disposition.
+        summary = record.get("finding_summary")
+        raw = summary.get("raw") if isinstance(summary, Mapping) else None
+        retained_count = raw if type(raw) is int and raw >= 0 else None
+        record["raw_finding_count"] = retained_count
+        record["finding_count"] = retained_count
+        record["client_actionable_finding_count"] = None
+        record["finding_count_basis"] = "retained_summary" if retained_count is not None else "unavailable"
+
     if configuration:
         record["scanner_configuration_findings"] = configuration
         record["scanner_configuration_error_count"] = len(configuration)
