@@ -9,6 +9,7 @@ from math import ceil
 from typing import Any
 
 from nico import comprehensive_review_work_v1 as legacy
+from nico.candidate_review_assistance_v1 import build_review_assistance
 from nico.comprehensive_client_delivery_contract_v1 import human_reviewer_identity
 
 VERSION = "nico.comprehensive_review_work.v2"
@@ -636,6 +637,7 @@ def review_work_projection(record: Mapping[str, Any]) -> dict[str, Any]:
         **base,
         "artifact_schema": PROJECTION_SCHEMA,
         "candidates": candidate_rows,
+        "review_assistance": build_review_assistance(candidate_rows, _scope_binding(record)),
         "clusters": clusters,
         "queue_counts": queue_counts,
         "quality_control_sampling": deepcopy(ledger.get("quality_control_sampling") or {}),
