@@ -152,11 +152,18 @@ def prepare_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _validate_final_surfaces(
+    canonical: Mapping[str, Any], register: Mapping[str, Any],
+    markdown: str, rendered_html: str, pdf: bytes,
+) -> dict[str, Any]:
+    return _validate_final_volume_surfaces(canonical, register, markdown, rendered_html, (pdf,))
+
+
+def _validate_final_volume_surfaces(
     canonical: Mapping[str, Any],
     register: Mapping[str, Any],
     markdown: str,
     rendered_html: str,
-    pdf: bytes,
+    pdfs: tuple[bytes, ...],
 ) -> dict[str, Any]:
     summary = register.get("summary") if isinstance(register.get("summary"), Mapping) else {}
     if summary.get("finding_population_reconciled") is not True:
@@ -181,14 +188,23 @@ def _validate_final_surfaces(
             f"{len(canonical_findings)} != {decision_count}"
         )
 
-    reader = PdfReader(io.BytesIO(pdf))
-    page_texts = extract_pdf_page_texts(pdf)
-    if len(page_texts) != len(reader.pages):
-        raise ValueError("final client report cached text page population does not match parsed PDF")
-    extracted = "\n".join(page_texts)
+    if not pdfs or len(pdfs) > 16:
+        raise ValueError("final client report volume population invalid")
     from nico.comprehensive_human_evidence_appendix import is_literal_evidence_page
-    presentation_extracted = "\n".join(text for page, text in zip(reader.pages, page_texts)
-                                        if not is_literal_evidence_page(page))
+    extracted_parts, presentation_parts, page_counts = [], [], []
+    page_count = 0
+    for pdf in pdfs:
+        reader = PdfReader(io.BytesIO(pdf))
+        page_texts = extract_pdf_page_texts(pdf)
+        if len(page_texts) != len(reader.pages):
+            raise ValueError("final client report cached text page population does not match parsed PDF")
+        page_count += len(reader.pages)
+        page_counts.append(len(reader.pages))
+        extracted_parts.extend(page_texts)
+        presentation_parts.extend(text for page, text in zip(reader.pages, page_texts)
+                                  if not is_literal_evidence_page(page))
+    extracted = "\n".join(extracted_parts)
+    presentation_extracted = "\n".join(presentation_parts)
     # Supplied quotations have no lifecycle authority. Validate report-owned
     # prose while retaining literal evidence and its exact export bytes.
     without_literals = lambda text: re.sub(r'<span data-nico-client-literal="true">.*?</span>', '', text, flags=re.S)
@@ -266,7 +282,8 @@ def _validate_final_surfaces(
         name = _text(item.get("scanner_name") or item.get("tool"))
         if name and name.casefold() not in normalized_extracted:
             raise ValueError(f"final client PDF omitted not-applicable analyzer: {name}")
-    legacy._assert_no_control_glyphs(pdf)
+    for pdf in pdfs:
+        legacy._assert_no_control_glyphs(pdf)
 
     compact_pdf = legacy._compact(extracted)
     for item in code[:60]:
@@ -274,7 +291,6 @@ def _validate_final_surfaces(
         if location and legacy._compact(location) not in compact_pdf:
             raise ValueError(f"final client PDF omitted exact source location: {location}")
 
-    page_count = len(reader.pages)
     return {
         "finding_population_reconciled": True,
         "canonical_decision_finding_count": decision_count,
@@ -311,6 +327,8 @@ def _validate_final_surfaces(
 
 def finalize_client_report_package(package: Mapping[str, Any]) -> dict[str, Any]:
     """Finalize an evidence-sized client PDF while retaining full JSON/CSV evidence."""
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(package)
 
     with report_delivery_phase_scope("finalize_core"):
         with report_delivery_phase_scope("finalize_prepare"):

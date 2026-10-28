@@ -49,6 +49,16 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
+      - name: Qualify bounded read-only verifier on existing synthetic Postgres
+        timeout-minutes: 2
+        run: python scripts/postgres_readonly_restore_proof.py
+
+      - name: Qualify Comprehensive metadata SQL and auth-none wrappers
+        timeout-minutes: 3
+        env:
+          NICO_SYNTHETIC_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: python scripts/postgres_comprehensive_observation_proof.py
+
       - name: Run synthetic restart and tenant-isolation proof
         run: |
           python scripts/postgres_restart_proof.py \
@@ -70,6 +80,9 @@ jobs:
             --output audit-results/postgres-worker-job-proof.json
       - name: Prove authenticated worker receipt publication and durable polling
         run: python scripts/postgres_worker_protocol_proof.py --evidence audit-results/postgres-worker-protocol-proof.json
+      - name: Prove one-artifact qualification capacity on existing synthetic Postgres
+        timeout-minutes: 4
+        run: python scripts/postgres_review_pdf_capacity_proof.py --synthetic-ci-proof --output audit-results/postgres-review-pdf-capacity-proof.json
       - name: Prove retained review-PDF ledger ownership on existing Postgres
         run: python scripts/postgres_review_pdf_preparation_proof.py --output audit-results/postgres-review-pdf-preparation-proof.json
       - name: Prove synthetic full retained PDF lifecycle on existing Postgres
@@ -83,6 +96,7 @@ jobs:
         run: |
           python - <<'PY'
           import json
+          import hashlib
           import os
           from pathlib import Path
 
@@ -97,6 +111,16 @@ jobs:
           serialized = json.dumps(payload)
           assert "postgresql://" not in serialized
           assert "NICO_TEST_DATABASE_URL" not in serialized
+
+          comprehensive = json.loads(Path("audit-results/postgres-comprehensive-observation-proof.json").read_text())
+          assert comprehensive["status"] == "passed"
+          assert comprehensive["commit_sha"] == os.environ["GITHUB_SHA"]
+          assert comprehensive["synthetic"] is True
+          assert comprehensive["report_bytes_verified"] is False
+          assert comprehensive["restore_provenance_verified"] is False
+          assert comprehensive["checks"] and all(comprehensive["checks"].values())
+          for name, digest in comprehensive["source_sha256"].items():
+              assert hashlib.sha256((Path("scripts/restore_observation") / name).read_bytes()).hexdigest() == digest
 
           reservation_path = Path("audit-results/postgres-intake-reservation-proof.json")
           reservation = json.loads(reservation_path.read_text(encoding="utf-8"))
@@ -139,6 +163,17 @@ jobs:
           assert protocol["client_delivery_allowed"] is False
           assert len(protocol["checks"]) == 33
           assert all(value is True for value in protocol["checks"].values())
+          capacity = json.loads(Path("audit-results/postgres-review-pdf-capacity-proof.json").read_text())
+          from scripts.postgres_review_pdf_capacity_proof import REQUIRED_CHECKS, POSITIVE_CHECKS
+          assert capacity["status"] == "passed" and capacity["synthetic"] is True
+          assert capacity["live_production_claim"] is False
+          assert capacity["assessment_executed"] is False
+          assert capacity["client_delivery_allowed"] is False
+          assert capacity["successful_ready_publication_proven"] is True
+          assert set(capacity["checks"]) == set(REQUIRED_CHECKS) | set(POSITIVE_CHECKS)
+          assert all(value is True for value in capacity["checks"].values())
+          assert "postgresql://" not in json.dumps(capacity)
+          assert "NICO_TEST_DATABASE_URL" not in json.dumps(capacity)
           review_pdf = json.loads(Path("audit-results/postgres-review-pdf-preparation-proof.json").read_text())
           assert review_pdf["status"] == "passed"
           assert review_pdf["synthetic"] is True
@@ -152,13 +187,24 @@ jobs:
           assert review_pdf["commit_sha"] == subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
           assert "postgresql://" not in json.dumps(review_pdf)
           assert "NICO_TEST_DATABASE_URL" not in json.dumps(review_pdf)
+          readonly = json.loads(Path("audit-results/postgres-readonly-restore-proof.json").read_text())
+          assert readonly["status"] == "passed" and readonly["synthetic"] is True
+          assert readonly["live_production_claim"] is False
+          assert readonly["restore_provenance_verified"] is False
+          assert readonly["evidence_record_written"] is False
+          assert readonly["verifier_sha256"] == hashlib.sha256(Path("scripts/verify_restored_storage_readonly.py").read_bytes()).hexdigest()
+          assert readonly["checks"] and all(readonly["checks"].values())
+          for key in ("bounded_reads", "missing_schema", "missing_table", "ledger_mismatch",
+                      "ledger_overlong", "server_readonly_enforcement", "write_rejected_by_postgres",
+                      "synthetic_schema_removed"):
+              assert readonly["checks"][key] is True
           lifecycle = json.loads(Path("audit-results/postgres-review-pdf-lifecycle-proof.json").read_text())
           assert lifecycle["status"] == "passed" and lifecycle["synthetic"] is True
           assert lifecycle["live_production_claim"] is False
           assert lifecycle["actual_retained_report_timing"] is False
           assert lifecycle["assessment_executed"] is False
           assert lifecycle["client_delivery_allowed"] is False
-          assert lifecycle["commit_sha"] == review_pdf["commit_sha"]
+          assert lifecycle["commit_sha"] == review_pdf["commit_sha"] == capacity["commit_sha"]
           assert all(value is True for value in lifecycle["checks"].values())
           for key in ("fresh_process_retrieved_exact_bytes", "identity_hash_and_gates_verified",
                       "real_store_restore", "real_child_render", "locked_ready_publication",
@@ -177,10 +223,13 @@ jobs:
           name: postgres-restart-proof-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             audit-results/postgres-restart-proof.json
+            audit-results/postgres-readonly-restore-proof.json
+            audit-results/postgres-comprehensive-observation-proof.json
             audit-results/postgres-intake-reservation-proof.json
             audit-results/postgres-scanner-artifact-proof.json
             audit-results/postgres-worker-job-proof.json
             audit-results/postgres-worker-protocol-proof.json
+            audit-results/postgres-review-pdf-capacity-proof.json
             audit-results/postgres-review-pdf-preparation-proof.json
             audit-results/postgres-review-pdf-lifecycle-proof.json
           if-no-files-found: error

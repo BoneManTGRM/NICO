@@ -61,7 +61,7 @@ def controller_for(store):
     return ComprehensiveApiController(ComprehensiveRunService(store, {}))
 
 
-def runtime_for(adapter):
+def runtime_for(adapter, *, jobs_factory=None):
     from tests.test_cross_locale_pdf_repeatability_v1 import _install_production_wrappers
     _install_production_wrappers()
     from nico.comprehensive_run_store import ComprehensiveRunStore
@@ -74,13 +74,13 @@ def runtime_for(adapter):
     def bounded_actual_child(*args, **kwargs):
         kwargs['max_seconds'] = min(kwargs['max_seconds'], 60)
         return run_worker(*args, **kwargs)
-    service = ReviewPdfPreparationService(PostgresReviewPdfPreparationJobs(adapter), source,
+    service = ReviewPdfPreparationService((jobs_factory or PostgresReviewPdfPreparationJobs)(adapter), source,
         capacity=BoundedSemaphore(1), worker=bounded_actual_child)
     return PreparationRuntime(service)
 
 
-def fresh_read(expected):
-    runtime = runtime_for(existing_adapter())
+def fresh_read(expected, *, adapter=None, jobs_factory=None):
+    runtime = runtime_for(adapter or existing_adapter(), jobs_factory=jobs_factory)
     identity = expected['identity']
     response = runtime.retrieve(identity['run_id'], identity['language'], expected['job_id'], expected['binding'])
     assert hashlib.sha256(response.body).hexdigest() == expected['pdf_sha256']
