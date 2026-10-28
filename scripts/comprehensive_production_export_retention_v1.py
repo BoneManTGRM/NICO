@@ -29,7 +29,7 @@ SCHEMA = "nico.production-export-download-receipt.v1"
 _ACTIVE: ContextVar["Capture | None"] = ContextVar("nico_export_capture", default=None)
 _SAFE_NAME = re.compile(r"[A-Za-z0-9_-]{1,160}\Z")
 _HEADERS = {
-    "content-type", "content-length", "content-disposition", "etag",
+    "content-type", "content-length", "content-disposition", "etag", "retry-after",
     "x-nico-run-id", "x-nico-commit-sha", "x-nico-report-id",
     "x-nico-report-language", "x-nico-artifact-sha256", "x-nico-pdf-sha256",
     "x-nico-canonical-truth-sha256", "x-nico-assessment-rerun",

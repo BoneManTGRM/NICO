@@ -6,6 +6,9 @@ import io
 import json
 import os
 import re
+import signal
+import threading
+from contextlib import contextmanager
 import sys
 import time
 from functools import wraps
@@ -48,6 +51,8 @@ SPANISH_MATURITY_LABELS = {"Excepcional", "Sólido", "Moderado", "Débil", "Crí
 FORBIDDEN_ENGLISH_MATURITY_LABELS = {"Exceptional", "Strong", "Moderate", "Weak", "Critical"}
 LOCALIZED_PDF_CONNECT_TIMEOUT_SECONDS = 300.0
 LOCALIZED_PDF_READ_TIMEOUT_SECONDS = 300.0
+LOCALIZED_PDF_TOTAL_TIMEOUT_SECONDS = 300.0
+LOCALIZED_PDF_MAX_ATTEMPTS = 6
 CANONICAL_JSON_CONNECT_TIMEOUT_SECONDS = 300.0
 CANONICAL_JSON_READ_TIMEOUT_SECONDS = 300.0
 ENGAGEMENT_VISIBILITY_TIMEOUT_SECONDS = 180.0
@@ -480,6 +485,57 @@ def _fetch_and_verify_durable_engagement(
     }
 
 
+@contextmanager
+def _localized_pdf_wallclock_limit():
+    # httpx read timeouts bound idle reads, not an entire streaming transfer.
+    # This proof runs on the Linux main thread; fail closed elsewhere or when
+    # another alarm owns the process rather than silently losing the hard cap.
+    assert threading.current_thread() is threading.main_thread() and hasattr(signal, "setitimer"), "localized PDF wallclock guard unavailable"
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0), "localized PDF wallclock guard already in use"
+    previous = signal.getsignal(signal.SIGALRM)
+    def expired(_signum, _frame):
+        raise AssertionError("localized PDF aggregate deadline exhausted")
+    signal.signal(signal.SIGALRM, expired)
+    signal.setitimer(signal.ITIMER_REAL, LOCALIZED_PDF_TOTAL_TIMEOUT_SECONDS)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+def _localized_pdf_response(client, *, frontend_origin: str, run_id: str, report_language: str):
+    route = f"/api/nico/assessment/comprehensive-run/{run_id}/localized-report/{report_language}/pdf"
+    url = frontend_origin + route
+    deadline = time.monotonic() + LOCALIZED_PDF_TOTAL_TIMEOUT_SECONDS
+    with _localized_pdf_wallclock_limit():
+        for attempt in range(1, LOCALIZED_PDF_MAX_ATTEMPTS + 1):
+            remaining = deadline - time.monotonic()
+            assert remaining > 0, "localized PDF aggregate deadline exhausted"
+            response = client.get(url, headers={
+                "Accept": "application/pdf", "Accept-Encoding": "identity", "Cache-Control": "no-store",
+            }, timeout=httpx.Timeout(connect=min(LOCALIZED_PDF_CONNECT_TIMEOUT_SECONDS, remaining),
+                                     read=min(LOCALIZED_PDF_READ_TIMEOUT_SECONDS, remaining),
+                                     write=min(30.0, remaining), pool=min(30.0, remaining)))
+            retain_response(f"pdf-attempt-{report_language}-{attempt}", route=route,
+                            status=response.status_code, headers=response.headers, content=response.content)
+            assert time.monotonic() < deadline, "localized PDF aggregate deadline exhausted"
+            delay = response.headers.get("retry-after", "")
+            qualified = False
+            if response.status_code == 503 and re.fullmatch(r"[1-9][0-9]?", delay) and int(delay) <= 60:
+                try:
+                    body = response.json()
+                    qualified = isinstance(body, dict) and isinstance(body.get("detail"), dict) and body["detail"].get("reason") == "retained_pdf_preparing"
+                except (ValueError, UnicodeError):
+                    pass
+            if not qualified:
+                return response
+            assert attempt < LOCALIZED_PDF_MAX_ATTEMPTS, "localized PDF busy attempt limit exhausted"
+            assert time.monotonic() + int(delay) < deadline, "localized PDF aggregate deadline exhausted"
+            time.sleep(int(delay))
+    raise AssertionError("localized PDF busy attempt limit exhausted")
+
+
 def _fetch_localized_pdf(
     *,
     frontend_origin: str,
@@ -498,13 +554,8 @@ def _fetch_localized_pdf(
         follow_redirects=False,
         trust_env=False,
     ) as client:
-        response = client.get(
-            f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}/localized-report/{report_language}/pdf",
-            headers={
-                "Accept": "application/pdf",
-                "Accept-Encoding": "identity",
-                "Cache-Control": "no-store",
-            },
+        response = _localized_pdf_response(
+            client, frontend_origin=frontend_origin, run_id=run_id, report_language=report_language,
         )
         pdf_bytes = response.content
     retain_response(
