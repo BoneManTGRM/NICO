@@ -659,7 +659,22 @@ def test_future_activity_cannot_change_snapshot_code_signals():
     assert repository["snapshot_commit_sha"] == "a" * 40
 
 
-def test_installed_collector_retains_source_observations_through_stage_context():
+def test_installed_collector_retains_source_observations_through_stage_context(tmp_path):
+    # Bootstrap installs process-global renderer bindings. Keep this installed
+    # integration check isolated from legacy publication tests in the same shard.
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+    from tests.owned_worker_environment import owned_worker_environment
+    if os.environ.get('NICO_CAPTURE_TEST_CHILD') != '1':
+        environment = owned_worker_environment(Path(__file__).resolve().parents[1], tmp_path, os.environ)
+        environment['NICO_CAPTURE_TEST_CHILD'] = '1'
+        completed = subprocess.run([sys.executable, '-m', 'pytest', '-q',
+            __file__ + '::test_installed_collector_retains_source_observations_through_stage_context'],
+            env=environment, capture_output=True, text=True, timeout=60)
+        assert completed.returncode == 0, completed.stdout + completed.stderr
+        return
     from nico.api import final_report_worker_bootstrap
     from nico import comprehensive_native_providers as providers
     from nico.comprehensive_run_service import _prior_stage_results_for_stage
