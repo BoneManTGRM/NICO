@@ -162,8 +162,35 @@ def retained_coverage_disclosures(context: Mapping[str, Any], *, spanish: bool) 
     if isinstance(register, Mapping) and isinstance(context.get('identity'), Mapping):
         from nico.candidate_investigation_pipeline_v1 import display_investigation
         from nico.candidate_source_reason_detail_v1 import LABELS
-        view = display_investigation(register, context['identity'])
+        from nico.candidate_investigation_report_scope_v1 import report_identity
+        expected_identity = report_identity(context, spanish=spanish)
+        view = display_investigation(register, expected_identity) if isinstance(expected_identity, Mapping) else {'available': False}
+        reason_labels = {
+            'source_parse_unavailable': ('Source parsing unavailable', 'Análisis sintáctico del código no disponible'),
+            'source_identity_mismatch': ('Source identity mismatch', 'La identidad del código no coincide'),
+            'ambiguous_call_expression': ('Ambiguous call expression', 'Expresión de llamada ambigua'),
+            'rule_semantics_require_specialist_review': ('Specialist rule analysis required', 'Se requiere análisis especializado de la regla'),
+            'unsupported_or_missing_exact_source_evidence': ('Unsupported or missing exact-source evidence', 'Evidencia del código exacto ausente o no compatible'),
+            'rule_source_line_mismatch': ('Rule and source line mismatch', 'La regla no coincide con la línea del código'),
+            'source_scope_unavailable_or_stale': ('Source scope unavailable or stale', 'Alcance del código no disponible u obsoleto'),
+            'investigation_budget_exhausted': ('Investigation budget exhausted', 'Presupuesto de investigación agotado'),
+            'source_file_binding_mismatch': ('Source file binding mismatch', 'La vinculación del archivo no coincide'),
+            'source_line_missing': ('Source line unavailable', 'Línea del código no disponible'),
+            'retained_observation_invalid': ('Retained observation invalid', 'Observación conservada inválida'),
+        }
+        if view.get('available'):
+            unresolved = view['candidate_count'] - view['completed_count']
+            lines.append((f'Candidatos sin resolver: {unresolved}; pendientes de revisión humana.' if spanish else
+                          f'Unresolved candidates: {unresolved}; human review pending.'))
+            for code, count in sorted(view['unresolved_reasons'].items()):
+                labels = reason_labels.get(code, ('Other unresolved evidence or analysis', 'Otra evidencia o análisis sin resolver'))
+                lines.append(f'{labels[1 if spanish else 0]}: {count}.')
+        elif isinstance(investigation, Mapping):
+            lines.append('Desglose de motivos no disponible: identidad o huellas de evidencia no validadas.' if spanish else
+                         'Reason breakdown unavailable: identity or evidence fingerprints not validated.')
         if view.get('available') and view.get('source_availability_counts'):
+            lines.append('Detalle del subconjunto sin análisis sintáctico disponible:' if spanish else
+                         'Breakdown of the subset without available source parsing:')
             lines.append('La ausencia de una observación no demuestra un fallo del analizador ni una causa presupuestaria.' if spanish else
                          'An absent observation proves neither parser failure nor a budget cause.')
             for code, count in view['source_availability_counts'].items():
