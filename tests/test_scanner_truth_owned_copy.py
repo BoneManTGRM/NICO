@@ -56,8 +56,7 @@ def test_one_redundant_assessment_copy_removed(monkeypatch, module, name):
     getattr(module, name)(source)
     assert old - len(calls) == 1
 
-@pytest.mark.parametrize('locale', ['en', 'es-MX'])
-def test_installed_artifacts_identical(monkeypatch, locale):
+def _installed_artifacts_identical(monkeypatch, locale):
     from tests.test_cross_locale_pdf_repeatability_v1 import _fixed_status
     from tests.test_comprehensive_same_run_locale_report_v1 import _install_finalized_scanner_register
     from nico import phase17_canonical_artifact_rebuild_v1 as phase17
@@ -66,12 +65,34 @@ def test_installed_artifacts_identical(monkeypatch, locale):
     register['totals'] = {'raw': 1, 'review_required': 1, 'source_path': 1}
     register['summary_by_category'] = {'static': dict(register['totals'])}
     before = deepcopy(source)
+    from nico import comprehensive_client_truth_canonical_v2 as stage_truth
     with monkeypatch.context() as patch:
         for module, _ in CONSUMERS:
             patch.setattr(module, 'copy_with_tree_ownership', legacy_copy)
+        patch.setattr(stage_truth, 'copy_with_tree_ownership', legacy_copy)
         expected = phase17.rebuild_client_artifacts(source)
     actual = phase17.rebuild_client_artifacts(source)
     assert actual == expected  # All artifact bytes, hashes, canonical evidence and gates.
     assert source == before
     assert actual['human_review_required'] is True
     assert actual['client_delivery_allowed'] is False
+
+
+def _run_owned_worker(worker, argument, directory):
+    import os, subprocess, sys
+    from pathlib import Path
+    from tests.owned_worker_environment import owned_worker_environment
+    root = Path(__file__).resolve().parents[1]
+    code = ("import sys, pytest\n"
+            f"from tests.test_scanner_truth_owned_copy import {worker} as worker\n"
+            "with pytest.MonkeyPatch.context() as patch:\n"
+            "    worker(patch, sys.argv[1])\n")
+    result = subprocess.run([sys.executable, "-c", code, argument], cwd=root,
+        env=owned_worker_environment(root, directory, os.environ),
+        capture_output=True, text=True, timeout=180)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("locale", ['en', 'es-MX'])
+def test_installed_artifacts_identical(locale, tmp_path):
+    _run_owned_worker("_installed_artifacts_identical", locale, tmp_path)

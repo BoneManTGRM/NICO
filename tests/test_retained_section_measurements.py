@@ -143,7 +143,11 @@ def _installed_measurement_worker(language, directory, placeholder='no'):
     def bound_fixture(locale):
         value = original_fixture(locale)
         if placeholder == 'yes':
-            value['json']['identity'].update(customer_id='default_customer', project_id='default_project')
+            value['json']['identity'].update(
+                customer_id='default_customer', project_id='default_project',
+                repository='BoneManTGRM/NICO',
+                run_id='comprun_1f86bcd45cc5c3c833dca34b16d40f64',
+                commit_sha='a8cf452a844ad6d1fc44f9acbe6e3868f6769a88')
         return value
     with pytest.MonkeyPatch.context() as fixture_patch:
         fixture_patch.setattr(base_fixture, '_package', bound_fixture)
@@ -363,8 +367,12 @@ def test_historical_report_cannot_recover_identity_from_measurement_envelope():
     from nico.retained_section_measurements_v1 import report_measurement_identity
     original = _measurement_scope_fixture()
     original['identity'].update(customer_id='Not supplied', project_id='Not supplied')
-    table = report_tables(original['assessment'], expected_identity=report_measurement_identity(original))[0]
-    assert table['rows'][0][1] == 'Unavailable'
+    from nico.comprehensive_human_review_package_cleanup_v1 import sanitize_client_identity
+    before = deepcopy(original)
+    for value in (original, sanitize_client_identity(original)):
+        table = report_tables(value['assessment'], expected_identity=report_measurement_identity(value))[0]
+        assert table['rows'][0][1] == 'Unavailable'
+    assert original == before
 
 
 def test_reports_without_measurements_do_not_gain_scope_context():

@@ -36,8 +36,7 @@ def test_local_boundary_preserves_nested_evidence_and_graph(monkeypatch,shape,la
     assert actual['assessment']['stage_summaries'][0]['source_observation']['records'][0]['line']==7
     assert source==before
 
-@pytest.mark.parametrize('language',['en','es-MX'])
-def test_installed_artifacts_equal_with_private_evidence(monkeypatch,language):
+def _installed_artifacts_equal_with_private_evidence(monkeypatch, language):
     from tests.test_cross_locale_pdf_repeatability_v1 import _fixed_status
     from tests.test_comprehensive_same_run_locale_report_v1 import _install_finalized_scanner_register
     from nico import phase17_canonical_artifact_rebuild_v1 as phase
@@ -66,8 +65,7 @@ def test_installed_artifacts_equal_with_private_evidence(monkeypatch,language):
     assert actual['human_review_required'] is True
     assert actual['client_delivery_allowed'] is False
 
-@pytest.mark.parametrize('corruption',['duplicate_id','raw_total'])
-def test_installed_population_rejections_unchanged(monkeypatch,corruption):
+def _installed_population_rejections_unchanged(monkeypatch, corruption):
     from tests.test_v2_premium_report_renderer import _package
     from tests.test_comprehensive_same_run_locale_report_v1 import _install_finalized_scanner_register
     from nico import phase17_canonical_artifact_rebuild_v1 as phase
@@ -84,3 +82,28 @@ def test_installed_population_rejections_unchanged(monkeypatch,corruption):
     with pytest.raises(ValueError) as actual:phase.rebuild_client_artifacts(source)
     assert str(actual.value)==str(expected.value)
     assert source==before
+
+
+def _run_owned_worker(worker, argument, directory):
+    import os, subprocess, sys
+    from pathlib import Path
+    from tests.owned_worker_environment import owned_worker_environment
+    root = Path(__file__).resolve().parents[1]
+    code = ("import sys, pytest\n"
+            f"from tests.test_stage_truth_evidence_ownership import {worker} as worker\n"
+            "with pytest.MonkeyPatch.context() as patch:\n"
+            "    worker(patch, sys.argv[1])\n")
+    result = subprocess.run([sys.executable, "-c", code, argument], cwd=root,
+        env=owned_worker_environment(root, directory, os.environ),
+        capture_output=True, text=True, timeout=180)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("language", ['en', 'es-MX'])
+def test_installed_artifacts_equal_with_private_evidence(language, tmp_path):
+    _run_owned_worker("_installed_artifacts_equal_with_private_evidence", language, tmp_path)
+
+
+@pytest.mark.parametrize("corruption", ['duplicate_id', 'raw_total'])
+def test_installed_population_rejections_unchanged(corruption, tmp_path):
+    _run_owned_worker("_installed_population_rejections_unchanged", corruption, tmp_path)
