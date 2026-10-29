@@ -11,11 +11,14 @@ import time
 
 from nico.candidate_investigation_pipeline_v1 import VERSION, scope_of
 from nico.candidate_source_observations_v1 import candidate_source_path, observe_python_source
+from nico.candidate_source_reason_detail_v1 import path_digest
 
 INPUT_LIMIT = 8 * 1024 * 1024
 OUTPUT_LIMIT = 2 * 1024 * 1024
 FILE_LIMIT = 262144
 CANDIDATE_LIMIT = 10000
+OUTCOME_LIMIT = 16384  # Within the existing 32768-byte envelope reservation.
+OUTCOME_SCHEMA = 'nico.candidate-path-capture-outcomes.v1'
 SUPPORTED = frozenset({'B101', 'B404', 'B405', 'B603', 'B607'})
 
 
@@ -42,6 +45,24 @@ def capture_candidates(rows, scope, inventory, read_blob, *, started=None, clock
               'candidate_inventory_complete': len(rows) <= CANDIDATE_LIMIT,
               'input_byte_limit': INPUT_LIMIT, 'output_byte_limit': OUTPUT_LIMIT}
     priorities = {}
+    outcomes = {'artifact_schema': OUTCOME_SCHEMA, 'path_sha256_reasons': {}, 'recording_truncated': False}
+    result['path_capture_outcomes'] = outcomes
+    outcome_bytes = len(encoded(outcomes))
+
+    def record(path, reason):
+        # One exact normalized-path digest per visited boundary; no source text.
+        # Missing entries mean unknown, never a deduction from aggregate counts.
+        nonlocal outcome_bytes
+        key = path_digest(path)
+        if key is None:
+            return
+        size = len(encoded({key: reason})) + 2
+        if outcome_bytes + size <= OUTCOME_LIMIT:
+            outcomes['path_sha256_reasons'][key] = reason
+            outcome_bytes += size
+        else:
+            outcomes['recording_truncated'] = True
+
     if not all(scope.values()) or any(len(v) > 1024 for v in scope.values()):
         result['scope'] = {key: value if len(value) <= 1024 else '' for key, value in scope.items()}
         reasons['source_scope_missing'] += 1
@@ -65,6 +86,7 @@ def capture_candidates(rows, scope, inventory, read_blob, *, started=None, clock
     result['candidate_path_count'] = len(priorities)
     if len(rows) > CANDIDATE_LIMIT:
         reasons['candidate_inventory_limit'] = len(rows) - CANDIDATE_LIMIT
+    path = None
     try:
         ordered = sorted(priorities, key=lambda path: (priorities[path], path))
         entries = inventory(deadline, ordered) if priorities and clock() < deadline else {}
@@ -73,16 +95,21 @@ def capture_candidates(rows, scope, inventory, read_blob, *, started=None, clock
             entries, metadata_size = entries
         result['inventory_metadata_bytes'] = metadata_size
         retained = 0
+        path = None
         for index, path in enumerate(ordered):
             if clock() >= deadline:
                 reasons['source_time_budget'] += len(ordered) - index
+                record(path, 'capture_deadline')
                 break
             entry = entries.get(path)
             if entry is None:
+                record(path, 'inventory_missing_or_unsupported')
                 reasons['source_missing_or_unsupported'] += 1
                 continue
             oid, size = entry
             if type(size) is not int or size < 0 or size > FILE_LIMIT or result['source_bytes_read'] + metadata_size + size > INPUT_LIMIT:
+                record(path, 'file_size_limit' if type(size) is int and size > FILE_LIMIT else
+                       'input_size_limit' if type(size) is int and size >= 0 else 'inventory_entry_invalid')
                 reasons['source_size_budget'] += 1
                 continue
             # Charge reserved bytes even if reading fails; no refund/retry budget.
@@ -90,26 +117,33 @@ def capture_candidates(rows, scope, inventory, read_blob, *, started=None, clock
             data = read_blob(oid, size, deadline)
             if not isinstance(data, bytes) or len(data) != size or hashlib.sha1(
                     b'blob ' + str(size).encode() + b'\0' + data, usedforsecurity=False).hexdigest() != oid:
+                record(path, 'blob_integrity_unavailable')
                 reasons['source_analysis_failed'] += 1
                 continue
             observation = observe_python_source(data, repository=scope['repository'],
                 commit_sha=scope['commit_sha'], path=path, blob_oid=oid)
             if clock() >= deadline:
                 reasons['source_time_budget'] += len(ordered) - index
+                record(path, 'capture_deadline')
                 break
             size = len(encoded({path: observation}))
             # Reserve a bounded envelope allowance; final serialization is checked too.
             if retained + size > OUTPUT_LIMIT - 32768:
+                record(path, 'observation_output_limit')
                 reasons['observation_size_budget'] += 1
                 continue
             result['observations'][path] = observation
             retained += size
     except (OSError, ValueError, TypeError, RecursionError, subprocess.SubprocessError):
+        if path is not None:
+            record(path, 'capture_deadline' if clock() >= deadline else 'capture_operation_failed')
         reasons['source_time_budget' if clock() >= deadline else 'source_analysis_failed'] += 1
     result['unavailable_reasons'] = dict(reasons)
     result['elapsed_seconds'] = round(clock() - started, 6)
     result['deadline_exhausted'] = clock() >= deadline
     if len(encoded(result)) > OUTPUT_LIMIT:
+        # A whole-envelope fallback invalidates individual allocation outcomes.
+        result.pop('path_capture_outcomes', None)
         result['observations'] = {}
         result['unavailable_reasons']['observation_size_budget'] = len(priorities)
     return result

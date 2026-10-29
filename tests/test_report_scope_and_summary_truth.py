@@ -211,18 +211,60 @@ def test_roadmap_variable_lines_and_hidden_executive_preview():
     assert '1 of 2' in stage_preview_labels(stage, context)[0]
 
 
-def test_spanish_complete_generated_conditions_preserve_threshold_and_suite():
+def _assert_spanish_generated_conditions_contract(contract):
     from nico.comprehensive_decision_content_restoration_v66 import _synthesized_complexity_findings
     from nico.comprehensive_spanish_publication_preflight_v93 import install_spanish_publication_preflight_v93
     install_spanish_publication_preflight_v93()
+    if contract == 'current-v98':
+        from nico.comprehensive_spanish_current_copy_worker_v98 import install_comprehensive_spanish_current_copy_worker_v98
+        assert install_comprehensive_spanish_current_copy_worker_v98()['bound'] is True
+        suite = ('El conjunto completo de comprobaciones requeridas del repositorio '
+                 'se aprueba en el commit de remediación.')
+    else:
+        assert contract == 'baseline-v88'
+        suite = ('El conjunto completo de verificaciones requeridas del repositorio '
+                 'se supera en el commit de remediación.')
     source = {'code_findings': _synthesized_complexity_findings([{'path':'src/report.py','line':138,'name':'render','cyclomatic_complexity':40}], 'a'*40)}
     before = deepcopy(source)
     md = compact.compact_finding_register_markdown(source, spanish=True)
     text = ' '.join(pdf_text(compact.render_compact_finding_register_pdf(source, spanish=True)).split())
-    for value in ('igual o superior a 30', 'conjunto completo de verificaciones requeridas', 'regresión material', 'entre formatos'):
+    # Exact version-specific sentence, never an either-wording fallback. Retain
+    # threshold, complete suite, remediation commit and regression requirements.
+    for value in ('igual o superior a 30', suite, 'regresión material', 'entre formatos'):
         assert value in md
         assert value in text
     assert source == before
+
+    # Prove the required-check assertion tracks the actual condition, not static
+    # boilerplate: removing that condition must remove it from both surfaces.
+    missing = deepcopy(source)
+    requirement = "The repository's complete required-check suite passes on the remediation commit."
+    for finding in missing['code_findings']:
+        for field in ('verification', 'acceptance_criteria'):
+            finding[field] = [value for value in finding[field] if value != requirement]
+    assert suite not in compact.compact_finding_register_markdown(missing, spanish=True)
+    assert suite not in ' '.join(pdf_text(compact.render_compact_finding_register_pdf(missing, spanish=True)).split())
+    assert source == before
+
+
+@pytest.mark.parametrize('contract', ['baseline-v88', 'current-v98'])
+def test_spanish_complete_generated_conditions_preserve_threshold_and_suite(contract, tmp_path):
+    # Production bootstrap installs v98; direct compatibility rendering uses v88.
+    # Each contract starts in an owned process so unrelated installer tests cannot
+    # choose its expected wording. Production translation text is untouched.
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+    from tests.owned_worker_environment import owned_worker_environment
+    root = Path(__file__).resolve().parents[1]
+    code = ('import sys; from tests.test_report_scope_and_summary_truth import '
+            '_assert_spanish_generated_conditions_contract; '
+            '_assert_spanish_generated_conditions_contract(sys.argv[1])')
+    result = subprocess.run([sys.executable, '-c', code, contract], cwd=root,
+        env=owned_worker_environment(root, tmp_path, os.environ),
+        capture_output=True, text=True, timeout=120)
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_page_cap_still_rejects_overflow_without_dropping_conditions():

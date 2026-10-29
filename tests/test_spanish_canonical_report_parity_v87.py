@@ -6,6 +6,30 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
+
+def _isolated_direct_translation_check(check):
+    """Direct-helper contract must not inherit installed global literal guards.
+
+    Execute the unchanged assertions in an owned interpreter, without removing
+    or rebinding any translator in the test runner or production modules.
+    """
+    from functools import wraps
+
+    @wraps(check)
+    def isolated():
+        import os
+        import tempfile
+        from tests.owned_worker_environment import owned_worker_environment
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory(prefix="nico-direct-locale-") as temp:
+            code = ("from tests.test_spanish_canonical_report_parity_v87 import "
+                    + check.__name__ + "; " + check.__name__ + ".__wrapped__()")
+            result = subprocess.run([sys.executable, "-c", code], cwd=root,
+                env=owned_worker_environment(root, Path(temp), os.environ),
+                capture_output=True, text=True, timeout=120)
+        assert result.returncode == 0, result.stdout + result.stderr
+    return isolated
+
 _REVIEW_SECTION_IDS = (
     "functional_qa",
     "platform_parity",
@@ -116,6 +140,7 @@ def test_spanish_public_provider_stage_badge_is_fully_localized() -> None:
     ) == "Estado: PROCESAMIENTO COMPLETO · EVIDENCIA LIMITADA"
 
 
+@_isolated_direct_translation_check
 def test_spanish_not_applicable_scanner_evidence_is_fully_localized() -> None:
     from nico.comprehensive_spanish_canonical_report_v87 import (
         _translate_presentation_field,
@@ -290,6 +315,7 @@ def test_spanish_canonical_localization_preserves_machine_truth_and_translates_n
     assert "VERDE" in collision_pdf_text
 
 
+@_isolated_direct_translation_check
 def test_spanish_scanner_limitations_localize_the_production_truth_contract() -> None:
     import pytest
 
@@ -529,6 +555,7 @@ def test_spanish_localizes_authoritative_ci_history_categories_and_empty_history
         assert _localize_tree({"evidence": classification_evidence})["evidence"] == expected_evidence
 
 
+@_isolated_direct_translation_check
 def test_spanish_localizes_reachable_unavailable_evidence_contracts() -> None:
     import pytest
 

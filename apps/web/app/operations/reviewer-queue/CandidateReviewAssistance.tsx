@@ -15,8 +15,8 @@ export type Assistance = {
   artifact_schema: string;
   pending_record_count: number;
   queue: Packet[];
-  source_investigation?: {available: boolean; candidate_count?: number; completed_count?: number;
-    packets: {candidate_id: string; rule_id: string; completed: boolean; source_sha256?: string; source_path?: string; line?: number; reason: string}[]};
+  source_investigation?: {available: boolean; candidate_count?: number; completed_count?: number; source_availability_counts?: Record<string, number>;
+    packets: {candidate_id: string; rule_id: string; completed: boolean; source_sha256?: string; source_path?: string; line?: number; reason: string; source_availability_detail?: string}[]};
 };
 
 const investigationReasons: Record<string, [string, string]> = {
@@ -31,6 +31,54 @@ const investigationReasons: Record<string, [string, string]> = {
   rule_source_line_mismatch: ["Rule and source line do not match", "La regla no coincide con la línea del código"],
   ambiguous_call_expression: ["Ambiguous call expression", "Expresión de llamada ambigua"],
   retained_observation_invalid: ["Retained observation invalid", "Observación conservada inválida"],
+};
+
+const sourceAvailabilityLabels: Record<string, [string, string]> = {
+  "capture_deadline": ["Capture reached its deadline at this path", "La captura alcanzó su plazo en esta ruta"],
+  "inventory_missing_or_unsupported": ["Path absent from supported regular-file inventory", "La ruta no figura en el inventario de archivos regulares compatibles"],
+  "file_size_limit": ["Source exceeded the per-file capture limit", "El código superó el límite de captura por archivo"],
+  "input_size_limit": ["Source exceeded the remaining aggregate input allowance", "El código superó el límite restante de entrada total"],
+  "inventory_entry_invalid": ["Retained capture rejected an invalid inventory entry", "La captura rechazó una entrada de inventario inválida"],
+  "blob_integrity_unavailable": ["Captured blob bytes did not pass identity validation", "Los bytes capturados no superaron la validación de identidad"],
+  "observation_output_limit": ["Observation exceeded remaining retained output allowance", "La observación superó el límite restante de salida conservada"],
+  "capture_operation_failed": ["Capture operation failed at this path; cause unspecified", "La operación de captura falló en esta ruta; causa sin especificar"],
+
+  "source_not_retained": [
+    "No observation retained for this candidate path; cause unknown",
+    "No se conservó una observación para esta ruta; causa desconocida"
+  ],
+  "capture_observations_invalid": [
+    "Retained observation collection is unavailable or malformed",
+    "La colección de observaciones conservadas no está disponible o es inválida"
+  ],
+  "candidate_path_unusable": [
+    "Candidate path cannot be safely matched",
+    "La ruta del candidato no se puede vincular de forma segura"
+  ],
+  "observation_parse_unavailable": [
+    "Retained observation reports parsing unavailable",
+    "La observación conservada informa que el análisis sintáctico no está disponible"
+  ],
+  "observation_size_limit": [
+    "Retained observation reports a source size limit",
+    "La observación conservada informa un límite de tamaño del código"
+  ],
+  "observation_binding_invalid": [
+    "Retained observation reports invalid source binding",
+    "La observación conservada informa una vinculación del código inválida"
+  ],
+  "observation_scope_conflict": [
+    "Retained observation binding conflicts with the expected source",
+    "La vinculación de la observación conservada contradice el código esperado"
+  ],
+  "observation_status_unknown": [
+    "Retained observation status is missing or unsupported",
+    "El estado de la observación conservada falta o no es compatible"
+  ],
+  "not_recorded": [
+    "Source availability detail was not retained",
+    "No se conservó el detalle de disponibilidad del código"
+  ]
 };
 
 const recommendations: Record<string, [string, string]> = {
@@ -68,6 +116,16 @@ export default function CandidateReviewAssistance({value, locale}: {value: Assis
     <p>{investigation?.available ? (es ? "Investigación acotada del código conservada durante la evaluación; sin consultas a modelos. Cada disposición sigue siendo humana." : "Bounded source investigation retained during assessment; no model calls. Every disposition remains human.") : es ? "Análisis determinista conservado; no se realizó una nueva investigación del código ni se consultó un modelo. Los enlaces son ubicaciones, no prueba de inspección. Cada disposición sigue siendo humana." : "Retained deterministic analysis; no new source investigation or model call was performed. Links are locators, not proof of inspection. Every disposition remains human."}</p>
     <p>{value.pending_record_count} {es ? "registros pendientes. Los grupos comparten un perfil de revisión; no demuestran equivalencia ni permiten descartar candidatos." : "pending records. Groups share a review profile; they do not establish equivalence or permit candidate dismissal."}</p>
     {investigation?.available ? <p>{investigation.completed_count} / {investigation.candidate_count} {es ? "candidatos con análisis acotado de reglas; el resto requiere evidencia o análisis adicional. No demuestra seguridad ni explotabilidad." : "candidates with bounded rule analysis; the remainder need evidence or further analysis. This does not establish safety or exploitability."}</p> : null}
+    {investigation?.available && investigation.source_availability_counts ? <div>
+      <p>{es ? "Detalle de candidatos sin análisis sintáctico disponible; una observación ausente no demuestra un fallo del analizador ni una causa presupuestaria." : "Detail for candidates without available source parsing; an absent observation proves neither parser failure nor a budget cause."}</p>
+      <ul aria-label={es ? "Disponibilidad del código" : "Source availability"}>
+        {Object.entries(sourceAvailabilityLabels).map(([code, labels]) => {
+          const count = investigation.source_availability_counts?.[code];
+          return Number.isSafeInteger(count) && count! > 0 && count! <= (investigation.candidate_count ?? 0)
+            ? <li key={code}>{labels[language]}: {count}</li> : null;
+        })}
+      </ul>
+    </div> : null}
     <ol start={current * 25 + 1}>
       {value.queue.slice(current * 25, current * 25 + 25).map(packet => <li key={`${packet.record_index}:${packet.candidate_id}`}>
         <details data-review-assistance-candidate={packet.candidate_id}>
@@ -76,7 +134,7 @@ export default function CandidateReviewAssistance({value, locale}: {value: Assis
           <ul>{packet.limitations.map(code => <li key={code}>{(Object.hasOwn(limitations, code) ? limitations[code] : ["Additional evidence review required", "Se requiere revisión adicional de evidencia"])[language]}</li>)}</ul>
           {sourcePackets.has(packet.candidate_id) ? (() => {
             const source = sourcePackets.get(packet.candidate_id)!;
-            if (!source.completed) return <p>{(Object.hasOwn(investigationReasons, source.reason) ? investigationReasons[source.reason] : ["Investigation unresolved", "Investigación sin resolver"])[language]}. {es ? "Solicitar evidencia antes de decidir." : "Request evidence before disposition."}</p>;
+            if (!source.completed) return <p>{(Object.hasOwn(investigationReasons, source.reason) ? investigationReasons[source.reason] : ["Investigation unresolved", "Investigación sin resolver"])[language]}. {source.reason === "source_parse_unavailable" ? (Object.hasOwn(sourceAvailabilityLabels, source.source_availability_detail || "") ? sourceAvailabilityLabels[source.source_availability_detail!] : sourceAvailabilityLabels.not_recorded)[language] + ". " : ""}{es ? "Solicitar evidencia antes de decidir." : "Request evidence before disposition."}</p>;
             const assertion = source.rule_id === "B101";
             const imported = source.rule_id === "B404" || source.rule_id === "B405";
             return <div data-source-investigation="true">
