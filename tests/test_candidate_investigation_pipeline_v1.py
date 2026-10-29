@@ -161,3 +161,58 @@ def test_observation_output_cap_can_starve_later_candidate_source(monkeypatch):
     assert list(source['observations']) == ['a.py']
     assert source['unavailable_reasons'] == {'observation_size_budget': 1}
     assert investigate_register(register(), source, SCOPE)['bounded_rule_analysis_completed'] == 0
+
+
+@pytest.mark.parametrize('path', ['./example.py', '././example.py'])
+def test_scanner_dot_prefix_matches_exact_capture_without_rewriting_raw_candidate(path):
+    source = capture_sources({'example.py': 'assert permitted\n'}, SCOPE)
+    reg = {'findings': [row(source_path=path)]}
+    before = deepcopy((reg, source))
+    result = investigate_register(reg, source, SCOPE)
+    assert result['bounded_rule_analysis_completed'] == 1
+    assert result['packets'][0]['source_reference']['line'] == 1
+    assert (reg, source) == before
+    reg['candidate_investigation'] = result
+    view = display_investigation(reg, SCOPE)
+    assert view['completed_count'] == 1
+    assert view['packets'][0]['source_path'] == 'example.py'
+    assert reg['findings'][0]['source_path'] == path
+
+
+@pytest.mark.parametrize('path', ['/example.py', '../example.py', './x/../example.py', 'x//example.py', './C:/example.py', '.\\example.py', 'file:///example.py', './example.py\x00'])
+def test_unsafe_scanner_path_does_not_alias_exact_capture(path):
+    source = capture_sources({'example.py': 'assert permitted\n'}, SCOPE)
+    reg = {'findings': [row(source_path=path)]}
+    result = investigate_register(reg, source, SCOPE)
+    assert result['bounded_rule_analysis_completed'] == 0
+    reg['candidate_investigation'] = result
+    assert display_investigation(reg, SCOPE)['completed_count'] == 0
+
+
+def test_native_bandit_register_to_persisted_review_keeps_original_path_and_identity():
+    from nico.comprehensive_native_providers_v5 import build_canonical_scanner_finding_register
+    scan = {'scanner_results': [{'scanner_name': 'bandit', 'category': 'static', 'findings': [
+        {'filename': './example.py', 'line_number': 1, 'test_id': 'B101',
+         'issue_text': 'Use of assert detected', 'issue_severity': 'LOW', 'issue_confidence': 'HIGH'}]}],
+        'finding_summary': {'by_tool': {'bandit': {'raw': 1, 'review_required': 1}}}}
+    reg = build_canonical_scanner_finding_register(scan, SHA)
+    assert reg['status'] == 'complete'
+    assert reg['findings'][0]['source_path'] == './example.py'
+    before = deepcopy(reg)
+    capture = capture_sources({'example.py': 'assert permitted\n'}, SCOPE)
+    result = investigate_register(reg, capture, SCOPE)
+    assert result['bounded_rule_analysis_completed'] == 1
+    assert reg == before
+    reg['candidate_investigation'] = result
+    assert display_investigation(reg, SCOPE)['completed_count'] == 1
+    assert result['human_review_required'] is True and result['client_delivery_allowed'] is False
+    assert reg['findings'][0]['disposition'] == 'review_required'
+
+
+@pytest.mark.parametrize('change', [{'exact_commit_sha': 'b'*40}, {'source_commit_sha': 'b'*40},
+                                  {'source_repository': 'foreign/repo'}, {'source_path': './EXAMPLE.py'}, {'line': 2}])
+def test_dot_path_does_not_weaken_commit_repository_case_or_line_binding(change):
+    capture = capture_sources({'example.py': 'assert permitted\n'}, SCOPE)
+    reg = {'findings': [row(source_path='./example.py') | change]}
+    result = investigate_register(reg, capture, SCOPE)
+    assert result['bounded_rule_analysis_completed'] == 0
