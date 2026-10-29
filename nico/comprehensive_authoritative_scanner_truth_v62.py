@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from nico.report_json_copy import deepcopy
+from nico.report_json_copy import deepcopy, copy_with_tree_ownership
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -554,12 +554,16 @@ def reconcile_authoritative_scanner_truth(
 ) -> dict[str, Any]:
     """Reconcile exact-run records without counting technology-inapplicable tools."""
 
-    output = deepcopy(dict(canonical))
+    output, owned_tree = copy_with_tree_ownership(dict(canonical))
     raw_truth, requested_tools = _authoritative_truth(output)
     raw_records = _canonical_records(output, raw_truth, requested_tools)
     output["requested_scanner_records"] = deepcopy(raw_records)
     output["scanner_execution_records"] = deepcopy(raw_records)
-    assessment = deepcopy(dict(_mapping(output.get("assessment"))))
+    assessment = (
+        output["assessment"]
+        if owned_tree and type(output.get("assessment")) is dict
+        else deepcopy(dict(_mapping(output.get("assessment"))))
+    )
     assessment["requested_scanner_records"] = deepcopy(raw_records)
     assessment["scanner_execution_records"] = deepcopy(raw_records)
     output["assessment"] = assessment

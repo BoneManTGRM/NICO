@@ -5,7 +5,7 @@ from nico.report_pdf_text import extract_pdf_page_texts
 import base64
 import html
 import re
-from nico.report_json_copy import deepcopy
+from nico.report_json_copy import deepcopy, copy_with_tree_ownership
 from functools import wraps
 from typing import Any, Mapping
 
@@ -95,12 +95,14 @@ def _clean_client_literal_stage_evidence(values: Any) -> list[str]:
 
 
 def _normalize_stage_truth(canonical: Mapping[str, Any]) -> dict[str, Any]:
-    output = deepcopy(dict(canonical))
+    output, owned_tree = copy_with_tree_ownership(dict(canonical))
     stages: list[dict[str, Any]] = []
     for raw in output.get("stage_summaries") or []:
         if not isinstance(raw, Mapping):
             continue
-        stage = deepcopy(dict(raw))
+        # Only top-level presentation fields are replaced below. Keep raw
+        # separate for provider reads, but reuse privately owned nested evidence.
+        stage = dict(raw) if owned_tree else deepcopy(dict(raw))
         stage_id = _text(stage.get("stage_id"), 120)
         if stage_id == "client_evidence_summary" or stage_id.startswith(
             "client_human_evidence_"
@@ -162,7 +164,7 @@ def _normalize_stage_truth(canonical: Mapping[str, Any]) -> dict[str, Any]:
         stages.append(stage)
     output["stage_summaries"] = stages
     assessment = (
-        deepcopy(dict(output.get("assessment")))
+        (output["assessment"] if owned_tree else deepcopy(dict(output["assessment"])))
         if isinstance(output.get("assessment"), Mapping)
         else {}
     )
