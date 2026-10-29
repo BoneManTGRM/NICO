@@ -657,7 +657,9 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
     )
     assessment["evidence_coverage"] = coverage
     from nico.candidate_investigation_pipeline_v1 import investigate_register
-    register['candidate_investigation'] = investigate_register(register, legacy._repo(context).get('candidate_source_observations'), context)
+    capture = (scan.get('candidate_source_observations') if 'candidate_source_capture_attempted' in scan
+               else legacy._repo(context).get('candidate_source_observations'))
+    register['candidate_investigation'] = investigate_register(register, capture, context)
     assessment["canonical_scanner_finding_register"] = register
     assessment["scanner_finding_summary"] = register["summary_by_category"]
     assessment["canonical_evidence_adjusted_score"] = evidence_adjusted
@@ -714,6 +716,7 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
     )
 
     result["assessment"] = assessment
+    result["candidate_source_observations"] = capture
     evidence = deepcopy(dict(result.get("evidence") or {}))
     evidence.update(
         {

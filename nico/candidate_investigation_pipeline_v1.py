@@ -71,6 +71,24 @@ def capture_sources(files, scope, *, clock=time.monotonic):
             'raw_source_retained': False, 'deadline_kind': 'cooperative_between_bounded_parses'}
 
 
+def _capture_accounting(retained, valid):
+    if not valid or retained.get('selection_policy') != 'supported-rule-paths-then-other-candidate-paths.v1':
+        return {}
+    values = {'selection_policy': retained['selection_policy']}
+    if retained.get('inventory_basis') == 'retained_detailed_scanner_findings_only':
+        values['inventory_basis'] = retained['inventory_basis']
+    for key in ('candidate_record_count', 'candidate_records_considered', 'candidate_path_count',
+                'source_bytes_read', 'inventory_metadata_bytes', 'total_input_bytes_charged',
+                'input_byte_limit', 'output_byte_limit', 'retained_output_bytes'):
+        value = retained.get(key)
+        if type(value) is int and 0 <= value <= 100000000:
+            values[key] = value
+    for key in ('candidate_inventory_complete', 'deadline_exhausted', 'scanner_collection_complete'):
+        if type(retained.get(key)) is bool:
+            values[key] = retained[key]
+    return values
+
+
 def investigate_register(register, retained, scope, *, clock=time.monotonic):
     """One packet per original candidate; caller persists alongside unchanged findings."""
     started = clock()
@@ -113,11 +131,12 @@ def investigate_register(register, retained, scope, *, clock=time.monotonic):
             'candidate_count': len(packets), 'bounded_rule_analysis_completed': sum(p['bounded_rule_analysis_completed'] for p in packets),
             'unresolved_reasons': dict(Counter(p.get('reason', 'unresolved') for p in packets if not p['bounded_rule_analysis_completed'])),
             'source_capture': {
+                **_capture_accounting(retained, valid),
                 'scope_valid': bool(valid),
                 'observation_count': len(observations),
                 'parsed_observation_count': sum(isinstance(item, Mapping) and item.get('status') == 'parsed' for item in observations.values()),
                 'unavailable_reasons': {key: value for key, value in (retained.get('unavailable_reasons', {}) if valid and isinstance(retained.get('unavailable_reasons'), Mapping) else {}).items()
-                    if key in {'source_scope_missing', 'unsupported_source', 'source_time_budget', 'source_size_budget', 'source_analysis_failed', 'observation_size_budget'} and type(value) is int and value >= 0},
+                    if key in {'source_scope_missing', 'unsupported_source', 'source_time_budget', 'source_size_budget', 'source_analysis_failed', 'observation_size_budget', 'candidate_inventory_limit', 'source_missing_or_unsupported'} and type(value) is int and value >= 0},
             },
             'packets': packets, 'human_review_required': True, 'client_delivery_allowed': False, 'model_invocations': 0}
 
