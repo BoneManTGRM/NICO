@@ -452,6 +452,9 @@ def _bounded_localized_preparation_input(
         for key, value in register.items()
         if str(key) != "findings"
     }
+    # Invocation-local display metadata; restoration removes this with the
+    # compact projection and verifies it was not changed during rendering.
+    compact_register["_render_population_count"] = len(findings)
     render_register = dict(compact_register)
     render_register["findings"] = []
     render_assessment = dict(assessment)

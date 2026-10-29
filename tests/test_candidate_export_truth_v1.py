@@ -190,3 +190,16 @@ def test_preview_count_does_not_claim_complete_register_and_canonical_empty_wins
     label = stage_preview_labels({**stage, 'findings': []}, context, spanish=spanish)[0]
     assert ('0 de 0' if spanish else '0 of 0') in label
     assert 'assessment.canonical_scanner_finding_register.findings' in label
+
+@pytest.mark.parametrize('spanish', [False, True])
+def test_investigation_disclosure_does_not_equate_triage_with_analysis(spanish):
+    from nico.report_preview_labels_v1 import retained_coverage_disclosures
+    context = {'assessment': {'canonical_scanner_finding_register': {'findings': [{}] * 1678,
+        'candidate_investigation': {'candidate_count': 1678, 'bounded_rule_analysis_completed': 0,
+                                    'model_invocations': 0}}}}
+    before = deepcopy(context)
+    text = ' '.join(retained_coverage_disclosures(context, spanish=spanish))
+    assert ('0 de 1678' if spanish else '0 of 1678') in text
+    assert ('no equivale' if spanish else 'does not equal') in text
+    assert ('invocaciones de modelos: 0' if spanish else 'model invocations: 0') in text
+    assert context == before

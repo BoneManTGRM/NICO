@@ -313,6 +313,7 @@ def _human_evidence_summary(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _project_record(record: dict[str, Any]) -> dict[str, Any]:
+    from nico.candidate_capture_diagnostics import capture_diagnostics
     stage_results = (
         record.get("stage_results")
         if isinstance(record.get("stage_results"), dict)
@@ -327,6 +328,7 @@ def _project_record(record: dict[str, Any]) -> dict[str, Any]:
         "identity": _bounded_value(
             record.get("identity") if isinstance(record.get("identity"), dict) else {}
         ),
+        "candidate_source_capture_diagnostics": capture_diagnostics(record),
         "engagement_metadata": _project_engagement_metadata(
             record.get("engagement_metadata")
         ),
