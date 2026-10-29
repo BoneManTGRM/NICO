@@ -6,7 +6,7 @@ import json
 import re
 import time
 
-from nico.candidate_source_observations_v1 import observe_python_source, investigate_candidate
+from nico.candidate_source_observations_v1 import observe_python_source, investigate_candidate, candidate_source_path
 
 VERSION = 'nico.persisted-candidate-investigation.v1'
 REASONS = frozenset({'source_scope_unavailable_or_stale', 'investigation_budget_exhausted', 'source_identity_mismatch', 'unsupported_or_missing_exact_source_evidence', 'source_parse_unavailable', 'source_file_binding_mismatch', 'source_line_missing', 'rule_semantics_require_specialist_review', 'rule_source_line_mismatch', 'ambiguous_call_expression', 'retained_observation_invalid', 'exact_line_structure_only'})
@@ -92,7 +92,8 @@ def investigate_register(register, retained, scope, *, clock=time.monotonic):
             packet = {'candidate_id': row.get('candidate_id'), 'bounded_rule_analysis_completed': False,
                       'reason': reason, 'unresolved_questions': [reason], 'rationale': [], 'counterevidence': []}
         else:
-            observation = observations.get(row.get('source_path') or row.get('path'), {})
+            path = candidate_source_path(row.get('source_path') or row.get('path'))
+            observation = observations.get(path, {}) if path is not None else {}
             try:
                 packet = investigate_candidate(row, observation, observed_commit=scope['commit_sha'],
                     expected_commit=scope['commit_sha'], expected_repository=scope['repository'])
@@ -123,7 +124,8 @@ def investigate_register(register, retained, scope, *, clock=time.monotonic):
 
 def display_investigation(register, scope):
     """Read-only projection. Repeated GETs never parse source or launch work."""
-    value = register.get('candidate_investigation') or {}
+    value = register.get('final_candidate_investigation') if 'final_candidate_investigation' in register else register.get('candidate_investigation')
+    value = value or {}
     rows = register.get('findings') or []
     if (not isinstance(value, Mapping) or not isinstance(rows, list)
             or not isinstance(value.get('packets'), list)
@@ -139,8 +141,8 @@ def display_investigation(register, scope):
         # No arbitrary retained narrative reaches the browser. Authored bilingual
         # explanations are selected by supported rule IDs in the presentation.
         reference = packet.get('source_reference') or {}
-        path = row.get('source_path') or row.get('path')
-        safe_path = isinstance(path, str) and 0 < len(path) <= 1024 and not path.startswith('/') and '\\' not in path and all(p not in {'', '.', '..'} for p in path.split('/')) and all(ord(c) >= 32 for c in path)
+        path = candidate_source_path(row.get('source_path') or row.get('path'))
+        safe_path = path is not None
         source_hash = reference.get('source_sha256')
         valid_hash = isinstance(source_hash, str) and re.fullmatch(r'[0-9a-f]{64}', source_hash) is not None
         valid_line = (type(row.get('line')) is int and row['line'] > 0

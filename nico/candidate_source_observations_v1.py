@@ -14,6 +14,19 @@ VERSION = 'nico.candidate-source-observations.v1'
 MAX_SOURCE_BYTES = 1_048_576
 
 
+def candidate_source_path(value):
+    """Resolve only repository-relative leading ./ spelling; never guess a root."""
+    if not isinstance(value, str) or not 0 < len(value) <= 1024:
+        return None
+    while value.startswith('./'):
+        value = value[2:]
+    if (not value or value.startswith('/') or '\\' in value or ':' in value
+            or any(part in {'', '.', '..'} for part in value.split('/'))
+            or any(ord(char) < 32 for char in value)):
+        return None
+    return value
+
+
 def observe_python_source(source: bytes, *, repository: str, commit_sha: str,
                           path: str, blob_oid: str) -> dict:
     if len(source) > MAX_SOURCE_BYTES:
@@ -69,8 +82,8 @@ def candidate_source_observation(candidate: Mapping, observation: Mapping, *,
     if observation.get('status') != 'parsed':
         return {**result, 'reason': 'source_parse_unavailable'}
     binding = observation.get('source_binding')
-    path = candidate.get('source_path') or candidate.get('path')
-    if (not isinstance(binding, Mapping) or binding.get('commit_sha') != expected_commit
+    path = candidate_source_path(candidate.get('source_path') or candidate.get('path'))
+    if (path is None or not isinstance(binding, Mapping) or binding.get('commit_sha') != expected_commit
             or binding.get('repository') != expected_repository or not expected_repository
             or binding.get('path') != path
             or candidate.get('source_repository') not in (None, '', expected_repository)):

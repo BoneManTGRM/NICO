@@ -374,6 +374,8 @@ def _prepare_client_artifact_package(
         prepared["json"] = reconcile_report_coverage(prepared["json"])
         from nico.comprehensive_finding_roadmap_v1 import rebind_generated_roadmap
         prepared["json"] = rebind_generated_roadmap(prepared["json"])
+    from nico.candidate_investigation_finalization_v1 import finalize_investigation
+    prepared['json'] = finalize_investigation(prepared['json'])
     return prepared
 
 

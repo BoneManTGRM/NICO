@@ -349,7 +349,8 @@ def wrap_final_report_publication(
             from nico.pdf_cap_failure_diagnostics import pdf_cap_identity
             report_identity = source["report_package"]["json"].get("identity")
             run_id = report_identity.get("run_id") if isinstance(report_identity, Mapping) else None
-            with pdf_cap_identity(run_id):
+            from nico.candidate_investigation_finalization_v1 import final_investigation_scope
+            with pdf_cap_identity(run_id), final_investigation_scope(report_context):
                 published = finalize_report_package(source)
         except Exception as exc:
             output = dict(source)
