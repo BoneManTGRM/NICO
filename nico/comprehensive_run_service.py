@@ -405,6 +405,10 @@ class ComprehensiveRunService:
             return self.resume(run_id, max_stages=1)
         return record
 
+    def load_capture_diagnostics_record(self, run_id: str) -> dict[str, Any]:
+        """No continuation, cache refresh, or legacy commitment initialization."""
+        return self._store.load_without_maintenance(run_id)
+
     def load_read_only(self, run_id: str) -> dict[str, Any]:
         """Load and integrity-validate a run without continuation or maintenance."""
 

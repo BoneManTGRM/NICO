@@ -722,6 +722,19 @@ class ComprehensiveRunStore:
             connection.commit()
         return _copy_record_for_store(canonical)
 
+    def load_without_maintenance(self, run_id: str) -> dict[str, Any]:
+        """Validate existing evidence without initializing legacy commitments."""
+        def consume(row: Any, _restore: Callable[[], Any]) -> dict[str, Any]:
+            if row[1] is None or row[2] is None:
+                raise ValueError("capture_diagnostic_review_commitment_unavailable")
+            payload = _decode_run_payload(row[0])
+            _assert_review_history_commitment(
+                payload, committed_count=int(row[1]), committed_sha256=str(row[2]),
+                allow_append=False,
+            )
+            return restore_comprehensive_run_record(payload)
+        return self._consume_read_snapshot(run_id, consume)
+
     def load(self, run_id: str) -> dict[str, Any]:
         return self._consume_read_snapshot(run_id, lambda _row, restore: restore())
 
