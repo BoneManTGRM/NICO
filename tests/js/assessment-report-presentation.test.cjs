@@ -55,16 +55,16 @@ function nodes(node) {
   if (!node || typeof node !== 'object') return [];
   return Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
 }
-function workspace({locale = 'en', scanner = 'complete', running = true, report = false, compactMobile = false} = {}) {
+function workspace({locale = 'en', scanner = 'complete', running = true, report = false, compactMobile = false, phase = null, issue = null, sections = null} = {}) {
   const result = {run_id: 'comprun_presentation_fixture', commit_sha: commit, terminal: !running,
     current_stage: 'cross_format_truth_verification', human_review_required: true, client_delivery_allowed: false,
     record: {stage_results: {dependency_security_static_analysis: {status: scanner}}},
     assessment: {executive_summary: headline + narrative, maturity_signal: {level: 'Exceptional', score: 93},
-      sections: [{id: 'code_audit', score: 96, status: 'strong'}]},
+      sections: sections || [{id: 'code_audit', score: 96, status: 'strong'}]},
     ...(report ? {reports: {report_id: 'report_fixture', pdf_available: true}} : {})};
   const controller = {service: 'comprehensive', repository: 'owner/control', client: '', project: '',
-    authorized: true, humanEvidence: {}, engagementFieldStates: {client_name: {state: 'not_supplied'}, project_name: {state: 'not_supplied'}}, phase: running ? 'running' : 'review_required',
-    result, running, protectedRunId: result.run_id, message: '', error: '', issue: null, attempt: 1, elapsed: 1};
+    authorized: true, humanEvidence: {}, engagementFieldStates: {client_name: {state: 'not_supplied'}, project_name: {state: 'not_supplied'}}, phase: phase || (running ? 'running' : 'review_required'),
+    result, running, protectedRunId: result.run_id, message: '', error: '', issue, attempt: 1, elapsed: 1};
   const render = loadModules(controller, compactMobile)('AssessmentWorkspace.tsx').default;
   return render({locale});
 }
@@ -189,3 +189,92 @@ for (const locale of ['en', 'es-MX']) {
     });
   }
 }
+
+for (const locale of ['en', 'es-MX']) {
+  test(`${locale}: browser poll pause badge stays distinct from server timeout`, () => {
+    const copy = copyFor(locale);
+    const paused = workspace({locale, running: false, phase: 'timed_out', issue: {
+      code: 'assessment_poll_budget_exhausted', runCreated: true, retryable: true,
+      title: copy.pollingPausedTitle, message: copy.pollingPausedMessage,
+    }});
+    const badges = nodes(paused).filter(n => n.type === 'span').map(text);
+    assert.ok(badges.includes(copy.pollingPausedTitle));
+    assert.ok(!badges.includes(copy.phases.timed_out));
+    const timeout = workspace({locale, running: false, phase: 'timed_out'});
+    const serverBadges = nodes(timeout).filter(n => n.type === 'span').map(text);
+    assert.ok(serverBadges.includes(copy.phases.timed_out));
+    assert.ok(!serverBadges.includes(copy.pollingPausedTitle));
+  });
+}
+
+test('exact generated static and unscored summaries translate without upgrading changed claims', () => {
+  const summary = 'Static-analysis evidence is reported separately from analyzer execution coverage. TypeScript analysis completed with verified retained evidence for the exact commit.';
+  assert.match(localizeExactSpanishText(summary), /TypeScript se completó/);
+  assert.match(localizeExactSpanishText('Unscored controls are excluded from maturity; any resulting mean change is not evidence of improved source quality.'), /no demuestra una mejora/);
+  assert.equal(localizeExactSpanishText(summary.replace('completed with verified', 'failed without verified')), null);
+});
+
+for (const locale of ['en', 'es-MX']) {
+  test(`${locale}: architecture and delivery evidence remain visible without score invention`, () => {
+    const render = modules('UnscoredSectionEvidence.tsx').default;
+    for (const id of ['architecture_debt', 'velocity_complexity']) {
+      const section = {id, score: null, presented_score: null, exclude_from_maturity: true,
+        evidence: ['Files analyzed for complexity: 14 of 1140.', 'CC <= 20: 8/10'],
+        unavailable: ['Retained exact-source score input unavailable.'],
+        findings: ['Delivery capacity is not scored because architecture has no valid exact-source score input.'],
+        score_input_provenance: {reason: 'measured_score_missing'},
+        score_contract: {operational_trend: {commits_returned: 0, jobs_observed: 20, pull_requests_returned: null}}};
+      const before = JSON.stringify(section);
+      const output = render({section, locale});
+      const content = text(output);
+      for (const retained of [...section.evidence, ...section.unavailable, ...section.findings]) assert.ok(content.includes(retained));
+      assert.match(content, locale === 'en' ? /Partial evidence remains partial/ : /La evidencia parcial sigue siendo parcial/);
+      assert.match(content, locale === 'en' ? /human-review requirements/ : /requisitos de revisión humana/);
+      if (id === 'velocity_complexity') {
+        assert.match(content, locale === 'en' ? /not measured delivery velocity/ : /no mediciones de velocidad/);
+        const values = nodes(output).filter(n => n.type === 'dd').map(text);
+        assert.deepEqual(values, [], 'legacy counters have no availability provenance and must not become observed activity');
+      }
+      assert.equal(JSON.stringify(section), before);
+      assert.equal(nodes(output).filter(n => ['button', 'input', 'form', 'a'].includes(n.type)).length, 0);
+    }
+  });
+  test(`${locale}: missing and malformed measurements never become zeros or complete coverage`, () => {
+    const render = modules('UnscoredSectionEvidence.tsx').default;
+    for (const section of [
+      {id: 'architecture_debt'},
+      {id: 'architecture_debt', evidence: [null, {}, 0, ''], score_input_provenance: {reason: '__proto__'}},
+      {id: 'velocity_complexity', score_contract: {operational_trend: {commits_returned: -1, jobs_observed: '20', merged_pull_requests: NaN, pull_requests_returned: 2.5}}},
+    ]) {
+      const output = render({section, locale});
+      assert.match(text(output), locale === 'en' ? /No measurements are inferred/ : /No se infieren mediciones/);
+      assert.equal(nodes(output).filter(n => n.type === 'dd').length, 0);
+      assert.doesNotMatch(text(output), /100%|\[object Object\]|NaN/);
+    }
+    assert.equal(render({section: {id: 'code_audit', score: 96}, locale}), null);
+  });
+}
+
+for (const locale of ['en', 'es-MX']) {
+  test(`${locale}: installed workspace shows both evidence sections with null score badges`, () => {
+    const sections = ['architecture_debt', 'velocity_complexity'].map(id => ({id, score: null, presented_score: null, exclude_from_maturity: true, evidence: ['Retained bounded population: 14/1140.']}));
+    const output = workspace({locale, sections, running: false, report: true});
+    assert.equal(nodes(output).filter(n => n.props?.['data-section-evidence']).length, 2);
+    assert.match(text(output), /14\/1140/);
+    assert.match(text(output), locale === 'en' ? /NOT SCORED/i : /SIN PUNTUACI/i);
+    assert.equal(sections.every(s => s.score === null && s.exclude_from_maturity === true), true);
+  });
+}
+
+test('legacy delivery contract default zeros are not represented as observed activity', () => {
+  // _immutable_delivery_score({}, {}) uses int(source.get(key) or 0); these
+  // are the actual empty-input contract values, not proof of zero activity.
+  const section = {id: 'velocity_complexity', score_contract: {operational_trend: {
+    commits_returned: 0, pull_requests_returned: 0, merged_pull_requests: 0,
+    jobs_observed: 0, job_success_rate: undefined, score_effect: 'none'}}};
+  for (const locale of ['en', 'es-MX']) {
+    const output = modules('UnscoredSectionEvidence.tsx').default({section, locale});
+    assert.equal(nodes(output).filter(n => n.type === 'dd').length, 0);
+    assert.match(text(output), locale === 'en' ? /No measurements are inferred/ : /No se infieren mediciones/);
+  }
+});

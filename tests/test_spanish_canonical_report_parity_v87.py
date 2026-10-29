@@ -1144,7 +1144,10 @@ install_comprehensive_spanish_client_surface_localization_v86()
 # Score-explanation differential against a7bb8fd: existing headings, outlines,
 # evidence, scores, gates and page counts are identical. Only the literal-safe
 # explanation and dependent artifact hashes change. All assertions remain active.
-SMALL_ENGLISH_GOLDEN = {'html': ('1edb72e7c9f43b8b2921c0a0047ec70091532e7c084d77594e05d691f93d89c5', 24212), 'markdown': ('cdac8b0cb19c96ee1638dbe7729c626c67b2758ed82096d5b670213467fb7679', 19799), 'page_count': 22, 'pdf_base64': ('4b3d442cacdad8b86c13e6d6a7bd1ba2e033c0daa509e86033027a386b26ec8c', 183780), 'pdf_sha256': '2a252110e5d0c006f5b2421ccd40fad8580f884692a20c8abd904dc8d4b4962f'}
+# Exact base/current comparison: only page 19 gains the required Bandit 1/2
+# repeatability disclosure; Markdown, HTML, page counts and all other fixtures
+# are unchanged. Keep structural, manifest, identity and bilingual assertions.
+SMALL_ENGLISH_GOLDEN = {'markdown': ('cdac8b0cb19c96ee1638dbe7729c626c67b2758ed82096d5b670213467fb7679', 19799), 'html': ('1edb72e7c9f43b8b2921c0a0047ec70091532e7c084d77594e05d691f93d89c5', 24212), 'pdf_base64': ('138e9c6dc78d5e754c53e9169218548424b46d72e3299fd0e98cf9c110c467b3', 184392), 'pdf_sha256': '130f0764230aa836c6554ffa5baef489fec44f389780216fb9394bd8b986f1f0', 'page_count': 22}
 # PR1779: isolated 644b -> 82315628 rich EN/es comparison preserves Markdown,
 # HTML, all 47 page texts/drawing streams/media boxes, canonical truth and gates.
 # Only phase 3 moves from summary page 5 to canonical Functional QA page 26;
@@ -1460,6 +1463,8 @@ assert small_english_before[0]["pdf_base64"] == small_english_after[0]["pdf_base
 assert "spanish_uses_english_canonical_section_contract" not in small_english_before[0]["premium_report_renderer"]
 assert small_spanish[0]["premium_report_renderer"]["spanish_uses_english_canonical_section_contract"] is True
 assert_structural_parity(small_english_before, small_spanish)
+assert "bandit: consecutive exact-SHA passes 1/2; requirement not met." in "\n".join(small_english_before[2])
+assert "bandit: pasadas consecutivas con SHA exacto 1/2; requisito no satisfecho." in "\n".join(small_spanish[2])
 
 rich_english = render(rich_input("en"))
 rich_spanish = render(rich_input("es-MX"))

@@ -21,6 +21,30 @@ def stage_preview_labels(stage: Mapping[str, Any], context: Mapping[str, Any], *
         return None
 
     stage_id = stage.get('stage_id')
+    if stage_id == 'dependency_security_static_analysis':
+        report = stage.get('_repeatability_assurance')
+        if not isinstance(report, Mapping):
+            return []
+        analyzers = report.get('analyzers')
+        if not isinstance(analyzers, list):
+            return []
+        lines = [('La finalización de la ejecución y la garantía de repetibilidad son distintas. '
+                  'La repetibilidad exige las pasadas consecutivas con SHA exacto indicadas; '
+                  'una ejecución completa no satisface por sí sola ese requisito.') if spanish else
+                 ('Execution completion and repeatability assurance are separate. '
+                  'Repeatability requires the stated consecutive exact-SHA passes; '
+                  'one completed execution alone does not satisfy that requirement.')]
+        for item in analyzers:
+            if not isinstance(item, Mapping) or item.get('required') is not True:
+                continue
+            observed, required = item.get('consecutive_successful_passes'), item.get('consecutive_passes_required')
+            if type(observed) is not int or type(required) is not int or observed < 0 or required < 1:
+                continue
+            name = str(item.get('scanner') or 'unknown')
+            state = ('requisito satisfecho' if item.get('acceptance_ready') is True else 'requisito no satisfecho') if spanish else ('requirement met' if item.get('acceptance_ready') is True else 'requirement not met')
+            lines.append((f'{name}: pasadas consecutivas con SHA exacto {observed}/{required}; {state}.' if spanish else
+                          f'{name}: consecutive exact-SHA passes {observed}/{required}; {state}.'))
+        return lines
     if stage_id == 'risk_reduction_and_executive_briefing':
         packages = retained('roadmap')
         # The producer binds these IDs to this stage's executive evidence.
@@ -38,14 +62,31 @@ def stage_preview_labels(stage: Mapping[str, Any], context: Mapping[str, Any], *
                          if spanish else f'Work-package ID preview: {len(shown)} of {len(identifiers)}.')]
         return []
     if stage_id == 'review_required_candidate_register':
-        records = retained('review_candidate_register')
-        total = str(len(records)) if records is not None else ('desconocido' if spanish else 'unknown')
+        complete = None
+        for source in sources:
+            nested = source.get('assessment')
+            for candidate_source in (source, nested if isinstance(nested, Mapping) else {}):
+                register = candidate_source.get('canonical_scanner_finding_register')
+                if isinstance(register, Mapping) and isinstance(register.get('findings'), list):
+                    complete = register['findings']
+                    break
+            if complete is not None:
+                break
+        # Legacy projections can retain a bounded preview without the canonical
+        # register. Its known population is still useful, but is not proof of
+        # the complete candidate population or a complete-register location.
+        preview = retained('review_candidate_register')
+        population = complete if complete is not None else preview
+        total = str(len(population)) if population is not None else ('desconocido' if spanish else 'unknown')
         rows = [line for line in stage.get('findings') or [] if str(line or '').strip()][:findings_limit]
-        return [(
-            f'Vista previa del registro de candidatos: {len(rows)} de {total} registros conservados. Registro completo: review_candidate_register en el JSON canónico.'
-            if spanish else
-            f'Candidate register preview: {len(rows)} of {total} retained records. Complete register: review_candidate_register in canonical JSON.'
-        )]
+        reference = 'assessment.canonical_scanner_finding_register.findings'
+        if spanish:
+            suffix = (f'Registro completo: {reference} en el JSON canónico.' if complete is not None
+                      else 'Registro completo no disponible en esta proyección; el total corresponde solo a la vista previa conservada.')
+            return [f'Vista previa del registro de candidatos: {len(rows)} de {total} registros conservados. ' + suffix]
+        suffix = (f'Complete register: {reference} in canonical JSON.' if complete is not None
+                  else 'Complete register unavailable in this projection; total describes only the retained preview.')
+        return [f'Candidate register preview: {len(rows)} of {total} retained records. ' + suffix]
     if stage_id != 'six_month_roadmap':
         return []
     # Count the collection that produced the rendered details, not an older
@@ -79,3 +120,32 @@ def stage_preview_labels(stage: Mapping[str, Any], context: Mapping[str, Any], *
     if partial:
         label += ' Some packages are partially shown.'
     return [label + ' Complete details: roadmap in canonical JSON.']
+
+
+def retained_coverage_disclosures(context: Mapping[str, Any], *, spanish: bool) -> list[str]:
+    """Final client-summary disclosures from retained typed data, without mutation."""
+    lines: list[str] = []
+    assessment = context.get('assessment')
+    assessment = assessment if isinstance(assessment, Mapping) else {}
+    register = assessment.get('canonical_scanner_finding_register')
+    if isinstance(register, Mapping) and isinstance(register.get('findings'), list):
+        count = len(register['findings'])
+        path = 'assessment.canonical_scanner_finding_register.findings'
+        lines.append((f'Registro completo de candidatos: {count} registros conservados; {path} en el JSON canónico.'
+                      if spanish else f'Complete candidate register: {count} retained records; {path} in canonical JSON.'))
+    records = context.get('scanner_execution_records')
+    for record in records if isinstance(records, list) else []:
+        if not isinstance(record, Mapping) or record.get('compact_record') is not True or record.get('raw_findings_embedded') is not False:
+            continue
+        summary = record.get('finding_summary')
+        count = summary.get('raw') if isinstance(summary, Mapping) else None
+        display = str(count) if type(count) is int and count >= 0 else ('no disponible' if spanish else 'unavailable')
+        name = str(record.get('scanner_name') or record.get('tool') or 'unknown')
+        lines.append((f'{name}: recuento de candidatos originales={display}; el recuento original no implica hallazgos materiales confirmados.'
+                      if spanish else f'{name}: raw candidate count={display}; raw count does not imply confirmed material findings.'))
+    report, identity = context.get('analyzer_evidence_report'), context.get('identity')
+    if (isinstance(report, Mapping) and isinstance(identity, Mapping)
+            and identity.get('commit_sha') and report.get('commit_sha') == identity.get('commit_sha')):
+        lines.extend(stage_preview_labels({'stage_id': 'dependency_security_static_analysis',
+                                          '_repeatability_assurance': report}, {}, spanish=spanish))
+    return lines

@@ -4,6 +4,7 @@ import {FormEvent, useEffect, useMemo, useState} from "react";
 import {savedRun, useReviewScope, reviewResponse, reviewError, ambiguousWrite, reconciliationMessage, type WorkspaceProps} from "./reviewWorkspaceState";
 import {buildReviewActionPayload, type ReviewAction as Action} from "./reviewActionPayload";
 import ReviewSessionNotice from "./ReviewSessionNotice";
+import CandidateReviewAssistance, {type Assistance} from "./CandidateReviewAssistance";
 import EvidenceRequests from "./EvidenceRequests";
 import QualityControlRecords from "./QualityControlRecords";
 import styles from "./review-work.module.css";
@@ -11,6 +12,7 @@ import styles from "./review-work.module.css";
 type Locale = "en" | "es-MX";
 type JsonRecord = Record<string, unknown>;
 type Projection = {
+  review_assistance?: Assistance;
   run_id?: string;
   repository?: string;
   commit_sha?: string;
@@ -335,6 +337,7 @@ export default function ReviewWorkPanel({runId, refresh = 0, isCurrent, onChange
     <div className={styles.actions}><button type="button" onClick={load} disabled={busy || !runId.trim()}>{projection ? copy.refresh : copy.load}</button></div>
 
     {projection ? <ReviewProgressSummary projection={projection} locale={locale} /> : null}
+    {projection?.review_assistance ? <CandidateReviewAssistance key={runId} value={projection.review_assistance} locale={locale} /> : null}
 
     {projection ? <QualityControlRecords records={ledger.quality_control} blockers={projection.quality_control_blockers} events={ledger.audit_events} locale={locale} busy={busy} onSelect={(candidateId) => {
       setAction("quality_control"); setTargetId(candidateId); setQcNote(""); setQcOutcome("agree");

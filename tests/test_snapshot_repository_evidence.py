@@ -292,6 +292,7 @@ def test_snapshot_repository_evidence_is_idempotent_without_refetching():
     assert first_repository["evidence_id"] == second_repository["evidence_id"]
     assert first_complexity["evidence_id"] == second_complexity["evidence_id"]
     assert second_repository["idempotent_reuse"] is True
+    assert second_repository["candidate_source_observations"] == first_repository["candidate_source_observations"]
     assert second_complexity["idempotent_reuse"] is True
     assert len(client.calls) == call_count
 

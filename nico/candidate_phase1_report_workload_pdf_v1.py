@@ -386,6 +386,8 @@ def render_phase1_evidence_review_gate_pdf(
                 ),
             ])
         story.extend([p(labels["candidate_state"], h2), table(rows, [1.05 * inch, .55 * inch, .75 * inch, .9 * inch, 4.15 * inch])])
+    from nico.report_preview_labels_v1 import retained_coverage_disclosures
+    story.extend(p(line, small) for line in retained_coverage_disclosures(canonical, spanish=spanish))
     story.append(KeepTogether([
         p(labels["client_boundary"], h2),
         p(

@@ -264,7 +264,7 @@ def compact_scanner_records(
                     f"scanner_runs/{origin_scan_id}" if origin_scan_id else ""
                 ),
                 "scan_id": origin_scan_id,
-                "finding_count": len(findings),
+                "finding_count": (tool_summary["raw"] if type(tool_summary.get("raw")) is int and tool_summary["raw"] >= 0 else len(findings)),
                 "finding_summary": tool_summary,
                 "duration_seconds": raw.get("duration_seconds"),
                 "failure_reason": _text(

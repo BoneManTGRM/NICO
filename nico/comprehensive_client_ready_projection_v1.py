@@ -668,6 +668,8 @@ def render_evidence_review_gate_pdf(canonical: Mapping[str, Any], register: Mapp
             ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
         ]))
         story.append(table)
+    from nico.report_preview_labels_v1 import retained_coverage_disclosures
+    story.extend(p(line, small) for line in retained_coverage_disclosures(canonical, spanish=spanish))
     story.extend([
         p("Límite del paquete del cliente" if spanish else "Client package boundary", h2),
         p(
