@@ -45,7 +45,8 @@ def capture_sources(files, scope, *, clock=time.monotonic):
             continue
         read_bytes += len(data)
         try:
-            oid = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+            # Git-format compatibility only, never the observation fingerprint.
+            oid = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data, usedforsecurity=False).hexdigest()
             observation = observe_python_source(data, repository=scope['repository'],
                 commit_sha=scope['commit_sha'], path=path, blob_oid=oid)
         except (ValueError, TypeError, RecursionError):

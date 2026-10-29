@@ -162,3 +162,29 @@ def test_parser_warning_text_is_not_emitted_or_copied(recwarn):
     assert not recwarn
     assert 'PRIVATE_SENTINEL' not in str(output)
     assert type(output['parse_warning_count']) is int
+
+
+def test_git_compatibility_hash_is_explicitly_nonsecurity_and_sha256_is_retained(monkeypatch):
+    from nico.candidate_investigation_pipeline_v1 import capture_sources
+    original = hashlib.sha1
+    calls = []
+
+    def compatibility_only(data, *, usedforsecurity=True):
+        assert usedforsecurity is False, 'Git object compatibility must not request a security SHA-1 primitive'
+        calls.append(data)
+        return original(data, usedforsecurity=False)
+
+    monkeypatch.setattr(hashlib, 'sha1', compatibility_only)
+    # Known empty Git blob OID, independent of the implementation under test.
+    empty = observe_python_source(b'', repository='example/repo', commit_sha=SHA,
+                                  path='empty.py', blob_oid='e69de29bb2d1d6434b8b29ae775ad8c2e48c5391')
+    assert empty['source_sha256'] == hashlib.sha256(b'').hexdigest()
+    assert observe_python_source(b'x', repository='example/repo', commit_sha=SHA,
+                                path='empty.py', blob_oid='e69de29bb2d1d6434b8b29ae775ad8c2e48c5391')['status'] == 'source_binding_invalid'
+    scope = {'run_id': 'r', 'repository': 'example/repo', 'commit_sha': SHA, 'customer_id': 'c', 'project_id': 'p'}
+    retained = capture_sources({'example.py': 'assert permitted\n'}, scope)
+    observation = retained['observations']['example.py']
+    assert observation['source_sha256'] == hashlib.sha256(b'assert permitted\n').hexdigest()
+    assert observation['source_binding']['origin'] == 'snapshot_decoded_text'
+    assert 'blob_oid' not in observation['source_binding']
+    assert len(calls) == 4

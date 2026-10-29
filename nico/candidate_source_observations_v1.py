@@ -20,7 +20,9 @@ def observe_python_source(source: bytes, *, repository: str, commit_sha: str,
         return {'status': 'source_size_limit', 'statements': {}}
     # The offline loader obtains this OID from the exact commit tree, not from
     # candidate prose. Verify byte identity before parsing that tree member.
-    actual_oid = hashlib.sha1(b'blob ' + str(len(source)).encode() + b'\0' + source).hexdigest()
+    # SHA-1 reproduces the Git object format only; observation integrity uses
+    # SHA-256 below. This does not authenticate an untrusted source or Git tree.
+    actual_oid = hashlib.sha1(b'blob ' + str(len(source)).encode() + b'\0' + source, usedforsecurity=False).hexdigest()
     if (not re.fullmatch(r'[0-9a-f]{40}', commit_sha) or actual_oid != blob_oid
             or not repository or not path):
         return {'status': 'source_binding_invalid', 'statements': {}}
