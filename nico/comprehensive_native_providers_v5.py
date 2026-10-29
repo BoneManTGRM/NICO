@@ -700,6 +700,11 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
                 "CI/CD configuration maturity is exact-SHA technical evidence. "
                 "Observed workflow outcomes are reported separately as mutable operational health."
             )
+    from nico.retained_section_measurements_v1 import build_section_measurements
+    measurements = build_section_measurements(context, repo, legacy._complexity(context), sections)
+    for section in sections:
+        if section.get("id") in measurements:
+            section["retained_measurements"] = measurements[section["id"]]
     assessment["sections"] = sections
     assessment["executive_summary"] = (
         f"Exact-SHA technical maturity is {technical}/100. Evidence-adjusted readiness is "

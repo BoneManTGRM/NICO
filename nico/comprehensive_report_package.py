@@ -1480,6 +1480,12 @@ def _pdf(
                 if stage_id == "repository_and_delivery_evidence"
                 else 10
             )
+            if (stage_id == "ci_cd_architecture_complexity_velocity"
+                    and isinstance(stage.get("_retained_measurement_lines"), list)
+                    and stage["_retained_measurement_lines"]):
+                # Functional measurement disclosures (including missingness and
+                # denominators) must survive the client appendix projection.
+                preview_limit = 100
             block.extend(p(label, body) for label in stage_preview_labels(
                 stage, assessment, evidence_limit=preview_limit, evidence_text_limit=1000, findings_limit=12,
                 spanish=localize_presentation is not None))

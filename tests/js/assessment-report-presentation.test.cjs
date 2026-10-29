@@ -278,3 +278,27 @@ test('legacy delivery contract default zeros are not represented as observed act
     assert.match(text(output), locale === 'en' ? /No measurements are inferred/ : /No se infieren mediciones/);
   }
 });
+
+for (const locale of ['en', 'es-MX']) {
+  test(`${locale}: retained measurement table preserves missingness, provenance and review status`, () => {
+    const records = [
+      {label_en: 'Maximum CC', label_es: 'Complejidad máxima', value: 2, unit: 'CC', validation: 'partial'},
+      {label_en: 'Nesting', label_es: 'Anidamiento', value: null, unit: 'levels', validation: 'unavailable'},
+      {label_en: 'Hotspots', label_es: 'Puntos de complejidad', value: 50, unit: 'entries', validation: 'pending_review'},
+    ].map(row => ({...row, population: 'partial:python:python_ast', provenance: 'source_function_measurements', commit_sha: 'a'.repeat(40)}));
+    const section = {id: 'architecture_debt', score: null, exclude_from_maturity: true,
+      score_input_provenance: {reason: 'measured_score_missing'},
+      retained_measurements: {artifact_schema: 'nico.retained-section-measurements.v1', records}};
+    const before = JSON.stringify(section);
+    const output = modules('UnscoredSectionEvidence.tsx').default({section, locale});
+    const content = text(output);
+    assert.equal(nodes(output).filter(n => n.type === 'table').length, 1);
+    assert.ok(content.includes('2 CC') && content.includes('50 entries'));
+    assert.ok(content.includes('a'.repeat(40)) && content.includes('partial:python:python_ast'));
+    assert.match(content, locale === 'en' ? /not a confirmed defect/ : /no es un defecto confirmado/);
+    assert.match(content, locale === 'en' ? /Unavailable/ : /No disponible/);
+    assert.ok(content.includes('complexity_evidence.complexity_score'));
+    assert.equal(JSON.stringify(section), before);
+    assert.equal(nodes(output).filter(n => ['button', 'input', 'form', 'a'].includes(n.type)).length, 0);
+  });
+}

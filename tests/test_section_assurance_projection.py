@@ -94,7 +94,7 @@ def test_saved_projection_refreshes_once_and_survives_restart_without_rewriting_
     for section in projection["assessment"]["sections"]:
         for field in FIELDS:
             section.pop(field, None)
-    projection["response_projection"].pop("section_assurance_policy", None)
+    projection["response_projection"]["section_assurance_policy"] = "retained-section-assurance-v1"
     with sqlite3.connect(database) as connection:
         connection.execute(
             "UPDATE nico_comprehensive_browser_projections SET projection=?, projection_sha256=? WHERE run_id=?",
