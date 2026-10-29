@@ -94,3 +94,19 @@ def test_malformed_packet_and_reference_fail_closed():
     reg['candidate_investigation'] = investigate_register(reg, source, SCOPE)
     reg['candidate_investigation']['packets'][0]['source_reference'] = 'bad'
     assert display_investigation(reg, SCOPE)['available'] is False
+
+@pytest.mark.parametrize('reference', [{}, {'source_sha256': 'bad', 'line': 1},
+    {'source_sha256': 'a' * 64}, {'source_sha256': 'a' * 64, 'line': 2},
+    {'source_sha256': 'a' * 64, 'line': True}])
+def test_missing_or_mismatched_source_reference_cannot_claim_completed_analysis(reference):
+    reg = register()
+    source = capture_sources({'example.py': 'assert permitted\n'}, SCOPE)
+    reg['candidate_investigation'] = investigate_register(reg, source, SCOPE)
+    assert display_investigation(reg, SCOPE)['completed_count'] == 1
+    reg['candidate_investigation']['packets'][0]['source_reference'] = reference
+    before = deepcopy(reg)
+    result = display_investigation(reg, SCOPE)
+    assert result['completed_count'] == 0
+    assert result['packets'][0]['completed'] is False
+    assert result['packets'][0]['reason'] == 'retained_observation_invalid'
+    assert reg == before

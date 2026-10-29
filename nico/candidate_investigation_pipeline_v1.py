@@ -133,10 +133,19 @@ def display_investigation(register, scope):
         reference = packet.get('source_reference') or {}
         path = row.get('source_path') or row.get('path')
         safe_path = isinstance(path, str) and 0 < len(path) <= 1024 and not path.startswith('/') and '\\' not in path and all(p not in {'', '.', '..'} for p in path.split('/')) and all(ord(c) >= 32 for c in path)
+        source_hash = reference.get('source_sha256')
+        valid_hash = isinstance(source_hash, str) and re.fullmatch(r'[0-9a-f]{64}', source_hash) is not None
+        valid_line = (type(row.get('line')) is int and row['line'] > 0
+                      and type(reference.get('line')) is int and reference['line'] == row['line'])
+        claimed_complete = packet.get('bounded_rule_analysis_completed') is True
+        valid_reference = safe_path and valid_hash and valid_line
+        reason = packet.get('reason') if isinstance(packet.get('reason'), str) and packet['reason'] in REASONS else 'unresolved'
+        if claimed_complete and not valid_reference:
+            reason = 'retained_observation_invalid'
         packets.append({'source_path': path if safe_path else None, 'candidate_id': row.get('candidate_id'), 'rule_id': row.get('rule_id') or row.get('rule'),
-                        'completed': packet.get('bounded_rule_analysis_completed') is True and (row.get('rule_id') or row.get('rule')) in {'B101', 'B404', 'B405', 'B603', 'B607'},
-                        'source_sha256': reference.get('source_sha256') if isinstance(reference.get('source_sha256'), str) and re.fullmatch(r'[0-9a-f]{64}', reference['source_sha256']) else None,
+                        'completed': claimed_complete and valid_reference and (row.get('rule_id') or row.get('rule')) in {'B101', 'B404', 'B405', 'B603', 'B607'},
+                        'source_sha256': source_hash if valid_hash else None,
                         'line': row.get('line') if type(row.get('line')) is int and row['line'] > 0 else None,
-                        'reason': packet.get('reason') if isinstance(packet.get('reason'), str) and packet['reason'] in REASONS else 'unresolved'})
+                        'reason': reason})
     return {'available': True, 'candidate_count': len(rows), 'completed_count': sum(p['completed'] for p in packets),
             'unresolved_reasons': dict(Counter(p['reason'] for p in packets if not p['completed'])), 'packets': packets}
