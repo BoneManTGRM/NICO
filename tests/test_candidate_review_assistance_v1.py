@@ -58,7 +58,7 @@ def test_uncertain_or_high_impact_never_gets_nonblocking_recommendation(extra):
     assert packet['limitations']
 
 
-@pytest.mark.parametrize('path', ['../secret', '/etc/passwd', 'x/../y', 'https://evil/x', 'x\\y', 'x\nY'])
+@pytest.mark.parametrize('path', ['../secret', '/etc/passwd', 'x/../y', 'https://evil/x', 'x\\y', 'x\nY', 'javascript:alert(1)', 'data:text/html,test', 'vbscript:msgbox(1)'])
 def test_unsafe_source_path_has_no_link(path):
     assert build_review_assistance([candidate(source_path=path)], SCOPE)['queue'][0]['source_url'] is None
 
