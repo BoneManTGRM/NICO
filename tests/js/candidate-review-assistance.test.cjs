@@ -34,3 +34,18 @@ for (const locale of ['en', 'es-MX']) {
     assert.equal(h.calls.length, 1);
   });
 }
+for (const locale of ['en', 'es-MX']) {
+  test(`${locale}: persisted investigation shows evidence and limits without launching work`, async () => {
+    const assistance = {artifact_schema: 'nico.candidate-review-assistance.v1', pending_record_count: 1,
+      queue: [{candidate_id: 'A', record_index: 0, recommendation: 'resolve_evidence_gaps', limitations: [], source_url: null, input_sha256: 'a'.repeat(64), existing_review_profile_cluster_id: ''}],
+      source_investigation: {available: true, candidate_count: 2, completed_count: 1,
+        packets: [{candidate_id: 'A', rule_id: 'B101', completed: true, source_sha256: 'b'.repeat(64), line: 1, reason: 'exact_line_structure_only'}]}};
+    const h = harness(locale, () => Response.json(payload({review_assistance: assistance})));
+    await h.load();
+    assert.match(h.html(), /1 \/ 2/);
+    assert.match(h.html(), locale === 'en' ? /Counterevidence/ : /Contraevidencia/);
+    assert.match(h.html(), locale === 'en' ? /Open questions/ : /Preguntas pendientes/);
+    assert.equal(h.find(n => n.props['data-source-investigation'] === 'true').length, 1);
+    assert.equal(h.calls.length, 1, 'read panel must not trigger new investigation');
+  });
+}

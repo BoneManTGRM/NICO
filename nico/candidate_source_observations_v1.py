@@ -125,7 +125,7 @@ def investigate_candidate(candidate: Mapping, observation: Mapping, *, observed_
     else:
         calls = observation.get('calls', {}).get(str(candidate['line']), [])
         if len(calls) != 1:
-            result.update(bounded_rule_analysis_completed=False, recommended_reviewer_action='request_missing_evidence')
+            result.update(bounded_rule_analysis_completed=False, reason='ambiguous_call_expression', recommended_reviewer_action='request_missing_evidence')
             result['unresolved_questions'] = ['Multiple or missing call expressions prevent an unambiguous exact-line argument analysis.']
             return result
         result['argument_observations'] = calls[0]

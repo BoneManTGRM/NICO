@@ -111,8 +111,23 @@ def _installed_worker(language):
     c['analyzer_evidence_report'] = {'commit_sha': c['identity']['commit_sha'], 'analyzers': [
         {'scanner': 'bandit', 'required': True, 'consecutive_successful_passes': 1,
          'consecutive_passes_required': 2, 'acceptance_ready': False}]}
+    from nico.candidate_investigation_pipeline_v1 import capture_sources, investigate_register, display_investigation
+    scope = c['identity']
+    for row in full:
+        row.update(exact_commit_sha=scope['commit_sha'], source_path='example.py', line=1, rule_id='B101')
+    register = c['assessment']['canonical_scanner_finding_register']
+    register['review_workload_clusters'] = [{'cluster_id': 'synthetic', 'candidate_ids': [r['candidate_id'] for r in full]}]
+    register['candidate_investigation'] = investigate_register(register, capture_sources({'example.py': 'assert permitted\n'}, scope), scope)
     before = deepcopy(package)
     result = rebuild_client_artifacts(package)
+    retained = result['json']['assessment']['canonical_scanner_finding_register']
+    projection = display_investigation(retained, result['json']['identity'])
+    assert projection['available'] and projection['completed_count'] == 1675
+    from nico.comprehensive_review_work_v2 import review_work_projection
+    record = {'identity': result['json']['identity'], 'stage_results': {'final_comprehensive_report_generation': {'report_package': result}}}
+    visible = review_work_projection(record)['review_assistance']['source_investigation']
+    assert visible['available'] and visible['completed_count'] == 1675
+
     _validate_exact_artifact_hashes(result)
     text = ''.join(''.join(p.extract_text().split()) for p in PdfReader(io.BytesIO(base64.b64decode(result['pdf_base64']))).pages)
     assert 'assessment.canonical_scanner_finding_register.findings' in text, text[-7000:]
