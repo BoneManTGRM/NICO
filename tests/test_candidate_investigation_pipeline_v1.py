@@ -124,3 +124,40 @@ def test_capture_diagnostics_are_count_only_and_preserve_failure_visibility():
     stale = investigate_register(register(), source, {**SCOPE, 'commit_sha': 'wrong'})
     assert stale['source_capture'] == {'scope_valid': False, 'observation_count': 0,
         'parsed_observation_count': 0, 'unavailable_reasons': {}}
+
+
+def test_capture_clock_starts_at_invocation_not_acquisition_time():
+    # A large absolute clock value models acquisition completed long beforehand.
+    ticks = iter([10000, 10000, 10000.01])
+    source = capture_sources({'example.py': 'assert permitted\n'}, SCOPE, clock=lambda: next(ticks))
+    assert source['observations']['example.py']['status'] == 'parsed'
+    assert investigate_register(register(), source, SCOPE)['bounded_rule_analysis_completed'] == 1
+
+
+def test_one_parse_crossing_deadline_can_leave_zero_observations(monkeypatch):
+    import nico.candidate_investigation_pipeline_v1 as pipeline
+    ticks = iter([0, 0, 6, 6])
+    source = capture_sources({'a.py': 'assert permitted\n', 'example.py': 'assert permitted\n'},
+                             SCOPE, clock=lambda: next(ticks))
+    assert source['observations'] == {}
+    assert source['unavailable_reasons'] == {'source_time_budget': 2}
+    result = investigate_register(register(), source, SCOPE)
+    assert result['bounded_rule_analysis_completed'] == 0
+    assert result['source_capture']['observation_count'] == 0
+    assert result['source_capture']['unavailable_reasons'] == {'source_time_budget': 2}
+
+
+def test_observation_output_cap_can_starve_later_candidate_source(monkeypatch):
+    import nico.candidate_investigation_pipeline_v1 as pipeline
+    original = pipeline.observe_python_source
+    def observed(data, **kwargs):
+        value = original(data, **kwargs)
+        if kwargs['path'] == 'a.py':
+            value['synthetic_size_padding'] = 'x' * (2 * 1024 * 1024 - 600)
+        return value
+    monkeypatch.setattr(pipeline, 'observe_python_source', observed)
+    source = capture_sources({'example.py': 'assert permitted\n', 'a.py': 'assert permitted\n'},
+                             SCOPE, clock=lambda: 0)
+    assert list(source['observations']) == ['a.py']
+    assert source['unavailable_reasons'] == {'observation_size_budget': 1}
+    assert investigate_register(register(), source, SCOPE)['bounded_rule_analysis_completed'] == 0

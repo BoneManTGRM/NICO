@@ -657,3 +657,27 @@ def test_future_activity_cannot_change_snapshot_code_signals():
     assert repository["activity_evidence"]["pull_requests_returned"] == 1
     assert complexity["profiled_file_count"] == 6
     assert repository["snapshot_commit_sha"] == "a" * 40
+
+
+def test_installed_collector_retains_source_observations_through_stage_context():
+    from nico.api import final_report_worker_bootstrap
+    from nico import comprehensive_native_providers as providers
+    from nico.comprehensive_run_service import _prior_stage_results_for_stage
+    from nico.candidate_investigation_pipeline_v1 import investigate_register
+    context = _context()
+    snapshot = _snapshot(context)
+    context['commit_sha'] = snapshot['commit_sha']
+    bundle, _ = providers.collect_snapshot_repository_evidence(context, snapshot, client=FakeSnapshotClient())
+    # Durable JSON serialization and the actual scoring context preserve parsed
+    # observations. Neither browser projection nor report sanitization is used.
+    retained = json.loads(json.dumps({'repository_and_delivery_evidence': {'repository_evidence': bundle}}))
+    context['prior_stage_results'] = _prior_stage_results_for_stage('canonical_scoring', retained, list(retained))
+    source = providers._repo(context)['candidate_source_observations']
+    assert source['observations']['tests/test_app.py']['status'] == 'parsed'
+    reg = {'findings': [{'candidate_id': 'synthetic-assert', 'category': 'static', 'rule_id': 'B101',
+        'source_path': 'tests/test_app.py', 'line': 2, 'exact_commit_sha': snapshot['commit_sha'],
+        'evidence_quality': 'exact_source'}]}
+    result = investigate_register(reg, source, context)
+    assert result['bounded_rule_analysis_completed'] == 1
+    assert result['human_review_required'] is True
+    assert result['client_delivery_allowed'] is False
