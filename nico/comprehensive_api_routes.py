@@ -1378,6 +1378,24 @@ def register_comprehensive_api_routes(
                 # A failed explicit login must not silently fall back to public status.
                 _authorize_review(operator_token)
             controller_value = _controller(request)
+            if request.query_params.get("projection") == "candidate-source-capture-v1":
+                # Explicit count-only read precedes cache, report assembly, intake
+                # reconciliation and scanner verification. Existing auth applies.
+                try:
+                    return await run_in_threadpool(
+                        controller_value.candidate_capture_diagnostics_read_only,
+                        run_id,
+                    )
+                except ComprehensiveRunNotFound:
+                    raise HTTPException(status_code=404, detail={"code": "capture_diagnostic_run_not_found"}) from None
+                except Exception as exc:
+                    known = {
+                        "capture_diagnostic_run_identity_mismatch",
+                        "capture_diagnostic_requires_terminal_run",
+                        "capture_diagnostic_review_commitment_unavailable",
+                    }
+                    code = str(exc) if isinstance(exc, ValueError) and str(exc) in known else "capture_diagnostic_unavailable"
+                    raise HTTPException(status_code=422 if code in known else 503, detail={"code": code}) from None
             browser_projection = _browser_projection_requested(request)
             response = None
             if browser_projection:

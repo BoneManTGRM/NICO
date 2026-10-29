@@ -1086,6 +1086,23 @@ class ComprehensiveApiController:
         record = self._service.load(self._required(run_id, "run_id"))
         return self._response(record, operation="status")
 
+    def candidate_capture_diagnostics_read_only(self, run_id: str) -> dict[str, Any]:
+        """Project only stored capture counts; never assemble artifacts or resume."""
+        from nico.candidate_capture_diagnostics import capture_diagnostics
+        requested = self._required(run_id, "run_id")
+        record = self._service.load_capture_diagnostics_record(requested)
+        identity = record.get("identity")
+        if not isinstance(identity, Mapping) or identity.get("run_id") != requested:
+            raise ValueError("capture_diagnostic_run_identity_mismatch")
+        if record.get("terminal") is not True:
+            raise ValueError("capture_diagnostic_requires_terminal_run")
+        return {
+            "artifact_schema": "nico.candidate-source-capture-status.v1",
+            "candidate_source_capture_diagnostics": capture_diagnostics(record),
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+        }
+
     def status_read_only(self, run_id: str) -> dict[str, Any]:
         """Project stored truth without resuming or regenerating the assessment."""
 
