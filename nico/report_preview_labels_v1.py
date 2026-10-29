@@ -63,12 +63,22 @@ def stage_preview_labels(stage: Mapping[str, Any], context: Mapping[str, Any], *
         return []
     if stage_id == 'review_required_candidate_register':
         complete = None
+        render_count = None
         for source in sources:
             nested = source.get('assessment')
             for candidate_source in (source, nested if isinstance(nested, Mapping) else {}):
                 register = candidate_source.get('canonical_scanner_finding_register')
-                if isinstance(register, Mapping) and isinstance(register.get('findings'), list):
-                    complete = register['findings']
+                count = register.get('_render_population_count') if isinstance(register, Mapping) else None
+                compact = (type(count) is int and count > 0
+                           and count == register.get('candidate_record_count')
+                           and register.get('count_parity_verified') is True) if isinstance(register, Mapping) else False
+                if isinstance(register, Mapping) and (isinstance(register.get('findings'), list) or compact):
+                    complete = register.get('findings', [])
+                    count = register.get('_render_population_count')
+                    if (not complete and type(count) is int and count > 0
+                            and count == register.get('candidate_record_count')
+                            and register.get('count_parity_verified') is True):
+                        render_count = count
                     break
             if complete is not None:
                 break
@@ -77,7 +87,8 @@ def stage_preview_labels(stage: Mapping[str, Any], context: Mapping[str, Any], *
         # the complete candidate population or a complete-register location.
         preview = retained('review_candidate_register')
         population = complete if complete is not None else preview
-        total = str(len(population)) if population is not None else ('desconocido' if spanish else 'unknown')
+        total = (str(render_count) if render_count is not None else
+                 str(len(population)) if population is not None else ('desconocido' if spanish else 'unknown'))
         rows = [line for line in stage.get('findings') or [] if str(line or '').strip()][:findings_limit]
         reference = 'assessment.canonical_scanner_finding_register.findings'
         if spanish:
@@ -133,6 +144,21 @@ def retained_coverage_disclosures(context: Mapping[str, Any], *, spanish: bool) 
         path = 'assessment.canonical_scanner_finding_register.findings'
         lines.append((f'Registro completo de candidatos: {count} registros conservados; {path} en el JSON canónico.'
                       if spanish else f'Complete candidate register: {count} retained records; {path} in canonical JSON.'))
+    investigation = register.get('candidate_investigation') if isinstance(register, Mapping) else None
+    if isinstance(investigation, Mapping):
+        count = investigation.get('candidate_count')
+        completed = investigation.get('bounded_rule_analysis_completed')
+        calls = investigation.get('model_invocations')
+        if (type(count) is int and type(completed) is int and 0 <= completed <= count
+                and type(calls) is int and calls >= 0):
+            lines.append((f'El registro conservado de investigación informa {completed} de {count} análisis acotados completados; '
+                          f'invocaciones de modelos: {calls}. El triaje técnico no equivale a investigación completada ni a aprobación humana.'
+                          if spanish else
+                          f'The retained investigation record reports {completed} of {count} bounded analyses completed; '
+                          f'model invocations: {calls}. Technical triage does not equal completed investigation or human approval.'))
+        else:
+            lines.append('Cobertura de investigación no disponible; el triaje técnico no equivale a investigación completada.' if spanish else
+                         'Investigation coverage unavailable; technical triage does not equal completed investigation.')
     records = context.get('scanner_execution_records')
     for record in records if isinstance(records, list) else []:
         if not isinstance(record, Mapping) or record.get('compact_record') is not True or record.get('raw_findings_embedded') is not False:

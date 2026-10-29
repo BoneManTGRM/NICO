@@ -111,6 +111,13 @@ def investigate_register(register, retained, scope, *, clock=time.monotonic):
     return {'artifact_schema': VERSION, 'scope': scope, 'input_sha256': fingerprint(register.get('findings') or []),
             'candidate_count': len(packets), 'bounded_rule_analysis_completed': sum(p['bounded_rule_analysis_completed'] for p in packets),
             'unresolved_reasons': dict(Counter(p.get('reason', 'unresolved') for p in packets if not p['bounded_rule_analysis_completed'])),
+            'source_capture': {
+                'scope_valid': bool(valid),
+                'observation_count': len(observations),
+                'parsed_observation_count': sum(isinstance(item, Mapping) and item.get('status') == 'parsed' for item in observations.values()),
+                'unavailable_reasons': {key: value for key, value in (retained.get('unavailable_reasons', {}) if valid and isinstance(retained.get('unavailable_reasons'), Mapping) else {}).items()
+                    if key in {'source_scope_missing', 'unsupported_source', 'source_time_budget', 'source_size_budget', 'source_analysis_failed', 'observation_size_budget'} and type(value) is int and value >= 0},
+            },
             'packets': packets, 'human_review_required': True, 'client_delivery_allowed': False, 'model_invocations': 0}
 
 

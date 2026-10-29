@@ -110,3 +110,17 @@ def test_missing_or_mismatched_source_reference_cannot_claim_completed_analysis(
     assert result['packets'][0]['completed'] is False
     assert result['packets'][0]['reason'] == 'retained_observation_invalid'
     assert reg == before
+
+
+def test_capture_diagnostics_are_count_only_and_preserve_failure_visibility():
+    source = capture_sources({'example.py': 'assert permitted\n'}, SCOPE)
+    source['unavailable_reasons'] = {'source_time_budget': 7, 'private/path.py': 9,
+                                     'source_size_budget': 'secret', 'observation_size_budget': True}
+    result = investigate_register(register(), source, SCOPE)
+    assert result['source_capture'] == {'scope_valid': True, 'observation_count': 1,
+        'parsed_observation_count': 1, 'unavailable_reasons': {'source_time_budget': 7}}
+    assert 'private/path.py' not in str(result)
+    assert 'secret' not in str(result)
+    stale = investigate_register(register(), source, {**SCOPE, 'commit_sha': 'wrong'})
+    assert stale['source_capture'] == {'scope_valid': False, 'observation_count': 0,
+        'parsed_observation_count': 0, 'unavailable_reasons': {}}
