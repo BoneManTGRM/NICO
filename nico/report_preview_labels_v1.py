@@ -159,6 +159,15 @@ def retained_coverage_disclosures(context: Mapping[str, Any], *, spanish: bool) 
         else:
             lines.append('Cobertura de investigación no disponible; el triaje técnico no equivale a investigación completada.' if spanish else
                          'Investigation coverage unavailable; technical triage does not equal completed investigation.')
+    if isinstance(register, Mapping) and isinstance(context.get('identity'), Mapping):
+        from nico.candidate_investigation_pipeline_v1 import display_investigation
+        from nico.candidate_source_reason_detail_v1 import LABELS
+        view = display_investigation(register, context['identity'])
+        if view.get('available') and view.get('source_availability_counts'):
+            lines.append('La ausencia de una observación no demuestra un fallo del analizador ni una causa presupuestaria.' if spanish else
+                         'An absent observation proves neither parser failure nor a budget cause.')
+            for code, count in view['source_availability_counts'].items():
+                lines.append(f'{LABELS[code][1 if spanish else 0]}: {count}.')
     records = context.get('scanner_execution_records')
     for record in records if isinstance(records, list) else []:
         if not isinstance(record, Mapping) or record.get('compact_record') is not True or record.get('raw_findings_embedded') is not False:

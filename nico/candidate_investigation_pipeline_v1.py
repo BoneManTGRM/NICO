@@ -8,6 +8,8 @@ import time
 
 from nico.candidate_source_observations_v1 import observe_python_source, investigate_candidate, candidate_source_path
 
+from nico.candidate_source_reason_detail_v1 import capture_detail, packet_detail
+
 VERSION = 'nico.persisted-candidate-investigation.v1'
 REASONS = frozenset({'source_scope_unavailable_or_stale', 'investigation_budget_exhausted', 'source_identity_mismatch', 'unsupported_or_missing_exact_source_evidence', 'source_parse_unavailable', 'source_file_binding_mismatch', 'source_line_missing', 'rule_semantics_require_specialist_review', 'rule_source_line_mismatch', 'ambiguous_call_expression', 'retained_observation_invalid', 'exact_line_structure_only'})
 SCOPE_KEYS = ('run_id', 'repository', 'commit_sha', 'customer_id', 'project_id')
@@ -95,11 +97,13 @@ def investigate_register(register, retained, scope, *, clock=time.monotonic):
     scope = scope_of(scope)
     valid = (all(scope.values()) and isinstance(retained, Mapping)
              and retained.get('artifact_schema') == VERSION and retained.get('scope') == scope)
-    observations = retained.get('observations', {}) if valid else {}
+    raw_observations = retained.get('observations') if valid else None
+    observations = raw_observations if isinstance(raw_observations, Mapping) else {}
     if not isinstance(observations, Mapping):
         observations = {}
     packets = []
     for index, row in enumerate(register.get('findings') or []):
+        detail = None
         if index >= 10000 or clock() - started >= 2:
             reason = 'investigation_budget_exhausted'
         elif not valid:
@@ -119,6 +123,9 @@ def investigate_register(register, retained, scope, *, clock=time.monotonic):
                 packet = {'candidate_id': row.get('candidate_id'), 'bounded_rule_analysis_completed': False,
                           'reason': 'retained_observation_invalid', 'unresolved_questions': ['retained_observation_invalid']}
 
+        if (valid and packet.get('reason') == 'source_parse_unavailable'
+                and row.get('source_repository') in (None, '', scope['repository'])):
+            detail = capture_detail(raw_observations, candidate_source_path(row.get('source_path') or row.get('path')), scope)
         reference = packet.get('source_reference') or {}
         # Persist compact versioned reasoning codes, not repeated prose and scope.
         packets.append({'candidate_id': row.get('candidate_id'),
@@ -126,10 +133,12 @@ def investigate_register(register, retained, scope, *, clock=time.monotonic):
             'bounded_rule_analysis_completed': packet['bounded_rule_analysis_completed'],
             'reason': packet.get('reason', 'unresolved'),
             'source_reference': {k: reference[k] for k in ('source_sha256', 'line') if k in reference},
-            'argument_observations': packet.get('argument_observations', {})})
+            'argument_observations': packet.get('argument_observations', {}),
+            **({'source_availability_detail': detail} if detail is not None else {})})
     return {'artifact_schema': VERSION, 'scope': scope, 'input_sha256': fingerprint(register.get('findings') or []),
             'candidate_count': len(packets), 'bounded_rule_analysis_completed': sum(p['bounded_rule_analysis_completed'] for p in packets),
             'unresolved_reasons': dict(Counter(p.get('reason', 'unresolved') for p in packets if not p['bounded_rule_analysis_completed'])),
+            'source_availability_counts': dict(Counter(packet_detail(p) for p in packets if p.get('reason') == 'source_parse_unavailable' and not p['bounded_rule_analysis_completed'])),
             'source_capture': {
                 **_capture_accounting(retained, valid),
                 'scope_valid': bool(valid),
@@ -175,6 +184,8 @@ def display_investigation(register, scope):
                         'completed': claimed_complete and valid_reference and (row.get('rule_id') or row.get('rule')) in {'B101', 'B404', 'B405', 'B603', 'B607'},
                         'source_sha256': source_hash if valid_hash else None,
                         'line': row.get('line') if type(row.get('line')) is int and row['line'] > 0 else None,
-                        'reason': reason})
+                        'reason': reason,
+                        **({'source_availability_detail': packet_detail(packet)} if reason == 'source_parse_unavailable' and not claimed_complete else {})})
     return {'available': True, 'candidate_count': len(rows), 'completed_count': sum(p['completed'] for p in packets),
-            'unresolved_reasons': dict(Counter(p['reason'] for p in packets if not p['completed'])), 'packets': packets}
+            'unresolved_reasons': dict(Counter(p['reason'] for p in packets if not p['completed'])),
+            'source_availability_counts': dict(Counter(p['source_availability_detail'] for p in packets if 'source_availability_detail' in p and not p['completed'])), 'packets': packets}

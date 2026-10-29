@@ -81,3 +81,23 @@ for (const locale of ['en', 'es-MX']) {
     });
   }
 }
+
+for (const locale of ['en', 'es-MX']) {
+  test(`${locale}: source availability details remain unresolved and count-only`, async () => {
+    const h = harness(locale, () => Response.json(payload({review_assistance: {
+      artifact_schema: 'nico.candidate-review-assistance.v1', pending_record_count: 1,
+      queue: [{candidate_id: 'A', record_index: 0, recommendation: 'resolve_evidence_gaps', limitations: [],
+        source_url: null, input_sha256: 'a'.repeat(64), existing_review_profile_cluster_id: ''}],
+      source_investigation: {available: true, candidate_count: 1, completed_count: 0,
+        source_availability_counts: {source_not_retained: 1, observation_parse_unavailable: -1, not_recorded: 9999, PRIVATE_SENTINEL: 8},
+        packets: [{candidate_id: 'A', rule_id: 'B101', completed: false, reason: 'source_parse_unavailable',
+          source_availability_detail: 'source_not_retained'}]}}})));
+    await h.load();
+    assert.match(h.html(), locale === 'en' ? /No observation retained/ : /No se conservó una observación/);
+    assert.match(h.html(), locale === 'en' ? /cause unknown/ : /causa desconocida/);
+    assert.match(h.html(), locale === 'en' ? /Request evidence before disposition/ : /Solicitar evidencia antes de decidir/);
+    assert.doesNotMatch(h.html(), /PRIVATE_SENTINEL|9999/);
+    assert.equal(h.find(n => n.props['data-source-investigation'] === 'true').length, 0);
+    assert.equal(h.calls.length, 1);
+  });
+}
