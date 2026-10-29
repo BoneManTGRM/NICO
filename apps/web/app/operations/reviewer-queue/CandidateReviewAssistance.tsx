@@ -34,6 +34,15 @@ const investigationReasons: Record<string, [string, string]> = {
 };
 
 const sourceAvailabilityLabels: Record<string, [string, string]> = {
+  "capture_deadline": ["Capture reached its deadline at this path", "La captura alcanzó su plazo en esta ruta"],
+  "inventory_missing_or_unsupported": ["Path absent from supported regular-file inventory", "La ruta no figura en el inventario de archivos regulares compatibles"],
+  "file_size_limit": ["Source exceeded the per-file capture limit", "El código superó el límite de captura por archivo"],
+  "input_size_limit": ["Source exceeded the remaining aggregate input allowance", "El código superó el límite restante de entrada total"],
+  "inventory_entry_invalid": ["Retained capture rejected an invalid inventory entry", "La captura rechazó una entrada de inventario inválida"],
+  "blob_integrity_unavailable": ["Captured blob bytes did not pass identity validation", "Los bytes capturados no superaron la validación de identidad"],
+  "observation_output_limit": ["Observation exceeded remaining retained output allowance", "La observación superó el límite restante de salida conservada"],
+  "capture_operation_failed": ["Capture operation failed at this path; cause unspecified", "La operación de captura falló en esta ruta; causa sin especificar"],
+
   "source_not_retained": [
     "No observation retained for this candidate path; cause unknown",
     "No se conservó una observación para esta ruta; causa desconocida"

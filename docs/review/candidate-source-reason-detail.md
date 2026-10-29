@@ -43,3 +43,23 @@ Final local verification:
 - `node --test tests/js/candidate-review-assistance.test.cjs`: 36 passed.
 - `apps/web/node_modules/.bin/tsc --noEmit` from the web project: exit 0.
 - Independent read-only review: foreign-repository attribution issue corrected and tested; final review found no remaining blocker for the stated PDF/UI/canonical scope.
+
+## Follow-up: observed per-path capture outcomes
+
+`candidate_workspace_capture_v1` now records `nico.candidate-path-capture-outcomes.v1` inside the existing exact-scope capture envelope. `path_sha256_reasons` keys are SHA-256 of the normalized UTF-8 candidate path, not source contents. Values are closed codes for a boundary actually visited: missing/unsupported regular-file inventory entry, invalid inventory size, per-file or aggregate input limit, blob integrity failure, retained-output limit, observed deadline, or an unspecified capture-operation failure. No raw errors, paths or source are added. The existing investigator maps a candidate to its path digest only after scope/identity checks, and only when its observation is absent.
+
+This is path-level evidence shared by candidates at that exact path, not an assertion that every candidate was individually analyzed. It does not record successful paths redundantly. It does not infer reasons for paths outside a capped candidate inventory, paths never visited after a timeout, an inventory operation that failed globally, or entries omitted after metadata exhaustion. Legacy/malformed/foreign evidence remains unknown. `recording_truncated` describes only the metadata cap, not inventory completeness.
+
+Outcome serialization is capped at 16,384 UTF-8 bytes **within the existing 32,768-byte envelope reservation**, with unchanged 2 MiB total output, 8 MiB input, 256 KiB file and five-second cooperative deadline limits. Diagnostic work uses the same invocation and elapsed deadline. Whole-envelope overflow removes individual outcomes rather than retaining invalid allocation attribution. No additional source fetch, capture pass or source execution occurs.
+
+Fixed synthetic comparison (1,681 candidates, 899 small valid Python files, 593 missing paths, 189 unsupported synthetic records): old/new order O,N,N,O,O,N. Capture seconds: O .02028, N .02363, N .02462, O .02162, O .02175, N .02543. Both made exactly 899 reads and charged 15,283 source bytes; observations, aggregate reasons, populations and capture completeness fields were equal. Output increased from approximately 341,526 to 357,582 bytes, including 16,028 bytes of outcome metadata. Final validated projection remains 899 completed / 782 unresolved. It explains 153 synthetic missing paths and leaves the other 440 unknown because metadata is capped. This is measured diagnostic overhead, not a speedup or a production-cause reconstruction.
+
+### Test-local localization isolation correction
+
+The three direct-helper tests named above now execute their **unchanged original assertions** in owned, timeout-bounded interpreters through a test-only decorator. No translator is removed/rebound and no production module changes for this purpose. After explicitly installing the previously contaminating v95 global guard, the entire parity file passes 12 tests. Installed PDF language/evidence tests remain separate acceptance coverage. Thus the documented shared-process failure is corrected by test isolation rather than weakening literal preservation or redefining real locale behavior.
+
+### Remaining blocker
+
+No retained production per-path outcomes exist for the old 593 cases. This code cannot retroactively supply them. Even future runs can exhaust diagnostic metadata; those candidates remain unknown. A real source-coverage repair requires observed per-path causes and exact source evidence; none is established merely by this diagnostic change. Hosted qualification and any deployment remain separate. Published integration head 029c83a is untouched.
+
+Follow-up qualification: the combined nine-file Python suite passed 262 tests (four existing pypdf warnings), including the formerly order-sensitive parity tests in the same process. After the final malformed-Unicode path guard, the capture/detail suite passed 50 tests; final outcome-only recheck passed 20 tests. These counts overlap and are not summed. The JavaScript reviewer suite passed 38 tests; TypeScript exited 0. An explicitly v95-preinstalled parity run also passed all 12 tests. Independent read-only review found no remaining blocker, including the final invalid UTF-8 / null-digest rejection. No assertion was disabled. The original three assertion bodies are unchanged.

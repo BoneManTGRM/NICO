@@ -125,7 +125,7 @@ def investigate_register(register, retained, scope, *, clock=time.monotonic):
 
         if (valid and packet.get('reason') == 'source_parse_unavailable'
                 and row.get('source_repository') in (None, '', scope['repository'])):
-            detail = capture_detail(raw_observations, candidate_source_path(row.get('source_path') or row.get('path')), scope)
+            detail = capture_detail(raw_observations, candidate_source_path(row.get('source_path') or row.get('path')), scope, retained.get('path_capture_outcomes'))
         reference = packet.get('source_reference') or {}
         # Persist compact versioned reasoning codes, not repeated prose and scope.
         packets.append({'candidate_id': row.get('candidate_id'),

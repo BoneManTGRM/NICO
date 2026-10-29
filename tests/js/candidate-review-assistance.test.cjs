@@ -101,3 +101,21 @@ for (const locale of ['en', 'es-MX']) {
     assert.equal(h.calls.length, 1);
   });
 }
+
+for (const locale of ['en', 'es-MX']) {
+  test(`${locale}: observed capture boundary remains a request for evidence`, async () => {
+    const h = harness(locale, () => Response.json(payload({review_assistance: {
+      artifact_schema: 'nico.candidate-review-assistance.v1', pending_record_count: 1,
+      queue: [{candidate_id: 'A', record_index: 0, recommendation: 'resolve_evidence_gaps', limitations: [],
+        source_url: null, input_sha256: 'a'.repeat(64), existing_review_profile_cluster_id: ''}],
+      source_investigation: {available: true, candidate_count: 1, completed_count: 0,
+        source_availability_counts: {observation_output_limit: 1},
+        packets: [{candidate_id: 'A', rule_id: 'B101', completed: false, reason: 'source_parse_unavailable',
+          source_availability_detail: 'observation_output_limit'}]}}})));
+    await h.load();
+    assert.match(h.html(), locale === 'en' ? /Observation exceeded remaining retained output allowance/ : /La observación superó el límite restante de salida conservada/);
+    assert.match(h.html(), locale === 'en' ? /Request evidence before disposition/ : /Solicitar evidencia antes de decidir/);
+    assert.equal(h.find(n => n.props['data-source-investigation'] === 'true').length, 0);
+    assert.equal(h.calls.length, 1);
+  });
+}
