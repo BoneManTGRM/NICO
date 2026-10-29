@@ -33,6 +33,7 @@ import StrategicEvidenceForm from "./StrategicEvidenceForm";
 import {isAmbiguousIntakeOutcome} from "./assessmentRunRequests";
 import {useAssessmentClientMode} from "./useAssessmentClientMode";
 import {useAssessmentRun} from "./useAssessmentRun";
+import UnscoredSectionEvidence from "./UnscoredSectionEvidence";
 
 const FINAL_REPORT_STAGE = "final_comprehensive_report_generation";
 type ReportLanguage = "en" | "es-MX";
@@ -359,6 +360,7 @@ function Scorecard({sections, copy, locale}: {sections: NonNullable<ReturnType<t
         </div> : null}
       </div>
       <p>{presentation.summary}</p>
+      <UnscoredSectionEvidence section={section} locale={locale} />
       <details className="help-details"><summary>{copy.evidence} ({section.evidence?.length || 0})</summary><List items={section.evidence} empty={copy.notVerified} /></details>
       {section.findings?.length ? <details className="help-details"><summary>{copy.findings} ({section.findings.length})</summary><List items={section.findings} empty={copy.notVerified} /></details> : null}
       {section.unavailable?.length ? <details className="help-details"><summary>{copy.evidenceLimitations} ({section.unavailable.length})</summary><List items={section.unavailable} empty={copy.notVerified} /></details> : null}
