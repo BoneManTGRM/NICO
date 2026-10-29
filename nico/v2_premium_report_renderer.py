@@ -369,6 +369,22 @@ def _canonical_stages(canonical: Mapping[str, Any]) -> list[dict[str, Any]]:
         )
         by_id["staffing_sequencing_and_cost"] = staffing
 
+    from nico.retained_section_measurements_v1 import report_tables
+    measurement_tables = report_tables(canonical.get("assessment") or {}, spanish=_is_spanish(canonical), expected_identity=canonical.get("identity"))
+    technical = by_id.get("ci_cd_architecture_complexity_velocity")
+    if technical is not None:
+        # Keep derived prose out of source-table population commitments. Replace
+        # only lines explicitly owned by the preceding display projection.
+        previous = technical.get("_retained_measurement_lines")
+        previous = previous if isinstance(previous, list) else []
+        evidence = list(technical.get("evidence") or [])
+        for line in previous:
+            if isinstance(line, str) and line in evidence:
+                evidence.remove(line)
+        lines = [f"{table['title']} · {row[0]}: {row[1]}; {row[2]}"
+                 for table in measurement_tables for row in table['rows']]
+        technical["evidence"] = evidence + lines
+        technical["_retained_measurement_lines"] = lines
     return list(by_id.values())
 
 

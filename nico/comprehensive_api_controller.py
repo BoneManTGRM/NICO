@@ -23,7 +23,7 @@ from nico.comprehensive_run_service import ComprehensiveRunService
 from nico.decision_grade_accepted_edition_guard_v1 import validate_accepted_edition
 
 VERSION = "nico.comprehensive_api_controller.v8"
-SECTION_ASSURANCE_POLICY = "retained-section-assurance-v1"
+SECTION_ASSURANCE_POLICY = "retained-section-assurance-v2"
 MAX_PROJECTED_STRING_CHARS = 1_200
 MAX_PROJECTED_LIST_ITEMS = 24
 MAX_PROJECTED_OBJECT_ITEMS = 24
@@ -955,7 +955,7 @@ def _project_report_manifest(report: dict[str, Any]) -> dict[str, Any]:
     return projected
 
 
-def _project_assessment(assessment: dict[str, Any]) -> dict[str, Any]:
+def _project_assessment(assessment: dict[str, Any], identity: dict[str, Any] | None = None) -> dict[str, Any]:
     projected: dict[str, Any] = {}
     for key in (
         "executive_summary",
@@ -998,6 +998,14 @@ def _project_assessment(assessment: dict[str, Any]) -> dict[str, Any]:
             ):
                 if key in section:
                     item[key] = _bounded_value(section[key])
+            from nico.retained_section_measurements_v1 import project_measurements, score_reason
+            if section.get("id") in {"architecture_debt", "velocity_complexity"}:
+                reason = score_reason(section.get("score_input_provenance"))
+                if reason:
+                    item["score_input_provenance"] = reason
+                measurements = project_measurements(section.get("retained_measurements"), identity)
+                if measurements:
+                    item["retained_measurements"] = measurements
             projected_sections.append(item)
         projected["sections"] = projected_sections
     projected["human_review_required"] = True
@@ -1468,7 +1476,7 @@ class ComprehensiveApiController:
                     else _project_report(report)
                 )
             if assessment:
-                response["assessment"] = _project_assessment(assessment)
+                response["assessment"] = _project_assessment(assessment, identity)
             accepted_edition = (
                 _project_accepted_edition(canonical_record)
                 if approved_status
