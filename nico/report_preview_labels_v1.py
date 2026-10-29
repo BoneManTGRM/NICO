@@ -72,15 +72,20 @@ def stage_preview_labels(stage: Mapping[str, Any], context: Mapping[str, Any], *
                     break
             if complete is not None:
                 break
-        total = str(len(complete)) if complete is not None else ('desconocido' if spanish else 'unknown')
+        # Legacy projections can retain a bounded preview without the canonical
+        # register. Its known population is still useful, but is not proof of
+        # the complete candidate population or a complete-register location.
+        preview = retained('review_candidate_register')
+        population = complete if complete is not None else preview
+        total = str(len(population)) if population is not None else ('desconocido' if spanish else 'unknown')
         rows = [line for line in stage.get('findings') or [] if str(line or '').strip()][:findings_limit]
         reference = 'assessment.canonical_scanner_finding_register.findings'
         if spanish:
             suffix = (f'Registro completo: {reference} en el JSON canónico.' if complete is not None
-                      else 'Registro completo no disponible en esta proyección.')
+                      else 'Registro completo no disponible en esta proyección; el total corresponde solo a la vista previa conservada.')
             return [f'Vista previa del registro de candidatos: {len(rows)} de {total} registros conservados. ' + suffix]
         suffix = (f'Complete register: {reference} in canonical JSON.' if complete is not None
-                  else 'Complete register unavailable in this projection.')
+                  else 'Complete register unavailable in this projection; total describes only the retained preview.')
         return [f'Candidate register preview: {len(rows)} of {total} retained records. ' + suffix]
     if stage_id != 'six_month_roadmap':
         return []

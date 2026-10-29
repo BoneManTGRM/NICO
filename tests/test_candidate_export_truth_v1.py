@@ -35,6 +35,8 @@ def test_legacy_preview_does_not_claim_complete_population():
     labels = stage_preview_labels({'stage_id': 'review_required_candidate_register', 'findings': ['preview']}, {'review_candidate_register': [{}] * 250})
     assert 'Complete register: review_candidate_register' not in labels[0]
     assert 'unavailable' in labels[0]
+    assert '1 of 250 retained records' in labels[0]
+    assert 'total describes only the retained preview' in labels[0]
 
 
 @pytest.mark.parametrize('count', [0, 24, 1583, 11, 57])
@@ -174,3 +176,17 @@ def test_final_summary_rejects_stale_assurance_and_unknown_compact_zero(renderer
             'eslint: raw candidate count=unavailable') in text
     assert '99/2' not in text
     assert c == before
+
+
+@pytest.mark.parametrize('spanish', [False, True])
+def test_preview_count_does_not_claim_complete_register_and_canonical_empty_wins(spanish):
+    stage = {'stage_id': 'review_required_candidate_register', 'findings': ['one']}
+    context = {'review_candidate_register': [{}] * 250}
+    label = stage_preview_labels(stage, context, spanish=spanish)[0]
+    assert ('1 de 250' if spanish else '1 of 250') in label
+    assert ('solo a la vista previa' if spanish else 'only the retained preview') in label
+    assert 'assessment.canonical_scanner_finding_register.findings' not in label
+    context['assessment'] = {'canonical_scanner_finding_register': {'findings': []}}
+    label = stage_preview_labels({**stage, 'findings': []}, context, spanish=spanish)[0]
+    assert ('0 de 0' if spanish else '0 of 0') in label
+    assert 'assessment.canonical_scanner_finding_register.findings' in label
