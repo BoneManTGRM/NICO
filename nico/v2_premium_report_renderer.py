@@ -369,8 +369,8 @@ def _canonical_stages(canonical: Mapping[str, Any]) -> list[dict[str, Any]]:
         )
         by_id["staffing_sequencing_and_cost"] = staffing
 
-    from nico.retained_section_measurements_v1 import report_tables
-    measurement_tables = report_tables(canonical.get("assessment") or {}, spanish=_is_spanish(canonical), expected_identity=canonical.get("identity"))
+    from nico.retained_section_measurements_v1 import report_tables, report_measurement_identity
+    measurement_tables = report_tables(canonical.get("assessment") or {}, spanish=_is_spanish(canonical), expected_identity=report_measurement_identity(canonical))
     technical = by_id.get("ci_cd_architecture_complexity_velocity")
     if technical is not None:
         # Keep derived prose out of source-table population commitments. Replace

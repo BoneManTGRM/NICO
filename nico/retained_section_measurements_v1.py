@@ -153,6 +153,34 @@ def project_measurements(value, expected_identity=None):
     return {'artifact_schema': VERSION, 'records': records, 'delivery_performance_measured': False}
 
 
+REPORT_SCOPE_KEY = 'retained_measurement_report_scope'
+REPORT_SCOPE_VERSION = 'nico.retained-measurement-report-scope.v1'
+
+
+def report_measurement_identity(canonical):
+    """Validate the original scope against its exact client-display projection.
+
+    Only identity cleanup creates this context, before changing display IDs.
+    Never recover identity from measurement envelopes or accept a verified flag.
+    Historical artifacts without the context retain exact-identity validation.
+    """
+    current = canonical.get('identity')
+    if REPORT_SCOPE_KEY not in canonical:
+        return current
+    context = canonical[REPORT_SCOPE_KEY]
+    original = context.get('identity') if isinstance(context, Mapping) else None
+    if (not isinstance(context, Mapping) or context.get('artifact_schema') != REPORT_SCOPE_VERSION
+            or not isinstance(original, Mapping) or not isinstance(current, Mapping)
+            or not all(isinstance(original.get(k), str) and original[k] for k in SCOPE_KEYS)):
+        return None
+    from nico.comprehensive_human_review_package_cleanup_v1 import _client_identity
+    projected = {k: _client_identity(original[k]) if k in {'customer_id', 'project_id'} else original[k]
+                 for k in SCOPE_KEYS}
+    if any(projected[k] != current.get(k) for k in SCOPE_KEYS):
+        return None
+    return {k: original[k] for k in SCOPE_KEYS}
+
+
 def report_tables(assessment, *, spanish=False, expected_identity=None):
     """Reuse the existing technical-analysis stage; no new report or score."""
     tables = []

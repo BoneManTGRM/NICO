@@ -125,6 +125,17 @@ def sanitize_client_identity(canonical: Mapping[str, Any]) -> dict[str, Any]:
         if isinstance(result.get("identity"), Mapping)
         else {}
     )
+    from nico.retained_section_measurements_v1 import REPORT_SCOPE_KEY, REPORT_SCOPE_VERSION, SCOPE_KEYS
+    assessment = result.get('assessment')
+    sections = assessment.get('sections') if isinstance(assessment, Mapping) else None
+    has_measurements = isinstance(sections, list) and any(
+        isinstance(section, Mapping) and isinstance(section.get('retained_measurements'), Mapping)
+        for section in sections)
+    if has_measurements and REPORT_SCOPE_KEY not in result and all(isinstance(identity.get(k), str) and identity[k] for k in SCOPE_KEYS):
+        # Preserve the execution identity before its display-only normalization.
+        # An existing malformed/conflicting context is never silently refreshed.
+        result[REPORT_SCOPE_KEY] = {'artifact_schema': REPORT_SCOPE_VERSION,
+                                    'identity': {k: identity[k] for k in SCOPE_KEYS}}
     # Scope IDs and human-entered display names are independent canonical fields.
     # A missing or placeholder scope ID must remain explicitly not supplied; never
     # reconstruct it from client/project display metadata.

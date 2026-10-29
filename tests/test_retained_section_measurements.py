@@ -131,22 +131,39 @@ def test_dimension_missingness_does_not_look_complete(monkeypatch, tmp_path):
     assert values(result)['function_count'] == 2
 
 
-def _installed_measurement_worker(language, directory):
+def _installed_measurement_worker(language, directory, placeholder='no'):
     from pathlib import Path
     from nico.api import final_report_worker_bootstrap
     from tests.test_roadmap_pdf_detail_completeness import _five_gap_package
     from nico.phase17_canonical_artifact_rebuild_v1 import rebuild_client_artifacts
     from nico.comprehensive_exact_artifact_hash_binding_v1 import _validate_exact_artifact_hashes
     from nico import v2_premium_report_renderer as renderer
-    package = _five_gap_package(language)
+    from tests import test_v2_premium_report_renderer as base_fixture
+    original_fixture = base_fixture._package
+    def bound_fixture(locale):
+        value = original_fixture(locale)
+        if placeholder == 'yes':
+            value['json']['identity'].update(customer_id='default_customer', project_id='default_project')
+        return value
+    with pytest.MonkeyPatch.context() as fixture_patch:
+        fixture_patch.setattr(base_fixture, '_package', bound_fixture)
+        package = _five_gap_package(language)
     canonical = package['json']
     with pytest.MonkeyPatch.context() as mp:
         import test_source_architecture_profile_evidence as fixture
         identity = deepcopy(canonical['identity'])
         snapshot = {**identity, 'status': 'attached', 'snapshot_id': 'snapshot_display', 'tree_sha': 'b'*40, 'captured_at': '2026-10-29T00:00:00Z'}
         mp.setattr(fixture, 'identities', lambda: (deepcopy(identity), deepcopy(snapshot)))
-        context, repo, complexity = collected(mp, Path(directory))
+        fixture_files = {'src/a.py':'def f(x):\n    if x: return 1\n    return 0\n',
+                         'src/b.ts':'function g(x: boolean) { if (x) return 1; return 0; }'} if placeholder == 'yes' else None
+        context, repo, complexity = collected(mp, Path(directory), files=fixture_files)
     output = build_section_measurements(context, repo, complexity, sections())
+    if placeholder == 'yes':
+        assert len(output['architecture_debt']['records']) == 23
+        for envelope in output.values():
+            for record in envelope['records']:
+                if record['metric'] in {'files_analyzed', 'import_edges', 'maximum_fan_out', 'duplicate_line_ratio', 'ci_configuration_score'}:
+                    record['value'] = {'files_analyzed':1285, 'import_edges':9924, 'maximum_fan_out':103, 'duplicate_line_ratio':0.0857, 'ci_configuration_score':100}[record['metric']]
     canonical['assessment']['sections'] = sections()
     for section in canonical['assessment']['sections']:
         if section['id'] in output:
@@ -174,6 +191,22 @@ def _installed_measurement_worker(language, directory):
         assert ('Funcionesconanidamientomedido' if language == 'es-MX' else 'Functionswithmeasurednesting') in normalized
         assert ('complejidadciclomáticamáxima' if language == 'es-MX' else 'Maximumcyclomaticcomplexity').casefold() in normalized.casefold()
         assert canonical['identity']['commit_sha'] in normalized
+        if placeholder == 'yes':
+            for expected in ('1285files', '9924edges', '103edges', '0.0857ratio', '100/100'):
+                assert expected in normalized, (name if 'name' in locals() else '', expected)
+            assert ('Archivosanalizadosparacomplejidad:Nodisponible' if language == 'es-MX' else 'Filesanalyzedforcomplexity:Unavailable') not in normalized
+            from nico.retained_section_measurements_v1 import LABELS
+            for metric, expected in [('files_analyzed','1285files'), ('import_edges','9924edges'), ('maximum_fan_out','103edges'), ('duplicate_line_ratio','0.0857ratio'), ('ci_configuration_score','100/100')]:
+                label = ''.join(LABELS[metric][1 if language == 'es-MX' else 0].split())
+                position = normalized.find(label + ':' + expected)
+                assert position >= 0, (metric, expected)
+                assert canonical['identity']['commit_sha'] in normalized[position:position+500]
+
+    for original_section in canonical['assessment']['sections']:
+        if 'retained_measurements' in original_section:
+            final_section = next(s for s in result['json']['assessment']['sections'] if s['id'] == original_section['id'])
+            assert final_section['retained_measurements'] == original_section['retained_measurements']
+            assert final_section['score'] is None and final_section['exclude_from_maturity'] is True
     assert package == before
     assert result['human_review_required'] is True and result['client_delivery_allowed'] is False
 
@@ -259,3 +292,84 @@ def test_production_provider_attaches_measurements_without_rescoring(monkeypatch
     assert architecture['exclude_from_maturity'] and delivery['exclude_from_maturity']
     assert values(architecture['retained_measurements'])['cc_maximum'] == 2
     assert delivery['retained_measurements']['delivery_performance_measured'] is False
+
+
+@pytest.mark.parametrize('language', ['en', 'es-MX'])
+def test_installed_bound_measurements_survive_placeholder_identity_cleanup(language, tmp_path):
+    import os, subprocess, sys
+    from pathlib import Path
+    from tests.owned_worker_environment import owned_worker_environment
+    root = Path(__file__).resolve().parents[1]
+    code = 'import sys; sys.path.insert(0, "tests"); from tests.test_retained_section_measurements import _installed_measurement_worker; _installed_measurement_worker(*sys.argv[1:])'
+    result = subprocess.run([sys.executable, '-c', code, language, str(tmp_path), 'yes'], cwd=root,
+        env=owned_worker_environment(root, tmp_path, os.environ), capture_output=True, text=True, timeout=180)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def _measurement_scope_fixture():
+    from nico.retained_section_measurements_v1 import VERSION
+    identity = {'run_id':'run', 'repository':'owner/repo', 'commit_sha':'a'*40,
+                'customer_id':'default_customer', 'project_id':'default_project'}
+    envelope = {'artifact_schema': VERSION, 'identity': deepcopy(identity), 'records':[
+        {'metric':'files_analyzed', 'value':1285, 'unit':'files', 'population':'analyzed_source',
+         'validation':'scope_bound', 'commit_sha':'a'*40, 'provenance':'complexity_evidence'}]}
+    return {'identity':identity, 'assessment':{'sections':[{'id':'architecture_debt', 'score':None,
+        'exclude_from_maturity':True, 'retained_measurements':envelope}]}}
+
+
+def test_display_scope_is_idempotent_and_keeps_original_measurements():
+    from nico.comprehensive_human_review_package_cleanup_v1 import sanitize_client_identity
+    from nico.retained_section_measurements_v1 import report_measurement_identity
+    original = _measurement_scope_fixture()
+    before = deepcopy(original)
+    cleaned = sanitize_client_identity(original)
+    assert cleaned['identity']['customer_id'] == cleaned['identity']['project_id'] == 'Not supplied'
+    assert report_measurement_identity(cleaned) == original['identity']
+    assert sanitize_client_identity(cleaned) == cleaned
+    assert cleaned['assessment'] == original['assessment']
+    assert original == before
+
+
+@pytest.mark.parametrize('field', ['run_id','repository','commit_sha','customer_id','project_id'])
+@pytest.mark.parametrize('target', ['report', 'context', 'envelope'])
+def test_foreign_measurement_scope_remains_unavailable(field, target):
+    from nico.comprehensive_human_review_package_cleanup_v1 import sanitize_client_identity
+    from nico.retained_section_measurements_v1 import report_measurement_identity, REPORT_SCOPE_KEY
+    cleaned = sanitize_client_identity(_measurement_scope_fixture())
+    if target == 'report':
+        cleaned['identity'][field] = 'foreign'
+    elif target == 'context':
+        cleaned[REPORT_SCOPE_KEY]['identity'][field] = 'foreign'
+    else:
+        cleaned['assessment']['sections'][0]['retained_measurements']['identity'][field] = 'foreign'
+    again = sanitize_client_identity(cleaned)
+    table = report_tables(again['assessment'], expected_identity=report_measurement_identity(again))[0]
+    assert table['rows'][0][1] == 'Unavailable'
+    assert table['rows'][0][2].endswith('SHA -')
+
+
+@pytest.mark.parametrize('bad', [None, [], {}, {'artifact_schema':'foreign'}, {'artifact_schema':'nico.retained-measurement-report-scope.v1','identity':[]}])
+def test_bad_existing_scope_is_not_rebound(bad):
+    from nico.comprehensive_human_review_package_cleanup_v1 import sanitize_client_identity
+    from nico.retained_section_measurements_v1 import report_measurement_identity, REPORT_SCOPE_KEY
+    original = _measurement_scope_fixture()
+    original[REPORT_SCOPE_KEY] = bad
+    cleaned = sanitize_client_identity(original)
+    assert cleaned[REPORT_SCOPE_KEY] == bad
+    assert report_measurement_identity(cleaned) is None
+
+
+def test_historical_report_cannot_recover_identity_from_measurement_envelope():
+    from nico.retained_section_measurements_v1 import report_measurement_identity
+    original = _measurement_scope_fixture()
+    original['identity'].update(customer_id='Not supplied', project_id='Not supplied')
+    table = report_tables(original['assessment'], expected_identity=report_measurement_identity(original))[0]
+    assert table['rows'][0][1] == 'Unavailable'
+
+
+def test_reports_without_measurements_do_not_gain_scope_context():
+    from nico.comprehensive_human_review_package_cleanup_v1 import sanitize_client_identity
+    from nico.retained_section_measurements_v1 import REPORT_SCOPE_KEY
+    original = _measurement_scope_fixture()
+    original['assessment']['sections'][0].pop('retained_measurements')
+    assert REPORT_SCOPE_KEY not in sanitize_client_identity(original)
