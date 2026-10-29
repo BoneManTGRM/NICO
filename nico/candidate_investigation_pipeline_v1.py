@@ -124,7 +124,8 @@ def investigate_register(register, retained, scope, *, clock=time.monotonic):
 
 def display_investigation(register, scope):
     """Read-only projection. Repeated GETs never parse source or launch work."""
-    value = register.get('candidate_investigation') or {}
+    value = register.get('final_candidate_investigation') if 'final_candidate_investigation' in register else register.get('candidate_investigation')
+    value = value or {}
     rows = register.get('findings') or []
     if (not isinstance(value, Mapping) or not isinstance(rows, list)
             or not isinstance(value.get('packets'), list)

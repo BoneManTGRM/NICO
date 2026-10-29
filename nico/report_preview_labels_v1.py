@@ -144,7 +144,7 @@ def retained_coverage_disclosures(context: Mapping[str, Any], *, spanish: bool) 
         path = 'assessment.canonical_scanner_finding_register.findings'
         lines.append((f'Registro completo de candidatos: {count} registros conservados; {path} en el JSON canónico.'
                       if spanish else f'Complete candidate register: {count} retained records; {path} in canonical JSON.'))
-    investigation = register.get('candidate_investigation') if isinstance(register, Mapping) else None
+    investigation = (register.get('final_candidate_investigation') if 'final_candidate_investigation' in register else register.get('candidate_investigation')) if isinstance(register, Mapping) else None
     if isinstance(investigation, Mapping):
         count = investigation.get('candidate_count')
         completed = investigation.get('bounded_rule_analysis_completed')
