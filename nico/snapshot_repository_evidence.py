@@ -1231,8 +1231,8 @@ def collect_snapshot_repository_evidence(
     bundle["architecture_evidence"]["source_observation"] = analyze_source_architecture(
         files, run_id=run_id, repository=repository, commit_sha=snapshot_sha, snapshot_id=snapshot_id,
     )
-    from nico.candidate_investigation_pipeline_v1 import capture_sources
-    bundle['candidate_source_observations'] = capture_sources(files, {**context, 'commit_sha': snapshot_sha})
+    # Candidate source capture belongs to the verified scanner workspace, after
+    # its candidate inventory exists. Do not spend a second capture budget here.
     measured = collect_complexity_evidence(files)
     coverage = profile_coverage(profile, measured)
     bundle["file_evidence"]["profile_coverage"] = coverage

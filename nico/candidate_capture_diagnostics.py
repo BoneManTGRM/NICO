@@ -5,7 +5,8 @@ from collections.abc import Mapping
 _SCOPE = ('run_id', 'repository', 'commit_sha', 'customer_id', 'project_id')
 _STATUSES = frozenset({'parsed', 'source_size_limit', 'source_binding_invalid', 'source_parse_unavailable'})
 _REASONS = frozenset({'source_scope_missing', 'unsupported_source', 'source_time_budget',
-                     'source_size_budget', 'source_analysis_failed', 'observation_size_budget'})
+                     'source_size_budget', 'source_analysis_failed', 'observation_size_budget',
+                     'candidate_inventory_limit', 'source_missing_or_unsupported'})
 
 
 def capture_diagnostics(record: Mapping) -> dict:
@@ -15,6 +16,10 @@ def capture_diagnostics(record: Mapping) -> dict:
     current = record
     for key in ('stage_results', 'repository_and_delivery_evidence', 'repository_evidence'):
         current = current.get(key) if isinstance(current, Mapping) else None
+    stages = record.get('stage_results')
+    scoring = stages.get('evidence_reconciliation_and_scoring') if isinstance(stages, Mapping) else None
+    if isinstance(scoring, Mapping) and 'candidate_source_observations' in scoring:
+        current = scoring
     if not isinstance(current, Mapping) or 'candidate_source_observations' not in current:
         return result
     capture = current['candidate_source_observations']

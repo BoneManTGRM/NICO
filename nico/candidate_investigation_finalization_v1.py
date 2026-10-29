@@ -41,6 +41,8 @@ def final_investigation_scope(context):
     repository = repository.get('repository_evidence') if isinstance(repository, Mapping) else None
     capture = repository.get('candidate_source_observations') if isinstance(repository, Mapping) else None
     scoring = stages.get('evidence_reconciliation_and_scoring') or {}
+    if isinstance(scoring, Mapping) and 'candidate_source_observations' in scoring:
+        capture = scoring['candidate_source_observations']
     assessment = scoring.get('assessment') if isinstance(scoring, Mapping) else None
     original = assessment.get('canonical_scanner_finding_register') if isinstance(assessment, Mapping) else None
     state = {'scope': scope, 'capture': capture, 'original': original, 'result': None, 'input': None}

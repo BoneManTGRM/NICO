@@ -292,7 +292,8 @@ def test_snapshot_repository_evidence_is_idempotent_without_refetching():
     assert first_repository["evidence_id"] == second_repository["evidence_id"]
     assert first_complexity["evidence_id"] == second_complexity["evidence_id"]
     assert second_repository["idempotent_reuse"] is True
-    assert second_repository["candidate_source_observations"] == first_repository["candidate_source_observations"]
+    assert "candidate_source_observations" not in first_repository
+    assert "candidate_source_observations" not in second_repository
     assert second_complexity["idempotent_reuse"] is True
     assert len(client.calls) == call_count
 
@@ -683,16 +684,7 @@ def test_installed_collector_retains_source_observations_through_stage_context(t
     snapshot = _snapshot(context)
     context['commit_sha'] = snapshot['commit_sha']
     bundle, _ = providers.collect_snapshot_repository_evidence(context, snapshot, client=FakeSnapshotClient())
-    # Durable JSON serialization and the actual scoring context preserve parsed
-    # observations. Neither browser projection nor report sanitization is used.
-    retained = json.loads(json.dumps({'repository_and_delivery_evidence': {'repository_evidence': bundle}}))
-    context['prior_stage_results'] = _prior_stage_results_for_stage('canonical_scoring', retained, list(retained))
-    source = providers._repo(context)['candidate_source_observations']
-    assert source['observations']['tests/test_app.py']['status'] == 'parsed'
-    reg = {'findings': [{'candidate_id': 'synthetic-assert', 'category': 'static', 'rule_id': 'B101',
-        'source_path': 'tests/test_app.py', 'line': 2, 'exact_commit_sha': snapshot['commit_sha'],
-        'evidence_quality': 'exact_source'}]}
-    result = investigate_register(reg, source, context)
-    assert result['bounded_rule_analysis_completed'] == 1
-    assert result['human_review_required'] is True
-    assert result['client_delivery_allowed'] is False
+    # Capture no longer runs before candidates exist. Installed wrappers must not
+    # silently reintroduce the first pass and double the aggregate source budget.
+    assert 'candidate_source_observations' not in bundle
+    assert bundle['architecture_evidence']['source_observation']

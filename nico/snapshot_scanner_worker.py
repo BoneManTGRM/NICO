@@ -384,6 +384,15 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any], *, execution_recor
                     })
                     redaction_applied = redaction_applied or "[REDACTED]" in str(result)
                     results.append(result)
+                # Reserve once durably before capture. A restarted invocation must
+                # not spend another source budget after an interrupted attempt.
+                if 'candidate_source_capture_attempted' not in job:
+                    job['candidate_source_capture_attempted'] = True
+                    if not _persist_snapshot_scan(job):
+                        return
+                    from nico.candidate_workspace_capture_v1 import capture_workspace
+                    job['candidate_source_observations'] = capture_workspace(
+                        repo_path, payload, actual_commit_sha, results, env=env)
         except RepositoryExecutionLimit as exc:
             actual_commit_sha = exc.commit_sha
             execution_limit = dict(exc.evidence)
