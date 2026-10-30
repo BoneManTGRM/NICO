@@ -264,7 +264,7 @@ test('the response deadline aborts the request and leaves explicit retry availab
   assert.equal(s.calls[0].init.signal.aborted,true);
   assert.equal(s.anchors.length,0);
   assert.equal(s.button.disabled,false);
-  assert.match(s.statuses.at(-1).textContent,/timed out\. Retry this download/);
+  assert.match(s.statuses.at(-1).textContent,/timed out\. Preparation may still be running/);
 });
 
 
@@ -673,5 +673,29 @@ for (const language of ['en','es-MX']) {
       ? 'The PDF could not be downloaded. Retry this download.'
       : 'No se pudo descargar el PDF. Vuelve a intentarlo.')+' (owned-request)');
     assert.equal(s.calls.length,1);assert.equal(s.anchors.length,0);
+  });
+}
+
+for (const language of ['en', 'es-MX']) {
+  for (const invalid of [false, true]) test(language+' explicit timeout/busy recovery preserves validation '+invalid, async()=>{
+    let attempts=0;
+    const s=setup(async()=>{
+      attempts++;
+      if(attempts===1) return Response.json({}, {status:504});
+      if(attempts===2) return Response.json({detail:{reason:'retained_pdf_preparing'}}, {status:503,headers:{'Retry-After':'5'}});
+      return response(language, invalid ? {'x-nico-canonical-truth-sha256':'c'.repeat(64)} : {});
+    },language);
+    s.click(); await s.settled();
+    assert.match(s.statuses.at(-1).textContent,language==='en'?/may still be running/:/puede continuar/);
+    assert.match(s.statuses.at(-1).textContent,language==='en'?/does not confirm failure or that the PDF is ready/:/no confirma un fallo ni que el PDF esté listo/);
+    assert.match(s.statuses.at(-1).textContent,language==='en'?/No automatic retry/:/No se reintentará automáticamente/);
+    for(const timer of s.timers.filter(t=>!t.cleared)) timer.fn();
+    await flush(); assert.equal(s.calls.length,1); assert.equal(s.anchors.length,0);
+    s.click(); await s.settled(); assert.equal(s.calls.length,2); assert.equal(s.anchors.length,0);
+    s.click(); await s.settled(); assert.equal(s.calls.length,3);
+    assert.equal(s.anchors.length,invalid?0:1);
+    assert.equal(new Set(s.calls.map(c=>c.url)).size,1);
+    assert.ok(s.calls.every(c=>c.init.method==='GET' && c.init.cache==='no-store'));
+    assert.ok(s.calls[0].url.endsWith('/localized-report/'+language+'/pdf'));
   });
 }

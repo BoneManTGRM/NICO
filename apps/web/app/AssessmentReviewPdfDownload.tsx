@@ -101,6 +101,14 @@ function showStatus(container: Element | null, message: string, failure = false)
 
 class PdfDownloadFailure extends Error {}
 
+function downloadTimeoutMessage(): string {
+  // A stopped HTTP wait does not cancel or establish the outcome of backend preparation.
+  // Do not promise readiness, trigger a retry, or activate asynchronous preparation here.
+  return spanishUi()
+    ? "La descarga del PDF excedió el tiempo límite. La preparación puede continuar en el servidor; esto no confirma un fallo ni que el PDF esté listo. Espera unos minutos. Vuelve a intentarlo con este mismo botón, evaluación e idioma; no inicies otra evaluación. No se reintentará automáticamente."
+    : "The PDF download timed out. Preparation may still be running on the server; this does not confirm failure or that the PDF is ready. Wait a few minutes. Retry this download using the same button, assessment and language; do not start another assessment. No automatic retry will run.";
+}
+
 async function downloadError(response: Response): Promise<Error> {
   const retryAfter = response.headers.get("retry-after") || "";
   if (response.status === 503 && /^[1-9][0-9]?$/.test(retryAfter) && Number(retryAfter) <= 60) {
@@ -121,9 +129,7 @@ async function downloadError(response: Response): Promise<Error> {
       : "Sign in to NICO, then retry this PDF download.");
   }
   if (response.status === 504 || response.status === 408) {
-    return new PdfDownloadFailure(spanishUi()
-      ? "La descarga del PDF excedió el tiempo límite. Vuelve a intentarlo; no inicies otra evaluación."
-      : "The PDF download timed out. Retry this download; do not start another assessment.");
+    return new PdfDownloadFailure(downloadTimeoutMessage());
   }
   const requestId = String(response.headers.get("x-request-id") || "");
   const reference = /^[a-zA-Z0-9_-]{1,80}$/.test(requestId)
@@ -334,9 +340,7 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
     if (!isCurrent()) return;
     const timedOut = error instanceof DOMException && error.name === "TimeoutError";
     showStatus(actions, timedOut
-      ? (spanishUi()
-        ? "La descarga del PDF excedió el tiempo límite. Vuelve a intentarlo; no inicies otra evaluación."
-        : "The PDF download timed out. Retry this download; do not start another assessment.")
+      ? downloadTimeoutMessage()
       : error instanceof PdfDownloadFailure ? error.message
         : (spanishUi() ? "La descarga se interrumpió. Vuelve a intentarlo." : "The download was interrupted. Retry this download."),
     true);
