@@ -97,6 +97,44 @@ def fresh_read(expected, *, adapter=None, jobs_factory=None):
     return {'fresh_process_retrieved_exact_bytes': True, 'identity_hash_and_gates_verified': True}
 
 
+def prove_readonly_ledger(runtime, identity):
+    """Use only the already-created, loopback-qualified synthetic fixture."""
+    from types import SimpleNamespace
+    from nico.review_pdf_canary_scope_v1 import FIELDS
+    from nico.review_pdf_ledger_diagnostic_v1 import diagnose_ledger
+    scope = {key: value for key, value in asdict(identity).items() if key in FIELDS}
+    app = SimpleNamespace(state=SimpleNamespace(
+        comprehensive_runtime={'configured': True, 'persistence_adapter': 'postgres'},
+        comprehensive_api_controller=runtime.source.controller))
+    previous = os.environ.get('NICO_REVIEW_PDF_CANARY_SCOPE')
+    source_before = runtime.source.store.load(identity.run_id)
+    job_before = runtime.jobs.get(identity)
+    try:
+        os.environ['NICO_REVIEW_PDF_CANARY_SCOPE'] = json.dumps(scope)
+        result = diagnose_ledger(app, identity.run_id, identity.language)
+        assert result['query_complete'] and result['read_only_transaction']
+        assert result['rows_returned'] == 1 and result['exact_source_row_present'] is True
+        assert result['rows'][0]['job_id'] == identity.job_id
+        assert result['rows'][0]['state'] == 'ready'
+        assert result['rows'][0]['binding_mismatches'] == []
+        # Deliberately changed expected revision still discovers the older row.
+        os.environ['NICO_REVIEW_PDF_CANARY_SCOPE'] = json.dumps(dict(scope, source_revision=scope['source_revision']+1))
+        older = diagnose_ledger(app, identity.run_id, identity.language)
+        assert older['query_complete'] and older['scoped_rows_present'] is True
+        assert older['exact_source_row_present'] is False
+        assert older['rows'][0]['binding_mismatches'] == ['source_revision']
+        absent_run = 'comprun_synthetic_absent_' + uuid4().hex
+        os.environ['NICO_REVIEW_PDF_CANARY_SCOPE'] = json.dumps(dict(scope, run_id=absent_run))
+        absent = diagnose_ledger(app, absent_run, identity.language)
+        assert absent['query_complete'] and absent['scoped_rows_present'] is False
+        assert absent['exact_source_row_present'] is False and absent['rows'] == []
+        assert runtime.jobs.get(identity) == job_before
+        assert runtime.source.store.load(identity.run_id) == source_before
+    finally:
+        if previous is None: os.environ.pop('NICO_REVIEW_PDF_CANARY_SCOPE', None)
+        else: os.environ['NICO_REVIEW_PDF_CANARY_SCOPE'] = previous
+
+
 def proof(progress=None):
     progress = {} if progress is None else progress
     checks = progress.setdefault("checks", {})
@@ -172,6 +210,8 @@ def proof(progress=None):
     try: runtime.retrieve(identity.run_id, identity.language, identity.job_id, binding)
     except PreparationConflict: checks['mutated_source_cannot_retrieve_old_pdf'] = True
     else: raise AssertionError('changed source retrieved retained PDF')
+    prove_readonly_ledger(runtime, identity)
+    checks['readonly_ledger_current_obsolete_and_absent_verified'] = True
     assert all(os.environ.get(key) == 'false' for key in (
         'NICO_ENABLE_REVIEW_PDF_PREPARATION', 'NICO_REVIEW_PDF_PG_QUALIFIED',
         'NEXT_PUBLIC_NICO_REVIEW_PDF_PREPARATION'))
