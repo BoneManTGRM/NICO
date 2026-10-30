@@ -190,3 +190,19 @@ test('storage compatibility uses existing authenticated GET proxy and bounded re
   assert.equal(s.calls[0].init.method, 'GET');
   assert.equal((await response.json()).lifecycle_qualified, false);
 });
+
+test('retained binding metadata uses existing authenticated bounded GET proxy', async () => {
+  const body = JSON.stringify({schema:'nico.pdf-retained-binding.v1',status:'unavailable',binding:null,
+    snapshot_validated:false,lifecycle_qualified:false,activation_authorized:false});
+  const s=setup(()=>new Response(body,{headers:{'content-type':'application/json'}}));
+  s.request.nextUrl.search='?retained_binding=true';
+  const result=await s.invoke(['review-pdf','es-MX']);
+  assert.equal(await result.text(),body);
+  assert.ok(String(s.calls[0].url).endsWith('/review-pdf/es-MX?retained_binding=true'));
+  assert.equal(s.calls[0].init.method,'GET');
+  assert.equal(s.calls[0].init.headers.get('x-nico-operator-session'),secret);
+  assert.equal(s.calls[0].init.redirect,'manual');
+  assert.deepEqual(s.deadlines,[30000]);
+  assert.equal(result.headers.get('cache-control'),'no-store, private, max-age=0');
+  privacy(s.logs);
+});
