@@ -35,14 +35,14 @@ function response(language='en', overrides={}) {
   }});
 }
 function setup(fetchImpl, language='en', digestImpl, options={}) {
-  const calls=[], anchors=[], timers=[], effects=[], listeners=new Map(), statuses=[];
+  const calls=[], anchors=[], timers=[], effects=[], listeners=new Map(), statuses=[], controls=[];
   let cleanUp, operationState;
   class Element {
     constructor(tag='span') {this.tagName=tag;this.attrs={};this.style={};this.isConnected=true;this.textContent='';}
     getAttribute(key) {return this.attrs[key]??null;}
     setAttribute(key,value) {this.attrs[key]=String(value);}
     removeAttribute(key) {delete this.attrs[key];}
-    appendChild(node) {statuses.push(node);}
+    appendChild(node) {(node.tagName==='button'?controls:statuses).push(node);}
     querySelector() {return statuses.filter(node=>node.isConnected).at(-1)||null;}
     closest(selector) {return selector==='button'?button:actions;}
     remove() {this.isConnected=false;}
@@ -75,7 +75,9 @@ function setup(fetchImpl, language='en', digestImpl, options={}) {
     Date: options.clock ? class extends Date {static now(){return options.clock.now;}} : Date,
     AbortSignal: options.clock ? {any:AbortSignal.any.bind(AbortSignal), timeout(ms){
       options.clock.timeouts.push(ms);return new AbortController().signal;}} : AbortSignal,
-    process:{env:{NEXT_PUBLIC_NICO_REVIEW_PDF_PREPARATION:options.async?"true":"false"}},
+    process:{env:{NEXT_PUBLIC_NICO_REVIEW_PDF_PREPARATION:options.async?"true":"false",
+      NEXT_PUBLIC_NICO_REVIEW_PDF_CANARY_RUN_ID:options.canaryRun===undefined?runId:options.canaryRun,
+      NEXT_PUBLIC_NICO_REVIEW_PDF_CANARY_LANGUAGE:options.canaryLanguage===undefined?language:options.canaryLanguage}},
     Uint8Array,crypto:digestImpl?{subtle:{digest:digestImpl}}:webcrypto,Element,HTMLButtonElement,
     fetch:async(url,init)=>{calls.push({url,init});return fetchImpl(url,init);},
     require(name){
@@ -96,7 +98,7 @@ function setup(fetchImpl, language='en', digestImpl, options={}) {
     while(operationState.size && Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,5));
     assert.equal(operationState.size,0,'Download operation did not settle within the regression deadline');
   };
-  return{api:module.exports,calls,anchors,timers,button,actions,statuses,blobs,click,cleanUp,settled,storage};
+  return{api:module.exports,calls,anchors,timers,button,actions,statuses,blobs,click,cleanUp,settled,storage,controls};
 }
 test('slow retained PDF stays tracked and repeat clicks cannot launch another request',async()=>{
   let release;
@@ -699,3 +701,121 @@ for (const language of ['en', 'es-MX']) {
     assert.ok(s.calls[0].url.endsWith('/localized-report/'+language+'/pdf'));
   });
 }
+
+for (const language of ['en','es-MX']) test(language+' visible cancel fences delivery and retains exact intent',async()=>{
+  const s=setup(async(url,init)=>preparation(url.endsWith('/cancel')?'cancelled':'queued',language),language,undefined,{async:true});
+  s.click();await flush();
+  assert.equal(s.controls.length,1);
+  assert.equal(s.controls[0].textContent,language==='en'?'Cancel preparation':'Cancelar preparación');
+  s.controls[0].onclick();s.controls[0].onclick();
+  await poll(s);await s.settled();
+  const cancels=s.calls.filter(c=>c.url.endsWith('/cancel'));
+  assert.equal(cancels.length,1);
+  assert.deepEqual(JSON.parse(cancels[0].init.body),{job_id:preparationJob,commit_sha:commit,canonical_truth_sha256:truth});
+  assert.equal(cancels[0].init.credentials,'same-origin');
+  assert.equal(s.anchors.length,0);
+  assert.match(s.statuses[0].textContent,language==='en'?/Process exit is not confirmed/:/no está confirmada/);
+  assert.ok([...s.storage.keys()].some(k=>k.startsWith('nico-review-cancel:')));
+  assert.equal(s.controls[0].isConnected,false);
+});
+
+test('cancel races ready without automatic delivery or false cancelled claim',async()=>{
+  const s=setup(async url=>preparation(url.endsWith('/cancel')?'ready':'queued'), 'en',undefined,{async:true});
+  s.click();await flush();s.controls[0].onclick();await poll(s);await s.settled();
+  assert.match(s.statuses[0].textContent,/finished before cancellation/);
+  assert.equal(s.anchors.length,0);
+});
+
+test('interrupted cancel resumes exact job with no second admission',async()=>{
+  const storage=new Map();
+  const first=setup(async url=>{
+    if(url.endsWith('/cancel'))throw new DOMException('interrupted','TimeoutError');
+    return preparation('queued');
+  },'en',undefined,{async:true,storage});
+  first.click();await flush();first.controls[0].onclick();await poll(first);await first.settled();first.cleanUp();
+  const next=setup(async url=>preparation(url.endsWith('/cancel')?'cancelled':'preparing'),'en',undefined,{async:true,storage,recover:true});
+  await next.settled();
+  assert.equal(next.calls.filter(c=>c.init.method==='POST'&&!c.url.endsWith('/cancel')).length,0);
+  assert.equal(next.calls.filter(c=>c.url.endsWith('/cancel')).length,1);
+  assert.equal(next.anchors.length,0);
+});
+
+for(const changes of [{run_id:'comprun_foreign'},{canonical_truth_sha256:'c'.repeat(64)},
+  {client_delivery_allowed:true},{job_id:'reviewpdfprep_'+'f'.repeat(64)}])test('cancel response rejects foreign or unsafe binding '+JSON.stringify(changes),async()=>{
+  const s=setup(async url=>preparation(url.endsWith('/cancel')?'cancelled':'queued','en',url.endsWith('/cancel')?changes:{}),'en',undefined,{async:true});
+  s.click();await flush();s.controls[0].onclick();await poll(s);await s.settled();
+  assert.equal(s.anchors.length,0);
+  assert.doesNotMatch(s.statuses[0].textContent,/Cancellation recorded/);
+});
+
+test('cancel during unknown admission survives lookup misses without duplicate POST',async()=>{
+  const storage=new Map();let resolveAdmission;
+  const first=setup(()=>new Promise(resolve=>{resolveAdmission=resolve;}),'en',undefined,{async:true,storage});
+  first.click();await flush();first.controls[0].onclick();
+  first.cleanUp();resolveAdmission(preparation('queued'));await first.settled();
+  let lookups=0;
+  const next=setup(async url=>{
+    if(url.endsWith('/cancel'))return preparation('cancelled');
+    return ++lookups===1?new Response('{}',{status:404}):preparation('preparing');
+  },'en',undefined,{async:true,storage,recover:true});
+  await flush();await poll(next);await next.settled();
+  assert.equal(next.calls.filter(c=>c.init.method==='POST'&&!c.url.endsWith('/cancel')).length,0);
+  assert.equal(next.calls.filter(c=>c.url.endsWith('/cancel')).length,1);
+  assert.equal(next.anchors.length,0);
+});
+
+test('stale visible cancel control cannot act on replacement source',async()=>{
+  const s=setup(async()=>preparation('queued'),'en',undefined,{async:true});
+  s.click();await flush();s.actions.attrs['data-commit-sha']='f'.repeat(40);
+  s.controls[0].onclick();s.cleanUp();await s.settled();
+  assert.equal(s.calls.filter(c=>c.url.endsWith('/cancel')).length,0);
+  assert.equal([...s.storage.keys()].some(k=>k.startsWith('nico-review-cancel:')),false);
+});
+
+test('resolved ready cancellation permits only a later explicit verified download',async()=>{
+  const storage=new Map();
+  const first=setup(async url=>preparation(url.endsWith('/cancel')?'ready':'queued'),'en',undefined,{async:true,storage});
+  first.click();await flush();first.controls[0].onclick();await poll(first);await first.settled();first.cleanUp();
+  const next=setup(async url=>url.includes('/pdf?')?response():preparation('ready'),'en',undefined,{async:true,storage,recover:true});
+  await flush();assert.equal(next.calls.length,0,'reload must not deliver after cancellation');
+  next.click();await next.settled();
+  assert.equal(next.calls.every(c=>c.init.method==='GET'),true);
+  assert.equal(next.anchors.length,1);
+});
+
+test('confirmed cancelled job stays terminal across reload and explicit clicks',async()=>{
+  const storage=new Map();
+  const first=setup(async url=>preparation(url.endsWith('/cancel')?'cancelled':'queued'),'en',undefined,{async:true,storage});
+  first.click();await flush();first.controls[0].onclick();await poll(first);await first.settled();first.cleanUp();
+  const next=setup(async()=>preparation('cancelled'),'en',undefined,{async:true,storage,recover:true});
+  await flush();assert.equal(next.calls.length,0);
+  next.click();await next.settled();next.click();await next.settled();
+  assert.equal(next.calls.every(c=>c.init.method==='GET'),true);
+  assert.equal(next.anchors.length,0);
+});
+
+test('cancel before admission permits a later explicit preparation, never an automatic one',async()=>{
+  const storage=new Map();let resolveQualification;
+  const first=setup(()=>new Promise(resolve=>{resolveQualification=resolve;}),'es-MX',undefined,{async:true,storage});
+  first.actions.attrs['data-assessment-locale-reapproval-required']='true';
+  first.click();await flush();first.controls[0].onclick();
+  resolveQualification(derivativePreparation('eligible'));await first.settled();
+  assert.equal(first.calls.every(c=>c.init.method==='GET'),true);
+  first.cleanUp();
+  const next=setup(async(url,init)=>url.includes('/pdf?')?derivativeResponse():derivativePreparation(url.includes('qualify=true')?'eligible':'ready'),'es-MX',undefined,{async:true,storage,recover:true});
+  next.actions.attrs['data-assessment-locale-reapproval-required']='true';
+  await flush();assert.equal(next.calls.length,0);
+  next.click();await next.settled();
+  assert.equal(next.calls.filter(c=>c.init.method==='POST').length,1);
+  assert.equal(next.anchors.length,1);
+});
+
+for (const config of [{canaryRun:''},{canaryRun:'comprun_other'},{canaryLanguage:'fr'},{canaryLanguage:'es-MX'}])test('non-canary report preserves existing synchronous download '+JSON.stringify(config),async()=>{
+  const s=setup(async()=>response(),'en',undefined,{async:true,...config});
+  s.click();await s.settled();
+  assert.equal(s.controls.length,0);
+  assert.equal(s.calls.length,1);
+  assert.equal(s.calls[0].init.method,'GET');
+  assert.equal(s.calls[0].url.includes('/review-pdf/'),false);
+  assert.equal(s.anchors.length,1);
+});
