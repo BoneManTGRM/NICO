@@ -206,3 +206,19 @@ test('retained binding metadata uses existing authenticated bounded GET proxy', 
   assert.equal(result.headers.get('cache-control'),'no-store, private, max-age=0');
   privacy(s.logs);
 });
+
+test('disabled canary ledger diagnostic preserves authenticated GET and bounded proxy', async () => {
+  const body=JSON.stringify({schema:'nico.pdf-canary-ledger-read.v1',status:'unavailable',query_complete:false,
+    scoped_rows_present:null,exact_source_row_present:null,rows:[]});
+  const s=setup(()=>new Response(body,{headers:{'content-type':'application/json'}}));
+  s.request.nextUrl.search='?canary_ledger=true';
+  const response=await s.invoke(['review-pdf','es-MX']);
+  assert.equal(await response.text(),body);
+  assert.ok(String(s.calls[0].url).endsWith('/review-pdf/es-MX?canary_ledger=true'));
+  assert.equal(s.calls[0].init.method,'GET');
+  assert.equal(s.calls[0].init.headers.get('x-nico-operator-session'),secret);
+  assert.equal(s.calls[0].init.redirect,'manual');
+  assert.deepEqual(s.deadlines,[30000]);
+  assert.equal(response.headers.get('cache-control'),'no-store, private, max-age=0');
+  privacy(s.logs);
+});

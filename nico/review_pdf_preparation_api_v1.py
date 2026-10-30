@@ -370,6 +370,12 @@ def install_review_pdf_preparation_api(app):
                 raise HTTPException(422, 'review_pdf_binding_request_invalid')
             from nico.review_pdf_retained_binding_v1 import retained_binding
             return JSONResponse(await run_in_threadpool(retained_binding, app, run_id, language), headers=_HEADERS)
+        if request.method == 'GET' and request.query_params.get('canary_ledger') is not None:
+            if (request.url.path.endswith(('/pdf', '/cancel'))
+                    or list(request.query_params.multi_items()) != [('canary_ledger', 'true')]):
+                raise HTTPException(422, 'review_pdf_ledger_request_invalid')
+            from nico.review_pdf_ledger_diagnostic_v1 import diagnose_ledger
+            return JSONResponse(await run_in_threadpool(diagnose_ledger, app, run_id, language), headers=_HEADERS)
         runtime = app.state.review_pdf_runtime
         if runtime is None:
             raise HTTPException(503, 'review_pdf_preparation_unavailable')
