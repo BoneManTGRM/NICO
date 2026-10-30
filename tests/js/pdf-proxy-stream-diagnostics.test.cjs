@@ -222,3 +222,14 @@ test('disabled canary ledger diagnostic preserves authenticated GET and bounded 
   assert.equal(response.headers.get('cache-control'),'no-store, private, max-age=0');
   privacy(s.logs);
 });
+
+test('admission error preserves safe correlation header and one upstream call',async()=>{
+  const trace='c'.repeat(32);
+  const s=setup(()=>Response.json({detail:'review_pdf_commit_outcome_unknown'},
+    {status:503,headers:{'x-nico-admission-trace':trace}}));
+  s.request.method='POST';s.request.headers.set('origin',s.request.nextUrl.origin);s.request.arrayBuffer=async()=>new TextEncoder().encode('{}').buffer;
+  const result=await s.invoke(['review-pdf','es-MX']);
+  assert.equal(result.status,503);assert.equal(result.headers.get('x-nico-admission-trace'),trace);
+  assert.equal((await result.json()).detail,'review_pdf_commit_outcome_unknown');
+  assert.equal(s.calls.length,1);
+});

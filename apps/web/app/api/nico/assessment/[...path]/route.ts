@@ -17,7 +17,7 @@ const LOCALIZED_EDITION_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/local
 const REVIEW_PREPARATION_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/review-pdf\/(?:en|es-MX)(?:\/(?:pdf|cancel))?$/;
 const RESPONSE_HEADERS = [
   "content-type", "content-length", "content-disposition", "retry-after",
-  "x-nico-run-id", "x-nico-commit-sha", "x-nico-report-id",
+  "x-nico-run-id", "x-nico-commit-sha", "x-nico-report-id", "x-nico-admission-trace",
   "x-nico-report-language", "x-nico-assessment-rerun", "x-nico-pdf-sha256",
   "x-nico-artifact-sha256", "x-nico-accepted-pdf-sha256",
   "x-nico-accepted-edition-language", "x-nico-accepted-edition-manifest-sha256",

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.review_pdf_admission_observability_v1 import timed as _admission_timed
+
 from nico.report_delivery_timing_v1 import report_delivery_phase
 
 import hashlib
@@ -688,6 +690,7 @@ def apply_comprehensive_review_decision(
     return updated
 
 
+@_admission_timed("record_restore_validation")
 def restore_comprehensive_run_record(payload: dict[str, Any]) -> dict[str, Any]:
     restored = _copy_record_for_update(payload)
     validation = validate_comprehensive_run_record(restored)

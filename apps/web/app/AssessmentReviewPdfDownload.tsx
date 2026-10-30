@@ -139,6 +139,148 @@ async function downloadError(response: Response): Promise<Error> {
     : "The PDF could not be downloaded. Retry this download.") + reference);
 }
 
+// Read only a small JSON envelope; never render server-provided prose or raw errors.
+async function boundedDiagnosticJson(response: Response, limit: number): Promise<unknown> {
+  if (!response.headers.get("content-type")?.toLowerCase().startsWith("application/json")) throw new Error("invalid diagnostic");
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("missing diagnostic");
+  let length = 0;
+  const chunks: Uint8Array[] = [];
+  try {
+    for (;;) {
+      const part = await reader.read();
+      if (part.done) break;
+      length += part.value.byteLength;
+      if (length > limit) throw new Error("oversized diagnostic");
+      chunks.push(part.value);
+    }
+    const joined = new Uint8Array(length);
+    let offset = 0;
+    for (const chunk of chunks) {joined.set(chunk, offset); offset += chunk.byteLength;}
+    return JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(joined));
+  } finally {void reader.cancel().catch(() => {}); reader.releaseLock();}
+}
+
+async function preparationFailure(response: Response): Promise<PdfDownloadFailure> {
+  let reason = "unknown";
+  try {
+    const body = await boundedDiagnosticJson(response, 4096) as {detail?: unknown};
+    if (typeof body?.detail === "string" && ["review_pdf_preparation_unavailable",
+      "review_pdf_commit_outcome_unknown", "review_pdf_operation_unavailable_or_timed_out"].includes(body.detail)) reason = body.detail;
+  } catch { /* Missing or malformed detail remains unknown; never absence. */ }
+  const trace = response.headers.get("x-nico-admission-trace") || "";
+  const reference = /^[0-9a-f]{32}$/.test(trace) ? ` [${trace}]` : "";
+  const en = reason === "review_pdf_preparation_unavailable"
+    ? "Background PDF preparation is unavailable. This does not establish an earlier job's outcome."
+    : reason === "review_pdf_commit_outcome_unknown"
+      ? "The server could not confirm whether preparation was recorded. A job may exist."
+      : reason === "review_pdf_operation_unavailable_or_timed_out"
+        ? "The preparation operation was unavailable or exceeded its deadline. Its job outcome is unknown."
+        : "The preparation response was unavailable or unrecognized. Its job outcome is unknown.";
+  const es = reason === "review_pdf_preparation_unavailable"
+    ? "La preparación del PDF en segundo plano no está disponible. Esto no establece el resultado de un trabajo anterior."
+    : reason === "review_pdf_commit_outcome_unknown"
+      ? "El servidor no pudo confirmar si se registró la preparación. Puede existir un trabajo."
+      : reason === "review_pdf_operation_unavailable_or_timed_out"
+        ? "La operación de preparación no estuvo disponible o excedió su plazo. El resultado del trabajo es desconocido."
+        : "La respuesta de preparación no estuvo disponible o no se reconoció. El resultado del trabajo es desconocido.";
+  return new PdfDownloadFailure((spanishUi() ? es + " No se enviará otra solicitud de preparación automáticamente."
+    : en + " No new preparation request will be sent automatically.") + reference);
+}
+
+const ledgerControls = new WeakMap<Element, {key: string; button: HTMLButtonElement; output: HTMLElement; controller?: AbortController}>();
+const ledgerRequests = new Set<AbortController>();
+
+function ledgerSummary(value: unknown): string {
+  if (!value || typeof value !== "object") throw new Error("invalid ledger");
+  const data = value as Record<string, unknown>;
+  if (data.schema !== "nico.pdf-canary-ledger-read.v1"
+    || data.search_scope !== "configured-row-tenant-and-identity-run-locale"
+    || data.activation_authorized !== false || data.job_integrity_verified !== false
+    || data.physical_worker_exit_confirmed !== null) throw new Error("invalid ledger");
+  if (["busy", "unavailable"].includes(String(data.status)) && data.query_complete === false
+    && data.scoped_rows_present === null && data.exact_source_row_present === null
+    && data.rows_returned === 0 && Array.isArray(data.rows) && data.rows.length === 0) {
+    return spanishUi() ? "Diagnóstico no disponible o ocupado. La existencia de un trabajo sigue siendo desconocida."
+      : "Diagnostic unavailable or busy. Job existence remains unknown.";
+  }
+  if (!["complete", "partial"].includes(String(data.status)) || data.read_only_transaction !== true
+    || data.query_complete !== (data.status === "complete") || !Array.isArray(data.rows)
+    || !Number.isInteger(data.rows_returned) || data.rows_returned !== data.rows.length || data.rows.length > 32
+    || typeof data.scoped_rows_present !== "boolean"
+    || data.scoped_rows_present !== (data.rows.length > 0)
+    || ![true, false, null].includes(data.exact_source_row_present as boolean | null)
+    || (data.status === "partial" && (data.rows.length !== 32 || data.exact_source_row_present === false))
+    || (data.rows.length === 0 && data.exact_source_row_present !== false)) throw new Error("invalid ledger");
+  const fields = ["customer_id", "project_id", "run_id", "repository", "commit_sha", "source_revision",
+    "source_integrity_sha256", "canonical_truth_sha256", "source_artifact_sha256", "language"];
+  let obsolete = 0;
+  for (const row of data.rows) {
+    if (!row || typeof row !== "object" || !Array.isArray(row.binding_mismatches)
+      || row.binding_mismatches.length > 10 || new Set(row.binding_mismatches).size !== row.binding_mismatches.length
+      || !row.binding_mismatches.every((key: unknown) => typeof key === "string" && fields.includes(key))
+      || row.source_binding_matches !== (row.binding_mismatches.length === 0)) throw new Error("invalid ledger");
+    if (!row.source_binding_matches) obsolete++;
+  }
+  const complete = data.query_complete === true;
+  if ((complete && data.exact_source_row_present !== (obsolete < data.rows.length))
+    || (obsolete < data.rows.length && data.exact_source_row_present !== true)) throw new Error("invalid ledger");
+  return spanishUi()
+    ? `Lectura ${complete ? "completa" : "parcial"}: ${data.rows_returned} filas visibles; ${obsolete} con vínculo de origen distinto. Alcance: cliente/proyecto, evaluación e idioma configurados. ${data.scoped_rows_present ? "Hay filas en este alcance." : "No se observaron filas en este alcance al leerlo."} No prueba ausencia histórica, integridad del trabajo, salida del proceso ni autorización para activar. No se modificaron trabajos.`
+    : `${complete ? "Complete" : "Partial"} read: ${data.rows_returned} visible rows; ${obsolete} with a different source binding. Scope: configured tenant/project, run and locale. ${data.scoped_rows_present ? "Rows exist in this scope." : "No rows were observed in this scope at the read."} This does not prove historical absence, job integrity, process exit or permission to activate. No jobs were changed.`;
+}
+
+function attachLedgerDiagnostic(button: HTMLButtonElement): void {
+  const actions = button.closest(REPORT_ACTIONS_SELECTOR);
+  if (!actions || button.getAttribute("data-assessment-pdf-kind") !== REVIEW_PDF_KIND) return;
+  const runId = visibleRunId(actions);
+  const locale = button.getAttribute("data-report-language");
+  if ((locale !== "en" && locale !== "es-MX") || !canaryTargetMatches(runId, locale)) return;
+  const binding = {commitSha: actions.getAttribute("data-commit-sha") || "",
+    canonicalTruthSha256: actions.getAttribute("data-canonical-truth-sha256") || "",
+    requiresNewApproval: actions.getAttribute("data-assessment-locale-reapproval-required") === "true"};
+  if (!/^[0-9a-f]{40}$/.test(binding.commitSha) || !/^[0-9a-f]{64}$/.test(binding.canonicalTruthSha256)) return;
+  const key = JSON.stringify([runId, locale, binding.commitSha, binding.canonicalTruthSha256, binding.requiresNewApproval]);
+  const old = ledgerControls.get(actions);
+  if (old?.key === key && old.button.isConnected) return;
+  old?.controller?.abort(); old?.button.remove(); old?.output.remove();
+  const control = document.createElement("button");
+  control.type = "button";
+  control.setAttribute("data-review-pdf-diagnostic", "true");
+  control.textContent = spanishUi() ? "Consultar diagnóstico de preparación (solo lectura)" : "Read preparation diagnostic";
+  const output = document.createElement("pre");
+  output.setAttribute("aria-live", "polite");
+  output.style.whiteSpace = "pre-wrap";
+  output.style.userSelect = "text";
+  const entry = {key, button: control, output, controller: undefined as AbortController | undefined};
+  ledgerControls.set(actions, entry);
+  const current = () => control.isConnected && ledgerControls.get(actions) === entry
+    && pendingReviewBindingMatches(button, actions, runId, locale, binding);
+  control.onclick = async () => {
+    if (control.disabled || !current()) return;
+    const controller = new AbortController(); entry.controller = controller; ledgerRequests.add(controller);
+    control.disabled = true;
+    output.textContent = spanishUi() ? "Consultando; no se iniciará ninguna preparación…" : "Reading; no preparation will be started…";
+    try {
+      const response = await fetch(preparationHref(runId, locale) + "?canary_ledger=true", {
+        method: "GET", credentials: "same-origin", cache: "no-store", redirect: "error",
+        headers: {Accept: "application/json"}, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
+      });
+      if (!response.ok) throw new Error("diagnostic unavailable");
+      const summary = ledgerSummary(await boundedDiagnosticJson(response, 24 * 1024));
+      if (current() && !controller.signal.aborted) output.textContent = summary;
+    } catch {
+      if (current() && !controller.signal.aborted) output.textContent = spanishUi()
+        ? "No se obtuvo un diagnóstico válido. El resultado sigue siendo desconocido. La preparación debe estar desactivada; puede ser necesario iniciar sesión."
+        : "No valid diagnostic was obtained. The outcome remains unknown. Preparation must be disabled; sign-in may be required.";
+    } finally {
+      ledgerRequests.delete(controller); controller.abort();
+      if (current()) control.disabled = false;
+    }
+  };
+  actions.appendChild(control); actions.appendChild(output);
+}
+
 function integrityError(): Error {
   return new PdfDownloadFailure(spanishUi()
     ? "El PDF no coincide con esta evaluación y su idioma. Recupera el estado de esta evaluación antes de volver a intentarlo."
@@ -377,6 +519,10 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
 
 function asyncPreparationEnabled(runId?: string, language?: ReportLanguage): boolean {
   if (typeof process === "undefined" || process.env.NEXT_PUBLIC_NICO_REVIEW_PDF_PREPARATION !== "true") return false;
+  return canaryTargetMatches(runId, language);
+}
+function canaryTargetMatches(runId?: string, language?: ReportLanguage): boolean {
+  if (typeof process === "undefined") return false;
   const target = process.env.NEXT_PUBLIC_NICO_REVIEW_PDF_CANARY_RUN_ID;
   const locale = process.env.NEXT_PUBLIC_NICO_REVIEW_PDF_CANARY_LANGUAGE;
   if (!target || !/^comprun_[a-zA-Z0-9_-]{1,160}$/.test(target)
@@ -443,7 +589,9 @@ async function prepareReviewPdf(runId: string, language: ReportLanguage, binding
     // Intent survives an interrupted POST/status response; it never creates a job.
     saveCancellation(key, "requested");
     cancelButton.disabled = true;
-    showStatus(actions, spanishUi() ? "Solicitando cancelación…" : "Requesting cancellation…");
+    showStatus(actions, spanishUi()
+      ? "Cancelación solicitada localmente; el servidor aún no la ha confirmado."
+      : "Cancellation requested locally; the server has not confirmed it yet.");
   };
   actions.appendChild(cancelButton);
   const wantsCancel = () => cancelIntent || cancellationRequested(key);
@@ -481,7 +629,7 @@ async function prepareReviewPdf(runId: string, language: ReportLanguage, binding
       // An unlocked lookup miss cannot rule out an admission COMMIT in flight.
       if (!prepare && jobId === "requested" && response.status === 404) return "admission_unknown";
       if ([404, 409, 422].includes(response.status)) savePreparation(key, "");
-      if (response.status === 503) throw stillPending();
+      if (response.status === 503) throw await preparationFailure(response);
       throw await downloadError(response);
     }
     const status = await response.json();
@@ -597,9 +745,9 @@ export default function AssessmentReviewPdfDownload() {
     }
     document.addEventListener("click", handleReviewPdfClick, true);
     const recover = () => {
-      if (!asyncPreparationEnabled()) return;
       for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>(`${REPORT_ACTIONS_SELECTOR} button`))) {
-        if (!button.disabled && button.getAttribute("data-assessment-pdf-kind") === REVIEW_PDF_KIND) {
+        attachLedgerDiagnostic(button);
+        if (asyncPreparationEnabled() && !button.disabled && button.getAttribute("data-assessment-pdf-kind") === REVIEW_PDF_KIND) {
           void downloadPendingReviewPdf(button, false, true).catch(() => {});
         }
       }
@@ -612,6 +760,8 @@ export default function AssessmentReviewPdfDownload() {
       document.removeEventListener("click", handleReviewPdfClick, true);
       for (const controller of active.values()) controller.abort();
       active.clear();
+      for (const controller of ledgerRequests) controller.abort();
+      ledgerRequests.clear();
     };
   }, []);
   return null;

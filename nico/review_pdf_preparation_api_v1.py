@@ -1,13 +1,14 @@
 """Opt-in pending-review preparation API. Default startup exposes no active worker."""
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from dataclasses import asdict
 import hashlib
 import json
 import marshal
 import os
 import re
+from uuid import uuid4
 from threading import BoundedSemaphore, Event, Thread
 
 from fastapi import HTTPException, Request
@@ -24,6 +25,8 @@ from nico.review_pdf_artifact_policy_v1 import artifact_mode, VERSION as ARTIFAC
 from nico.review_pdf_preparation_worker_v1 import validate_result
 from nico.review_pdf_canary_scope_v1 import CanaryScope
 from nico.review_pdf_preparation_deadline_v1 import CommitOutcomeUnknown, DeadlineGuard
+
+from nico.review_pdf_admission_observability_v1 import AdmissionTrace, phase
 
 ROUTE = '/assessment/comprehensive-run/{run_id}/review-pdf/{language}'
 _HEADERS = {'Cache-Control': 'no-store, private, max-age=0'}
@@ -113,13 +116,14 @@ class PreparationRuntime:
         if self.canary_scope is not None:
             self.canary_scope.request(run_id, language, binding)
 
-    def _bounded(self, seconds, operation, *, slot=None):
+    def _bounded(self, seconds, operation, *, slot=None, observe=False, trace_id=None):
         slot = self.service.capacity if slot is None else slot
         if not slot.acquire(blocking=False):
             raise PreparationBusy('review_pdf_capacity_busy')
         guard = DeadlineGuard(seconds, self.stop)
         try:
-            return operation(guard)
+            with AdmissionTrace(guard, trace_id).scope() if observe else nullcontext():
+                return operation(guard)
         finally:
             guard.stop.set()
             def release():
@@ -131,40 +135,44 @@ class PreparationRuntime:
             else:
                 Thread(target=release, daemon=True, name='nico-review-request-quarantine').start()
 
-    def prepare(self, run_id, language, binding):
+    def prepare(self, run_id, language, binding, *, trace_id=None):
         # Full admission validation is retained. It must finish before the
         # browser's 30-second POST limit; a late restoration cannot enqueue.
-        return self._bounded(20, lambda guard: self._prepare(run_id, language, binding, guard))
+        return self._bounded(20, lambda guard: self._prepare(run_id, language, binding, guard), observe=True, trace_id=trace_id)
 
     def qualify(self, run_id, language, binding):
         return self._bounded(20, lambda guard: self._prepare(run_id, language, binding, guard, qualify_only=True))
 
     def _prepare(self, run_id, language, binding, guard, *, qualify_only=False):
         self._check_request_scope(run_id, language, binding)
-        renderer, policy = self.source.policy()
+        with phase("policy"):
+            renderer, policy = self.source.policy()
         def consume(row, restore):
             if row[1] is None or row[2] is None:
                 raise PreparationConflict('review_commitment_required')
             record = restore()
-            status = self.source.controller._status_artifact_from_record(record)
-            reports = status.get('reports') or {}
-            from nico.comprehensive_same_run_locale_report_v1 import _source_lifecycle_projection
-            lifecycle = _source_lifecycle_projection(status, reports, reports.get('json') or {})
-            if (record.get('terminal') is not True or lifecycle['approval_status'] != 'pending_human_approval'
-                    or lifecycle['client_delivery_allowed'] is not False):
-                raise PreparationConflict('pending_review_draft_required')
-            ident = record['identity']
-            identity = PreparationIdentity(ident['customer_id'], ident['project_id'], run_id,
-                ident['repository'], ident['commit_sha'], record['revision'], record['integrity_sha256'],
-                reports['canonical_truth_sha256'], reports['pdf_sha256'], renderer, policy, language,
-                artifact_mode(status, language))
-            self._binding(identity, binding)
-            self._check_scope(identity)
-            return identity
+            with phase("report_projection"):
+                status = self.source.controller._status_artifact_from_record(record)
+            with phase("lifecycle_binding"):
+                reports = status.get('reports') or {}
+                from nico.comprehensive_same_run_locale_report_v1 import _source_lifecycle_projection
+                lifecycle = _source_lifecycle_projection(status, reports, reports.get('json') or {})
+                if (record.get('terminal') is not True or lifecycle['approval_status'] != 'pending_human_approval'
+                        or lifecycle['client_delivery_allowed'] is not False):
+                    raise PreparationConflict('pending_review_draft_required')
+                ident = record['identity']
+                identity = PreparationIdentity(ident['customer_id'], ident['project_id'], run_id,
+                    ident['repository'], ident['commit_sha'], record['revision'], record['integrity_sha256'],
+                    reports['canonical_truth_sha256'], reports['pdf_sha256'], renderer, policy, language,
+                    artifact_mode(status, language))
+                self._binding(identity, binding)
+                self._check_scope(identity)
+                return identity
         identity = guard.call(self.source.store._consume_read_snapshot, run_id, consume)
         if qualify_only:
             return self.projection(dict(identity=asdict(identity), job_id=identity.job_id, status='eligible'))
-        job = guard.call(self.jobs.enqueue, identity, preparation_authorized=True, check=guard.check, commit_guard=guard, timeout=5)
+        with phase("enqueue"):
+            job = guard.call(self.jobs.enqueue, identity, preparation_authorized=True, check=guard.check, commit_guard=guard, timeout=5)
         return self.projection(job)
 
     @staticmethod
@@ -379,6 +387,7 @@ def install_review_pdf_preparation_api(app):
         runtime = app.state.review_pdf_runtime
         if runtime is None:
             raise HTTPException(503, 'review_pdf_preparation_unavailable')
+        response_headers = dict(_HEADERS)
         try:
             is_pdf = request.url.path.endswith('/pdf')
             is_cancel = request.url.path.endswith('/cancel')
@@ -396,8 +405,10 @@ def install_review_pdf_preparation_api(app):
                 else:
                     if payload['prepare'] is not True:
                         raise ValueError('explicit_preparation_required')
-                    result = await run_in_threadpool(runtime.prepare, run_id, language, binding)
-                return JSONResponse(result, status_code=200 if is_cancel else 202, headers=_HEADERS)
+                    trace_id = uuid4().hex
+                    response_headers["X-NICO-Admission-Trace"] = trace_id
+                    result = await run_in_threadpool(runtime.prepare, run_id, language, binding, trace_id=trace_id)
+                return JSONResponse(result, status_code=200 if is_cancel else 202, headers=response_headers)
             params = dict(request.query_params)
             if not is_pdf and set(params) == {'qualify', 'commit_sha', 'canonical_truth_sha256'}:
                 if params.pop('qualify') != 'true':
@@ -412,15 +423,15 @@ def install_review_pdf_preparation_api(app):
                 return await run_in_threadpool(runtime.retrieve, run_id, language, job_id, params)
             return JSONResponse(await run_in_threadpool(runtime.status, run_id, language, job_id, params), headers=_HEADERS)
         except KeyError:
-            raise HTTPException(404, 'review_pdf_unavailable') from None
+            raise HTTPException(404, 'review_pdf_unavailable', headers=response_headers) from None
         except PreparationConflict:
-            raise HTTPException(409, 'review_pdf_binding_or_state_changed') from None
+            raise HTTPException(409, 'review_pdf_binding_or_state_changed', headers=response_headers) from None
         except CommitOutcomeUnknown:
-            raise HTTPException(503, 'review_pdf_commit_outcome_unknown') from None
+            raise HTTPException(503, 'review_pdf_commit_outcome_unknown', headers=response_headers) from None
         except RuntimeError:
-            raise HTTPException(503, 'review_pdf_operation_unavailable_or_timed_out') from None
+            raise HTTPException(503, 'review_pdf_operation_unavailable_or_timed_out', headers=response_headers) from None
         except (ValueError, TypeError):
-            raise HTTPException(422, 'review_pdf_request_or_artifact_invalid') from None
+            raise HTTPException(422, 'review_pdf_request_or_artifact_invalid', headers=response_headers) from None
     app.add_api_route(ROUTE, endpoint, methods=['GET', 'POST'])
     app.add_api_route(ROUTE + '/pdf', endpoint, methods=['GET'])
     app.add_api_route(ROUTE + '/cancel', endpoint, methods=['POST'])

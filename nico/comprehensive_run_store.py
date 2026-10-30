@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from nico.report_delivery_timing_v1 import report_delivery_phase
+from nico.review_pdf_admission_observability_v1 import timed, phase
 
 import hashlib
 import json
@@ -58,6 +59,7 @@ def _decode_json_object_payload(payload: Any) -> dict[str, Any]:
 
 
 @report_delivery_phase("record_decompress_decode")
+@timed("decode")
 def _decode_run_payload(payload: Any) -> dict[str, Any]:
     return decode_run_storage(_decode_json_object_payload(payload))
 
@@ -122,6 +124,7 @@ def _browser_projection_sha256(projection: Mapping[str, Any]) -> str:
     ).hexdigest()
 
 
+@timed("history_validation")
 def _assert_review_history_commitment(
     record: Mapping[str, Any],
     *,
@@ -738,6 +741,7 @@ class ComprehensiveRunStore:
     def load(self, run_id: str) -> dict[str, Any]:
         return self._consume_read_snapshot(run_id, lambda _row, restore: restore())
 
+    @timed("snapshot_read")
     def _consume_read_snapshot(self, run_id: str, consume: Callable[..., Any]) -> Any:
         """Consume one joined SQL snapshot; restoration retains all existing checks.
 
@@ -753,20 +757,21 @@ class ComprehensiveRunStore:
         p = self.placeholder
         with self._connection() as connection:
             cursor = connection.cursor()
-            cursor.execute(
-                f"""
-                SELECT runs.payload, commitments.event_count, commitments.chain_sha256,
-                       runs.run_id, runs.customer_id, runs.project_id, runs.repository,
-                       runs.commit_sha, runs.evidence_ledger_id, runs.status, runs.revision,
-                       runs.terminal, runs.integrity_sha256, runs.updated_at
-                FROM nico_comprehensive_runs AS runs
-                LEFT JOIN nico_comprehensive_review_history_commitments AS commitments
-                    ON commitments.run_id = runs.run_id
-                WHERE runs.run_id = {p}
-                """,
-                (normalized,),
-            )
-            row = cursor.fetchone()
+            with phase("snapshot_fetch"):
+                cursor.execute(
+                    f"""
+                    SELECT runs.payload, commitments.event_count, commitments.chain_sha256,
+                           runs.run_id, runs.customer_id, runs.project_id, runs.repository,
+                           runs.commit_sha, runs.evidence_ledger_id, runs.status, runs.revision,
+                           runs.terminal, runs.integrity_sha256, runs.updated_at
+                    FROM nico_comprehensive_runs AS runs
+                    LEFT JOIN nico_comprehensive_review_history_commitments AS commitments
+                        ON commitments.run_id = runs.run_id
+                    WHERE runs.run_id = {p}
+                    """,
+                    (normalized,),
+                )
+                row = cursor.fetchone()
             if row is None:
                 raise ComprehensiveRunNotFound(normalized)
             def restore() -> dict[str, Any]:

@@ -216,7 +216,11 @@ def test_activation_reuses_canonical_factory_without_schema_initialization(monke
 
 
 @pytest.mark.parametrize('invalid', ['none', 'commitment', 'approval', 'delivery', 'binding'])
-def test_prepare_consumes_validated_snapshot_and_deduplicates(seam, monkeypatch, invalid):
+def test_prepare_consumes_validated_snapshot_and_deduplicates(seam, monkeypatch, invalid, caplog):
+    import logging
+    from nico import review_pdf_admission_observability_v1 as obs
+    caplog.set_level(logging.INFO, logger="uvicorn.error")
+    monkeypatch.setattr(obs, "_offer", lambda value: obs._LOG.info("nico_pdf_admission_timing=%s", value))
     service, jobs, source, _, worker, _, _ = seam
     i = identity()
     record = dict(identity={key: getattr(i, key) for key in ('customer_id','project_id','repository','commit_sha')},
@@ -250,6 +254,13 @@ def test_prepare_consumes_validated_snapshot_and_deduplicates(seam, monkeypatch,
         with pytest.raises(PreparationConflict): runtime.prepare(i.run_id, i.language, context)
     if invalid == 'commitment': restore.assert_not_called()
     worker.assert_not_called()
+    diagnostics = [json.loads(r.args[0]) for r in caplog.records if r.msg == 'nico_pdf_admission_timing=%s']
+    assert len(diagnostics) == (2 if invalid == 'none' else 1)
+    for diagnostic in diagnostics:
+        assert diagnostic['outcome'] == ('returned' if invalid == 'none' else 'raised')
+        assert ('enqueue' in diagnostic['phases']) is (invalid == 'none')
+        assert diagnostic['durable_job_outcome'] == 'not_established_by_timing'
+    assert 'synthetic-admin-token' not in caplog.text
 
 
 def test_admission_timeout_cannot_enqueue_after_slow_validation_returns(seam, monkeypatch):
@@ -357,3 +368,19 @@ def test_qualification_is_authenticated_read_only_and_cannot_accept_client_mode(
     runtime.prepare.assert_not_called()
     assert http.post(path(), headers=headers, json={
         'prepare': True, 'artifact_mode': 'pending-source-localized-draft', **binding()}).status_code == 422
+
+
+@pytest.mark.parametrize('error,code', [(None,202), (RuntimeError('private'),503),
+    (api.CommitOutcomeUnknown('private'),503), (PreparationConflict('private'),409)])
+def test_server_generated_trace_correlates_admission_without_raw_errors(client, error, code):
+    import re
+    http, runtime, _ = client
+    if error: runtime.prepare.side_effect = error
+    response = http.post(path(), headers={'x-nico-admin-token':'synthetic-admin-token',
+        'x-nico-admission-trace':'untrusted/private'}, json={'prepare':True, **binding()})
+    assert response.status_code == code
+    trace = response.headers['x-nico-admission-trace']
+    assert re.fullmatch('[0-9a-f]{32}',trace)
+    assert runtime.prepare.call_args.kwargs == {'trace_id':trace}
+    assert 'private' not in response.text
+    assert response.headers['cache-control'].startswith('no-store')

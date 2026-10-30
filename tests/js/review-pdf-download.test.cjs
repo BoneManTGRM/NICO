@@ -51,6 +51,7 @@ function setup(fetchImpl, language='en', digestImpl, options={}) {
   class HTMLButtonElement extends Element {constructor(){super('button');this.disabled=false;}}
   const actions=new Element('div');
   actions.attrs={'data-run-id':runId,'data-commit-sha':commit,'data-canonical-truth-sha256':truth,'data-assessment-report-ready':'true'};
+  if(options.reapproval)actions.attrs['data-assessment-locale-reapproval-required']='true';
   const button=new HTMLButtonElement();
   button.attrs={'data-assessment-pdf-kind':'localized-draft-pending-approval','data-report-language':language};
   button.textContent=language==='es-MX'?'Descargar PDF para revisión':'Download review PDF';
@@ -61,7 +62,7 @@ function setup(fetchImpl, language='en', digestImpl, options={}) {
   }
   const document={
     documentElement:{lang:language==='es-MX'?'es':'en'},
-    body:{appendChild(){}},createElement:tag=>new Element(tag),querySelectorAll:()=>options.recover?[button]:[],
+    body:{appendChild(){}},createElement:tag=>new Element(tag),querySelectorAll:()=>options.recover||options.diagnostic?[button]:[],
     addEventListener:(type,fn)=>listeners.set(type,fn),
     removeEventListener:(type,fn)=>{if(listeners.get(type)===fn)listeners.delete(type);},
   };
@@ -78,7 +79,7 @@ function setup(fetchImpl, language='en', digestImpl, options={}) {
     process:{env:{NEXT_PUBLIC_NICO_REVIEW_PDF_PREPARATION:options.async?"true":"false",
       NEXT_PUBLIC_NICO_REVIEW_PDF_CANARY_RUN_ID:options.canaryRun===undefined?runId:options.canaryRun,
       NEXT_PUBLIC_NICO_REVIEW_PDF_CANARY_LANGUAGE:options.canaryLanguage===undefined?language:options.canaryLanguage}},
-    Uint8Array,crypto:digestImpl?{subtle:{digest:digestImpl}}:webcrypto,Element,HTMLButtonElement,
+    Uint8Array,TextDecoder,crypto:digestImpl?{subtle:{digest:digestImpl}}:webcrypto,Element,HTMLButtonElement,
     fetch:async(url,init)=>{calls.push({url,init});return fetchImpl(url,init);},
     require(name){
       if(name==='react')return{useEffect:fn=>effects.push(fn),useRef:value=>{operationState=value;return{current:value};}};
@@ -818,4 +819,103 @@ for (const config of [{canaryRun:''},{canaryRun:'comprun_other'},{canaryLanguage
   assert.equal(s.calls[0].init.method,'GET');
   assert.equal(s.calls[0].url.includes('/review-pdf/'),false);
   assert.equal(s.anchors.length,1);
+});
+
+for (const language of ['en','es-MX']) for (const reason of [
+  'review_pdf_preparation_unavailable', 'review_pdf_commit_outcome_unknown',
+  'review_pdf_operation_unavailable_or_timed_out', 'private secret /path',
+]) test(`bounded preparation failure ${language} ${reason}`, async()=>{
+  const s=setup(async()=>Response.json({detail:reason},{status:503,headers:{'x-nico-admission-trace':'d'.repeat(32)}}),language,undefined,{async:true});
+  s.click();await s.settled();
+  const text=s.statuses.at(-1).textContent;
+  assert.match(text,language==='en'?/unknown|unavailable|may exist/:/desconocido|disponible|Puede existir/);
+  assert.ok(text.includes('d'.repeat(32)));
+  assert.ok(!text.includes('private secret'));
+  assert.equal(s.calls.length,1);assert.equal(s.anchors.length,0);assert.equal(s.storage.size,1);
+  // The explicit next click checks status, never resubmits admission.
+  s.click();await s.settled();
+  assert.equal(s.calls.filter(c=>c.init.method==='POST').length,1);
+  assert.equal(s.calls[1].init.method,'GET');
+});
+
+for(const body of ['not JSON',JSON.stringify({detail:'x'.repeat(5000)}),JSON.stringify({detail:{reason:'review_pdf_commit_outcome_unknown'}})])
+test('malformed error remains unknown without raw output '+body.length,async()=>{
+  const s=setup(async()=>new Response(body,{status:503,headers:{'content-type':'application/json','x-nico-admission-trace':'unsafe/path'}}),'en',undefined,{async:true});
+  s.click();await s.settled();
+  assert.match(s.statuses.at(-1).textContent,/unrecognized.*unknown/);
+  assert.ok(!s.statuses.at(-1).textContent.includes('unsafe/path'));
+  assert.equal(s.calls.length,1);
+});
+
+function ledger(overrides={}) {return {schema:'nico.pdf-canary-ledger-read.v1',status:'complete',
+  search_scope:'configured-row-tenant-and-identity-run-locale', query_complete:true,read_only_transaction:true,
+  scoped_rows_present:false,exact_source_row_present:false,rows_returned:0,rows:[],
+  job_integrity_verified:false,physical_worker_exit_confirmed:null,activation_authorized:false,...overrides};}
+function diagnosticControl(s){return s.controls.find(c=>c.attrs['data-review-pdf-diagnostic']==='true');}
+for(const language of ['en','es-MX'])test('disabled preparation offers explicit read-only diagnostic '+language,async()=>{
+  let resolve;
+  const s=setup(()=>new Promise(r=>{resolve=r;}),language,undefined,{diagnostic:true});
+  const control=diagnosticControl(s);assert.ok(control);assert.equal(s.calls.length,0);
+  const operation=control.onclick();await flush();control.onclick();
+  assert.equal(s.calls.length,1);assert.equal(s.calls[0].init.method,'GET');
+  assert.equal(s.calls[0].init.redirect,'error');assert.match(s.calls[0].url,/\?canary_ledger=true$/);
+  resolve(Response.json(ledger()));await operation;
+  assert.match(s.statuses.at(-1).textContent,language==='en'?/No rows were observed.*does not prove historical/:/No se observaron filas.*No prueba ausencia histórica/);
+  assert.equal(s.storage.size,0);assert.equal(s.anchors.length,0);assert.equal(control.disabled,false);
+});
+for(const change of [
+  {status:'unavailable',query_complete:false,scoped_rows_present:null,exact_source_row_present:null},
+  {status:'partial',query_complete:false,scoped_rows_present:true,exact_source_row_present:null,rows_returned:32,
+   rows:Array.from({length:32},()=>({source_binding_matches:false,binding_mismatches:['source_revision']}))},
+])test('diagnostic truthful non-complete state '+change.status,async()=>{
+  const s=setup(async()=>Response.json(ledger(change)),'en',undefined,{diagnostic:true});
+  await diagnosticControl(s).onclick();
+  assert.match(s.statuses.at(-1).textContent,change.status==='partial'?/Partial read: 32 visible rows; 32 with a different/:/existence remains unknown/);
+  assert.equal(s.calls.length,1);
+});
+for(const change of [{schema:'wrong'},{activation_authorized:true},{read_only_transaction:false},
+ {rows_returned:1},{rows:[{source_binding_matches:false,binding_mismatches:['private secret']}],rows_returned:1,scoped_rows_present:true},
+ {status:'partial',query_complete:false}])test('reject malformed ledger '+JSON.stringify(change),async()=>{
+  const s=setup(async()=>Response.json(ledger(change)),'en',undefined,{diagnostic:true});
+  await diagnosticControl(s).onclick();assert.match(s.statuses.at(-1).textContent,/No valid diagnostic.*unknown/);
+  assert.ok(!s.statuses.at(-1).textContent.includes('private secret'));assert.equal(s.storage.size,0);
+});
+for(const status of [401,403,503])test('diagnostic HTTP failure remains unknown '+status,async()=>{
+  const s=setup(async()=>new Response('private error',{status}),'en',undefined,{diagnostic:true});
+  await diagnosticControl(s).onclick();assert.match(s.statuses.at(-1).textContent,/unknown.*sign-in/);
+  assert.ok(!s.statuses.at(-1).textContent.includes('private error'));
+});
+test('diagnostic oversize and stale completion cannot expose contents',async()=>{
+  let finish;
+  const s=setup(()=>new Promise(r=>{finish=r;}),'en',undefined,{diagnostic:true});
+  const operation=diagnosticControl(s).onclick();s.actions.attrs['data-commit-sha']='c'.repeat(40);
+  finish(Response.json(ledger()));await operation;
+  assert.ok(!s.statuses.at(-1).textContent.includes('Complete read'));
+  const next=setup(async()=>Response.json({...ledger(),private:'x'.repeat(24576)}),'en',undefined,{diagnostic:true});
+  await diagnosticControl(next).onclick();assert.match(next.statuses.at(-1).textContent,/No valid diagnostic/);
+});
+test('diagnostic interrupted response and reload never start admission',async()=>{
+  const s=setup(async()=>{throw new DOMException('private','TimeoutError');},'en',undefined,{diagnostic:true});
+  await diagnosticControl(s).onclick();s.cleanUp();
+  const next=setup(async()=>Response.json(ledger()),'en',undefined,{diagnostic:true,storage:s.storage});
+  assert.equal(next.calls.length,0);assert.equal(next.storage.size,0);
+  await diagnosticControl(next).onclick();assert.equal(next.calls[0].init.method,'GET');
+});
+
+
+test('Spanish diagnostic supports exact derivative requiring fresh approval with flags off',async()=>{
+  const s=setup(async()=>Response.json(ledger()),'es-MX',undefined,{diagnostic:true,reapproval:true});
+  await diagnosticControl(s).onclick();
+  assert.equal(s.calls.length,1);assert.equal(s.calls[0].init.method,'GET');
+  assert.match(s.statuses.at(-1).textContent,/Lectura completa/);
+  assert.equal(s.storage.size,0);assert.equal(s.anchors.length,0);
+});
+test('unknown admission cancel wording records local intent without claiming server cancellation',async()=>{
+  let finish;
+  const s=setup(()=>new Promise(r=>{finish=r;}),'en',undefined,{async:true});
+  s.click();await flush();s.controls[0].onclick();
+  assert.match(s.statuses.at(-1).textContent,/requested locally.*not confirmed/);
+  assert.equal(s.calls.filter(c=>c.url.endsWith('/cancel')).length,0);
+  finish(Response.json({detail:'review_pdf_commit_outcome_unknown'},{status:503}));await s.settled();
+  assert.equal(s.calls.filter(c=>c.init.method==='POST').length,1);
 });
