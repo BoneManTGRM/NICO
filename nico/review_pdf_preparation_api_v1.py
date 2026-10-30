@@ -22,6 +22,7 @@ from nico.review_pdf_preparation_service_v1 import (
 )
 from nico.review_pdf_artifact_policy_v1 import artifact_mode, VERSION as ARTIFACT_POLICY
 from nico.review_pdf_preparation_worker_v1 import validate_result
+from nico.review_pdf_canary_scope_v1 import CanaryScope
 from nico.review_pdf_preparation_deadline_v1 import CommitOutcomeUnknown, DeadlineGuard
 
 ROUTE = '/assessment/comprehensive-run/{run_id}/review-pdf/{language}'
@@ -54,7 +55,8 @@ class PreparationBusy(RuntimeError):
 
 
 class PreparationRuntime:
-    def __init__(self, service):
+    def __init__(self, service, *, canary_scope=None):
+        self.canary_scope = canary_scope
         self.service = service
         self.jobs, self.source = service.jobs, service.source
         self.stop = Event()
@@ -90,7 +92,10 @@ class PreparationRuntime:
                         break
                     cursor = row['job_id']
                     try:
-                        self.service.run_once(PreparationIdentity(**row['identity']), stop=self.stop)
+                        identity = PreparationIdentity(**row['identity'])
+                        self._check_scope(identity)
+                        self.source.check_policy(identity)
+                        self.service.run_once(identity, stop=self.stop)
                     except Exception:
                         continue  # One invalid/failed job cannot starve later identities.
                 if len(rows) < 16:
@@ -99,6 +104,14 @@ class PreparationRuntime:
                 # A storage outage never enables a memory/local fallback or a new job.
                 pass
             self.stop.wait(5)
+
+    def _check_scope(self, identity):
+        if self.canary_scope is not None:
+            self.canary_scope.check(identity)
+
+    def _check_request_scope(self, run_id, language, binding):
+        if self.canary_scope is not None:
+            self.canary_scope.request(run_id, language, binding)
 
     def _bounded(self, seconds, operation, *, slot=None):
         slot = self.service.capacity if slot is None else slot
@@ -127,6 +140,7 @@ class PreparationRuntime:
         return self._bounded(20, lambda guard: self._prepare(run_id, language, binding, guard, qualify_only=True))
 
     def _prepare(self, run_id, language, binding, guard, *, qualify_only=False):
+        self._check_request_scope(run_id, language, binding)
         renderer, policy = self.source.policy()
         def consume(row, restore):
             if row[1] is None or row[2] is None:
@@ -145,6 +159,7 @@ class PreparationRuntime:
                 reports['canonical_truth_sha256'], reports['pdf_sha256'], renderer, policy, language,
                 artifact_mode(status, language))
             self._binding(identity, binding)
+            self._check_scope(identity)
             return identity
         identity = guard.call(self.source.store._consume_read_snapshot, run_id, consume)
         if qualify_only:
@@ -158,6 +173,7 @@ class PreparationRuntime:
             raise PreparationConflict('review_pdf_binding_changed')
 
     def _job(self, run_id, language, job_id, binding, *, include_pdf=False):
+        self._check_request_scope(run_id, language, binding)
         if not _JOB.fullmatch(job_id):
             raise PreparationConflict('review_pdf_job_invalid')
         with self.jobs.adapter._connect() as con:
@@ -174,6 +190,7 @@ class PreparationRuntime:
             raise KeyError('review_pdf_job_unavailable')
         job = row['payload']
         identity = PreparationIdentity(**job['identity'])
+        self._check_scope(identity)
         if identity.job_id != job_id or job['job_id'] != job_id or identity.run_id != run_id or identity.language != language:
             raise PreparationConflict('review_pdf_job_scope_changed')
         for name, expected in dict(customer_id=identity.customer_id, project_id=identity.project_id,
@@ -193,11 +210,13 @@ class PreparationRuntime:
             report_language=job['identity']['language'], commit_sha=job['identity']['commit_sha'],
             canonical_truth_sha256=job['identity']['canonical_truth_sha256'],
             artifact_mode=job['identity']['artifact_mode'],
-            human_review_required=True, client_delivery_allowed=False)
+            human_review_required=True, client_delivery_allowed=False,
+            physical_worker_exit_confirmed=None)
 
     def lookup(self, run_id, language, binding):
         # Recover a committed idempotent admission whose response was lost.
         # No restore, enqueue, assessment or report body read on this GET.
+        self._check_request_scope(run_id, language, binding)
         def read():
             renderer, policy = self.source.policy()
             with self.jobs.adapter._connect() as con:
@@ -229,14 +248,21 @@ class PreparationRuntime:
             self._job, run_id, language, job_id, binding, timeout=5)[1]), slot=self.read_slot)
 
     def cancel(self, run_id, language, job_id, binding):
-        identity, _ = self._job(run_id, language, job_id, binding)
-        with self.jobs._transaction(identity) as con:
-            job = self.jobs._read(con, identity)
-            if job['status'] in {'queued', 'rendering', 'rendered_unverified'}:
-                job.update(status='cancelled', lease_id='', lease_until_epoch=0,
-                           updated_epoch=self.jobs._now(con))
-                self.jobs._write(con, identity, job)
-        return self.projection(job)
+        # Cancellation cannot wait indefinitely behind a slow storage operation.
+        # A late/uncertain commit remains fenced and is recovered by exact status.
+        def operation(guard):
+            identity, _ = guard.call(self._job, run_id, language, job_id, binding, timeout=5)
+            def write():
+                with self.jobs._transaction(identity, commit_guard=guard) as con:
+                    job = self.jobs._read(con, identity)
+                    guard.check()
+                    if job['status'] in {'queued', 'rendering', 'rendered_unverified'}:
+                        job.update(status='cancelled', lease_id='', lease_until_epoch=0,
+                                   updated_epoch=self.jobs._now(con))
+                        self.jobs._write(con, identity, job)
+                return self.projection(job)
+            return guard.call(write, timeout=5)
+        return self._bounded(5, operation, slot=self.read_slot)
 
     def retrieve(self, run_id, language, job_id, binding):
         return self._bounded(230, lambda guard: guard.call(self._retrieve, run_id, language, job_id, binding))
@@ -264,6 +290,7 @@ def _configured_runtime(app):
     if (os.getenv('NICO_ENABLE_REVIEW_PDF_PREPARATION') != 'true'
             or os.getenv('NICO_REVIEW_PDF_PG_QUALIFIED') != 'true'):
         return None
+    canary_scope = CanaryScope.parse(os.getenv('NICO_REVIEW_PDF_CANARY_SCOPE', ''))
     controller = getattr(app.state, 'comprehensive_api_controller', None)
     store = controller._service._store if controller is not None else None
     state = getattr(app.state, 'comprehensive_runtime', {})
@@ -288,7 +315,7 @@ def _configured_runtime(app):
     runtime_policy()
     source = RetainedSourceAuthority(store, controller, runtime_policy)
     return PreparationRuntime(ReviewPdfPreparationService(PostgresReviewPdfPreparationJobs(adapter),
-                                                         source, capacity=_PUBLICATION_SLOT))
+                                                         source, capacity=_PUBLICATION_SLOT), canary_scope=canary_scope)
 
 
 def install_review_pdf_preparation_api(app):

@@ -295,8 +295,13 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
   }
   const key = JSON.stringify([runId, reportLanguage, commitSha, canonicalTruthSha256,
     Boolean(binding.requiresNewApproval)]);
-  const asynchronous = asyncPreparationEnabled();
-  if (resumeOnly && (!asynchronous || !savedPreparation(key))) return Promise.resolve();
+  const asynchronous = asyncPreparationEnabled(runId, reportLanguage);
+  if (resumeOnly && (!asynchronous || !savedPreparation(key)
+    || ["ready", "not_started", "cancelled"].includes(cancellationState(key)))) return Promise.resolve();
+  // Only a new explicit user click can clear a positively resolved cancellation.
+  if (!resumeOnly && ["ready", "not_started"].includes(cancellationState(key))) {
+    saveCancellation(key, "");
+  }
   const existing = pendingReviewPromises.get(key);
   if (existing?.isCurrent()) return existing.operation;
   // An explicit click on a replacement binding cancels the stale retained read.
@@ -324,6 +329,7 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
     let artifactMode: ArtifactMode | undefined;
     if (asynchronous) {
       ({jobId: preparationJobId, artifactMode} = await prepareReviewPdf(runId, reportLanguage, {...binding, isCurrent}, key, actions, controller, resumeOnly));
+      if (cancellationRequested(key)) throw cancellationMessage();
       startDownloadDeadline();
       showStatus(actions, spanishUi() ? "Descargando y verificando el PDF…" : "Downloading and verifying the PDF…");
     }
@@ -369,8 +375,13 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
   return operation;
 }
 
-function asyncPreparationEnabled(): boolean {
-  return typeof process !== "undefined" && process.env.NEXT_PUBLIC_NICO_REVIEW_PDF_PREPARATION === "true";
+function asyncPreparationEnabled(runId?: string, language?: ReportLanguage): boolean {
+  if (typeof process === "undefined" || process.env.NEXT_PUBLIC_NICO_REVIEW_PDF_PREPARATION !== "true") return false;
+  const target = process.env.NEXT_PUBLIC_NICO_REVIEW_PDF_CANARY_RUN_ID;
+  const locale = process.env.NEXT_PUBLIC_NICO_REVIEW_PDF_CANARY_LANGUAGE;
+  if (!target || !/^comprun_[a-zA-Z0-9_-]{1,160}$/.test(target)
+    || !["en", "es-MX"].includes(locale || "")) return false;
+  return runId === undefined || (target === runId && locale === language);
 }
 function preparationHref(runId: string, language: ReportLanguage): string {
   return `/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/review-pdf/${language}`;
@@ -398,11 +409,44 @@ function savePreparation(key: string, jobId: string): void {
     else window.sessionStorage.removeItem(`nico-review-preparation:${key}`);
   } catch { /* Durable backend status remains authoritative. */ }
 }
+function cancellationState(key: string): string {
+  try { return window.sessionStorage.getItem(`nico-review-cancel:${key}`) || ""; }
+  catch { return ""; }
+}
+function saveCancellation(key: string, state: string): void {
+  try {
+    if (state) window.sessionStorage.setItem(`nico-review-cancel:${key}`, state);
+    else window.sessionStorage.removeItem(`nico-review-cancel:${key}`);
+  } catch { /* In-memory intent still fences the current operation. */ }
+}
+function cancellationRequested(key: string): boolean {
+  return cancellationState(key) === "requested";
+}
+function cancellationMessage(): PdfDownloadFailure {
+  return new PdfDownloadFailure(spanishUi()
+    ? "Se solicitó cancelar. No se descargará el PDF automáticamente. Consulta el estado; no inicies otra evaluación."
+    : "Cancellation was requested. The PDF will not download automatically. Check its status; do not start another assessment.");
+}
 async function prepareReviewPdf(runId: string, language: ReportLanguage, binding: DownloadBinding,
   key: string, actions: Element, controller: AbortController, resumeOnly = false): Promise<{jobId: string; artifactMode: ArtifactMode}> {
   let jobId = savedPreparation(key);
   let artifactMode: ArtifactMode | undefined;
   let qualifiedJobId: string | undefined;
+  let cancelIntent = cancellationRequested(key);
+  const cancelButton = document.createElement("button");
+  cancelButton.type = "button";
+  cancelButton.setAttribute("data-review-pdf-cancel", "true");
+  cancelButton.textContent = spanishUi() ? "Cancelar preparación" : "Cancel preparation";
+  cancelButton.onclick = () => {
+    if (controller.signal.aborted || (binding.isCurrent && !binding.isCurrent())) return;
+    cancelIntent = true;
+    // Intent survives an interrupted POST/status response; it never creates a job.
+    saveCancellation(key, "requested");
+    cancelButton.disabled = true;
+    showStatus(actions, spanishUi() ? "Solicitando cancelación…" : "Requesting cancellation…");
+  };
+  actions.appendChild(cancelButton);
+  const wantsCancel = () => cancelIntent || cancellationRequested(key);
   const admissionDeadline = savedAdmissionDeadline(key) || Date.now() + 900_000;
   if (jobId === "requested") savePreparation(key, `requested:v1:${admissionDeadline}`);
   const singleStatusCheck = jobId === "requested" && admissionDeadline <= Date.now() && !resumeOnly;
@@ -416,6 +460,10 @@ async function prepareReviewPdf(runId: string, language: ReportLanguage, binding
     if (binding.isCurrent && !binding.isCurrent()) throw integrityError();
     const remaining = preparationDeadline - Date.now();
     if (remaining <= 0) throw stillPending();
+    if (prepare && wantsCancel()) {
+      saveCancellation(key, "not_started");
+      throw cancellationMessage();
+    }
     if (prepare) savePreparation(key, `requested:v1:${preparationDeadline}`);
     const response = await fetch(preparationHref(runId, language) + (prepare ? "" : `?${preparationQuery(qualify ? "requested" : jobId, binding)}${qualify ? "&qualify=true" : ""}`), {
       method: prepare ? "POST" : "GET", cache: "no-store", credentials: "same-origin",
@@ -456,8 +504,39 @@ async function prepareReviewPdf(runId: string, language: ReportLanguage, binding
     }
     jobId = status.job_id;
     savePreparation(key, jobId);
+    if (wantsCancel()) {
+      const cancelled = await fetch(preparationHref(runId, language) + "/cancel", {
+        method: "POST", credentials: "same-origin", cache: "no-store",
+        headers: {Accept: "application/json", "Content-Type": "application/json"},
+        body: JSON.stringify({job_id: jobId, commit_sha: binding.commitSha,
+          canonical_truth_sha256: binding.canonicalTruthSha256}),
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(Math.min(30_000, Math.max(1, preparationDeadline - Date.now())))]),
+      });
+      if (!cancelled.ok) throw cancellationMessage();
+      const result = await cancelled.json();
+      if (controller.signal.aborted) throw controller.signal.reason;
+      if ((binding.isCurrent && !binding.isCurrent()) || result.job_id !== jobId
+        || result.run_id !== runId || result.report_language !== language
+        || result.commit_sha !== binding.commitSha || result.canonical_truth_sha256 !== binding.canonicalTruthSha256
+        || result.artifact_mode !== artifactMode || result.human_review_required !== true
+        || result.client_delivery_allowed !== false) throw integrityError();
+      if (result.state === "cancelled") {
+        saveCancellation(key, "cancelled");
+        throw new PdfDownloadFailure(spanishUi()
+        ? "Cancelación registrada. La salida del proceso no está confirmada; la capacidad permanece protegida. La evaluación no cambió."
+        : "Cancellation recorded. Process exit is not confirmed; capacity remains protected. The assessment is unchanged.");
+      }
+      if (result.state === "ready") {
+        saveCancellation(key, "ready");
+        throw new PdfDownloadFailure(spanishUi()
+        ? "La preparación terminó antes de la cancelación. No se descargó ningún PDF automáticamente. Selecciona descargar si deseas el PDF."
+        : "Preparation finished before cancellation. No PDF was downloaded automatically. Select download if you want the PDF.");
+      }
+      throw cancellationMessage();
+    }
     return String(status.state);
   };
+  try {
   // A derivative is admitted only after the server proves a pending source.
   // Resume uses the already admitted, source-bound job; it never posts again.
   if (binding.requiresNewApproval && !jobId) await read(false, true);
@@ -471,7 +550,7 @@ async function prepareReviewPdf(runId: string, language: ReportLanguage, binding
   for (let attempt = 0; ; attempt++) {
     if (state === "ready" && artifactMode) return {jobId, artifactMode};
     if (!messages[state]) {
-      savePreparation(key, "");
+      if (state !== "cancelled") savePreparation(key, "");
       throw new PdfDownloadFailure(spanishUi()
         ? "La preparación del PDF falló o se canceló. La evaluación no cambió."
         : "PDF preparation failed or was cancelled. The assessment is unchanged.");
@@ -487,6 +566,7 @@ async function prepareReviewPdf(runId: string, language: ReportLanguage, binding
     });
     state = await read(false);
   }
+  } finally { cancelButton.remove(); }
 }
 
 /** Track pending-review downloads through response validation and byte delivery. */
@@ -497,7 +577,8 @@ export default function AssessmentReviewPdfDownload() {
     function handleReviewPdfClick(event: MouseEvent): void {
       const target = event.target instanceof Element ? event.target : null;
       const button = target?.closest("button");
-      if (!(button instanceof HTMLButtonElement) || button.disabled) return;
+      if (!(button instanceof HTMLButtonElement) || button.disabled
+        || button.getAttribute("data-review-pdf-cancel") === "true") return;
       const actions = button.closest(REPORT_ACTIONS_SELECTOR);
       if (!actions || button.getAttribute("data-assessment-pdf-kind") !== REVIEW_PDF_KIND
         || !REVIEW_PDF_LABEL.test(String(button.textContent || "").trim())

@@ -1,3 +1,5 @@
+import json
+from nico.review_pdf_canary_scope_v1 import FIELDS
 from copy import deepcopy
 from dataclasses import asdict
 from unittest.mock import Mock, MagicMock
@@ -89,6 +91,7 @@ def test_defaults_and_sqlite_never_activate(monkeypatch):
     assert api._configured_runtime(app) is None
     monkeypatch.setenv('NICO_ENABLE_REVIEW_PDF_PREPARATION','true')
     monkeypatch.setenv('NICO_REVIEW_PDF_PG_QUALIFIED','true')
+    monkeypatch.setenv('NICO_REVIEW_PDF_CANARY_SCOPE', json.dumps({k:v for k,v in asdict(identity()).items() if k in FIELDS}))
     app.state.comprehensive_api_controller = Mock()
     app.state.comprehensive_api_controller._service._store._dialect = 'sqlite'
     with pytest.raises(RuntimeError, match='verified_postgres_required'):
@@ -193,6 +196,7 @@ def test_activation_reuses_canonical_factory_without_schema_initialization(monke
     from nico.comprehensive_final_report_background_v1 import _PUBLICATION_SLOT
     monkeypatch.setenv('NICO_ENABLE_REVIEW_PDF_PREPARATION', 'true')
     monkeypatch.setenv('NICO_REVIEW_PDF_PG_QUALIFIED', 'true')
+    monkeypatch.setenv('NICO_REVIEW_PDF_CANARY_SCOPE', json.dumps({k:v for k,v in asdict(identity()).items() if k in FIELDS}))
     monkeypatch.setattr(PostgresAdapter, '__init__', Mock(side_effect=AssertionError('no schema init')))
     monkeypatch.setattr(api, 'runtime_policy', lambda: ('e' * 40, 'f' * 64))
     app = FastAPI()
@@ -228,7 +232,8 @@ def test_prepare_consumes_validated_snapshot_and_deduplicates(seam, monkeypatch,
     monkeypatch.setattr(locale, '_source_lifecycle_projection', lambda *args: {
         'approval_status':'approved' if invalid == 'approval' else 'pending_human_approval',
         'client_delivery_allowed':invalid == 'delivery'})
-    runtime = api.PreparationRuntime(service)
+    runtime = api.PreparationRuntime(service, canary_scope=api.CanaryScope(
+        {k:v for k,v in asdict(i).items() if k in FIELDS}))
     context = binding() if invalid != 'binding' else {**binding(), 'commit_sha':'0'*40}
     if invalid == 'none':
         enqueue = Mock(wraps=jobs.enqueue)
