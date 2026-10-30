@@ -331,6 +331,12 @@ def install_review_pdf_preparation_api(app):
         _authorize_review(request.headers.get('x-nico-admin-token', ''))
         if not _RUN.fullmatch(run_id) or language not in {'en', 'es-MX'}:
             raise HTTPException(422, 'review_pdf_request_invalid')
+        if request.method == 'GET' and request.query_params.get('storage_compatibility') is not None:
+            if (request.url.path.endswith(('/pdf', '/cancel'))
+                    or list(request.query_params.multi_items()) != [('storage_compatibility', 'true')]):
+                raise HTTPException(422, 'review_pdf_diagnostic_request_invalid')
+            from nico.review_pdf_storage_diagnostic_v1 import diagnose_storage
+            return JSONResponse(await run_in_threadpool(diagnose_storage, app), headers=_HEADERS)
         runtime = app.state.review_pdf_runtime
         if runtime is None:
             raise HTTPException(503, 'review_pdf_preparation_unavailable')
