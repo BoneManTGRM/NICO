@@ -368,3 +368,19 @@ def test_qualification_is_authenticated_read_only_and_cannot_accept_client_mode(
     runtime.prepare.assert_not_called()
     assert http.post(path(), headers=headers, json={
         'prepare': True, 'artifact_mode': 'pending-source-localized-draft', **binding()}).status_code == 422
+
+
+@pytest.mark.parametrize('error,code', [(None,202), (RuntimeError('private'),503),
+    (api.CommitOutcomeUnknown('private'),503), (PreparationConflict('private'),409)])
+def test_server_generated_trace_correlates_admission_without_raw_errors(client, error, code):
+    import re
+    http, runtime, _ = client
+    if error: runtime.prepare.side_effect = error
+    response = http.post(path(), headers={'x-nico-admin-token':'synthetic-admin-token',
+        'x-nico-admission-trace':'untrusted/private'}, json={'prepare':True, **binding()})
+    assert response.status_code == code
+    trace = response.headers['x-nico-admission-trace']
+    assert re.fullmatch('[0-9a-f]{32}',trace)
+    assert runtime.prepare.call_args.kwargs == {'trace_id':trace}
+    assert 'private' not in response.text
+    assert response.headers['cache-control'].startswith('no-store')

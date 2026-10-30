@@ -52,3 +52,47 @@ lifecycle controls. No production payload replay, performance claim, PostgreSQL
 experiment or live admission is included. Existing hosted CI/security and applicable
 Postgres proof should qualify the eventual exact candidate before deployment. Any
 future production trial still requires separate authorization; flags remain off.
+
+## Bundled operator failure handling
+
+Preparation POST generates an opaque 32-hex admission trace on the server and
+returns it in `X-NICO-Admission-Trace` on success and mapped errors. The same ID
+is passed into the timing snapshot. Caller-supplied headers do not select it.
+The authenticated frontend proxy preserves this header. Early runtime-disabled
+responses and immediate capacity failures may have no timing event; the ID is
+correlation only, never evidence that a job exists.
+
+The UI reads at most 4 KiB of JSON error detail and recognizes only the existing
+three preparation 503 codes. It distinguishes unavailable service, uncertain
+commit, and operation-unavailable/timeout without deciding job absence. Malformed
+or unknown replies remain unknown. Raw messages are never displayed. Admission
+intent remains stored, so a later explicit click performs status lookup, not a
+second admission. Cancel immediately describes local intent; it does not claim
+server cancellation before a valid response.
+
+A configured-canary report offers **Read preparation diagnostic**, including when
+preparation is disabled. The control uses the existing authenticated disabled-only
+`?canary_ledger=true` GET and never changes jobs. It makes no request until clicked;
+concurrent repeated clicks are suppressed, each read has a 15-second deadline and
+24-KiB body limit, and redirects are rejected. Failed/partial reads cannot become
+absence claims. Visible selectable text shows only complete/partial status, row
+count, and number of source-binding mismatches, with scope and uncertainty. It
+compares to the configured source binding, not certification of the displayed
+report's current stored revision. No row payloads, job IDs or arbitrary strings
+are rendered. Changed UI bindings suppress stale results; fresh-approval Spanish
+bindings remain supported. No diagnostic read is persisted in session storage or
+used to clear admission/cancellation intent. Reload alone starts no diagnostic.
+
+The routing hints must still identify the configured canary run and locale for
+this button to appear. The backend remains the authority and refuses the ledger
+check while preparation is enabled. Authentication expiry or missing hints can
+still require operator involvement; this patch does not alter access rules.
+
+Final local bundle qualification: 234 Python tests across the same eight files,
+182 JavaScript tests across review-pdf-download and pdf-proxy-stream-diagnostics,
+and TypeScript no-emit checking. Synthetic controls cover cold admission failure,
+unknown acknowledgement, retry/reload/cancel behavior and diagnostic responses;
+there was no production report replay or repeated rendering benchmark. Independent
+review caught and corrected a missing reapproval bit in the diagnostic UI binding.
+Hosted exact-head checks remain required; no live trial is authorized by these
+results. Preparation speed and the previous failure phase remain unproven.

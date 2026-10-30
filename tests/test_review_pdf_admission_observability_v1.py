@@ -215,3 +215,14 @@ def test_real_snapshot_failure_preserves_exception_and_hides_identifier(tmp_path
     assert result['phases']['snapshot_fetch']['raised'] == 0
     assert 'private_identifier' not in caplog.text
     assert result['durable_job_outcome'] == 'not_established_by_timing'
+
+
+@pytest.mark.parametrize('reference', ['c'*32, 'private/path', None])
+def test_trace_reference_is_opaque_and_strictly_validated(caplog, reference):
+    import re
+    caplog.set_level(logging.INFO, logger='uvicorn.error')
+    with AdmissionTrace(DeadlineGuard(20, Event()), reference).scope(): pass
+    result, = records(caplog)
+    assert re.fullmatch('[0-9a-f]{32}', result['trace_id'])
+    if reference == 'c'*32: assert result['trace_id'] == reference
+    assert 'private/path' not in caplog.text

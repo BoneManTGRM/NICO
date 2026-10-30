@@ -4,6 +4,7 @@ from contextvars import ContextVar
 from functools import wraps
 import json
 import logging
+import re
 from threading import RLock, Lock, Thread
 from queue import Queue, Full
 from uuid import uuid4
@@ -103,12 +104,12 @@ def timed(name):
 
 
 class AdmissionTrace:
-    def __init__(self, guard):
+    def __init__(self, guard, trace_id=None):
         self.guard = guard
         self.lock = RLock()
         self.phases = {}
         self.started = guard.clock()
-        self.trace_id = uuid4().hex
+        self.trace_id = trace_id if type(trace_id) is str and re.fullmatch(r"[0-9a-f]{32}", trace_id) else uuid4().hex
 
     def emit(self, outcome):
         # No exception object, identity, arguments, paths or customer data accepted.
