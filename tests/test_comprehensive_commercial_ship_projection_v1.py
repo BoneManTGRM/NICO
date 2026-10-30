@@ -902,7 +902,14 @@ def test_review_pdf_and_markdown_bridges_never_silently_noop() -> None:
     assert "AUTOMATED-DRAFT-PENDING-APPROVAL.pdf" in pdf_source
     assert "Downloading and verifying the PDF… You can keep using this page." in pdf_source
     assert "PDF verified and sent to your downloads." in pdf_source
-    assert "Retry this download; do not start another assessment." in pdf_source
+    assert (
+        "Retry this download using the same button, assessment and language; "
+        "do not start another assessment. No automatic retry will run."
+    ) in pdf_source
+    assert (
+        "Vuelve a intentarlo con este mismo botón, evaluación e idioma; "
+        "no inicies otra evaluación. No se reintentará automáticamente."
+    ) in pdf_source
     assert 'credentials: "same-origin"' in pdf_source
     assert "if (existing?.isCurrent()) return existing.operation;" in pdf_source
     assert "existing?.controller.abort();" in pdf_source

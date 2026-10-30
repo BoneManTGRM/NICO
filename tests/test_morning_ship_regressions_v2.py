@@ -287,7 +287,25 @@ def test_pdf_bridge_uses_one_user_gesture_dispatch_and_visible_status() -> None:
     assert source.count("link.click();") == 1
     assert "Downloading and verifying the PDF… You can keep using this page." in source
     assert "PDF verified and sent to your downloads." in source
-    assert "Retry this download; do not start another assessment." in source
+    timeout_message = source.split("function downloadTimeoutMessage(): string {", 1)[1].split(
+        "async function downloadError", 1
+    )[0]
+    # The current contract preserves manual recovery while explaining that a
+    # stopped HTTP wait does not establish the backend preparation outcome.
+    assert (
+        "The PDF download timed out. Preparation may still be running on the server; "
+        "this does not confirm failure or that the PDF is ready. Wait a few minutes. "
+        "Retry this download using the same button, assessment and language; "
+        "do not start another assessment. No automatic retry will run."
+    ) in timeout_message
+    assert (
+        "La descarga del PDF excedió el tiempo límite. La preparación puede continuar en el servidor; "
+        "esto no confirma un fallo ni que el PDF esté listo. Espera unos minutos. "
+        "Vuelve a intentarlo con este mismo botón, evaluación e idioma; "
+        "no inicies otra evaluación. No se reintentará automáticamente."
+    ) in timeout_message
+    assert "return new PdfDownloadFailure(downloadTimeoutMessage());" in source
+    assert "? downloadTimeoutMessage()" in source
     assert 'status.remove()' not in source
     assert "data-nico-review-pdf-action-status" in source
     assert "assert anchor_click_count == 1" in proof
