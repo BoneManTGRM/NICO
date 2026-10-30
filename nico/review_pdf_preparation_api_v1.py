@@ -1,7 +1,7 @@
 """Opt-in pending-review preparation API. Default startup exposes no active worker."""
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from dataclasses import asdict
 import hashlib
 import json
@@ -24,6 +24,8 @@ from nico.review_pdf_artifact_policy_v1 import artifact_mode, VERSION as ARTIFAC
 from nico.review_pdf_preparation_worker_v1 import validate_result
 from nico.review_pdf_canary_scope_v1 import CanaryScope
 from nico.review_pdf_preparation_deadline_v1 import CommitOutcomeUnknown, DeadlineGuard
+
+from nico.review_pdf_admission_observability_v1 import AdmissionTrace, phase
 
 ROUTE = '/assessment/comprehensive-run/{run_id}/review-pdf/{language}'
 _HEADERS = {'Cache-Control': 'no-store, private, max-age=0'}
@@ -113,13 +115,14 @@ class PreparationRuntime:
         if self.canary_scope is not None:
             self.canary_scope.request(run_id, language, binding)
 
-    def _bounded(self, seconds, operation, *, slot=None):
+    def _bounded(self, seconds, operation, *, slot=None, observe=False):
         slot = self.service.capacity if slot is None else slot
         if not slot.acquire(blocking=False):
             raise PreparationBusy('review_pdf_capacity_busy')
         guard = DeadlineGuard(seconds, self.stop)
         try:
-            return operation(guard)
+            with AdmissionTrace(guard).scope() if observe else nullcontext():
+                return operation(guard)
         finally:
             guard.stop.set()
             def release():
@@ -134,37 +137,41 @@ class PreparationRuntime:
     def prepare(self, run_id, language, binding):
         # Full admission validation is retained. It must finish before the
         # browser's 30-second POST limit; a late restoration cannot enqueue.
-        return self._bounded(20, lambda guard: self._prepare(run_id, language, binding, guard))
+        return self._bounded(20, lambda guard: self._prepare(run_id, language, binding, guard), observe=True)
 
     def qualify(self, run_id, language, binding):
         return self._bounded(20, lambda guard: self._prepare(run_id, language, binding, guard, qualify_only=True))
 
     def _prepare(self, run_id, language, binding, guard, *, qualify_only=False):
         self._check_request_scope(run_id, language, binding)
-        renderer, policy = self.source.policy()
+        with phase("policy"):
+            renderer, policy = self.source.policy()
         def consume(row, restore):
             if row[1] is None or row[2] is None:
                 raise PreparationConflict('review_commitment_required')
             record = restore()
-            status = self.source.controller._status_artifact_from_record(record)
-            reports = status.get('reports') or {}
-            from nico.comprehensive_same_run_locale_report_v1 import _source_lifecycle_projection
-            lifecycle = _source_lifecycle_projection(status, reports, reports.get('json') or {})
-            if (record.get('terminal') is not True or lifecycle['approval_status'] != 'pending_human_approval'
-                    or lifecycle['client_delivery_allowed'] is not False):
-                raise PreparationConflict('pending_review_draft_required')
-            ident = record['identity']
-            identity = PreparationIdentity(ident['customer_id'], ident['project_id'], run_id,
-                ident['repository'], ident['commit_sha'], record['revision'], record['integrity_sha256'],
-                reports['canonical_truth_sha256'], reports['pdf_sha256'], renderer, policy, language,
-                artifact_mode(status, language))
-            self._binding(identity, binding)
-            self._check_scope(identity)
-            return identity
+            with phase("report_projection"):
+                status = self.source.controller._status_artifact_from_record(record)
+            with phase("lifecycle_binding"):
+                reports = status.get('reports') or {}
+                from nico.comprehensive_same_run_locale_report_v1 import _source_lifecycle_projection
+                lifecycle = _source_lifecycle_projection(status, reports, reports.get('json') or {})
+                if (record.get('terminal') is not True or lifecycle['approval_status'] != 'pending_human_approval'
+                        or lifecycle['client_delivery_allowed'] is not False):
+                    raise PreparationConflict('pending_review_draft_required')
+                ident = record['identity']
+                identity = PreparationIdentity(ident['customer_id'], ident['project_id'], run_id,
+                    ident['repository'], ident['commit_sha'], record['revision'], record['integrity_sha256'],
+                    reports['canonical_truth_sha256'], reports['pdf_sha256'], renderer, policy, language,
+                    artifact_mode(status, language))
+                self._binding(identity, binding)
+                self._check_scope(identity)
+                return identity
         identity = guard.call(self.source.store._consume_read_snapshot, run_id, consume)
         if qualify_only:
             return self.projection(dict(identity=asdict(identity), job_id=identity.job_id, status='eligible'))
-        job = guard.call(self.jobs.enqueue, identity, preparation_authorized=True, check=guard.check, commit_guard=guard, timeout=5)
+        with phase("enqueue"):
+            job = guard.call(self.jobs.enqueue, identity, preparation_authorized=True, check=guard.check, commit_guard=guard, timeout=5)
         return self.projection(job)
 
     @staticmethod

@@ -6,6 +6,7 @@ until they physically return; their caller stops advancing the lifecycle.
 from __future__ import annotations
 
 from threading import Event, RLock, Thread
+from nico.review_pdf_admission_observability_v1 import current_trace, bind_trace
 import time
 
 
@@ -54,9 +55,11 @@ class DeadlineGuard:
     def call(self, function, *args, timeout=None, **kwargs):
         self.check()
         done, result = Event(), {}
+        trace = current_trace()
         def invoke():
             try:
-                result['value'] = function(*args, **kwargs)
+                with bind_trace(trace):
+                    result['value'] = function(*args, **kwargs)
             except BaseException as error:
                 result['error'] = error
             finally:
