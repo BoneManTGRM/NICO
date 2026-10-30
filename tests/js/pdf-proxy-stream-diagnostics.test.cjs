@@ -178,3 +178,15 @@ test('prepared PDF and cancellation reject wrong methods without upstream work',
   s.request.method='POST';assert.equal((await s.invoke(['review-pdf','en','pdf'])).status,405);
   assert.equal(s.calls.length,0);
 });
+
+test('storage compatibility uses existing authenticated GET proxy and bounded read deadline', async () => {
+  const s = setup(() => Response.json({probe_complete: true, lifecycle_qualified: false}));
+  s.request.nextUrl.search = '?storage_compatibility=true';
+  const response = await s.invoke(['review-pdf', 'es-MX']);
+  assert.equal(response.status, 200);
+  assert.equal(s.calls.length, 1);
+  assert.ok(String(s.calls[0].url).endsWith('/review-pdf/es-MX?storage_compatibility=true'));
+  assert.deepEqual(s.deadlines, [30000]);
+  assert.equal(s.calls[0].init.method, 'GET');
+  assert.equal((await response.json()).lifecycle_qualified, false);
+});
