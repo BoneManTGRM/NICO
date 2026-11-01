@@ -49,6 +49,8 @@ def observe_python_source(source: bytes, *, repository: str, commit_sha: str,
         return {'status': 'source_parse_unavailable', 'source_sha256': digest, 'statements': {}}
     statements = {}
     calls = {}
+    from nico.candidate_call_resolution_v1 import VERSION as CALL_VERSION, resolve_calls
+    bindings = resolve_calls(tree)
     for node in ast.walk(tree):
         if isinstance(node, (ast.Assert, ast.Import, ast.ImportFrom, ast.Call, ast.Try)):
             statements.setdefault(node.lineno, set()).add(type(node).__name__)
@@ -61,8 +63,10 @@ def observe_python_source(source: bytes, *, repository: str, commit_sha: str,
                 'argument_form': 'sequence_expression' if isinstance(arg, (ast.List, ast.Tuple)) else 'literal_text' if literal is not None else 'dynamic_or_absent',
                 'executable_path': 'absolute_literal' if literal and literal.startswith('/') else 'relative_literal' if literal else 'unknown',
                 'shell_keyword': str(shell.value).lower() if isinstance(shell, ast.Constant) and type(shell.value) is bool else 'unspecified' if shell is None else 'dynamic',
+                'api_binding': bindings[id(node)],
             })
     return {'status': 'parsed', 'source_binding': binding, 'source_sha256': digest, 'parse_warning_count': len(parse_warnings),
+            'call_resolution_version': CALL_VERSION, 'complete_source_blob': True,
             'statements': {str(k): sorted(v) for k, v in statements.items()}, 'calls': calls}
 
 
