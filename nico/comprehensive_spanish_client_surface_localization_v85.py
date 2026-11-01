@@ -332,6 +332,8 @@ def _english_status_only(value: str) -> str:
 
 def _artifact_label(value: Any) -> str:
     labels = {
+        "markdown_report": "Informe (Markdown)",
+        "html_report": "Informe (HTML)",
         "findings_csv": "Hallazgos (CSV)",
         "evidence_csv": "Evidencia (CSV)",
         "candidate_register_json": "Registro de candidatos (JSON)",
