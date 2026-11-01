@@ -78,6 +78,22 @@ def test_exact_blob_alias_resolution_supplies_syntax_not_safety(source, line, ap
     ('import subprocess as sp\nglobals()[name] = other\nsp.run([])\n', 3),
     ('import subprocess as sp\nsetattr(sp, name, other)\nsp.run([])\n', 3),
     ('import subprocess as sp\nsp.__dict__["run"] = other\nsp.run([])\n', 3),
+    ('import subprocess as sp\nother = sp\nother.run = lambda x: None\nsp.run([])\n', 4),
+    ('import subprocess as sp\nf = exec\nf("sp=other")\nsp.run([])\n', 4),
+    ('import subprocess as sp\nmutate(sp)\nsp.run([])\n', 3),
+    ('import subprocess as sp\nregistry = [sp]\nregistry[0].run = other\nsp.run([])\n', 4),
+    ('from subprocess import run\nalias = run\nalias.__code__ = other\nrun([])\n', 4),
+    ('import subprocess as sp\nf = globals\nf()["sp"] = other\nsp.run([])\n', 4),
+    ('import subprocess as sp\nimport builtins as b\nf = b.exec\nf("sp=other")\nsp.run([])\n', 5),
+    ('import subprocess as sp\nf = __builtins__["exec"]\nf("sp=other")\nsp.run([])\n', 4),
+    ('import subprocess as sp\nfrom builtins import exec as f\nf("sp=other")\nsp.run([])\n', 4),
+    ('import subprocess as sp\nimport subprocess as other\nother.run = replacement\nsp.run([])\n', 4),
+    ('from subprocess import run\nimport subprocess as other\nother.run = replacement\nrun([])\n', 4),
+    ('import subprocess as sp\nimport sys\nsys.modules["subprocess"].run = other\nsp.run([])\n', 4),
+    ('import subprocess as sp\ndef mutate():\n    import subprocess as other\n    other.run = replacement\nmutate()\nsp.run([])\n', 6),
+    ('import subprocess as sp\nfrom subprocess import __dict__ as data\ndata["run"] = other\nsp.run([])\n', 4),
+    ('import subprocess as sp\nfrom sys import modules as mods\nmods["subprocess"].run = other\nsp.run([])\n', 4),
+    ('import subprocess as sp\nfrom builtins import getattr as g\nf = g(obj, "exec")\nf(code)\nsp.run([])\n', 5),
     ('import subprocess as sp\n[sp.run([]) for sp in items]\n', 2),
     ('from .subprocess import run\nrun([])\n', 2),
     ('import subprocess as sp\nsp.unknown([])\n', 2),
@@ -205,3 +221,23 @@ assert 'executable_source_confirmation' in stale['technical_triage_proof_gaps']
 '''
     completed = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, timeout=30)
     assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+def test_import_heavy_input_does_not_scan_module_body_for_each_import():
+    import ast
+    from nico.candidate_call_resolution_v1 import resolve_calls
+    from nico.candidate_workspace_capture_v1 import FILE_LIMIT
+
+    source = ''.join(f'import math as m{i}\n' for i in range(4096))
+    source += 'import subprocess as sp\nsp.run([])\n'
+    assert len(source.encode()) < FILE_LIMIT
+    tree = ast.parse(source)
+
+    class NoLinearMembership(list):
+        def __contains__(self, value):
+            raise AssertionError('per-import linear module-body membership scan')
+
+    tree.body = NoLinearMembership(tree.body)
+    bindings = resolve_calls(tree)
+    assert list(bindings.values()) == [{'status': 'resolved', 'reason': 'unshadowed_module_import',
+                                       'api': 'subprocess.run', 'import_line': 4097}]

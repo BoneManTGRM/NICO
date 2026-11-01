@@ -20,8 +20,12 @@ def resolve_calls(tree):
     No arbitrary source identifiers or argument values leave this function.
     """
     nodes = list(ast.walk(tree))
+    module_nodes = {id(node) for node in tree.body}
+    parents = {id(child): node for node in nodes for child in ast.iter_child_nodes(node)}
     imports, bound, unsafe = {}, Counter(), set()
     dynamic = False
+    namespace_names = {'exec', 'eval', 'globals', 'locals', 'vars', 'getattr', 'setattr', 'delattr',
+                       '__import__', 'import_module', '__builtins__', '__dict__', '__getattribute__', 'modules'}
     for node in nodes:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             for alias in node.names:
@@ -29,7 +33,18 @@ def resolve_calls(tree):
                 bound[name] += 1
                 if alias.name == '*':
                     dynamic = True
-                if node not in tree.body:
+                if isinstance(node, ast.ImportFrom) and node.module == 'builtins' and alias.name in namespace_names:
+                    dynamic = True
+                if isinstance(node, ast.ImportFrom) and node.module == 'sys' and alias.name == 'modules':
+                    dynamic = True
+                # Unsupported subprocess imports can expose the same mutable
+                # module through another scope or an attribute such as __dict__.
+                subprocess_import = ((isinstance(node, ast.Import) and alias.name == 'subprocess')
+                                     or (isinstance(node, ast.ImportFrom) and node.level == 0 and node.module == 'subprocess'))
+                if subprocess_import and (id(node) not in module_nodes
+                        or (isinstance(node, ast.ImportFrom) and alias.name not in APIS)):
+                    dynamic = True
+                if id(node) not in module_nodes:
                     continue
                 if isinstance(node, ast.Import) and alias.name == 'subprocess':
                     imports[name] = ('subprocess', node.lineno)
@@ -56,12 +71,30 @@ def resolve_calls(tree):
                 root = root.value
             if isinstance(root, ast.Name):
                 unsafe.add(root.id)
-        if isinstance(node, ast.Call):
-            name = node.func.id if isinstance(node.func, ast.Name) else node.func.attr if isinstance(node.func, ast.Attribute) else ''
-            if name in {'exec', 'eval', 'globals', 'locals', 'vars', 'setattr', 'delattr', '__import__'}:
-                dynamic = True
-        if isinstance(node, ast.Attribute) and node.attr == '__dict__':
+        # A reference can be aliased before invocation. Checking only the name
+        # of the final Call would miss f = exec; f(...), including builtins.exec.
+        if ((isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id in namespace_names)
+                or (isinstance(node, ast.Attribute) and node.attr in namespace_names)):
             dynamic = True
+
+    # Import aliases may not escape into assignments, containers, arguments, or
+    # attribute chains. We do not attempt to track aliases through arbitrary code.
+    # Imports of the same module share mutable objects, so one unsafe alias
+    # invalidates all subprocess bindings in this file.
+    for node in nodes:
+        if not isinstance(node, ast.Name) or not isinstance(node.ctx, ast.Load) or node.id not in imports:
+            continue
+        parent = parents.get(id(node))
+        if imports[node.id][0] == 'subprocess':
+            call = parents.get(id(parent))
+            direct = (isinstance(parent, ast.Attribute) and parent.value is node and parent.attr in APIS
+                      and isinstance(call, ast.Call) and call.func is parent)
+        else:
+            direct = isinstance(parent, ast.Call) and parent.func is node
+        if not direct:
+            unsafe.add(node.id)
+    if unsafe.intersection(imports):
+        unsafe.update(imports)
 
     result = {}
     for node in nodes:
