@@ -57,7 +57,7 @@ def test_frontend_dependency_override_removes_vulnerable_image_optimizer_path() 
     assert "unoptimized: true" in config
 
 
-def test_pypdf_security_floor_excludes_cve_2026_71852_affected_pin() -> None:
+def test_pypdf_security_floor_excludes_october_2026_advisories() -> None:
     requirements = {
         line.strip()
         for line in REQUIREMENTS.read_text(encoding="utf-8").splitlines()
@@ -70,9 +70,9 @@ def test_pypdf_security_floor_excludes_cve_2026_71852_affected_pin() -> None:
         for requirement in requirements
         if requirement.startswith("pypdf==")
     )
-    assert _semver_core(pinned_pypdf) >= (6, 21, 2)
+    assert _semver_core(pinned_pypdf) >= (6, 21, 4)
     assert "pypdf==6.14.2" not in requirements
-    assert '"pypdf>=6.21.2,<7"' in pyproject
+    assert '"pypdf>=6.21.4,<7"' in pyproject
     assert '"pypdf>=6.14.2,<7"' not in pyproject
 
 
@@ -134,8 +134,8 @@ def test_active_workflow_pypdf_requirements_exclude_vulnerable_versions():
     for path in (ROOT / ".github/workflows").glob("*.yml"):
         for spec in re.findall(r'pypdf((?:==|>=)[^"\s\\]+)', path.read_text()):
             accepted = SpecifierSet(spec)
-            assert "6.21.2" in accepted, (path, spec)
-            for vulnerable in ("5.9.0", "6.15.0", "6.19.0", "6.21.1"):
+            assert "6.21.4" in accepted, (path, spec)
+            for vulnerable in ("5.9.0", "6.15.0", "6.19.0", "6.21.1", "6.21.2", "6.21.3"):
                 assert vulnerable not in accepted, (path, spec, vulnerable)
 
 
