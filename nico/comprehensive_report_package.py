@@ -282,7 +282,7 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
     )
     flatten = _flatten_client_literals if client_literal_stage else _flatten
     dedupe = _dedupe_client_literals if client_literal_stage else _dedupe
-    structured_fields = {"source_function_conformance_v1", "source_observation", "structured_tables", "profile_coverage", "source_indicator_paths", "source_indicator_identity", "source_indicator_state", "execution_limit"}
+    structured_fields = {"architecture_policy_conformance_v1", "source_function_conformance_v1", "source_observation", "structured_tables", "profile_coverage", "source_indicator_paths", "source_indicator_identity", "source_indicator_state", "execution_limit"}
     def without_structured(value: Any) -> Any:
         if isinstance(value, dict):
             return {key: without_structured(item) for key, item in value.items() if key not in structured_fields}
@@ -426,6 +426,9 @@ def _source_cell(value: Any, *, spanish: bool) -> str:
         return ("Sí" if value else "No") if spanish else ("Yes" if value else "No")
     text = str(value)
     if spanish:
+        from nico.architecture_policy_conformance_v1 import COPY_ES as POLICY_ES
+        if text in POLICY_ES:
+            return POLICY_ES[text]
         from nico.comprehensive_spanish_function_measurement_copy_v1 import translate_function_measurement_copy
         authored = translate_function_measurement_copy(text)
         if authored is not None:
