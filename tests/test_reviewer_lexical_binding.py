@@ -47,7 +47,8 @@ def test_qualified_binding_visible_without_disposition_or_argument_claims(rule, 
     assert proof['import_line'] == 1 and proof['line'] == 2
     assert proof['candidate_input_sha256'] == pipeline.fingerprint(candidate)
     assert set(proof) == pipeline.BINDING_FIELDS
-    assert 'argument_observations' not in result['packets'][0]
+    assert set(result['packets'][0]['argument_observations']) == set(pipeline.ARGUMENT_ENUMS)
+    assert 'argument_observations' not in view['packets'][0]
     assert result['human_review_required'] and not result['client_delivery_allowed']
     assessed = triage.apply_candidate_technical_triage({'findings': [candidate]},
         triage={'synthetic': True}, source_capture=retained, source_scope=SCOPE)['findings'][0]
@@ -150,3 +151,54 @@ def test_real_review_projection_keeps_binding_and_all_gates():
     with pytest.raises(ValueError, match='review_work_not_ready'):
         assert_ready_for_approval(record)
     assert record == before
+
+
+@pytest.mark.parametrize('call,expected', [
+    ('sp.run(["/synthetic/tool"])', ('sequence_expression', 'absolute_literal', 'unspecified')),
+    ('sp.run(["tool"], **options)', ('sequence_expression', 'relative_literal', 'unspecified')),
+    ('sp.run(arguments, shell=flag)', ('dynamic_or_absent', 'unknown', 'dynamic')),
+    ('sp.run(**options)', ('dynamic_or_absent', 'unknown', 'unspecified')),
+    ('sp.run("tool", shell=False, **options)', ('literal_text', 'relative_literal', 'false')),
+    ('sp.run("tool", shell=True)', ('literal_text', 'relative_literal', 'true')),
+])
+def test_argument_enum_round_trip_is_syntax_only_and_not_ui_contract(call, expected):
+    candidate = row()
+    result, _ = project(candidate, capture('import subprocess as sp\n'+call+'\n', candidate))
+    restored = json.loads(json.dumps(result))
+    assert restored['packets'][0]['argument_observations'] == dict(zip(pipeline.ARGUMENT_ENUMS, expected))
+    assert len(json.dumps(restored['packets'][0]['argument_observations'])) < 160
+    # Existing GET contract never exposed arguments; this change is lexical assistance.
+    view = pipeline.display_investigation({'findings':[candidate], 'candidate_investigation':restored}, SCOPE)
+    assert 'argument_observations' not in view['packets'][0]
+    assert restored['human_review_required'] and not restored['client_delivery_allowed']
+
+
+@pytest.mark.parametrize('field,value', [('argument_form','RAW_SOURCE_SENTINEL'),
+    ('executable_path',['absolute_literal']), ('shell_keyword',False), ('shell_keyword','FALSE'),
+    ('shell_keyword',None)])
+def test_malformed_argument_enum_omitted_without_inventing_value(field, value):
+    candidate = row()
+    retained = capture('import subprocess as sp\nsp.run([])\n',candidate)
+    call = retained['observations']['app.py']['calls']['2'][0]
+    call[field] = value
+    call['raw_arguments'] = 'RAW_ARGUMENT_SENTINEL'
+    call['source_prose'] = 'RAW_SOURCE_SENTINEL'
+    result, view = project(candidate,retained)
+    args = result['packets'][0]['argument_observations']
+    assert field not in args
+    assert set(args) == set(pipeline.ARGUMENT_ENUMS)-{field}
+    assert 'api_binding' not in args
+    assert 'SENTINEL' not in json.dumps(result)
+    assert 'argument_observations' not in view['packets'][0]
+
+
+@pytest.mark.parametrize('arguments', [None, [], {'shell_keyword':'unspecified', 'api_binding':{'api':'RAW_SENTINEL'}, 'raw':'RAW_SENTINEL'}])
+def test_legacy_packet_argument_extras_never_leak_into_projection(arguments):
+    candidate = row(); result,_ = project(candidate,capture('import subprocess\nsubprocess.run([])\n',candidate))
+    result['packets'][0].pop('lexical_binding')
+    result['packets'][0]['argument_observations'] = arguments
+    view = pipeline.display_investigation({'findings':[candidate], 'candidate_investigation':json.loads(json.dumps(result))}, SCOPE)
+    assert view['available']
+    assert 'lexical_binding' not in view['packets'][0]
+    assert 'argument_observations' not in view['packets'][0]
+    assert 'RAW_SENTINEL' not in json.dumps(view)

@@ -24,6 +24,25 @@ BINDING_FIELDS = frozenset({'version', 'resolver_version', 'api', 'import_line',
     'source_sha256', 'blob_oid', 'scope', 'path', 'candidate_input_sha256'})
 
 
+ARGUMENT_ENUMS = {
+    'argument_form': frozenset({'sequence_expression', 'literal_text', 'dynamic_or_absent'}),
+    'executable_path': frozenset({'absolute_literal', 'relative_literal', 'unknown'}),
+    'shell_keyword': frozenset({'true', 'false', 'unspecified', 'dynamic'}),
+}
+
+
+def _sanitize_arguments(value):
+    """Preserve existing syntax enums only; absence never means shell=False.
+
+    At most three short enum strings. Embedded API binding is not qualified proof
+    and neither it nor source/argument values belong in persisted assistance.
+    """
+    if not isinstance(value, Mapping):
+        return {}
+    return {key: value[key] for key, allowed in ARGUMENT_ENUMS.items()
+            if isinstance(value.get(key), str) and value[key] in allowed}
+
+
 def _binding_size(value):
     return len(json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode())
 
@@ -194,6 +213,7 @@ def investigate_register(register, retained, scope, *, clock=time.monotonic):
             'bounded_rule_analysis_completed': packet['bounded_rule_analysis_completed'],
             'reason': packet.get('reason', 'unresolved'),
             'source_reference': {k: reference[k] for k in ('source_sha256', 'line') if k in reference},
+            'argument_observations': _sanitize_arguments(packet.get('argument_observations')),
             **({'lexical_binding': binding} if binding is not None else {}),
             **({'source_availability_detail': detail} if detail is not None else {})})
     return {'artifact_schema': VERSION, 'scope': scope, 'input_sha256': fingerprint(register.get('findings') or []),
