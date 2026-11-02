@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 
 
 def environment(root, mode):
@@ -21,8 +22,17 @@ def build(root):
     env=environment(root,'build')
     # Registry acquisition only; no lifecycle scripts, cache credentials or ambient npm config.
     install={k:v for k,v in env.items() if k not in ('NODE_OPTIONS','NICO_REVIEWER_PROOF_NETWORK','NODE_ENV')}
-    install.update(NPM_CONFIG_USERCONFIG='/dev/null',NPM_CONFIG_GLOBALCONFIG='/dev/null')
-    subprocess.run(['npm','ci','--ignore-scripts','--no-audit','--no-fund'],cwd=root/'apps/web',env=install,check=True,timeout=240)
-    subprocess.run(['node','node_modules/next/dist/bin/next','build'],cwd=root/'apps/web',env=env,check=True,timeout=240)
+    # npm rejects loading the same path as both user and global configuration.
+    # Keep distinct empty files alive through both subprocesses, then remove them.
+    with tempfile.TemporaryDirectory(prefix='nico-reviewer-npm-') as directory:
+        configs = {'NPM_CONFIG_USERCONFIG': Path(directory)/'user.npmrc',
+                   'NPM_CONFIG_GLOBALCONFIG': Path(directory)/'global.npmrc'}
+        for path in configs.values():
+            path.write_bytes(b'')
+        config_env = {key: str(path) for key, path in configs.items()}
+        install.update(config_env)
+        env.update(config_env)
+        subprocess.run(['npm','ci','--ignore-scripts','--no-audit','--no-fund'],cwd=root/'apps/web',env=install,check=True,timeout=240)
+        subprocess.run(['node','node_modules/next/dist/bin/next','build'],cwd=root/'apps/web',env=env,check=True,timeout=240)
 
 if __name__=='__main__':build(Path(__file__).resolve().parents[1])

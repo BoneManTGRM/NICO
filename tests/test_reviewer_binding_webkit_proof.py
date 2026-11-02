@@ -80,3 +80,57 @@ def test_environment_drops_credentials_and_rejects_dotenv(tmp_path,monkeypatch):
  assert env['NICO_REVIEWER_PROOF_NETWORK']=='server'
  (tmp_path/'apps/web/.env.local').write_text('synthetic')
  with pytest.raises(RuntimeError,match='dotenv'):environment(tmp_path,'server')
+
+
+@pytest.mark.parametrize('failure_step',[None,0,1])
+def test_npm_configs_empty_distinct_alive_and_cleaned(tmp_path,monkeypatch,failure_step):
+ import subprocess
+ import reviewer_proof_environment as build_env
+ (tmp_path/'apps/web').mkdir(parents=True)
+ monkeypatch.setenv('NPM_CONFIG_USERCONFIG','/synthetic/ambient-user')
+ monkeypatch.setenv('NPM_CONFIG_GLOBALCONFIG','/synthetic/ambient-global')
+ monkeypatch.setenv('NPM_TOKEN','synthetic-secret')
+ calls=[];paths=[]
+ def run(command,**kwargs):
+  env=kwargs['env'];current=[Path(env[k]) for k in ('NPM_CONFIG_USERCONFIG','NPM_CONFIG_GLOBALCONFIG')]
+  assert current[0]!=current[1] and all(p.read_bytes()==b'' for p in current)
+  assert 'NPM_TOKEN' not in env
+  assert kwargs['check'] is True and kwargs['timeout']==240
+  assert kwargs['cwd']==tmp_path/'apps/web'
+  if calls:
+   assert current==paths
+   assert env['NICO_REVIEWER_PROOF_NETWORK']=='build' and '--require=' in env['NODE_OPTIONS']
+   assert command==['node','node_modules/next/dist/bin/next','build']
+  else:
+   paths.extend(current)
+   assert 'NODE_OPTIONS' not in env and 'NICO_REVIEWER_PROOF_NETWORK' not in env
+   assert command==['npm','ci','--ignore-scripts','--no-audit','--no-fund']
+  calls.append(command)
+  if len(calls)-1==failure_step:raise subprocess.CalledProcessError(1,command)
+ monkeypatch.setattr(build_env.subprocess,'run',run)
+ if failure_step is None:build_env.build(tmp_path)
+ else:
+  with pytest.raises(subprocess.CalledProcessError):build_env.build(tmp_path)
+ assert len(calls)==(2 if failure_step is None else failure_step+1)
+ assert paths and all(not p.exists() and not p.parent.exists() for p in paths)
+
+
+def test_installed_npm_configuration_regression_without_install(monkeypatch):
+ import subprocess
+ import reviewer_proof_environment as build_env
+ real_run=subprocess.run
+ # The process guard rejects outbound sockets; only npm --version executes.
+ guarded=build_env.environment(ROOT,'server')
+ broken={**guarded,'NPM_CONFIG_USERCONFIG':'/dev/null','NPM_CONFIG_GLOBALCONFIG':'/dev/null'}
+ result=real_run(['npm','--version'],cwd=ROOT/'apps/web',env=broken,capture_output=True,text=True,timeout=20)
+ assert result.returncode!=0 and 'double-loading config' in result.stderr
+ observed=[]
+ def probe(command,**kwargs):
+  env={**kwargs['env'],'NODE_OPTIONS':guarded['NODE_OPTIONS'],'NICO_REVIEWER_PROOF_NETWORK':'server'}
+  result=real_run(['npm','--version'],cwd=kwargs['cwd'],env=env,capture_output=True,text=True,timeout=20)
+  assert result.returncode==0,result.stderr
+  assert result.stdout.strip()
+  observed.append(command)
+ monkeypatch.setattr(build_env.subprocess,'run',probe)
+ build_env.build(ROOT)
+ assert len(observed)==2
