@@ -282,7 +282,7 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
     )
     flatten = _flatten_client_literals if client_literal_stage else _flatten
     dedupe = _dedupe_client_literals if client_literal_stage else _dedupe
-    structured_fields = {"source_function_conformance_v1", "source_observation", "structured_tables", "profile_coverage", "source_indicator_paths", "source_indicator_identity", "source_indicator_state", "execution_limit"}
+    structured_fields = {"architecture_policy_conformance_v1", "source_function_conformance_v1", "source_observation", "structured_tables", "profile_coverage", "source_indicator_paths", "source_indicator_identity", "source_indicator_state", "execution_limit"}
     def without_structured(value: Any) -> Any:
         if isinstance(value, dict):
             return {key: without_structured(item) for key, item in value.items() if key not in structured_fields}
@@ -426,6 +426,9 @@ def _source_cell(value: Any, *, spanish: bool) -> str:
         return ("Sí" if value else "No") if spanish else ("Yes" if value else "No")
     text = str(value)
     if spanish:
+        from nico.architecture_policy_conformance_v1 import COPY_ES as POLICY_ES
+        if text in POLICY_ES:
+            return POLICY_ES[text]
         from nico.comprehensive_spanish_function_measurement_copy_v1 import translate_function_measurement_copy
         authored = translate_function_measurement_copy(text)
         if authored is not None:
@@ -638,6 +641,15 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
                 [cell(value, preview=summary is not None, literal=column in {"Source", "Target"} or (column == "Value" and row[0] in table.get("literal_value_labels", ()) and value is not None)) for column, value in zip(columns, row)]
                 for row in batch
             ]
+            narrative_rows = []
+            if columns == ["Measure", "Value"] and summary is None:
+                for row_index, row in enumerate(batch, 1):
+                    if row[0] in {"Limitations", "Policy scope and limitations"}:
+                        # Keep the complete label and prose together across the full
+                        # table width rather than wasting half the row on its label.
+                        values[row_index] = [cell(_source_cell(row[0], spanish=spanish) + ": " +
+                                                  _source_cell(row[1], spanish=spanish), literal=True), ""]
+                        narrative_rows.append(row_index)
             if summary is not None:
                 note_text = (f"Vista previa: filas {offset + 1}–{end}; se muestran {len(rows)} de {total_rows} filas." if spanish else
                              f"Preview: rows {offset + 1}–{end}; showing {len(rows)} of {total_rows} rows.")
@@ -652,6 +664,7 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
             values.append([cell(note_text)] + [""] * (len(columns) - 1))
             rendered = Table(values, colWidths=[width / len(columns)] * len(columns), repeatRows=1,
                              splitInRow=1, hAlign="LEFT")
+            rendered.setStyle(TableStyle([("SPAN", (0, row), (-1, row)) for row in narrative_rows]))
             rendered.setStyle(TableStyle([
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e0f2fe")),
                 ("GRID", (0, 0), (-1, -2), .3, colors.HexColor("#94a3b8")),
@@ -659,7 +672,7 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
                 ("NOSPLIT", (0, -2), (-1, -1)),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-                ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
             ]))
             if batch_heading is not None:
                 # keepWithNext groups the heading with the entire table batch,
