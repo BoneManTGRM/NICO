@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+# Guard retained loaders, network and database access for every synthetic case.
+from tests.test_candidate_nonexecutable_qc_proof import isolated
+
 from nico.candidate_evidence_context_v1 import enrich_canonical_candidate_evidence
 from nico.candidate_lineage_migration_v1 import apply_candidate_lineage, lineage_keys
 from nico.candidate_technical_triage_v1 import apply_candidate_technical_triage
@@ -260,8 +263,11 @@ def test_secret_and_static_triage_respect_evidence_boundaries() -> None:
         },
     )
     static_noise = analyze([noise])["findings"][0]
-    assert static_noise["technical_triage_verdict"] == "not_actionable"
-    assert static_noise["rationale_code"] == "static_nonexecutable_noise"
+    assert static_noise["technical_triage_verdict"] == "needs_review"
+    assert static_noise["rationale_code"] == "static_nonexecutable_unproven"
+    assert "independent_nonexecutable_source_proof" in static_noise["proof_gaps"]
+    assert static_noise["review_routing_class"] == "HUMAN_TECHNICAL_REVIEW"
+    assert static_noise["disposition"] == "review_required"
 
     generic = candidate(
         "GENERIC",
@@ -339,7 +345,10 @@ def test_clustering_preserves_every_candidate_and_exact_occurrence_counts() -> N
         item["cluster_id"] for item in two["findings"]
     }
     assert all(item["cluster_size"] == 5 for item in one["findings"])
-    assert all(item["grouped_review_eligible"] is True for item in one["findings"])
+    assert all(item["grouped_review_eligible"] is False for item in one["findings"])
+    assert all(item["technical_triage_verdict"] == "needs_review" for item in one["findings"])
+    assert one["technical_triage"]["candidates_requiring_individual_human_attention"] == 5
+    assert one["technical_triage"]["quality_control_sample_pool"] == 0
     assert {item["source_path"] for item in one["findings"]} == {
         "tests/fixture_1.py",
         "tests/fixture_2.py",
@@ -356,8 +365,8 @@ def test_workload_metrics_are_deterministic_and_not_security_scores() -> None:
         rule="GHSA-U",
         context={},
     )
-    qc = candidate(
-        "QC",
+    unproven = candidate(
+        "UNPROVEN",
         path="tests/example.py",
         context={
             "executable_code": False,
@@ -365,17 +374,17 @@ def test_workload_metrics_are_deterministic_and_not_security_scores() -> None:
             "scope": "test",
         },
     )
-    result = analyze([stable, uncertain, qc], [prior], triage=retained_triage("OLD"))
+    result = analyze([stable, uncertain, unproven], [prior], triage=retained_triage("OLD"))
     metrics = result["technical_triage"]["workload_metrics"]
     assert metrics == {key: result["technical_triage"][key] for key in metrics}
     assert metrics["total_candidates"] == 3
     assert metrics["technical_triage_completed"] == 3
     assert metrics["technical_triage_pending"] == 0
-    assert metrics["not_actionable_count"] == 2
-    assert metrics["needs_review_count"] == 1
+    assert metrics["not_actionable_count"] == 1
+    assert metrics["needs_review_count"] == 2
     assert metrics["stable_carry_forward_count"] == 1
-    assert metrics["candidates_requiring_individual_human_attention"] == 1
-    assert metrics["quality_control_sample_pool"] == 1
+    assert metrics["candidates_requiring_individual_human_attention"] == 2
+    assert metrics["quality_control_sample_pool"] == 0
     assert result["technical_triage"]["score_effect"] == (
         "none_canonical_dispositions_and_totals_unchanged"
     )
@@ -489,5 +498,67 @@ def test_repeated_analysis_and_one_thousand_candidate_batch_are_deterministic() 
     assert metrics["total_candidates"] == 1000
     assert metrics["technical_triage_completed"] == 1000
     assert metrics["technical_triage_coverage_pct"] == 100.0
-    assert metrics["candidates_requiring_individual_human_attention"] == 0
+    assert metrics["candidates_requiring_individual_human_attention"] == 1000
+    assert metrics["needs_review_count"] == 1000
+    assert metrics["not_actionable_count"] == 0
+    assert metrics["quality_control_sample_pool"] == 0
+    assert metrics["candidates_eligible_for_grouped_review"] == 0
     assert metrics["algorithm_version"] == "nico.deterministic-contextual-triage.v2"
+
+
+def test_supported_harness_qc_and_unproven_claims_have_separate_workload_counts() -> None:
+    # This existing rule requires exact-source B101, low severity, a line and a
+    # named non-production validation harness. It does not prove generic noise.
+    supported = [candidate(
+        name, scanner="bandit", rule="B101", severity="low", line=line,
+        path="scripts/synthetic_acceptance_proof.py",
+        context={"scope": "test"}, occurrence_count=count,
+    ) for name, line, count in (("HARNESS_A", 10, 2), ("HARNESS_B", 20, 3))]
+    unproven = candidate("UNPROVEN", path="tests/example.py", occurrence_count=4,
+        context={"scope": "test", "executable_code": False, "comment_or_string": True})
+    result = analyze([*supported, unproven])
+    metrics = result["technical_triage"]
+    assert metrics["total_candidates"] == 9
+    assert metrics["technical_triage_completed"] == 9  # includes four needing review
+    assert metrics["not_actionable_count"] == 5
+    assert metrics["needs_review_count"] == 4
+    assert metrics["quality_control_sample_pool"] == 5
+    assert metrics["candidates_eligible_for_grouped_review"] == 5
+    assert metrics["candidates_requiring_individual_human_attention"] == 4
+    for item in result["findings"]:
+        if item["candidate_id"].startswith("HARNESS"):
+            assert item["rationale_code"] == "assert_nonproduction_validation_harness"
+            assert item["review_routing_class"] == "QUALITY_CONTROL_ELIGIBLE"
+            assert item["grouped_review_eligible"] is True
+            assert item["cluster_size"] == 5
+        else:
+            assert item["review_routing_class"] == "HUMAN_TECHNICAL_REVIEW"
+            assert item["grouped_review_eligible"] is False
+        assert item["disposition"] == "review_required"
+        assert item["human_approval_status"] == "pending"
+        assert item["technical_triage_client_delivery_allowed"] is False
+    assert metrics["human_disposition_created"] is False
+    assert metrics["client_delivery_allowed"] is False
+
+
+def test_harness_qc_requires_each_existing_evidence_condition() -> None:
+    supported = candidate("HARNESS", scanner="bandit", rule="B101", severity="low",
+        path="scripts/synthetic_acceptance_proof.py", context={"scope": "test"})
+    changes = (
+        {"scanner": "semgrep"},
+        {"rule_id": "B999"},
+        {"evidence_quality": "unknown"},
+        {"line": None},
+        {"severity": "high"},
+        {"deterministic_evidence": {"scope": "production"}},
+        {"source_path": "nico/production.py"},
+    )
+    for change in changes:
+        missing = {**deepcopy(supported), **change, "candidate_id": "MISSING", "finding_id": "MISSING"}
+        result = analyze([supported, missing])
+        assert result["technical_triage"]["quality_control_sample_pool"] == 1
+        assert result["technical_triage"]["needs_review_count"] == 1
+        assert result["technical_triage"]["candidates_requiring_individual_human_attention"] == 1
+        unsupported = next(item for item in result["findings"] if item["candidate_id"] == "MISSING")
+        assert unsupported["review_routing_class"] == "HUMAN_TECHNICAL_REVIEW"
+        assert unsupported["disposition"] == "review_required"
