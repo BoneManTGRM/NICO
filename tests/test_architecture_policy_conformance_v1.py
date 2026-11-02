@@ -87,7 +87,8 @@ def test_real_collection_provider_markdown_html_pdf_and_identity(monkeypatch,tmp
     title='Conformidad con la política de arquitectura' if spanish else 'Architecture policy conformance'
     markdown='\n'.join(report._source_markdown(stage,spanish=spanish))
     html=report._semantic_html(markdown,'Synthetic policy proof')
-    pdf=io.BytesIO();SimpleDocTemplate(pdf).build(report._source_pdf_tables(stage,spanish=spanish,width=450))
+    from reportlab.lib.pagesizes import letter
+    pdf=io.BytesIO();SimpleDocTemplate(pdf,pagesize=letter,leftMargin=40,rightMargin=40,topMargin=40,bottomMargin=40).build(report._source_pdf_tables(stage,spanish=spanish,width=450))
     text='\n'.join(p.extract_text() or '' for p in PdfReader(io.BytesIO(pdf.getvalue())).pages)
     for rendered in (markdown,html,text):
         assert title in rendered
@@ -140,6 +141,8 @@ def test_final_artifacts_preserve_policy_and_existing_acceptance(monkeypatch,tmp
     from nico.comprehensive_pdf_embedded_fonts_v1 import install_comprehensive_pdf_embedded_fonts_v1
     from nico.comprehensive_pdf_layout_polish_v1 import install_comprehensive_pdf_layout_polish_v1
     from nico.comprehensive_spanish_canonical_report_v87 import render_spanish_markdown, render_spanish_pdf
+    from nico.typescript_ast_complexity_v1 import install_typescript_ast_complexity_v1
+    install_typescript_ast_complexity_v1()
     install_comprehensive_pdf_embedded_fonts_v1();install_comprehensive_pdf_layout_polish_v1()
     monkeypatch.setattr(fixture,'FILES',{'src/a.py':function(cc=21)})
     package,_=collected_package(monkeypatch,tmp_path,spanish=spanish)
@@ -210,11 +213,17 @@ def test_partial_nesting_retains_observed_failure_and_population(monkeypatch,tmp
     assert stage[KEY]==value
     markdown='\n'.join(report._source_markdown(stage,spanish=spanish))
     html=report._semantic_html(markdown,'Partial policy')
-    pdf=io.BytesIO();SimpleDocTemplate(pdf).build(report._source_pdf_tables(stage,spanish=spanish,width=450))
+    from reportlab.lib.pagesizes import letter
+    pdf=io.BytesIO();SimpleDocTemplate(pdf,pagesize=letter,leftMargin=40,rightMargin=40,topMargin=40,bottomMargin=40).build(report._source_pdf_tables(stage,spanish=spanish,width=450))
+    from tests.test_sparse_reflow_section_flow import assert_text_geometry
+    assert_text_geometry(pdf.getvalue(),tmp_path/'partial-policy-layout.pdf')
     text='\n'.join(p.extract_text() or '' for p in PdfReader(io.BytesIO(pdf.getvalue())).pages)
     for surface in (markdown,html,text):
         normalized=' '.join(surface.split())
         assert '1 / 2' in normalized
+        assert '1 / 0 / 1 / 0' in normalized
+        assert ('Reglas cumplidas / incumplidas / desconocidas / no aplicables' if spanish else
+                'Passed / failed / unknown / not-applicable rules') in normalized
         assert ('Incumplimientos observados' if spanish else 'Observed violations') in normalized
         assert ('no son exhaustivos' if spanish else 'not exhaustive') in normalized
         assert ('Sin porcentaje calificado' if spanish else 'No qualified percentage') in normalized

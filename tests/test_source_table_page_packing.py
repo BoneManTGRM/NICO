@@ -115,3 +115,25 @@ with MonkeyPatch.context() as patch, TemporaryDirectory() as temp:
 """], cwd=root,env=env,check=True,capture_output=True,text=True,timeout=120)
     pdf=(target/'bins-40'/'report.pdf').read_bytes()
     assert len(PdfReader(io.BytesIO(pdf)).pages) <= 34
+
+
+def test_full_width_limitations_preserve_complete_text_and_readability(tmp_path):
+    from nico.architecture_policy_conformance_v1 import LIMIT
+    from tests.test_sparse_reflow_section_flow import assert_text_geometry
+    for spanish in (False, True):
+        stage = {'structured_tables': [{'title': 'Architecture policy rules',
+            'columns': ['Measure', 'Value'],
+            'rows': [['Policy scope and limitations', LIMIT], ['Limitations', 'evidence boundary ' * 80]]}]}
+        stream = io.BytesIO()
+        flowables = report._source_pdf_tables(stage, spanish=spanish, width=450)
+        SimpleDocTemplate(stream,pagesize=letter,leftMargin=40,rightMargin=40,topMargin=40,bottomMargin=40).build(flowables)
+        source = stream.getvalue()
+        assert_text_geometry(source, tmp_path / f'policy-limitations-{spanish}.pdf')
+        text = ' '.join(' '.join(page.extract_text() for page in PdfReader(io.BytesIO(source)).pages).split())
+        for label, value in stage['structured_tables'][0]['rows']:
+            expected = report._source_cell(label, spanish=spanish) + ': ' + report._source_cell(value, spanish=spanish)
+            assert ' '.join(expected.split()) in text
+        for page in PdfReader(io.BytesIO(source)).pages:
+            sizes = []
+            page.extract_text(visitor_text=lambda text, cm, tm, font, size: sizes.append(size) if text.strip() else None)
+            assert min(sizes) >= 7.1

@@ -38,3 +38,7 @@ Independent review must assess the normative critical designation and whether th
 ## Partial observations and threshold consistency
 
 Every rule retains measured and total function counts. `observed_violations` records qualified observations even when a dimension is partial; `violations` is the exhaustive count only for a complete applicable dimension. Partial rules remain unknown, suppress the policy percentage and explicitly label observed counts non-exhaustive in English/es-MX. Known negative observations are never hidden or converted into pass. A source metric threshold must be an integer matching the versioned policy threshold before its counts can be used; mismatch leaves the rule unknown, records both thresholds and suppresses the percentage rather than relabeling source counts.
+
+## Compact presentation
+
+The four rule-state counts share an explicitly ordered summary row; resolved/inventory counts share a second row. These are display-only groupings; structured counts, denominators and critical state are unchanged. Policy tables precede the existing measurement tables. PDF source-table narrative limitation rows span both columns with their complete translated label and text; vertical padding is 2pt while the existing 7.1pt minimum font and 9pt leading remain unchanged. No evidence rows are omitted and the existing 34-page synthetic final-report budget remains enforced.
