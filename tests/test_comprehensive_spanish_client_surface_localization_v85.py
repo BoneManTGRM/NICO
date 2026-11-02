@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from copy import deepcopy
 
 from pypdf import PdfReader
 from reportlab.lib.styles import getSampleStyleSheet
@@ -66,6 +67,16 @@ def _entries() -> list[dict]:
             "filename": "nico-comprun_spanish_surface_localization-evidence.csv",
             "sha256": "c" * 64,
         },
+        {
+            "artifact_type": "markdown_report",
+            "filename": "nico-comprun_spanish_surface_localization-report.md",
+            "sha256": "1" * 64,
+        },
+        {
+            "artifact_type": "html_report",
+            "filename": "nico-comprun_spanish_surface_localization-report.html",
+            "sha256": "2" * 64,
+        },
     ]
 
 
@@ -98,7 +109,9 @@ Keep `Client Artifact Manifest` and `src/report.py:42` literal.
 
 
 def test_spanish_manifest_pdf_is_fully_localized_and_keeps_exact_artifacts() -> None:
-    pdf = _render_spanish_manifest(manifest, _canonical(), _entries())
+    entries = _entries()
+    original_entries = deepcopy(entries)
+    pdf = _render_spanish_manifest(manifest, _canonical(), entries)
     extracted = _pdf_text(pdf)
     normalized = _normalized_pdf_text(pdf)
 
@@ -118,14 +131,24 @@ def test_spanish_manifest_pdf_is_fully_localized_and_keeps_exact_artifacts() -> 
     assert "Client Artifact Manifest" not in extracted
     assert "Human Review and Exact-Artifact Approval Record" not in extracted
     assert "Review package ready" not in extracted
+    assert "Informe (Markdown)" in normalized
+    assert "Informe (HTML)" in normalized
+    assert "markdown_report" not in extracted
+    assert "html_report" not in extracted
+    for entry in entries:
+        assert entry["filename"] in "".join(extracted.split())
+        assert entry["sha256"] in "".join(extracted.split())
+    assert entries == original_entries
 
 
 def test_spanish_markdown_manifest_translates_labels_and_preserves_hashes() -> None:
     identity = manifest._canonical_identity(_canonical())
+    entries = _entries()
+    original_entries = deepcopy(entries)
     markdown = _spanish_markdown_manifest(
         manifest,
         identity,
-        _entries(),
+        entries,
         pdf_sha256="d" * 64,
         canonical_json_sha256="e" * 64,
         manifest_sha256="f" * 64,
@@ -141,6 +164,10 @@ def test_spanish_markdown_manifest_translates_labels_and_preserves_hashes() -> N
     assert "f" * 64 in markdown
     assert "Client Artifact Manifest" not in markdown
     assert "Human Review and Exact-Artifact Approval Record" not in markdown
+    for entry, label in zip(entries[-2:], ("Informe (Markdown)", "Informe (HTML)")):
+        assert f"| {label} | {entry['filename']} | {entry['sha256']} |" in markdown
+        assert entry["artifact_type"] not in markdown
+    assert entries == original_entries
 
 
 def test_pdf_localization_removes_stale_review_status_without_touching_literals() -> None:
