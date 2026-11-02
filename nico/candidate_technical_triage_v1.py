@@ -620,9 +620,13 @@ def _fresh_triage(record: Mapping[str, Any], *, call_fact: Mapping[str, Any] | N
             rationale = "Bandit B101 identifies an assert used inside a specifically named non-production acceptance or proof harness, where the assertion is validation control flow rather than a shipped security boundary."
             next_step = "Retain the exact path, line, and rule evidence for quality-control sampling."
         elif executable is False and (comment_or_string is True or scope in {"test", "example"}):
-            verdict, confidence, code = "not_actionable", "high", "static_nonexecutable_noise"
-            rationale = "The rule hit is confined to non-executable text or a non-production example/test boundary."
-            next_step = "Retain source-context evidence for quality-control sampling."
+            # Scanner metadata is a claim, not independently bound source proof.
+            # No current receipt proves this non-executable exclusion; even a
+            # missing AST call is insufficient to establish it.
+            verdict, confidence, code = "needs_review", "low", "static_nonexecutable_unproven"
+            gaps.append("independent_nonexecutable_source_proof")
+            rationale = "Non-executable scanner context lacks independently bound source proof; it cannot establish a quality-control exclusion."
+            next_step = "Verify the exact-source location and non-executable boundary before proposing an exclusion."
         elif (
             executable is True
             and scope == "production"
@@ -869,6 +873,10 @@ def apply_candidate_technical_triage(register: Mapping[str, Any], *, triage: Map
         record["technical_triage_client_delivery_allowed"] = False
         record["human_approval_status"] = record.get("human_approval_status") or "pending"
         prior = indexed.get(prior_candidate_id) if lineage_status in _SAFE_LINEAGE_STATUSES and prior_candidate_id else None
+        if (prior is not None and _norm(record.get("category")) == "static"
+                and _norm(prior.get("technical_triage_rationale_code")) == "static_nonexecutable_noise"):
+            # Exact lineage does not add the proof missing from this old rationale.
+            prior = None
         if record.get("candidate_evidence_context_status") == "ambiguous":
             prior = None
             call_fact = None
