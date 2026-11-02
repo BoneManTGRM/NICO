@@ -288,7 +288,12 @@ def install_candidate_lineage_runtime_patch() -> dict[str, Any]:
             register["assessment_subject_normalization"] = normalization
             register = enrich_canonical_candidate_evidence(register, scan)
             register = apply_candidate_lineage(register)
-            register = apply_candidate_technical_triage(register)
+            register = apply_candidate_technical_triage(
+                register,
+                source_capture=scan.get('candidate_source_observations'),
+                source_scope={**scan, 'commit_sha': commit_sha}
+                if scan.get('snapshot_commit_sha') == commit_sha else None,
+            )
             register = revalidate_retained_candidate_triage(register)
             return refine_candidate_review_workload(register)
 

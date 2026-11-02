@@ -422,7 +422,7 @@ def _retained_canonical_fields(
     }
 
 
-def _fresh_triage(record: Mapping[str, Any]) -> dict[str, Any]:
+def _fresh_triage(record: Mapping[str, Any], *, call_fact: Mapping[str, Any] | None = None) -> dict[str, Any]:
     result = _base_fields(record)
     category = _norm(record.get("category"))
     evidence_quality = _norm(record.get("evidence_quality"))
@@ -585,6 +585,16 @@ def _fresh_triage(record: Mapping[str, Any]) -> dict[str, Any]:
             true_values={"mitigated", "protected", "guarded", "safeguard_present"},
             false_values={"unmitigated", "unprotected", "unguarded", "no_mitigation"},
         )
+        if call_fact and call_fact.get('status') == 'resolved':
+            used.append(f"static_import_binding={call_fact['api']}")
+            used.append(f"source_sha256={call_fact['source_sha256']}")
+            if executable is False or comment_or_string is True:
+                # Contradictory scanner context cannot turn a parsed call into
+                # non-executable noise, or become an automatic confirmation.
+                executable = None
+                gaps.append('conflicting_executable_source_evidence')
+            else:
+                executable = True
         used.extend([
             f"scanner={scanner}",
             f"rule={rule}",
@@ -819,7 +829,9 @@ def _metrics(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
-def apply_candidate_technical_triage(register: Mapping[str, Any], *, triage: Mapping[str, Any] | None = None) -> dict[str, Any]:
+def apply_candidate_technical_triage(register: Mapping[str, Any], *, triage: Mapping[str, Any] | None = None,
+                                    source_capture: Mapping[str, Any] | None = None,
+                                    source_scope: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Attach safe retained proposals and freshly triage all other candidates.
 
     Technical verdicts are proposal-only. This function never creates human disposition,
@@ -838,7 +850,18 @@ def apply_candidate_technical_triage(register: Mapping[str, Any], *, triage: Map
 
     imported = 0
     fresh = 0
+    from nico.candidate_call_resolution_v1 import candidate_call_fact
+    call_counts = Counter(eligible=0, attempted=0, resolved=0, unresolved=0)
     for record in current:
+        # Never trust a candidate-supplied receipt or carry it across source
+        # changes. Only the scan worker's separately bound capture supplies facts.
+        record.pop('technical_triage_call_resolution', None)
+        call_fact = candidate_call_fact(record, source_capture, source_scope)
+        if call_fact is not None:
+            call_counts['eligible'] += 1
+            call_counts['attempted'] += int(call_fact['attempted'])
+            call_counts[call_fact['status']] += 1
+            record['technical_triage_call_resolution'] = call_fact
         lineage_status = _text(record.get("lineage_status"), 80)
         prior_candidate_id = _text(record.get("prior_candidate_id"), 300)
         record["technical_triage_human_approval_status"] = "pending"
@@ -848,6 +871,9 @@ def apply_candidate_technical_triage(register: Mapping[str, Any], *, triage: Map
         prior = indexed.get(prior_candidate_id) if lineage_status in _SAFE_LINEAGE_STATUSES and prior_candidate_id else None
         if record.get("candidate_evidence_context_status") == "ambiguous":
             prior = None
+            call_fact = None
+        elif call_fact and call_fact.get('status') == 'resolved':
+            prior = None  # Fresh source facts must pass current deterministic triage.
         if prior is not None:
             base = _base_fields(record)
             record.update(base)
@@ -866,7 +892,7 @@ def apply_candidate_technical_triage(register: Mapping[str, Any], *, triage: Map
             record["technical_triage_status"] = "imported_proposal"
             imported += _count(record)
         else:
-            record.update(_fresh_triage(record))
+            record.update(_fresh_triage(record, call_fact=call_fact))
             fresh += _count(record)
 
     _cluster_candidates(current)
@@ -919,6 +945,12 @@ def apply_candidate_technical_triage(register: Mapping[str, Any], *, triage: Map
         "client_delivery_allowed": False,
         "score_effect": "none_canonical_dispositions_and_totals_unchanged",
         "workload_metrics": deepcopy(metrics),
+        "source_call_resolution": {
+            **dict(call_counts),
+            "not_attempted": call_counts['eligible'] - call_counts['attempted'],
+            "unit": "candidate_records",
+            "resolved_means": "static_import_binding_only_not_candidate_disposition",
+        },
         **metrics,
     }
     output["canonical_digest_sha256"] = hashlib.sha256(json.dumps(current, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
