@@ -315,11 +315,53 @@ def _complexity_summary_payload(context: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _import_graph_evidence(ast_result: dict[str, Any], paths: set[str]) -> dict[str, Any]:
+    """Project complete parser graph observations; absence never means no cycles."""
+    result = {
+        "import_graph_status": "unavailable",
+        "import_graph_scope": "Supplied JavaScript/TypeScript static import graph only; not whole-repository or runtime architecture. Cycles contain multiple files; self-import cycles are not enumerated.",
+        "strongly_connected_components": None,
+        "cyclic_components": None,
+        "files_in_import_cycles": None,
+    }
+    graph = ast_result.get("import_graph")
+    analyses = ast_result.get("analyses")
+    if ast_result.get("status") != "complete" or not isinstance(graph, dict) or not graph:
+        return result
+    if (not isinstance(analyses, list) or len(analyses) != len(paths)
+            or any(not isinstance(row, dict) or not isinstance(row.get("path"), str) for row in analyses)
+            or {row.get("path") for row in analyses} != paths
+            or ast_result.get("parse_failures") != []
+            or any(row.get("status") != "analyzed" or row.get("method") != "typescript_compiler_ast"
+                   or type(row.get("parser_diagnostic_count")) is not int
+                   or row["parser_diagnostic_count"] != 0 for row in analyses)):
+        result["import_graph_status"] = "partial"
+        return result
+    nodes, edges, components = (graph.get(key) for key in ("nodes", "edges", "strongly_connected_components"))
+    cycles, members = graph.get("cyclic_components"), graph.get("files_in_cycles")
+    if (any(type(n) is not int or n < 0 for n in (nodes, edges, components))
+            or nodes != len(paths) or not (1 <= components <= nodes if nodes else components == edges == 0)
+            or not isinstance(cycles, list) or not isinstance(members, list)):
+        return result
+    seen: set[str] = set()
+    for cycle in cycles:
+        if (not isinstance(cycle, list) or len(cycle) < 2
+                or any(not isinstance(path, str) or path not in paths for path in cycle)
+                or len(set(cycle)) != len(cycle) or seen.intersection(cycle)):
+            return result
+        seen.update(cycle)
+    if (len(cycles) > components or members != sorted(seen)
+            or components != len(cycles) + nodes - len(seen) or edges < len(seen)):
+        return result
+    return {**result, "import_graph_status": "measured",
+            "strongly_connected_components": components,
+            "cyclic_components": cycles[:20], "files_in_import_cycles": members[:100]}
+
+
 def _complexity_architecture_payload(context: dict[str, Any]) -> dict[str, Any]:
     fan_outs = context["fan_outs"]
     internal_fan_outs = context["internal_fan_outs"]
     fan_ins = context["fan_ins"]
-    import_graph = context["import_graph"]
     ast_result = context["ast_result"]
     return {
         "import_edges": sum(fan_outs),
@@ -328,9 +370,7 @@ def _complexity_architecture_payload(context: dict[str, Any]) -> dict[str, Any]:
         "maximum_fan_out": _safe_max(fan_outs, empty=0),
         "average_fan_in": _safe_average(fan_ins, empty=0.0),
         "maximum_fan_in": _safe_max(fan_ins, empty=0),
-        "strongly_connected_components": int(import_graph.get("strongly_connected_components") or 0),
-        "cyclic_components": list(import_graph.get("cyclic_components") or [])[:20],
-        "files_in_import_cycles": list(import_graph.get("files_in_cycles") or [])[:100],
+        **_import_graph_evidence(ast_result, set(context["javascript_files"])),
         "top_coupled_files": context["coupled"][:25],
         "hotspots": context["hotspots"][:50],
         "duplicate_evidence": context["base"]._duplicate_evidence(context["source_files"]),
@@ -391,7 +431,6 @@ def _build_complexity(files: dict[str, str]) -> dict[str, Any]:
         "eligible_count": len(source_files),
         "analyzed_count": len(analyses),
         "high_complexity": sum(value >= 11 for value in complexities),
-        "import_graph": ast_result.get("import_graph") if isinstance(ast_result.get("import_graph"), dict) else {},
     }
     from nico.source_function_measurements_v1 import KEY, build_optional_measurements
     measurements = build_optional_measurements(source_files, analyses, ast_result)
