@@ -146,7 +146,7 @@ def test_actual_review_projection_with_sorted_candidates_uses_original_identity(
     from nico.candidate_investigation_pipeline_v1 import fingerprint
     rows=[{**row(),'candidate_id':'Z'},{**row(),'candidate_id':'A'}]
     retained=capture(rows)
-    register={'candidate_record_count':2,'findings':rows,'review_workload_clusters':[{'cluster_id':'synthetic','candidate_ids':['Z','A']}]} 
+    register={'candidate_record_count':2,'findings':rows,'review_workload_clusters':[{'cluster_id':'synthetic','candidate_ids':['Z','A']}]}
     register['candidate_investigation']=investigate_register(register,retained,SCOPE)
     identity={**SCOPE,'evidence_ledger_id':'synthetic-ledger'}
     canonical={'identity':identity,'assessment':{'canonical_scanner_finding_register':register}}
