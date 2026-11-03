@@ -1459,6 +1459,10 @@ def collect_hosted_provider_repository_evidence(
         "client_delivery_allowed": False,
         "guardrail": "Complexity measurements cover only readable sampled source files from the exact provider revision.",
     }
+    from nico.source_function_measurements_v1 import bind_measurements
+    bind_measurements(complexity)
+    from nico.source_function_collection_v1 import bind_collection
+    bind_collection(complexity)
     _persist_evidence(bundle, active_store, "provider-snapshot-repository-evidence.json")
     _persist_evidence(complexity, active_store, "provider-snapshot-complexity-evidence.json")
     return bundle, complexity
