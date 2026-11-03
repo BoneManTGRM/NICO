@@ -19,7 +19,7 @@ export type Assistance = {
   pending_record_count: number;
   queue: Packet[];
   source_investigation?: {available: boolean; candidate_count?: number; completed_count?: number; source_availability_counts?: Record<string, number>;
-    packets: {dependency_next_step?: string; record_index?: number; candidate_input_sha256?: string; dependency_identity?: {package: string; locked_version: string; lockfile_path: string; source_sha256: string}; candidate_id: string; rule_id: string; completed: boolean; source_sha256?: string; source_path?: string; line?: number; reason: string; source_availability_detail?: string}[]};
+    packets: {dependency_advisory_membership?: {status: string; advisory_id: string; package: string; locked_version: string; lockfile_source_sha256: string; selected_evidence_sha256: string}; dependency_next_step?: string; record_index?: number; candidate_input_sha256?: string; dependency_identity?: {package: string; locked_version: string; lockfile_path: string; source_sha256: string}; candidate_id: string; rule_id: string; completed: boolean; source_sha256?: string; source_path?: string; line?: number; reason: string; source_availability_detail?: string}[]};
 };
 
 const dependencyNextSteps: Record<string, [string, string]> = {
@@ -158,11 +158,14 @@ export default function CandidateReviewAssistance({value, locale}: {value: Assis
               p.candidate_input_sha256 === packet.source_candidate_input_sha256) : [];
             const identity = matches.length === 1 ? matches[0].dependency_identity : undefined;
             const nextStep = matches.length === 1 ? matches[0].dependency_next_step : undefined;
+            const advisory = matches.length === 1 ? matches[0].dependency_advisory_membership : undefined;
+            const explicitMatch = identity && advisory?.status === "explicitly_listed" && advisory.package === identity.package && advisory.locked_version === identity.locked_version && advisory.lockfile_source_sha256 === identity.source_sha256 && /^[a-f0-9]{64}$/.test(advisory.selected_evidence_sha256) && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(advisory.advisory_id);
             const tasks = packet.evidence_tasks.slice(0, 4).filter(code => Object.hasOwn(dependencyTasks, code) &&
               (!identity || (code !== "identify_package" && code !== "identify_locked_version")));
             return <div data-dependency-evidence="true">
               {nextStep && (nextStep !== "verify_installation_and_use" || identity) && Object.hasOwn(dependencyNextSteps, nextStep) ? <p data-dependency-next-step="true">{dependencyNextSteps[nextStep][language]}</p> : null}
               {identity ? <p>{es ? "Identidad obtenida del archivo de bloqueo (no confirma instalación ni seguridad):" : "Identity collected from lockfile (not proof of installation or safety):"} <code>{identity.package}</code> · <code>{identity.locked_version}</code> · <code>{identity.lockfile_path}</code> · SHA-256: <code>{identity.source_sha256}</code></p> : null}
+              {explicitMatch ? <p data-advisory-explicit-membership="true">{es ? "El aviso conservado enumera explícitamente esta versión bloqueada. Esto no demuestra qué está instalado, afectación en producción ni alcanzabilidad:" : "The retained advisory explicitly lists this locked version. This does not establish installation, production affectedness or reachability:"} <code>{advisory!.advisory_id}</code> · {es ? "Hash de los campos de evidencia seleccionados:" : "Selected evidence fields hash:"} <code>{advisory!.selected_evidence_sha256}</code></p> : null}
               <ul>{tasks.map(code => <li key={code}>{dependencyTasks[code][language]}</li>)}</ul>
             </div>;
           })() : null}

@@ -13,6 +13,7 @@ from nico.candidate_investigation_pipeline_v1 import VERSION, scope_of
 from nico.candidate_source_observations_v1 import candidate_source_path, observe_python_source
 from nico.candidate_source_reason_detail_v1 import path_digest
 from nico import dependency_identity_evidence_v1 as dependency_identity
+from nico import dependency_advisory_membership_v1 as advisory
 
 INPUT_LIMIT = 8 * 1024 * 1024
 OUTPUT_LIMIT = 2 * 1024 * 1024
@@ -27,7 +28,7 @@ def encoded(value):
     return json.dumps(value, ensure_ascii=True, sort_keys=True).encode('utf-8')
 
 
-def capture_candidates(rows, scope, inventory, read_blob, *, started=None, clock=time.monotonic):
+def capture_candidates(rows, scope, inventory, read_blob, *, started=None, clock=time.monotonic, advisory_observations=None, advisory_input_bytes=0):
     """Inventory/read callbacks share the deadline; never follow a candidate path.
 
     Inventory maps paths to verified regular Git blob (object ID, size) pairs.
@@ -40,6 +41,8 @@ def capture_candidates(rows, scope, inventory, read_blob, *, started=None, clock
     reasons = Counter()
     result = {'artifact_schema': VERSION, 'scope': scope, 'observations': {},
               'source_bytes_read': 0, 'unavailable_reasons': reasons,
+              'dependency_advisory_observations': advisory_observations or {},
+              'advisory_input_bytes': advisory_input_bytes,
               'raw_source_retained': False, 'selection_policy': 'supported-rule-paths-then-other-candidate-paths.v1',
               'deadline_kind': 'cooperative_between_bounded_parses',
               'candidate_record_count': len(rows), 'candidate_records_considered': min(len(rows), CANDIDATE_LIMIT),
@@ -96,7 +99,7 @@ def capture_candidates(rows, scope, inventory, read_blob, *, started=None, clock
         if isinstance(entries, tuple):
             entries, metadata_size = entries
         result['inventory_metadata_bytes'] = metadata_size
-        retained = 0
+        retained = len(encoded(result['dependency_advisory_observations']))
         path = None
         for index, path in enumerate(ordered):
             if clock() >= deadline:
@@ -109,7 +112,7 @@ def capture_candidates(rows, scope, inventory, read_blob, *, started=None, clock
                 reasons['source_missing_or_unsupported'] += 1
                 continue
             oid, size = entry
-            if type(size) is not int or size < 0 or size > FILE_LIMIT or result['source_bytes_read'] + metadata_size + size > INPUT_LIMIT:
+            if type(size) is not int or size < 0 or size > FILE_LIMIT or result['source_bytes_read'] + metadata_size + advisory_input_bytes + size > INPUT_LIMIT:
                 record(path, 'file_size_limit' if type(size) is int and size > FILE_LIMIT else
                        'input_size_limit' if type(size) is int and size >= 0 else 'inventory_entry_invalid')
                 reasons['source_size_budget'] += 1
@@ -148,6 +151,7 @@ def capture_candidates(rows, scope, inventory, read_blob, *, started=None, clock
         # A whole-envelope fallback invalidates individual allocation outcomes.
         result.pop('path_capture_outcomes', None)
         result['observations'] = {}
+        result['dependency_advisory_observations'] = {}
         result['unavailable_reasons']['observation_size_budget'] = len(priorities)
     return result
 
@@ -158,6 +162,7 @@ def capture_workspace(repo_path, payload, actual_commit, results, *, env, clock=
     if actual_commit != payload.get('snapshot_commit_sha') or not re.fullmatch(r'[a-f0-9]{40}', actual_commit):
         return capture_candidates([], {}, lambda *args: {}, lambda *args: b'', started=started, clock=clock)
     from nico.comprehensive_native_providers_v5 import _normalized_record
+    advisory_observations, advisory_input_bytes, advisory_attempts = advisory.capture(results, scope, _normalized_record, deadline=started + 5, clock=clock)
     rows = []
     count = sum(len(item.get('findings') or []) for item in results if isinstance(item, Mapping) and isinstance(item.get('findings'), list))
     for item in results:
@@ -218,9 +223,10 @@ def capture_workspace(repo_path, payload, actual_commit, results, *, env, clock=
                 entries[path] = (oid.decode('ascii'), int(size))
         return entries, len(raw)
     result = capture_candidates(rows, scope, inventory,
-        lambda oid, size, deadline: git(['cat-file', 'blob', oid], deadline, size), started=started, clock=clock)
+        lambda oid, size, deadline: git(['cat-file', 'blob', oid], deadline, size), started=started, clock=clock, advisory_observations=advisory_observations, advisory_input_bytes=advisory_input_bytes)
+    result['dependency_advisory_records_considered'] = advisory_attempts
     result['inventory_metadata_bytes'] = metadata_bytes[0]
-    result['total_input_bytes_charged'] = result['source_bytes_read'] + metadata_bytes[0]
+    result['total_input_bytes_charged'] = result['source_bytes_read'] + metadata_bytes[0] + advisory_input_bytes
     result['inventory_basis'] = 'retained_detailed_scanner_findings_only'
     result['scanner_collection_complete'] = bool(results) and all(isinstance(item, Mapping) and item.get('status') in {'completed', 'not_applicable'} for item in results)
     result.update(candidate_record_count=count, candidate_records_considered=len(rows),

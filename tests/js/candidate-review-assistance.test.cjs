@@ -176,3 +176,22 @@ for (const locale of ['en','es-MX']) {
     assert.equal(h.calls.length,1);
   });
 }
+
+for (const locale of ['en','es-MX']) {
+  for(const mode of ['positive','missing','wrong_version','wrong_source','stale_packet']) {
+    test(`${locale}: explicit advisory membership ${mode} never clears`,async()=>{
+      const identity={package:'demo',locked_version:'1.2.3',lockfile_path:'package-lock.json',source_sha256:'b'.repeat(64)};
+      const advisory={status:'explicitly_listed',advisory_id:'GHSA-demo-1234',package:'demo',locked_version:mode==='wrong_version'?'9.0.0':'1.2.3',lockfile_source_sha256:mode==='wrong_source'?'d'.repeat(64):identity.source_sha256,selected_evidence_sha256:'e'.repeat(64)};
+      const source={candidate_id:'dep',record_index:2,candidate_input_sha256:mode==='stale_packet'?'d'.repeat(64):'c'.repeat(64),completed:false,rule_id:'x',reason:'unresolved',dependency_identity:identity,...(mode==='missing'?{}:{dependency_advisory_membership:advisory})};
+      const h=harness(locale,()=>Response.json(payload({review_assistance:{artifact_schema:'nico.candidate-review-assistance.v1',pending_record_count:1,
+        queue:[{candidate_id:'dep',record_index:0,source_record_index:2,source_candidate_input_sha256:'c'.repeat(64),recommendation:'resolve_evidence_gaps',limitations:[],source_url:null,input_sha256:'a'.repeat(64),existing_review_profile_cluster_id:'',evidence_tasks:['identify_package','identify_locked_version','verify_affectedness','verify_runtime_use']}],
+        source_investigation:{available:true,packets:[source]}}})));
+      await h.load();
+      assert.equal(h.find(n=>n.props['data-advisory-explicit-membership']==='true').length,mode==='positive'?1:0);
+      if(mode==='positive')assert.match(h.html(),locale==='en'?/does not establish installation/:/no demuestra qué está instalado/);
+      assert.match(h.html(),locale==='en'?/Keep the candidate pending/:/Mantener el candidato pendiente/);
+      assert.match(h.html(),locale==='en'?/affectedness remains unresolved/:/afectación sigue sin resolverse/);
+      assert.equal(h.calls.length,1);
+    });
+  }
+}

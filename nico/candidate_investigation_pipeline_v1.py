@@ -11,6 +11,7 @@ from nico.candidate_source_observations_v1 import observe_python_source, investi
 from nico.candidate_source_reason_detail_v1 import capture_detail, packet_detail
 
 from nico import dependency_identity_evidence_v1 as dependency_identity
+from nico import dependency_advisory_membership_v1 as advisory
 
 VERSION = 'nico.persisted-candidate-investigation.v1'
 REASONS = frozenset({'source_scope_unavailable_or_stale', 'investigation_budget_exhausted', 'source_identity_mismatch', 'unsupported_or_missing_exact_source_evidence', 'source_parse_unavailable', 'source_file_binding_mismatch', 'source_line_missing', 'rule_semantics_require_specialist_review', 'rule_source_line_mismatch', 'ambiguous_call_expression', 'retained_observation_invalid', 'exact_line_structure_only'})
@@ -145,9 +146,16 @@ def investigate_register(register, retained, scope, *, clock=time.monotonic):
             if clock() - started < 2 and identity_bytes + size <= 262144:
                 identity = proposal
                 identity_bytes += size
+        membership = advisory.qualify(row, identity, retained, scope) if identity is not None and clock() - started < 2 else None
+        if membership is not None:
+            size = len(json.dumps(membership).encode())
+            if identity_bytes + size > 262144 or clock() - started >= 2:
+                membership = None
+            else:
+                identity_bytes += size
         reference = packet.get('source_reference') or {}
         # Persist compact versioned reasoning codes, not repeated prose and scope.
-        packets.append({**({'dependency_identity': identity} if identity else {}), 'candidate_id': row.get('candidate_id'),
+        packets.append({**({'dependency_advisory_membership': membership} if membership else {}), **({'dependency_identity': identity} if identity else {}), 'candidate_id': row.get('candidate_id'),
             'candidate_input_sha256': fingerprint(row), 'rule_id': row.get('rule_id') or row.get('rule'),
             'bounded_rule_analysis_completed': packet['bounded_rule_analysis_completed'],
             'reason': packet.get('reason', 'unresolved'),
@@ -223,7 +231,13 @@ def display_investigation(register, scope, *, trusted_capture=None):
             if expected is not None and identity == expected and identity_output_bytes + size <= 262144:
                 qualified_identity = expected
                 identity_output_bytes += size
-        packets.append({**({'dependency_identity': qualified_identity} if qualified_identity else {}),
+        membership = advisory.qualify(row, qualified_identity, trusted_capture, scope_of(scope)) if qualified_identity is not None else None
+        size = len(json.dumps(membership).encode()) if membership else 0
+        if membership != packet.get('dependency_advisory_membership') or identity_output_bytes + size > 262144:
+            membership = None
+        else:
+            identity_output_bytes += size
+        packets.append({**({'dependency_advisory_membership': membership} if membership else {}), **({'dependency_identity': qualified_identity} if qualified_identity else {}),
                         **({'dependency_next_step': dependency_identity.next_step(row, trusted_capture, scope_of(scope), qualified=qualified_identity is not None)} if row.get('category') == 'dependency' else {}),
                         'record_index': len(packets), 'candidate_input_sha256': fingerprint(row),
                         'source_path': path if safe_path else None, 'candidate_id': row.get('candidate_id'), 'rule_id': row.get('rule_id') or row.get('rule'),
