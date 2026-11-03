@@ -224,6 +224,7 @@ def display_investigation(register, scope, *, trusted_capture=None):
                 qualified_identity = expected
                 identity_output_bytes += size
         packets.append({**({'dependency_identity': qualified_identity} if qualified_identity else {}),
+                        **({'dependency_next_step': dependency_identity.next_step(row, trusted_capture, scope_of(scope), qualified=qualified_identity is not None)} if row.get('category') == 'dependency' else {}),
                         'record_index': len(packets), 'candidate_input_sha256': fingerprint(row),
                         'source_path': path if safe_path else None, 'candidate_id': row.get('candidate_id'), 'rule_id': row.get('rule_id') or row.get('rule'),
                         'completed': claimed_complete and valid_reference and (row.get('rule_id') or row.get('rule')) in {'B101', 'B404', 'B405', 'B603', 'B607'},

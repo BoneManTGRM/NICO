@@ -145,3 +145,34 @@ for (const locale of ['en', 'es-MX']) {
     });
   }
 }
+
+for (const locale of ['en', 'es-MX']) {
+  for (const code of ['supply_scanner_identity','supply_current_capture','supply_lockfile_observation','inspect_lockfile_capture','reconcile_lockfile_identity','verify_installation_and_use','injected raw narrative','__proto__']) {
+    test(`${locale}: next-step guidance ${code}`, async () => {
+      const source={candidate_id:'dep',record_index:2,candidate_input_sha256:'c'.repeat(64),completed:false,rule_id:'x',reason:'unresolved',dependency_next_step:code, ...(code==='verify_installation_and_use'?{dependency_identity:{package:'demo',locked_version:'1.2.3',lockfile_path:'package-lock.json',source_sha256:'b'.repeat(64)}}:{})};
+      const h=harness(locale,()=>Response.json(payload({review_assistance:{artifact_schema:'nico.candidate-review-assistance.v1',pending_record_count:1,
+        queue:[{candidate_id:'dep',record_index:0,source_record_index:2,source_candidate_input_sha256:'c'.repeat(64),recommendation:'resolve_evidence_gaps',limitations:[],source_url:null,input_sha256:'a'.repeat(64),existing_review_profile_cluster_id:'',evidence_tasks:['identify_package','identify_locked_version','verify_affectedness','verify_runtime_use']}],
+        source_investigation:{available:true,packets:[source]}}})));
+      await h.load();
+      const allowed=!['injected raw narrative','__proto__'].includes(code);
+      assert.equal(h.find(n=>n.props['data-dependency-next-step']==='true').length,allowed?1:0);
+      assert.doesNotMatch(h.html(),/injected raw narrative/);
+      assert.match(h.html(),locale==='en'?/Keep the candidate pending/:/Mantener el candidato pendiente/);
+      if(code==='supply_lockfile_observation') assert.match(h.html(),locale==='en'?/cause is unknown/:/causa se desconoce/);
+      if(code==='reconcile_lockfile_identity') assert.match(h.html(),locale==='en'?/do not assume that matching was attempted/:/no suponer que se intentó la coincidencia/);
+      assert.equal(h.calls.length,1);
+    });
+  }
+}
+
+for (const locale of ['en','es-MX']) {
+  test(`${locale}: collected guidance requires an actual identity receipt`, async()=>{
+    const h=harness(locale,()=>Response.json(payload({review_assistance:{artifact_schema:'nico.candidate-review-assistance.v1',pending_record_count:1,
+      queue:[{candidate_id:'dep',record_index:0,source_record_index:2,source_candidate_input_sha256:'c'.repeat(64),recommendation:'resolve_evidence_gaps',limitations:[],source_url:null,input_sha256:'a'.repeat(64),existing_review_profile_cluster_id:'',evidence_tasks:['identify_package','identify_locked_version','verify_affectedness','verify_runtime_use']}],
+      source_investigation:{available:true,packets:[{candidate_id:'dep',record_index:2,candidate_input_sha256:'c'.repeat(64),completed:false,rule_id:'x',reason:'unresolved',dependency_next_step:'verify_installation_and_use'}]}}})));
+    await h.load();
+    assert.equal(h.find(n=>n.props['data-dependency-next-step']==='true').length,0);
+    assert.match(h.html(),locale==='en'?/Identify the package in/:/Identificar el paquete en/);
+    assert.equal(h.calls.length,1);
+  });
+}

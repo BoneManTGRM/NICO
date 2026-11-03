@@ -133,3 +133,33 @@ def retained_capture(record):
     stage = stages.get('repository_and_delivery_evidence')
     repo = stage.get('repository_evidence') if isinstance(stage, Mapping) else None
     return repo.get('candidate_source_observations') if isinstance(repo, Mapping) else None
+
+
+def next_step(row, capture, scope, *, qualified):
+    """Authored guidance from retained state, never a diagnosis or new analysis."""
+    if qualified:
+        return 'verify_installation_and_use'
+    req = row.get('dependency_identity_request')
+    if not isinstance(req, Mapping) or request({'package': req.get('package'), **({'installed_version': req['claimed_version']} if req.get('claimed_version') is not None else {})}, req.get('lockfile_path')) != req:
+        return 'supply_scanner_identity'
+    if (row.get('exact_commit_sha') != scope.get('commit_sha')
+            or row.get('source_commit_sha', scope.get('commit_sha')) not in ('', scope.get('commit_sha'))
+            or row.get('source_repository', scope.get('repository')) not in ('', scope.get('repository'))
+            or any(k in row and row[k] != scope.get(k) for k in ('run_id', 'customer_id', 'project_id'))
+            or candidate_source_path(row.get('source_path')) != req['lockfile_path']):
+        return 'supply_current_capture'
+    if (not isinstance(capture, Mapping) or capture.get('artifact_schema') != 'nico.persisted-candidate-investigation.v1'
+            or capture.get('scope') != scope or not all(scope.get(k) for k in SCOPE)):
+        return 'supply_current_capture'
+    observations = capture.get('observations')
+    observation = observations.get(req['lockfile_path']) if isinstance(observations, Mapping) else None
+    if not isinstance(observation, Mapping):
+        return 'supply_lockfile_observation'
+    if observation.get('status') != 'observed':
+        return 'inspect_lockfile_capture'
+    if (observation.get('artifact_schema') != VERSION or observation.get('scope') != scope
+            or observation.get('path') != req['lockfile_path'] or observation.get('origin') != 'verified_git_blob'):
+        return 'supply_current_capture'
+    # Missing receipt can also mean a budget boundary, stale proof or unsupported
+    # inventory. Do not turn the existence of an observation into an attempt claim.
+    return 'reconcile_lockfile_identity'
