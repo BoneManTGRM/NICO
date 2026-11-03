@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import hashlib
+import json
 import shutil
 import subprocess
 import tempfile
@@ -16,7 +18,7 @@ from nico import scanner_tool_runners as tool_runners
 from nico.dependency_materiality import classify_dependency_finding
 from nico import scanner_worker as base
 from nico.storage import STORE
-from nico.worker_execution import WorkerWorkspace
+from nico.worker_execution import WorkerWorkspace, WorkerCleanupError
 
 _COMMIT_SHA_RE = re.compile(r"^[0-9a-fA-F]{40,64}$")
 _EXCLUDED_PATH_PARTS = {"tests", "test", "fixtures", "fixture", "examples", "example", "samples", "sample"}
@@ -297,9 +299,43 @@ def _persist_snapshot_scan(record: dict[str, Any], store=None) -> bool:
     return True
 
 
+def _cleanup_control_identity(payload: dict[str, Any]) -> dict[str, str]:
+    return {
+        'customer_id': str(payload.get('customer_id') or 'default_customer'),
+        'project_id': str(payload.get('project_id') or 'default_project'),
+        'run_id': str(payload.get('run_id') or ''),
+        'repository': str(payload.get('repository') or ''),
+        'snapshot_commit_sha': str(payload.get('snapshot_commit_sha') or '').lower(),
+    }
+
+
+def _cleanup_control_id(payload: dict[str, Any]) -> str:
+    identity = _cleanup_control_identity(payload)
+    digest = hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    return 'scanner_cleanup_block_' + digest
+
+
+def _cleanup_control(payload: dict[str, Any]) -> dict[str, Any] | None:
+    # Exact primary-key read of a small control record, never historical payloads.
+    record = STORE.get('audit_log', _cleanup_control_id(payload))
+    if record is not None and (
+        record.get('record_kind') != 'scanner_cleanup_control.v1'
+        or record.get('cleanup_identity') != _cleanup_control_identity(payload)
+        or record.get('cleanup_unconfirmed') is not True
+    ):
+        raise WorkerCleanupError('invalid cleanup control; admission blocked')
+    return record
+
+
 def _run_snapshot_scan(scan_id: str, payload: dict[str, Any], *, execution_record=None) -> None:
     job = deepcopy(execution_record if execution_record is not None else base.SCAN_JOBS[scan_id])
     job.setdefault('scan_id', scan_id)
+    durable = STORE.get('scanner_runs', scan_id)
+    if isinstance(durable, dict) and durable.get('cleanup_unconfirmed') is True:
+        base.SCAN_JOBS[scan_id] = deepcopy(durable)
+        return
+    if _cleanup_control(payload) is not None:
+        return
     customer_id = payload.get("customer_id") or "default_customer"
     project_id = payload.get("project_id") or "default_project"
     job["status"] = "running"
@@ -393,6 +429,35 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any], *, execution_recor
                     from nico.candidate_workspace_capture_v1 import capture_workspace
                     job['candidate_source_observations'] = capture_workspace(
                         repo_path, payload, actual_commit_sha, results, env=env)
+        except WorkerCleanupError:
+            # A control-plane abort must not become an ordinary per-tool failure,
+            # nor strand a durable running job after its daemon thread exits.
+            # Persist the exact-key admission block first. It also blocks a retry
+            # if terminal-job persistence subsequently fails. Existing table only;
+            # no findings/source/output are copied into this control record.
+            control_id = _cleanup_control_id(payload)
+            STORE.put('audit_log', control_id, {
+                **_cleanup_control_identity(payload), 'audit_id': control_id,
+                'action': 'scanner.cleanup_unconfirmed_control',
+                'record_kind': 'scanner_cleanup_control.v1',
+                'cleanup_identity': _cleanup_control_identity(payload),
+                'blocked_scan_id': scan_id, 'status': 'blocked',
+                'cleanup_unconfirmed': True, 'terminal': True, 'retryable': False,
+                'automatic_resume': False, 'human_review_required': True,
+                'client_delivery_allowed': False,
+            })
+            job.update(status='blocked', terminal=True, retryable=False,
+                       automatic_resume=False, cleanup_unconfirmed=True,
+                       current_stage='worker_cleanup_unconfirmed',
+                       error_code='worker_cleanup_unconfirmed',
+                       updated_at=base.now_iso(), completed_at=base.now_iso(),
+                       scanner_results=deepcopy(results),
+                       actual_commit_sha=actual_commit_sha,
+                       human_review_required=True, client_delivery_allowed=False,
+                       unavailable_data_notes=['Worker cleanup could not be confirmed; operator reconciliation required.'])
+            if not _persist_snapshot_scan(job):
+                raise WorkerCleanupError('terminal cleanup block persistence unconfirmed')
+            return
         except RepositoryExecutionLimit as exc:
             actual_commit_sha = exc.commit_sha
             execution_limit = dict(exc.evidence)
@@ -525,6 +590,14 @@ def start_snapshot_scan(payload: dict[str, Any], *, worker_contract: dict | None
         return {"status": "blocked", "error": "authorized_by is required."}
     if not str(payload.get("authorization_scope") or "").strip():
         return {"status": "blocked", "error": "authorization_scope is required."}
+    # Repeated intake in another process must not replace a cleanup-blocked scan
+    # with a fresh scan ID for the same assessment/source/tenant.
+    previous = _cleanup_control(payload)
+    if previous is not None:
+        return {'status': 'blocked', 'code': 'worker_cleanup_unconfirmed',
+                'scan_id': previous['blocked_scan_id'], 'retryable': False,
+                'automatic_resume': False, 'human_review_required': True,
+                'client_delivery_allowed': False}
     from nico.hosted_provider_comprehensive_runtime_v1 import _clone_spec
 
     try:
