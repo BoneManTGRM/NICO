@@ -10,6 +10,51 @@ NAME = re.compile(r'(?:@[a-z0-9_.-]+/)?[a-z0-9_.-]+\Z')
 SEMVER = re.compile(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\Z')
 
 
+ROOT_VERSION = 'nico.lockfile-root-declaration.v1'
+ROOT_ROLES = ('dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies')
+
+
+def _root_declarations(root):
+    # Literal lockfile metadata only. Never interpret ranges, installation or use.
+    if not isinstance(root, dict):
+        return None
+    declarations = {}
+    for role in ROOT_ROLES:
+        if role not in root:
+            continue
+        group = root[role]
+        if not isinstance(group, dict) or len(group) > 4096:
+            return None
+        for name, spec in group.items():
+            if (not isinstance(name, str) or len(name) > 214 or not NAME.fullmatch(name) or name in ('.', '..')
+                    or not isinstance(spec, str) or not spec or len(spec) > 1024
+                    or spec != spec.strip() or spec.startswith('npm:')
+                    or any(ord(c) < 32 for c in spec)):
+                return None
+            declarations.setdefault(name, []).append(role)
+            if len(declarations) > 4096:
+                return None
+    return {'artifact_schema': ROOT_VERSION, 'declarations': dict(sorted(declarations.items()))} if declarations else None
+
+
+def _qualified_root_declaration(observation, name, location):
+    value = observation.get('root_declarations')
+    if (location != 'node_modules/' + name or not isinstance(value, Mapping)
+            or set(value) != {'artifact_schema', 'declarations'} or value.get('artifact_schema') != ROOT_VERSION):
+        return None
+    declarations = value.get('declarations')
+    if not isinstance(declarations, Mapping) or len(declarations) > 4096:
+        return None
+    for package, roles in declarations.items():
+        if (not isinstance(package, str) or len(package) > 214 or not NAME.fullmatch(package) or package in ('.', '..')
+                or not isinstance(roles, list) or not roles or len(roles) > 4
+                or any(not isinstance(r, str) or r not in ROOT_ROLES for r in roles)
+                or roles != [r for r in ROOT_ROLES if r in roles]):
+            return None
+    roles = declarations.get(name)
+    return {'artifact_schema': ROOT_VERSION, 'roles': list(roles)} if roles else None
+
+
 def request(finding, path):
     ecosystems = [finding[k] for k in ('ecosystem', 'osv_scanned_ecosystem') if k in finding]
     if any(not isinstance(e, str) or e.lower() != 'npm' for e in ecosystems):
@@ -64,7 +109,8 @@ def observe(data, *, scope, path, blob_oid):
                 entries.append({'package': name if len(name) <= 214 else '', 'unsupported': True})
             else:
                 entries.append({'package': name, 'locked_version': version, 'package_path': location})
-        return {'artifact_schema': VERSION, 'status': 'observed', 'scope': dict(scope), 'origin': 'verified_git_blob',
+        root = _root_declarations(packages.get(''))
+        return {**({'root_declarations': root} if root else {}), 'artifact_schema': VERSION, 'status': 'observed', 'scope': dict(scope), 'origin': 'verified_git_blob',
                 'path': path, 'blob_oid': blob_oid, 'source_sha256': hashlib.sha256(data).hexdigest(), 'entries': entries}
     except (ValueError, UnicodeError, TypeError, RecursionError):
         return {'artifact_schema': VERSION, 'status': 'unavailable'}
@@ -116,7 +162,8 @@ def qualify(row, observation, scope):
             or '.git' in location.split('/') or not (location == 'node_modules/' + req['package'] or location.endswith('/node_modules/' + req['package']))
             or req['claimed_version'] not in (None, version)):
         return None
-    return {'artifact_schema': VERSION, 'package': req['package'], 'locked_version': version, 'ecosystem': 'npm',
+    root = _qualified_root_declaration(observation, req['package'], location)
+    return {**({'root_declaration': root} if root else {}), 'artifact_schema': VERSION, 'package': req['package'], 'locked_version': version, 'ecosystem': 'npm',
             'lockfile_path': req['lockfile_path'], 'package_path': location, 'source_sha256': observation['source_sha256'],
             'blob_oid': observation['blob_oid'], 'scope': dict(scope), 'installed_state': 'unknown',
             'affectedness': 'unknown', 'reachability': 'unknown'}

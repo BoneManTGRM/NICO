@@ -176,3 +176,22 @@ for (const locale of ['en','es-MX']) {
     assert.equal(h.calls.length,1);
   });
 }
+
+for (const locale of ['en','es-MX']) {
+  for (const mode of ['valid','all','absent','unknown','duplicate','foreign','extra']) {
+    test(`${locale}: literal lockfile root declaration ${mode}`,async()=>{
+      const declaration={artifact_schema:'nico.lockfile-root-declaration.v1',roles:mode==='all'?['dependencies','devDependencies','optionalDependencies','peerDependencies']:mode==='unknown'?['production']:mode==='duplicate'?['dependencies','dependencies']:['dependencies']};
+      if(mode==='extra')declaration.narrative='private injected text';
+      const source={candidate_id:'dep',record_index:2,candidate_input_sha256:'c'.repeat(64),completed:false,rule_id:'x',reason:'unresolved',dependency_identity:{package:'demo',locked_version:'1.2.3',lockfile_path:'package-lock.json',source_sha256:'b'.repeat(64),...(mode==='absent'?{}:{root_declaration:declaration})}};
+      const h=harness(locale,()=>Response.json(payload({review_assistance:{artifact_schema:'nico.candidate-review-assistance.v1',pending_record_count:1,
+        queue:[{candidate_id:'dep',record_index:0,source_record_index:mode==='foreign'?99:2,source_candidate_input_sha256:'c'.repeat(64),recommendation:'resolve_evidence_gaps',limitations:[],source_url:null,input_sha256:'a'.repeat(64),existing_review_profile_cluster_id:'',evidence_tasks:['identify_package','identify_locked_version','verify_affectedness','verify_runtime_use']}],
+        source_investigation:{available:true,packets:[source]}}})));
+      await h.load();
+      assert.equal(h.find(n=>n.props['data-lockfile-root-declaration']==='true').length,['valid','all'].includes(mode)?1:0);
+      if(['valid','all'].includes(mode))assert.match(h.html(),locale==='en'?/installation and runtime use remain unknown/:/la instalación y el uso en ejecución siguen sin determinarse/);
+      assert.match(h.html(),locale==='en'?/Keep the candidate pending/:/Mantener el candidato pendiente/);
+      assert.doesNotMatch(h.html(),/private injected text/);
+      assert.equal(h.calls.length,1);
+    });
+  }
+}
