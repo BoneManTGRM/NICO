@@ -69,7 +69,7 @@ def normalize_scanner_executions(scan: dict[str, Any]) -> dict[str, Any]:
     for raw in existing:
         if not isinstance(raw, dict):
             continue
-        tool = _tool(raw.get("tool") or raw.get("scanner"))
+        tool = _tool(raw.get("tool") or raw.get("scanner") or raw.get("scanner_name"))
         if not tool:
             continue
         item = dict(raw)
