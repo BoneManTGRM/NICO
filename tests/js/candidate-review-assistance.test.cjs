@@ -119,3 +119,29 @@ for (const locale of ['en', 'es-MX']) {
     assert.equal(h.calls.length, 1);
   });
 }
+
+for (const locale of ['en', 'es-MX']) {
+  for (const mode of ['qualified', 'stale', 'duplicate', 'unqualified']) {
+    test(`${locale}: dependency tasks ${mode} retain safety questions`, async () => {
+      const identity = {package: 'demo', locked_version: '1.2.3', lockfile_path: 'package-lock.json', source_sha256:'b'.repeat(64)};
+      const source = {candidate_id:'dep', record_index:3, candidate_input_sha256:'c'.repeat(64), completed:false, rule_id:'CVE-fixture', reason:'unsupported_or_missing_exact_source_evidence', dependency_identity:identity};
+      const sources = mode === 'duplicate' ? [source,source] : mode === 'unqualified' ? [] : [{...source, candidate_input_sha256:mode==='stale'?'d'.repeat(64):source.candidate_input_sha256}];
+      const h=harness(locale,()=>Response.json(payload({review_assistance:{artifact_schema:'nico.candidate-review-assistance.v1',pending_record_count:1,
+        queue:[{candidate_id:'dep',record_index:0,source_record_index:3,source_candidate_input_sha256:'c'.repeat(64),recommendation:'resolve_evidence_gaps',limitations:['unresolved_proof_gaps'],source_url:null,input_sha256:'a'.repeat(64),existing_review_profile_cluster_id:'',evidence_tasks:['identify_package','identify_locked_version','verify_affectedness','verify_runtime_use']}],
+        source_investigation:{available:true,packets:sources}}})));
+      await h.load();
+      const html=h.html();
+      assert.match(html,locale==='en'?/affectedness remains unresolved/:/afectación sigue sin resolverse/);
+      assert.match(html,locale==='en'?/Keep the candidate pending/:/Mantener el candidato pendiente/);
+      if(mode==='qualified') {
+        assert.match(html,/1\.2\.3/);
+        assert.match(html,locale==='en'?/not proof of installation or safety/:/no confirma instalación ni seguridad/);
+        assert.doesNotMatch(html,locale==='en'?/Identify the package in/:/Identificar el paquete en/);
+      } else {
+        assert.doesNotMatch(html,/1\.2\.3/);
+        assert.match(html,locale==='en'?/Identify the package in/:/Identificar el paquete en/);
+      }
+      assert.equal(h.calls.length,1);
+    });
+  }
+}

@@ -10,6 +10,8 @@ from nico.candidate_source_observations_v1 import observe_python_source, investi
 
 from nico.candidate_source_reason_detail_v1 import capture_detail, packet_detail
 
+from nico import dependency_identity_evidence_v1 as dependency_identity
+
 VERSION = 'nico.persisted-candidate-investigation.v1'
 REASONS = frozenset({'source_scope_unavailable_or_stale', 'investigation_budget_exhausted', 'source_identity_mismatch', 'unsupported_or_missing_exact_source_evidence', 'source_parse_unavailable', 'source_file_binding_mismatch', 'source_line_missing', 'rule_semantics_require_specialist_review', 'rule_source_line_mismatch', 'ambiguous_call_expression', 'retained_observation_invalid', 'exact_line_structure_only'})
 SCOPE_KEYS = ('run_id', 'repository', 'commit_sha', 'customer_id', 'project_id')
@@ -102,6 +104,9 @@ def investigate_register(register, retained, scope, *, clock=time.monotonic):
     if not isinstance(observations, Mapping):
         observations = {}
     packets = []
+    identity_bytes = 0
+    identity_cache = {}
+    identity_attempted = 0
     for index, row in enumerate(register.get('findings') or []):
         detail = None
         if index >= 10000 or clock() - started >= 2:
@@ -126,9 +131,23 @@ def investigate_register(register, retained, scope, *, clock=time.monotonic):
         if (valid and packet.get('reason') == 'source_parse_unavailable'
                 and row.get('source_repository') in (None, '', scope['repository'])):
             detail = capture_detail(raw_observations, candidate_source_path(row.get('source_path') or row.get('path')), scope, retained.get('path_capture_outcomes'))
+        identity = None
+        if reason is None and valid and row.get('category') == 'dependency' and clock() - started < 2 and identity_bytes < 262144:
+            key = fingerprint({'request': row.get('dependency_identity_request'), 'path': row.get('source_path'),
+                               'exact_commit_sha': row.get('exact_commit_sha'), 'source_commit_sha': row.get('source_commit_sha'),
+                               'source_repository': row.get('source_repository'),
+                               'row_scope': {k: row[k] for k in ('run_id', 'customer_id', 'project_id') if k in row}})
+            if key not in identity_cache and len(identity_cache) < 128:
+                identity_cache[key] = dependency_identity.qualify(row, observations.get(candidate_source_path(row.get('source_path')), {}), scope)
+            identity_attempted += int(key in identity_cache)
+            proposal = identity_cache.get(key)
+            size = len(json.dumps(proposal).encode()) if proposal else 0
+            if clock() - started < 2 and identity_bytes + size <= 262144:
+                identity = proposal
+                identity_bytes += size
         reference = packet.get('source_reference') or {}
         # Persist compact versioned reasoning codes, not repeated prose and scope.
-        packets.append({'candidate_id': row.get('candidate_id'),
+        packets.append({**({'dependency_identity': identity} if identity else {}), 'candidate_id': row.get('candidate_id'),
             'candidate_input_sha256': fingerprint(row), 'rule_id': row.get('rule_id') or row.get('rule'),
             'bounded_rule_analysis_completed': packet['bounded_rule_analysis_completed'],
             'reason': packet.get('reason', 'unresolved'),
@@ -136,7 +155,11 @@ def investigate_register(register, retained, scope, *, clock=time.monotonic):
             'argument_observations': packet.get('argument_observations', {}),
             **({'source_availability_detail': detail} if detail is not None else {})})
     return {'artifact_schema': VERSION, 'scope': scope, 'input_sha256': fingerprint(register.get('findings') or []),
-            'candidate_count': len(packets), 'bounded_rule_analysis_completed': sum(p['bounded_rule_analysis_completed'] for p in packets),
+            'candidate_count': len(packets),
+            'dependency_identity_attempted_count': identity_attempted,
+            'dependency_identity_collected_count': sum('dependency_identity' in p for p in packets),
+            'dependency_identity_output_byte_limit': 262144,
+            'bounded_rule_analysis_completed': sum(p['bounded_rule_analysis_completed'] for p in packets),
             'unresolved_reasons': dict(Counter(p.get('reason', 'unresolved') for p in packets if not p['bounded_rule_analysis_completed'])),
             'source_availability_counts': dict(Counter(packet_detail(p) for p in packets if p.get('reason') == 'source_parse_unavailable' and not p['bounded_rule_analysis_completed'])),
             'source_capture': {
@@ -150,7 +173,7 @@ def investigate_register(register, retained, scope, *, clock=time.monotonic):
             'packets': packets, 'human_review_required': True, 'client_delivery_allowed': False, 'model_invocations': 0}
 
 
-def display_investigation(register, scope):
+def display_investigation(register, scope, *, trusted_capture=None):
     """Read-only projection. Repeated GETs never parse source or launch work."""
     value = register.get('final_candidate_investigation') if 'final_candidate_investigation' in register else register.get('candidate_investigation')
     value = value or {}
@@ -161,6 +184,8 @@ def display_investigation(register, scope):
             or value.get('input_sha256') != fingerprint(rows) or len(value.get('packets', [])) != len(rows)):
         return {'available': False, 'reason': 'retained_investigation_missing_or_stale', 'packets': []}
     packets = []
+    identity_cache = {}
+    identity_output_bytes = 0
     for row, packet in zip(rows, value['packets']):
         if (not isinstance(row, Mapping) or not isinstance(packet, Mapping)
                 or not isinstance(packet.get('source_reference', {}), Mapping)
@@ -180,12 +205,33 @@ def display_investigation(register, scope):
         reason = packet.get('reason') if isinstance(packet.get('reason'), str) and packet['reason'] in REASONS else 'unresolved'
         if claimed_complete and not valid_reference:
             reason = 'retained_observation_invalid'
-        packets.append({'source_path': path if safe_path else None, 'candidate_id': row.get('candidate_id'), 'rule_id': row.get('rule_id') or row.get('rule'),
+        identity = packet.get('dependency_identity')
+        qualified_identity = None
+        if (row.get('category') == 'dependency' and isinstance(identity, Mapping)
+                and isinstance(trusted_capture, Mapping) and trusted_capture.get('artifact_schema') == VERSION
+                and trusted_capture.get('scope') == scope_of(scope)):
+            captured = trusted_capture.get('observations')
+            observed = captured.get(path) if isinstance(captured, Mapping) else None
+            key = fingerprint({'request': row.get('dependency_identity_request'), 'path': row.get('source_path'),
+                               'exact_commit_sha': row.get('exact_commit_sha'), 'source_commit_sha': row.get('source_commit_sha'),
+                               'source_repository': row.get('source_repository'),
+                               'row_scope': {k: row[k] for k in ('run_id', 'customer_id', 'project_id') if k in row}})
+            if key not in identity_cache and len(identity_cache) < 128:
+                identity_cache[key] = dependency_identity.qualify(row, observed, scope_of(scope))
+            expected = identity_cache.get(key)
+            size = len(json.dumps(expected).encode()) if expected else 0
+            if expected is not None and identity == expected and identity_output_bytes + size <= 262144:
+                qualified_identity = expected
+                identity_output_bytes += size
+        packets.append({**({'dependency_identity': qualified_identity} if qualified_identity else {}),
+                        'record_index': len(packets), 'candidate_input_sha256': fingerprint(row),
+                        'source_path': path if safe_path else None, 'candidate_id': row.get('candidate_id'), 'rule_id': row.get('rule_id') or row.get('rule'),
                         'completed': claimed_complete and valid_reference and (row.get('rule_id') or row.get('rule')) in {'B101', 'B404', 'B405', 'B603', 'B607'},
                         'source_sha256': source_hash if valid_hash else None,
                         'line': row.get('line') if type(row.get('line')) is int and row['line'] > 0 else None,
                         'reason': reason,
                         **({'source_availability_detail': packet_detail(packet)} if reason == 'source_parse_unavailable' and not claimed_complete else {})})
     return {'available': True, 'candidate_count': len(rows), 'completed_count': sum(p['completed'] for p in packets),
+            'dependency_identity_collected_count': sum('dependency_identity' in p for p in packets),
             'unresolved_reasons': dict(Counter(p['reason'] for p in packets if not p['completed'])),
             'source_availability_counts': dict(Counter(p['source_availability_detail'] for p in packets if 'source_availability_detail' in p and not p['completed'])), 'packets': packets}
