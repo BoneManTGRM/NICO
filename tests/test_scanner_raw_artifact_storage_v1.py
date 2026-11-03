@@ -158,6 +158,7 @@ def test_nonapplicability_is_preserved_without_completion_credit(artifacts):
 @pytest.mark.parametrize("failure", [False, True])
 def test_snapshot_worker_persists_before_publishing_tool_retention(artifacts, monkeypatch, failure):
     from types import SimpleNamespace
+    from nico.storage import MemoryAdapter
     from nico import snapshot_scanner_worker as worker
     from nico import scanner_evidence_pipeline_v1 as pipeline
     m, store, reopen, root, path, binding, record, raw, compressed = artifacts
@@ -165,13 +166,16 @@ def test_snapshot_worker_persists_before_publishing_tool_retention(artifacts, mo
     if failure:
         monkeypatch.setattr(m, "_default_store", lambda: None)
     saved = []
+    worker_store = MemoryAdapter()
     def put(table, item_id, payload):
         if payload.get("scanner_results"):
             result = payload["scanner_results"][0]
             if result.get("raw_artifact_retention_complete"):
                 assert store.get(result["raw_artifact"]["artifact_id"], limit=100000)["compressed"] == compressed
         saved.append(deepcopy(payload))
-    monkeypatch.setattr(worker, "STORE", SimpleNamespace(put=put, audit=lambda *args, **kwargs: None))
+        return worker_store.put(table, item_id, payload)
+    monkeypatch.setattr(worker, "STORE", SimpleNamespace(
+        get=worker_store.get, put=put, audit=lambda *args, **kwargs: None))
     def clone(repository, commit, workspace, environment):
         repo = workspace / "repo"
         repo.mkdir()
