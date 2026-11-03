@@ -6,6 +6,9 @@ import styles from "./reviewer-queue.module.css";
 type Packet = {
   candidate_id: string;
   record_index: number;
+  source_candidate_input_sha256?: string;
+  source_record_index?: number;
+  evidence_tasks?: string[];
   recommendation: string;
   limitations: string[];
   source_url: string | null;
@@ -17,7 +20,14 @@ export type Assistance = {
   pending_record_count: number;
   queue: Packet[];
   source_investigation?: {available: boolean; candidate_count?: number; completed_count?: number; source_availability_counts?: Record<string, number>;
-    packets: {record_index?: number; candidate_input_sha256?: string; lexical_binding?: {version: string; api: string; import_line: number; line: number; source_sha256: string}; candidate_id: string; rule_id: string; completed: boolean; source_sha256?: string; source_path?: string; line?: number; reason: string; source_availability_detail?: string}[]};
+    packets: {record_index?: number; candidate_input_sha256?: string; dependency_identity?: {package: string; locked_version: string; lockfile_path: string; source_sha256: string}; lexical_binding?: {version: string; api: string; import_line: number; line: number; source_sha256: string}; candidate_id: string; rule_id: string; completed: boolean; source_sha256?: string; source_path?: string; line?: number; reason: string; source_availability_detail?: string}[]};
+};
+
+const dependencyTasks: Record<string, [string, string]> = {
+  identify_package: ["Identify the package in the exact-source lockfile; do not use an advisory's package name as proof.", "Identificar el paquete en el archivo de bloqueo del código exacto; el nombre de un aviso no es prueba."],
+  identify_locked_version: ["Read the uniquely matched locked version. A locked version does not prove what is installed.", "Leer la versión bloqueada con coincidencia única. No demuestra qué versión está instalada."],
+  verify_affectedness: ["Check the applicable advisory against the actual installed version; affectedness remains unresolved.", "Comparar el aviso aplicable con la versión realmente instalada; la afectación sigue sin resolverse."],
+  verify_runtime_use: ["Establish whether production uses this package and what independent controls apply. Keep the candidate pending until reviewed.", "Determinar si producción usa este paquete y qué controles independientes existen. Mantener el candidato pendiente de revisión."],
 };
 
 const investigationReasons: Record<string, [string, string]> = {
@@ -144,7 +154,21 @@ export default function CandidateReviewAssistance({value, locale}: {value: Assis
           <summary><code>{packet.candidate_id}</code> — {(Object.hasOwn(recommendations, packet.recommendation) ? recommendations[packet.recommendation] : recommendations.resolve_evidence_gaps)[language]}</summary>
           {packet.source_url && /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/blob\/[0-9a-f]{40}\//.test(packet.source_url) ? <p><a href={packet.source_url} target="_blank" rel="noopener noreferrer">{es ? "Abrir ubicación del código exacto" : "Open exact source location"}</a></p> : null}
           <ul>{packet.limitations.map(code => <li key={code}>{(Object.hasOwn(limitations, code) ? limitations[code] : ["Additional evidence review required", "Se requiere revisión adicional de evidencia"])[language]}</li>)}</ul>
+          {packet.evidence_tasks ? (() => {
+            const matches = investigation?.available ? investigation.packets.filter(p =>
+              p.record_index === packet.source_record_index && p.candidate_id === packet.candidate_id &&
+              typeof packet.source_candidate_input_sha256 === "string" && /^[a-f0-9]{64}$/.test(packet.source_candidate_input_sha256) &&
+              p.candidate_input_sha256 === packet.source_candidate_input_sha256) : [];
+            const identity = matches.length === 1 ? matches[0].dependency_identity : undefined;
+            const tasks = packet.evidence_tasks.slice(0, 4).filter(code => Object.hasOwn(dependencyTasks, code) &&
+              (!identity || (code !== "identify_package" && code !== "identify_locked_version")));
+            return <div data-dependency-evidence="true">
+              {identity ? <p>{es ? "Identidad obtenida del archivo de bloqueo (no confirma instalación ni seguridad):" : "Identity collected from lockfile (not proof of installation or safety):"} <code>{identity.package}</code> · <code>{identity.locked_version}</code> · <code>{identity.lockfile_path}</code> · SHA-256: <code>{identity.source_sha256}</code></p> : null}
+              <ul>{tasks.map(code => <li key={code}>{dependencyTasks[code][language]}</li>)}</ul>
+            </div>;
+          })() : null}
           {(() => {
+            if (packet.evidence_tasks) return null;
             const source = sourceFor(packet);
             if (!source) return null;
             if (!source.completed) return <p>{(Object.hasOwn(investigationReasons, source.reason) ? investigationReasons[source.reason] : ["Investigation unresolved", "Investigación sin resolver"])[language]}. {source.reason === "source_parse_unavailable" ? (Object.hasOwn(sourceAvailabilityLabels, source.source_availability_detail || "") ? sourceAvailabilityLabels[source.source_availability_detail!] : sourceAvailabilityLabels.not_recorded)[language] + ". " : ""}{es ? "Solicitar evidencia antes de decidir." : "Request evidence before disposition."}</p>;
