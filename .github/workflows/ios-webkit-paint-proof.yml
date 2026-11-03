@@ -167,13 +167,19 @@ jobs:
             --reviewed-head "${{ github.event.pull_request.head.sha }}" \
             --output reviewer-binding-webkit-proof
 
-      - name: Retain synthetic reviewer layout evidence
+      - name: Validate and stage bounded reviewer evidence
+        id: reviewer_artifact
         if: always() && github.event_name == 'pull_request'
+        timeout-minutes: 1
+        run: python scripts/reviewer_proof_diagnostics.py >> "$GITHUB_OUTPUT"
+
+      - name: Retain synthetic reviewer layout evidence
+        if: always() && github.event_name == 'pull_request' && steps.reviewer_artifact.outcome == 'success'
         timeout-minutes: 2
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: reviewer-binding-webkit-proof
-          path: reviewer-binding-webkit-proof/publish/
+          path: ${{ steps.reviewer_artifact.outputs.upload_path }}
           if-no-files-found: error
           retention-days: 1
 

@@ -14,6 +14,7 @@ import threading
 import shutil
 import re
 from reviewer_proof_environment import environment
+from reviewer_proof_diagnostics import RESERVED_BYTES, run_with_diagnostics, set_stage
 from urllib.parse import urlsplit
 
 ORIGIN = 'http://127.0.0.1:3107'
@@ -75,7 +76,7 @@ def validate_styles(styles, responses, computed):
     assert computed['bodyMargin'] == '0px' and computed['boxSizing'] == 'border-box', 'production CSS not applied'
 
 
-TOTAL_ARTIFACT_BYTES = 20 * 1024 * 1024
+TOTAL_ARTIFACT_BYTES = 20 * 1024 * 1024 - RESERVED_BYTES
 
 
 def finalize_artifacts(raw, publish, manifest):
@@ -103,9 +104,11 @@ def main():
     raw=args.output/'raw';raw.mkdir()
     manifest={'schema':'nico.reviewer-binding-webkit-proof.v1','checkout_sha':sha,'reviewed_head_sha':args.reviewed_head,'tree_sha':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],cwd=root,text=True).strip(),'cases':[],
               'synthetic_only':True,'authentication_verified':False,'production_deployment_verified':False}
+    set_stage('playwright-import')
     from playwright.sync_api import sync_playwright
     start=time.monotonic()
     with (raw/'server.log').open('wb') as log:
+        set_stage('server-start')
         server=subprocess.Popen(['node','node_modules/next/dist/bin/next','start','-H','127.0.0.1','-p','3107'],
             cwd=root/'apps/web',env=environment(root,'server'),stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
         def drain():
@@ -114,6 +117,7 @@ def main():
                 log.write(data[:remaining]);remaining=max(0,remaining-len(data))
         reader=threading.Thread(target=drain,daemon=True);reader.start()
         try:
+            set_stage('browser-proof')
             with sync_playwright() as p:
                 browser=p.webkit.launch()  # normal installed runner; no sandbox overrides
                 for locale in ('en','es-MX'):
@@ -195,4 +199,5 @@ def main():
             finalize_artifacts(raw,args.output/'publish',manifest)
     assert manifest['complete']
 
-if __name__=='__main__':main()
+if __name__=='__main__':
+    run_with_diagnostics(Path(__file__).resolve().parents[1], 'proof', main)

@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+from reviewer_proof_diagnostics import run_with_diagnostics, set_stage
 
 
 def environment(root, mode):
@@ -19,6 +20,7 @@ def environment(root, mode):
 
 
 def build(root):
+    set_stage('environment')
     env=environment(root,'build')
     # Registry acquisition only; no lifecycle scripts, cache credentials or ambient npm config.
     install={k:v for k,v in env.items() if k not in ('NODE_OPTIONS','NICO_REVIEWER_PROOF_NETWORK','NODE_ENV')}
@@ -32,7 +34,11 @@ def build(root):
         config_env = {key: str(path) for key, path in configs.items()}
         install.update(config_env)
         env.update(config_env)
+        set_stage('npm-install')
         subprocess.run(['npm','ci','--ignore-scripts','--no-audit','--no-fund'],cwd=root/'apps/web',env=install,check=True,timeout=240)
+        set_stage('frontend-build')
         subprocess.run(['node','node_modules/next/dist/bin/next','build'],cwd=root/'apps/web',env=env,check=True,timeout=240)
 
-if __name__=='__main__':build(Path(__file__).resolve().parents[1])
+if __name__=='__main__':
+    root = Path(__file__).resolve().parents[1]
+    run_with_diagnostics(root, 'build', lambda: build(root))
