@@ -152,6 +152,18 @@ export default function PrimaryNavigation() {
     return () => window.removeEventListener("popstate", synchronizeLocation);
   }, [pathname]);
 
+  function refreshAssessmentHref(event: {currentTarget: HTMLAnchorElement}) {
+    // Intake/reset replaces the URL without a popstate event. Read it at the
+    // interaction boundary so primary navigation cannot restore a stale run.
+    const location = window.location;
+    const language = new URLSearchParams(location.search).get("lang")?.toLowerCase();
+    const locale: CanonicalLocale = location.pathname.startsWith("/es") || language === "es-mx" || language === "es"
+      ? "es-MX" : "en-US";
+    event.currentTarget.setAttribute("href", assessmentHrefFor(
+      location.pathname, location.search, location.hash, locale,
+    ));
+  }
+
   function refreshFinalReviewHref(event: {currentTarget: HTMLAnchorElement}) {
     const link = event.currentTarget;
     if (new URL(link.href, window.location.origin).pathname !== "/operations/final-review") return;
@@ -201,7 +213,7 @@ export default function PrimaryNavigation() {
       data-canonical-product="nico-comprehensive"
     >
       <div className="global-nav-inner">
-        <a className="global-brand" href={assessmentHref} aria-label={spanishActive ? "Inicio de NICO" : "NICO home"}>
+        <a className="global-brand" href={assessmentHref} onPointerDown={refreshAssessmentHref} onFocus={refreshAssessmentHref} onClick={refreshAssessmentHref} aria-label={spanishActive ? "Inicio de NICO" : "NICO home"}>
           <span className="global-brand-mark" aria-hidden="true">N</span>
           <span className="global-brand-copy">
             <strong>NICO</strong>
@@ -218,6 +230,9 @@ export default function PrimaryNavigation() {
                 key={service.key}
                 className={`primary-service-link${active ? " active" : ""}`}
                 href={assessmentHref}
+                onPointerDown={refreshAssessmentHref}
+                onFocus={refreshAssessmentHref}
+                onClick={refreshAssessmentHref}
                 aria-current={active ? "page" : undefined}
                 data-service={service.key}
               >
