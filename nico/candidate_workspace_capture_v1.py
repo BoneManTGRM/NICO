@@ -12,6 +12,7 @@ import time
 from nico.candidate_investigation_pipeline_v1 import VERSION, scope_of
 from nico.candidate_source_observations_v1 import candidate_source_path, observe_python_source
 from nico.candidate_source_reason_detail_v1 import path_digest
+from nico import dependency_identity_evidence_v1 as dependency_identity
 
 INPUT_LIMIT = 8 * 1024 * 1024
 OUTPUT_LIMIT = 2 * 1024 * 1024
@@ -75,8 +76,9 @@ def capture_candidates(rows, scope, inventory, read_blob, *, started=None, clock
             reasons['unsupported_source'] += 1
             continue
         path = candidate_source_path(row.get('source_path') or row.get('path'))
-        if (path is None or '.git' in path.split('/') or not path.endswith('.py')
-                or row.get('category') != 'static' or row.get('exact_commit_sha') != scope['commit_sha']
+        dependency = row.get('category') == 'dependency' and isinstance(row.get('dependency_identity_request'), Mapping)
+        supported_path = path is not None and ((row.get('category') == 'static' and path.endswith('.py')) or (dependency and path.split('/')[-1] == 'package-lock.json'))
+        if (not supported_path or '.git' in path.split('/') or row.get('exact_commit_sha') != scope['commit_sha']
                 or row.get('source_commit_sha', scope['commit_sha']) not in ('', scope['commit_sha'])
                 or row.get('source_repository', scope['repository']) not in ('', scope['repository'])):
             reasons['unsupported_source'] += 1
@@ -120,8 +122,9 @@ def capture_candidates(rows, scope, inventory, read_blob, *, started=None, clock
                 record(path, 'blob_integrity_unavailable')
                 reasons['source_analysis_failed'] += 1
                 continue
-            observation = observe_python_source(data, repository=scope['repository'],
-                commit_sha=scope['commit_sha'], path=path, blob_oid=oid)
+            observation = (dependency_identity.observe(data, scope=scope, path=path, blob_oid=oid)
+                if path.split('/')[-1] == 'package-lock.json' else observe_python_source(data, repository=scope['repository'],
+                commit_sha=scope['commit_sha'], path=path, blob_oid=oid))
             if clock() >= deadline:
                 reasons['source_time_budget'] += len(ordered) - index
                 record(path, 'capture_deadline')

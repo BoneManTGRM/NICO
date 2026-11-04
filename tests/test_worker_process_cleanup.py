@@ -130,14 +130,17 @@ def test_cleanup_uncertainty_blocks_future_launch_even_if_caught(tmp_path,monkey
 
 @pytest.mark.parametrize('failure',[KeyboardInterrupt, RuntimeError])
 def test_exception_cleanup_preserves_exception(tmp_path,monkeypatch,failure):
-    original = subprocess.Popen.communicate
+    original = worker._BoundedCapture.pump
     processes=[]
+    original_popen = subprocess.Popen
+    def track(*args, **kwargs):
+        process = original_popen(*args, **kwargs)
+        processes.append(process)
+        return process
     def interrupted(self,*args,**kwargs):
-        if not processes:
-            processes.append(self)
-            raise failure('synthetic cancellation')
-        return original(self,*args,**kwargs)
-    monkeypatch.setattr(subprocess.Popen,'communicate',interrupted)
+        raise failure('synthetic cancellation')
+    monkeypatch.setattr(subprocess,'Popen',track)
+    monkeypatch.setattr(worker._BoundedCapture,'pump',interrupted)
     with pytest.raises(failure):
         worker.run_command([sys.executable,'-c','import time;time.sleep(8)'],cwd=tmp_path)
     assert processes[0].poll() is not None
@@ -169,18 +172,26 @@ def test_scanner_sequence_aborts_on_cleanup_uncertainty(tmp_path,monkeypatch):
 
 
 def test_drain_failure_latches_without_unbounded_communicate(tmp_path,monkeypatch):
-    original=subprocess.Popen.communicate
-    calls=[]
-    def drain_timeout(self,*args,**kwargs):
-        calls.append(kwargs.get('timeout'))
-        if len(calls)==2:
-            raise subprocess.TimeoutExpired(self.args,kwargs['timeout'])
-        return original(self,*args,**kwargs)
-    monkeypatch.setattr(subprocess.Popen,'communicate',drain_timeout)
+    original_cleanup=worker._cleanup_group
+    cleaned=[]
+    def cleanup(*args):
+        original_cleanup(*args)
+        cleaned.append(True)
+    original_pump=worker._BoundedCapture.pump
+    original_active=worker._BoundedCapture.active
+    def pump(self, timeout):
+        assert 0 <= timeout <= .05
+        if cleaned:
+            raise OSError('synthetic drain failure')
+        return original_pump(self, timeout)
+    monkeypatch.setattr(worker,'_cleanup_group',cleanup)
+    monkeypatch.setattr(worker._BoundedCapture,'active',lambda self: bool(cleaned) or original_active(self))
+    monkeypatch.setattr(worker._BoundedCapture,'pump',pump)
+    def forbidden(*args,**kwargs):raise AssertionError('unbounded communicate used')
+    monkeypatch.setattr(subprocess.Popen,'communicate',forbidden)
     with pytest.raises(worker.WorkerCleanupError,match='drain'):
         worker.run_command([sys.executable,'-c','print(1)'],cwd=tmp_path)
-    assert calls==[60,worker._DRAIN_SECONDS]
-    assert worker._CLEANUP_UNCERTAIN.is_set()
+    assert cleaned and worker._CLEANUP_UNCERTAIN.is_set()
 
 
 def test_kill_failure_is_bounded_and_latched(tmp_path,monkeypatch):

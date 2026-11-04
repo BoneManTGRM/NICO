@@ -10,7 +10,8 @@ from typing import Any
 
 from nico import comprehensive_review_work_v1 as legacy
 from nico.candidate_review_assistance_v1 import build_review_assistance
-from nico.candidate_investigation_pipeline_v1 import display_investigation
+from nico.candidate_investigation_pipeline_v1 import display_investigation, fingerprint as investigation_fingerprint
+from nico.dependency_identity_evidence_v1 import retained_capture
 from nico.comprehensive_client_delivery_contract_v1 import human_reviewer_identity
 
 VERSION = "nico.comprehensive_review_work.v2"
@@ -538,6 +539,8 @@ def review_work_projection(record: Mapping[str, Any]) -> dict[str, Any]:
     baseline_qc = {_text(value) for value in ledger.get("qc_required_candidate_ids") or []}
 
     candidate_rows: list[dict[str, Any]] = []
+    original_rows = legacy.canonical_candidate_register(record)['findings']
+    source_indexes = {_text(item.get('candidate_id')): index for index, item in enumerate(original_rows)}
     queue_counts = {
         "critical_material": 0,
         "human_technical_review": 0,
@@ -554,6 +557,8 @@ def review_work_projection(record: Mapping[str, Any]) -> dict[str, Any]:
         row.update(
             {
                 "candidate_id": candidate_id,
+                "source_record_index": source_indexes[candidate_id],
+                "source_candidate_input_sha256": investigation_fingerprint(candidate),
                 "primary_review_queue": queue,
                 "quality_control_sample": candidate_id in set(effective_qc),
                 "quality_control_source": (
@@ -639,7 +644,7 @@ def review_work_projection(record: Mapping[str, Any]) -> dict[str, Any]:
         "artifact_schema": PROJECTION_SCHEMA,
         "candidates": candidate_rows,
         "review_assistance": {**build_review_assistance(candidate_rows, _scope_binding(record)),
-                              "source_investigation": display_investigation(legacy.canonical_candidate_register(record), _scope_binding(record))},
+                              "source_investigation": display_investigation(legacy.canonical_candidate_register(record), _scope_binding(record), trusted_capture=retained_capture(record))},
         "clusters": clusters,
         "queue_counts": queue_counts,
         "quality_control_sampling": deepcopy(ledger.get("quality_control_sampling") or {}),
