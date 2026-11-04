@@ -884,7 +884,8 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         <div className={styles.progressMeta}>
           <span><b>{copy.stage}</b><span data-stage-id={stageId} title={stageId}>{stageId ? stageLabel(stageId, copy) : copy.phases[phase]}</span></span>
           <span><b>{copy.progress}</b>{Math.round(percent)}%</span>
-          <span><b>{copy.elapsed}</b>{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}</span>
+          {/* Keep elapsed time readable without announcing every timer tick. */}
+          <span aria-live="off" data-assessment-elapsed="true"><b>{copy.elapsed}</b>{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}</span>
           {!compactMobile ? <span><b>{copy.checks}</b>{attempt}</span> : null}
         </div>
         <div className={styles.progressBar} role="progressbar" aria-label={`${copy.stageLabels[stageId] || stageId || copy.phases[phase]} ${copy.progress}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(percent)}><span style={{width: `${Math.max(2, Math.min(100, percent))}%`}} /></div>
