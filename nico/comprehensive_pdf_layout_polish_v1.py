@@ -188,7 +188,7 @@ def _render_polished_sparse_group(texts: list[str]) -> bytes:
         title = lines[0] if reflow._ordinary_sparse_stage(source_text) else ""
         section_story: list[Any] = []
         if page_index:
-            section_story.append(Spacer(1, 0.045 * inch))
+            story.append(Spacer(1, 0.045 * inch))
         for line_index, line in enumerate(lines):
             escaped = html.escape(line)
             if title and line_index == 0:
@@ -200,9 +200,19 @@ def _render_polished_sparse_group(texts: list[str]) -> bytes:
             else:
                 section_story.append(Paragraph(escaped, body))
         if section_story:
-            # The heading keeps its first paragraph; body paragraphs retain
-            # widow/orphan controls. Let later evidence flow into remaining space
-            # instead of moving the entire source page to a fresh physical page.
+            # Embedded fonts can wrap evidence onto more lines than Base-14
+            # Helvetica. Keep a short evidence section intact using its actual
+            # rendered height, not its source line count. Larger sections still
+            # flow across pages; never chain the final paragraph to the next section.
+            if title and any(line in {"Evidence", "Evidencia"} for line in lines):
+                width = letter[0] - 1.16 * inch - 12  # six-point frame padding
+                cap = 3 * inch
+                height = sum(paragraph.wrap(width, cap)[1]
+                             + paragraph.getSpaceBefore() + paragraph.getSpaceAfter()
+                             for paragraph in section_story)
+                if height <= cap:
+                    for paragraph in section_story[:-1]:
+                        paragraph.keepWithNext = True
             story.extend(section_story)
 
     document = SimpleDocTemplate(
