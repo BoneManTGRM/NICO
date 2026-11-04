@@ -9,9 +9,9 @@ const payload=(run=RUN)=>({run_id:run,repository:'owner/repo',commit_sha:'a'.rep
  candidates:[{candidate_id:'candidate_a',human_disposition_state:'pending'}],clusters:[],queue_counts:{},workload_metrics:{human_dispositions_pending:1},quality_control_sampling:{},
  ledger:{},empirical_measurement:{},unresolved_high_impact_candidate_ids:[],ready_for_final_approval:false,human_review_required:true,client_delivery_allowed:false});
 const completed=()=>({...payload(),remaining_candidate_count:0,dispositioned_candidate_count:1,workload_metrics:{human_dispositions_pending:0,human_dispositions_completed:1},candidates:[{candidate_id:'candidate_a',human_disposition_state:'completed'}]});
-function harness(respond){
+function harness(respond, locale="en"){
  const frames=new Map(),cache=new Map(),calls=[];let frame,cursor,dirty=true,tree;
- const location=new URL('https://nico.test/operations/reviewer-queue?run_id='+RUN);
+ const location=new URL('https://nico.test/operations/reviewer-queue?run_id='+RUN+'&lang='+locale);
  const window={location,history:{state:null,replaceState(_s,_t,url){window.location=new URL(url,window.location);}}};
  const hooks={...React,useState(initial){const i=cursor++;if(!(i in frame.slots))frame.slots[i]=typeof initial==='function'?initial():initial;const f=frame;
  return [f.slots[i],v=>{f.slots[i]=typeof v==='function'?v(f.slots[i]):v;dirty=true;}];},
@@ -126,4 +126,21 @@ for(const panel of [WORK,BROWSER])for(const body of ['json','empty','html','trun
  assert.ok(calls.every(c=>c.url.includes(RUN)&&c.init.credentials==='same-origin'));
  assert.ok(h.within(panel,n=>n.props.role==='alert').some(n=>String(n.props.children).includes('outcome was not confirmed')));
  const action=JSON.parse(calls[0].init.body);assert.equal(action.review_authorized,true);assert.equal(action.authorization_confirmed,true);
+});
+
+for (const locale of ['en', 'es-MX']) test(`${locale}: queue selection and scrollable evidence expose keyboard semantics`, async()=>{
+ const data={...payload(), clusters:[{cluster_id:'cluster_a',candidate_ids:['candidate_a']}]};
+ const h=harness(()=>Response.json(data), locale);
+ await h.button(BROWSER,locale==='en'?'Load review truth':'Cargar verdad de revisión').props.onClick();h.render();
+ const shortcuts=()=>h.within(BROWSER,n=>n.type==='button'&&typeof n.props['aria-pressed']==='boolean');
+ assert.equal(shortcuts().length,6);
+ assert.ok(shortcuts().every(n=>n.props['aria-pressed']===false));
+ const evidence=h.within(BROWSER,n=>n.type==='pre');assert.equal(evidence.length,2);
+ for(const node of evidence){assert.equal(node.props.tabIndex,0);assert.equal(node.props.role,'region');assert.match(node.props['aria-label'],locale==='en'?/Retained/:/conservad/);}
+ shortcuts()[0].props.onClick();h.render();assert.deepEqual(shortcuts().map(n=>n.props['aria-pressed']),[true,false,false,false,false,false]);
+ const queueLabel=h.within(BROWSER,n=>n.type==='label'&&n.props.children.includes(locale==='en'?'Queue':'Cola'))[0];
+ queueLabel.props.children.find(n=>n?.type==='select').props.onChange({target:{value:'quality_control_sample'}});h.render();
+ assert.deepEqual(shortcuts().map(n=>n.props['aria-pressed']),[false,false,false,false,true,false]);
+ h.button(BROWSER,locale==='en'?'Clear filters':'Limpiar filtros').props.onClick();h.render();
+ assert.ok(shortcuts().every(n=>n.props['aria-pressed']===false));assert.equal(h.calls.length,1);
 });
