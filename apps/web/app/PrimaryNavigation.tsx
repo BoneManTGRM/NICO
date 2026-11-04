@@ -126,11 +126,17 @@ export function finalReviewHref(href: string, search: string, visibleRunId = "")
   const current = new URLSearchParams(search);
   const target = new URL(href, "https://nico.invalid");
   const runId = visibleRunId || current.get("run_id") || "";
-  if (!/^(comprun_|express_run_)[A-Za-z0-9_-]+$/.test(runId)) return href;
+  // The anchor may still contain a previous run after replaceState. Rebuild
+  // run scope from current evidence rather than retaining that anchor's scope.
+  for (const field of ["run_id", "service", "edition", "customer_id", "project_id"]) {
+    target.searchParams.delete(field);
+  }
+  if (!/^(comprun_|express_run_)[A-Za-z0-9_-]+$/.test(runId)) return `${target.pathname}${target.search}`;
   target.searchParams.set("run_id", runId);
   target.searchParams.set("service", runId.startsWith("comprun_") ? "comprehensive" : "express");
   for (const field of ["edition", "customer_id", "project_id"]) {
-    const value = current.get(field);
+    // A visible report can override the URL run, but cannot borrow its context.
+    const value = runId === current.get("run_id") ? current.get(field) : null;
     if (value) target.searchParams.set(field, value);
   }
   return `${target.pathname}${target.search}`;
