@@ -58,10 +58,15 @@ def provision_script(workflow, step_name):
     match = re.search(r'^  [A-Za-z0-9_-]+:\s*$', job, re.M)
     if match:
         job = job[:match.start()]
-    step = '      - name: ' + step_name + '\n        run: |\n'
+    step = '      - name: ' + step_name + '\n'
     if job.count(step) != 1:
         raise ValueError('diagnostic_recipe_step_invalid')
     body = job.split(step, 1)[1]
+    # Accept a plain step ID before run; reject other intervening metadata.
+    body = re.sub(r'\A        id: [A-Za-z_][A-Za-z0-9_-]*\n', '', body, count=1)
+    if not body.startswith('        run: |\n'):
+        raise ValueError('diagnostic_recipe_step_invalid')
+    body = body[len('        run: |\n'):]
     lines = []
     for line in body.splitlines():
         if line and not line.startswith('          '):
@@ -611,3 +616,4 @@ def main():
 
 if __name__=='__main__':
     main()
+
