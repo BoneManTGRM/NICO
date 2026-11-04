@@ -1,6 +1,7 @@
 "use client";
 
 import {useState} from "react";
+import styles from "./reviewer-queue.module.css";
 
 type Packet = {
   candidate_id: string;
@@ -122,7 +123,7 @@ export default function CandidateReviewAssistance({value, locale}: {value: Assis
   };
   const pages = Math.max(1, Math.ceil(value.queue.length / 25));
   const current = Math.min(page, pages - 1);
-  return <section aria-label={es ? "Asistencia para revisión" : "Review assistance"}>
+  return <section className={styles.assistance} aria-label={es ? "Asistencia para revisión" : "Review assistance"}>
     <h3>{es ? "Cola priorizada de revisión asistida" : "Prioritized assisted-review queue"}</h3>
     <p>{investigation?.available ? (es ? "Investigación acotada del código conservada durante la evaluación; sin consultas a modelos. Cada disposición sigue siendo humana." : "Bounded source investigation retained during assessment; no model calls. Every disposition remains human.") : es ? "Análisis determinista conservado; no se realizó una nueva investigación del código ni se consultó un modelo. Los enlaces son ubicaciones, no prueba de inspección. Cada disposición sigue siendo humana." : "Retained deterministic analysis; no new source investigation or model call was performed. Links are locators, not proof of inspection. Every disposition remains human."}</p>
     <p>{value.pending_record_count} {es ? "registros pendientes. Los grupos comparten un perfil de revisión; no demuestran equivalencia ni permiten descartar candidatos." : "pending records. Groups share a review profile; they do not establish equivalence or permit candidate dismissal."}</p>
