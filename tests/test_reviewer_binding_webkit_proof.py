@@ -134,3 +134,43 @@ def test_installed_npm_configuration_regression_without_install(monkeypatch):
  monkeypatch.setattr(build_env.subprocess,'run',probe)
  build_env.build(ROOT)
  assert len(observed)==2
+
+
+def test_dependency_browser_fixture_bindings_and_case_matrix():
+ p=proof.fixture('a'*40,'dependency')
+ assistance=p['review_assistance'];queue=assistance['queue'];packets=assistance['source_investigation']['packets']
+ assert len(queue)==13 and len({r['candidate_id'] for r in queue})==13
+ assert p['candidate_count']==p['remaining_candidate_count']==assistance['pending_record_count']==13
+ assert p['dispositioned_candidate_count']==0 and p['quality_control_completed_count']==0
+ assert p['human_review_required'] and not p['client_delivery_allowed'] and not p['ready_for_final_approval']
+ for row in queue:
+  case=row['candidate_id'].removeprefix('dependency-')
+  matches=[s for s in packets if s['candidate_id']==row['candidate_id'] and s['record_index']==row['source_record_index'] and s['candidate_input_sha256']==row['source_candidate_input_sha256']]
+  assert len(matches)==(2 if case=='duplicate' else 0 if case in ('stale','missing','foreign','wrong-index') else 1)
+  assert row['record_index']!=row['source_record_index']
+  assert row['input_sha256']!=row['source_candidate_input_sha256']
+  if len(matches)==1:
+   assert ('dependency_identity' in matches[0]) == (case=='qualified')
+ assert set(proof.VIEWPORTS.values())=={(1280,1000),(390,844)}
+ assert len(proof.SCENARIOS)*len(proof.VIEWPORTS)*2==20
+ assert len(proof.DEPENDENCY_PACKAGE)>100 and len(proof.DEPENDENCY_PATH)>140
+
+
+def test_dependency_fixture_is_fresh_and_keeps_runtime_boundaries():
+ a=proof.fixture('a'*40,'dependency');a['review_assistance']['queue'][0]['candidate_id']='mutated'
+ b=proof.fixture('a'*40,'dependency')
+ assert b['review_assistance']['queue'][0]['candidate_id']=='dependency-qualified'
+ assert proof.request_kind('POST',proof.ORIGIN+proof.API)=='blocked'
+ assert proof.request_kind('GET','https://production.invalid'+proof.API)=='blocked'
+
+
+@pytest.mark.parametrize('case,text,count',[
+ ('stale','1.2.3-synthetic',0),
+ ('missing','PRIVATE_UNTRUSTED_GUIDANCE',0),
+ ('qualified','',1),
+ ('unknown','Identify the package in; affectedness remains unresolved; Keep the candidate pending',1),
+ ('collected-without-receipt','Identify the package in; affectedness remains unresolved; Keep the candidate pending',1),
+ ('supply_current_capture','Identify the package in; affectedness remains unresolved; Keep the candidate pending',1),
+])
+def test_dependency_text_oracle_rejects_missing_or_unsafe_rendering(case,text,count):
+ with pytest.raises(AssertionError):proof.validate_dependency_text(case,'en',text,count)
