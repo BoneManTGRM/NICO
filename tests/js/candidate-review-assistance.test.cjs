@@ -119,3 +119,33 @@ for (const locale of ['en', 'es-MX']) {
     assert.equal(h.calls.length, 1);
   });
 }
+
+for (const locale of ['en', 'es-MX']) {
+  for (const mode of ['valid', 'duplicate', 'wrong-fingerprint', 'legacy', 'invalid-api']) {
+    test(`${locale}: qualified lexical binding ${mode} never clears candidate`, async () => {
+      const item = {candidate_id: 'same', record_index: 0, recommendation: 'resolve_evidence_gaps', limitations: [], source_url: null,
+        input_sha256: 'a'.repeat(64), existing_review_profile_cluster_id: 'group'};
+      const source = {candidate_id: 'same', record_index: 0, candidate_input_sha256: item.input_sha256,
+        rule_id: 'B603', completed: true, source_sha256: 'b'.repeat(64), source_path: 'app.py', line: 2,
+        reason: 'exact_line_structure_only', lexical_binding: {version: 'nico.reviewer-lexical-binding.v1',
+          api: 'subprocess.run', import_line: 1, line: 2, source_sha256: 'b'.repeat(64)}};
+      if (mode === 'wrong-fingerprint') source.candidate_input_sha256 = 'invalid';
+      if (mode === 'legacy') delete source.record_index;
+      if (mode === 'invalid-api') source.lexical_binding.api = 'PRIVATE_SENTINEL';
+      const queue = [item];
+      if (mode === 'duplicate') queue.push({...item, record_index: 1, input_sha256: 'd'.repeat(64)});
+      const h = harness(locale, () => Response.json(payload({review_assistance: {
+        artifact_schema: 'nico.candidate-review-assistance.v1', pending_record_count: queue.length, queue,
+        source_investigation: {available: true, candidate_count: queue.length, completed_count: 1, packets: [source]}}})));
+      await h.load();
+      assert.equal(h.find(n => n.props['data-lexical-binding'] === 'true').length, mode === 'valid' ? 1 : 0);
+      if (mode === 'valid') {
+        assert.match(h.html(), /subprocess.run/);
+        assert.match(h.html(), locale === 'en' ? /import hooks.*working directory.*mitigations/ : /mecanismos de importación.*directorio de trabajo.*mitigaciones/);
+        assert.match(h.html(), locale === 'en' ? /retain for human contextual review/i : /conservar para revisión contextual humana/i);
+      }
+      assert.doesNotMatch(h.html(), /PRIVATE_SENTINEL/);
+      assert.equal(h.calls.length, 1);
+    });
+  }
+}
