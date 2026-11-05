@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from nico.report_json_copy import deepcopy
+from nico.report_json_copy import deepcopy, copy_with_tree_ownership
 from collections.abc import Mapping
 from typing import Any
 
@@ -53,6 +53,29 @@ def _record_rank(record: Mapping[str, Any]) -> tuple[int, ...]:
         int(status.startswith("completed")),
         int(bool(artifact and artifact not in {"missing", "unavailable"})),
         int(status not in _TERMINAL_BAD),
+    )
+
+
+def _retained_ci_verified(record: Mapping[str, Any], canonical: Mapping[str, Any]) -> bool:
+    """Recheck protected bytes; a report-supplied coverage label is not proof."""
+    from nico.report_execution_provenance_e6 import scanner_execution_evidence
+
+    identity = canonical.get("identity")
+    if (not isinstance(identity, Mapping) or not record.get("scan_id")
+        or record.get("run_id") != identity.get("run_id")
+        or record.get("commit_sha") != identity.get("commit_sha")
+        or record.get("current_run") is not False
+        or record.get("execution_observed_for_this_report") is not False):
+        return False
+    evidence = scanner_execution_evidence(identity, {
+        "dependency_security_static_analysis": {"scan_id": record["scan_id"]},
+    }, scanner_name="typescript")
+    return any(
+        row.get("scanner_name") == "typescript"
+        and row.get("retained_ci_evidence_verified") is True
+        and record.get("raw_artifact_sha256")
+        == (row.get("raw_artifact") or {}).get("sha256")
+        for row in evidence.get("scanner_records", [])
     )
 
 
@@ -120,16 +143,31 @@ def _canonical_scanners(
             and history_ok
         )
 
+        retained_ci = bool(
+            scanner == "typescript" and status.startswith("completed")
+            and exact and capture and history_ok
+            and not record.get("timed_out") and not record.get("output_truncated")
+            and _retained_ci_verified(record, canonical)
+        )
+        # This is ordinary report coverage, never native execution acceptance.
+        # Keep ordinary record projections byte-stable; discard unverified labels.
+        if retained_ci:
+            record["retained_ci_evidence_verified"] = True
+            record["coverage_basis"] = "authenticated_retained_typescript_ci"
+        else:
+            record.pop("retained_ci_evidence_verified", None)
+            record.pop("coverage_basis", None)
+
         deficits: list[str] = []
         if not status.startswith("completed"):
             deficits.append(f"status={status}")
-        if not current:
+        if not current and not retained_ci:
             deficits.append("current_run_not_proven")
-        if not observed:
+        if not observed and not retained_ci:
             deficits.append("execution_not_observed_for_this_report")
         if not exact:
             deficits.append("exact_commit_match_not_proven")
-        if not verified_signal:
+        if not verified_signal and not retained_ci:
             deficits.append("scanner_verification_not_proven")
         if not capture:
             deficits.append("complete_artifact_capture_not_proven")
@@ -204,7 +242,7 @@ def _scanner_line(record: Mapping[str, Any]) -> str:
         f"{name}: status={status}; current_run={record.get('current_run') is True}; "
         f"exact_commit_match={record.get('exact_commit_match') is True}; "
         f"verified_complete={record.get('verified_complete') is True}; "
-        f"findings={len(record.get('findings') or [])}; "
+        f"findings={record.get('finding_count', len(record.get('findings') or []))}; "
         f"artifact_hash={_text(record.get('artifact_hash')) or 'unavailable'}"
     )
 
@@ -431,9 +469,12 @@ def _blocking_contract_reasons(
 
 
 def reconcile_production_report_truth(package: Mapping[str, Any]) -> dict[str, Any]:
-    result = deepcopy(dict(package))
-    canonical = deepcopy(dict(result.get("json") or result))
-    assessment = deepcopy(dict(canonical.get("assessment") or {}))
+    result, owned_tree = copy_with_tree_ownership(dict(package))
+    owned_canonical = owned_tree and type(result.get("json")) is dict and bool(result["json"])
+    canonical = (result["json"] if owned_canonical else deepcopy(dict(result.get("json") or result)))
+    assessment = (canonical["assessment"] if owned_canonical
+                  and type(canonical.get("assessment")) is dict
+                  else deepcopy(dict(canonical.get("assessment") or {})))
 
     scanners = _canonical_scanners(canonical, assessment)
     scanner_names = {_name(item.get("scanner_name")) for item in scanners}
@@ -459,7 +500,9 @@ def reconcile_production_report_truth(package: Mapping[str, Any]) -> dict[str, A
         relevant = [record for category in categories for record in by_category.get(category, [])]
         section.setdefault("evidence", [])
         section["evidence"].extend(_scanner_line(record) for record in relevant)
-        incomplete = [record for record in relevant if record.get("verified_complete") is not True]
+        incomplete = [record for record in relevant
+                      if record.get("verified_complete") is not True
+                      and record.get("retained_ci_evidence_verified") is not True]
         section["unavailable"].extend(
             f"{_name(record.get('scanner_name'))} exact-SHA evidence remains {_status(record)}: "
             f"{'; '.join(record.get('verification_deficits') or []) or _text(record.get('reason') or record.get('failure_or_unavailable_reason')) or 'completion requirements were not met'}"

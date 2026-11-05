@@ -65,6 +65,10 @@ def _raw_metadata(record: Mapping[str, Any], *, binding: Mapping[str, Any]) -> d
         limit=MAX_SCANNER_PARSE_BYTES,
     )
     metadata = dict(read.metadata)
+    if binding.get('scanner_name') == 'typescript':
+        from nico.retained_typescript_status_v1 import BASIS, verified_retained_typescript
+        if verified_retained_typescript(record, binding, read):
+            metadata['coverage_basis'] = BASIS
     if record.get('status') == 'not_applicable':
         verified = False
         inventory = _mapping(record.get('applicability_evidence'))
@@ -127,6 +131,7 @@ def _scanner_metadata(record: Mapping[str, Any], *, scan: Mapping[str, Any], com
             "full_configuration_verified": False,
         },
         "execution_observed": observed,
+        "coverage_basis": raw.get('coverage_basis'),
         "retained_execution_observed_claim": record.get("execution_observed_for_this_report") if type(record.get("execution_observed_for_this_report")) is bool else None,
         "output_capture_complete": record.get("output_capture_complete") if type(record.get("output_capture_complete")) is bool else None,
         "output_truncated": record.get("output_truncated") if type(record.get("output_truncated")) is bool else None,
@@ -143,13 +148,20 @@ def _scanner_metadata(record: Mapping[str, Any], *, scan: Mapping[str, Any], com
     }
 
 
-def inventory_for_record(record: Mapping[str, Any], *, run_id: str) -> JSONResponse:
+def inventory_for_record(
+    record: Mapping[str, Any], *, run_id: str, scanner_name: str | None = None,
+) -> JSONResponse:
     """Verify stored run-selected scanner bytes without granting route authority.
 
     Callers must supply an integrity-validated run record or its integrity-bound
     status projection. No caller-supplied scanner ID or storage path is accepted.
+    Internal consumers may select one scanner to avoid reading unrelated blobs;
+    identity and population checks still cover the entire retained scan. Routes
+    always use the full inventory, and a selection never claims full completion.
     """
     try:
+        if scanner_name is not None and scanner_name not in KNOWN_SCANNERS:
+            return _error(409, "scanner_evidence_selection_invalid")
         identity = _mapping(record.get("identity"))
         commit = identity.get("commit_sha")
         if identity.get("run_id") != run_id or not isinstance(commit, str) or not _COMMIT.fullmatch(commit):
@@ -178,8 +190,11 @@ def inventory_for_record(record: Mapping[str, Any], *, run_id: str) -> JSONRespo
         requested = scan.get("tools_requested")
         requested = requested if isinstance(requested, list) else []
         requested_names = {name for name in requested if isinstance(name, str) and name in KNOWN_SCANNERS}
-        metadata = [_scanner_metadata(item, scan=scan, commit=commit.lower()) for item in known]
-        for name in requested_names - names.keys():
+        metadata = [_scanner_metadata(item, scan=scan, commit=commit.lower()) for item in known
+                    if scanner_name is None or _scanner_name(item) == scanner_name]
+        for name in (requested_names | ({scanner_name} if scanner_name else set())) - names.keys():
+            if scanner_name is not None and name != scanner_name:
+                continue
             metadata.append({"scanner_name": name, "execution_status": "unknown", "coverage_status": "not_evaluated_by_inventory", "raw_artifact": {"availability": "scanner_record_missing"}})
         metadata.sort(key=lambda item: item["scanner_name"])
         unknown_records = len(raw_records) - len(known)
@@ -188,7 +203,9 @@ def inventory_for_record(record: Mapping[str, Any], *, run_id: str) -> JSONRespo
         complete = bool(metadata) and not (unknown_records or unknown_requested or duplicates) and all(item["raw_artifact"]["availability"] == "verified" for item in metadata)
         return JSONResponse({
             "artifact_schema": VERSION,
-            "status": "inventory_complete" if complete else "inventory_incomplete",
+            "status": ("inventory_complete" if complete else "inventory_incomplete") if scanner_name is None
+                      else ("selected_scanner_complete" if complete else "selected_scanner_incomplete"),
+            **({"selected_scanner": scanner_name} if scanner_name is not None else {}),
             "authenticated_authority": "nico_admin",
             "read_only": True,
             "run_id": run_id,
@@ -286,7 +303,9 @@ def verify_status_scanner_evidence(response: Mapping[str, Any]) -> dict[str, Any
             and item.get('applicability_observation_verified') is True
         ) or (
             item.get('execution_status') in {'complete', 'completed', 'completed_clean', 'completed_with_findings'}
-            and item.get('execution_observed') is True and item.get('output_capture_complete') is True
+            and (item.get('execution_observed') is True or (
+                name == 'typescript' and item.get('coverage_basis') == 'authenticated_retained_typescript_ci'
+            )) and item.get('output_capture_complete') is True
             and item.get('output_truncated') is not True and item.get('timed_out') is not True
             and item.get('returncode_valid') is not False and item.get('applicable') is not False
             and item.get('source_checkout_verified') is not False
@@ -309,6 +328,8 @@ def verify_status_scanner_evidence(response: Mapping[str, Any]) -> dict[str, Any
         and name not in not_applicable]
     unproven = [name for name in REQUIRED_TOOLS if name not in applicable and name not in not_applicable]
     summary.update(completed_count=len(completed), completed_tools=completed,
+                   retained_ci_tools=[item['scanner_name'] for item in records
+                       if item['scanner_name'] in completed and item.get('coverage_basis') == 'authenticated_retained_typescript_ci'],
                    not_applicable_tools=not_applicable, incomplete_tools=incomplete,
                    execution_required_count=execution_required_count,
                    applicable_count=len(applicable), applicable_tools=applicable,

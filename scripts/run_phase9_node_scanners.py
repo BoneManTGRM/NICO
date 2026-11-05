@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -185,4 +186,20 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    if "--post-build-typescript" in sys.argv:
+        import argparse
+        # Node CI has no Python application dependencies. Load this stdlib-only
+        # exporter directly without importing NICO's application bootstrap.
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("nico_ci_typescript_export", ROOT / "nico/nico_ci_typescript_evidence_v1.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--post-build-typescript", action="store_true")
+        parser.add_argument("--output", type=Path, required=True)
+        args = parser.parse_args()
+        result = module.export_post_build(ROOT, args.output)
+        raise SystemExit(0 if result.get("status") == "completed" and result.get("clean") else 1)
+    else:
+        main()

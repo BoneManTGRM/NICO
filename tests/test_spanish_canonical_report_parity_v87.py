@@ -6,6 +6,30 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
+
+def _isolated_direct_translation_check(check):
+    """Direct-helper contract must not inherit installed global literal guards.
+
+    Execute the unchanged assertions in an owned interpreter, without removing
+    or rebinding any translator in the test runner or production modules.
+    """
+    from functools import wraps
+
+    @wraps(check)
+    def isolated():
+        import os
+        import tempfile
+        from tests.owned_worker_environment import owned_worker_environment
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory(prefix="nico-direct-locale-") as temp:
+            code = ("from tests.test_spanish_canonical_report_parity_v87 import "
+                    + check.__name__ + "; " + check.__name__ + ".__wrapped__()")
+            result = subprocess.run([sys.executable, "-c", code], cwd=root,
+                env=owned_worker_environment(root, Path(temp), os.environ),
+                capture_output=True, text=True, timeout=120)
+        assert result.returncode == 0, result.stdout + result.stderr
+    return isolated
+
 _REVIEW_SECTION_IDS = (
     "functional_qa",
     "platform_parity",
@@ -116,6 +140,7 @@ def test_spanish_public_provider_stage_badge_is_fully_localized() -> None:
     ) == "Estado: PROCESAMIENTO COMPLETO · EVIDENCIA LIMITADA"
 
 
+@_isolated_direct_translation_check
 def test_spanish_not_applicable_scanner_evidence_is_fully_localized() -> None:
     from nico.comprehensive_spanish_canonical_report_v87 import (
         _translate_presentation_field,
@@ -290,6 +315,7 @@ def test_spanish_canonical_localization_preserves_machine_truth_and_translates_n
     assert "VERDE" in collision_pdf_text
 
 
+@_isolated_direct_translation_check
 def test_spanish_scanner_limitations_localize_the_production_truth_contract() -> None:
     import pytest
 
@@ -529,6 +555,7 @@ def test_spanish_localizes_authoritative_ci_history_categories_and_empty_history
         assert _localize_tree({"evidence": classification_evidence})["evidence"] == expected_evidence
 
 
+@_isolated_direct_translation_check
 def test_spanish_localizes_reachable_unavailable_evidence_contracts() -> None:
     import pytest
 
@@ -1126,9 +1153,38 @@ install_comprehensive_spanish_client_surface_localization_v86()
 # page-boundary, manifest, repeat-render and human-gate assertions remain active.
 # Briefing findings now share the repeating evidence table. PDF drawing bytes
 # change; Markdown/HTML, page counts, semantic parity and approval gates do not.
-SMALL_ENGLISH_GOLDEN = {'markdown': ('7c6d1ced076d61a3960e1f3bd743ba9214c9eb74e03461c66b4e8a471a5785c9', 19314), 'html': ('936051dbc7b244c141b82703e7bc858ce0e4f62837d85f1aebbeb969fc84b03d', 23677), 'pdf_base64': ('ce70764b762a0df5314220133bdf7b9ed5d332d178f04f5617db8c8c72f0781e', 182352), 'pdf_sha256': '19e9d272ac20842214dcf82ec5ee3b1aa7d0c9764ba8ea65c79e9671bdda38d4', 'page_count': 22}
-RICH_ENGLISH_GOLDEN = {'markdown': ('91d6065e83ea908d6dba3814293192429cb3a0192babfdad6b2765b1f3aa7b0e', 21018), 'html': ('f1c11430f2177d9ebf29fd65fdf8b9918f089a4fe88c395714ba413c06654b0d', 25687), 'pdf_base64': ('558357fcfda52b5ff03a6de6a81e536ccc5adce22a5382c694f6fa7dde651f70', 284956), 'pdf_sha256': '3f63a025b3d7b38bca56bbadfcea4483ac46221ef43e8a6320e9096173d0825c', 'page_count': 47}
-PHASE9_ENGLISH_GOLDEN = {'markdown': ('bf7ad4d4af0f7dd3ca0d0f0d9de06724bd4b254fa4c8aef08907cb780d6aff3d', 19357), 'html': ('2b9b9dea73efb74fb9eb5770ea01815a01e7de9a98b6d114016870083bc96107', 23699), 'pdf_base64': ('c9964b50527ca98406e5459fee8437a5725c46201d2c09dc633257b2f1b8f7ac', 181092), 'pdf_sha256': 'ad6ac4133b28f95c775258a203a42122d09890665dd75431a99cb9c3c392373e', 'page_count': 22}
+# Status-record wording: exact base 611f7654 reproduces the prior three goldens.
+# Fixed-fixture English/Spanish exports differ only in the status-record label,
+# its explanatory note, and derived artifact digests (plus PDF line wrapping).
+# Scores, findings, approval state, bookmarks and page counts remain unchanged;
+# every semantic, layout, manifest and repeat-render assertion below stays active.
+# PR1774 differential: exact a71ea0ff reproduces all prior goldens. The new
+# compact register retains every acceptance/verification/exit criterion, with
+# readable type and ID-bound headings; roadmap previews disclose retained scope.
+# Small/phase9 Markdown and HTML gain the retained exit criteria. PDF text changes
+# are those criteria, preview labels, layout wrapping, and derived artifact hashes.
+# Rich Markdown/HTML are unchanged. All page counts and bookmarks are unchanged;
+# exact fingerprints, bilingual truth/layout/manifest and repeat-render gates stay active.
+# Combined PR1820/PR1821 differential against exact 2630076: only rich contents
+# pages 2-3 and the final two manifest/approval page streams change. Markdown,
+# HTML, body evidence, truth, outlines and page counts remain unchanged.
+# Score-explanation differential against a7bb8fd: existing headings, outlines,
+# evidence, scores, gates and page counts are identical. Only the literal-safe
+# explanation and dependent artifact hashes change. All assertions remain active.
+# Exact base/current comparison: only page 19 gains the required Bandit 1/2
+# repeatability disclosure; Markdown, HTML, page counts and all other fixtures
+# are unchanged. Keep structural, manifest, identity and bilingual assertions.
+SMALL_ENGLISH_GOLDEN = {'markdown': ('cdac8b0cb19c96ee1638dbe7729c626c67b2758ed82096d5b670213467fb7679', 19799), 'html': ('1edb72e7c9f43b8b2921c0a0047ec70091532e7c084d77594e05d691f93d89c5', 24212), 'pdf_base64': ('138e9c6dc78d5e754c53e9169218548424b46d72e3299fd0e98cf9c110c467b3', 184392), 'pdf_sha256': '130f0764230aa836c6554ffa5baef489fec44f389780216fb9394bd8b986f1f0', 'page_count': 22}
+# PR1779: isolated 644b -> 82315628 rich EN/es comparison preserves Markdown,
+# HTML, all 47 page texts/drawing streams/media boxes, canonical truth and gates.
+# Only phase 3 moves from summary page 5 to canonical Functional QA page 26;
+# the other 37 outline entries are identical. Only its PDF fingerprints change.
+RICH_ENGLISH_GOLDEN = {'html': ('0ba5425ac385bc5307ded94bb6862179a538b92b093290e04316df684bf6ac65', 25997), 'markdown': ('458f49d0206b1776605f233b022c43ccd5533b13fa35c853c75f94ac2dff0523', 21290), 'page_count': 47, 'pdf_base64': ('cd144d442dc11978c5a234857e1e054d819ae4c0b837f5a6308b58ba60151a39', 285848), 'pdf_sha256': '2bedef68efa334e4c7c25c5a239c796cf4717c1abf99c15e9a5cf0de15907636'}
+# PR1816 differential against exact 42e9bd5b reproduces the prior golden.
+# Only scorecard page 6 drawing streams/text wrapping change in both languages;
+# Markdown, HTML, all other page streams, media boxes, page counts and outlines
+# remain identical. Full scorecard text now wraps within its columns.
+PHASE9_ENGLISH_GOLDEN = {'html': ('8b88c58f2fc745e7f543321f100b56dd3b67e6d34db694fcde9cad3745498e0f', 24273), 'markdown': ('053c24aea0e39a4925504e23aa129df8b5749c08f59381afa25af8f5077c6007', 19879), 'page_count': 22, 'pdf_base64': ('fa2c4a791f97fd2496dc87bb6cab9d3a29c95b9ae6d9ef2965b22dd37f8f5c55', 183100), 'pdf_sha256': '07e2db0da98c23b56b6ad8ba37b3e3302378726cd25fab1c53fd075a9ce5db21'}
 
 SPANISH_OUTLINE = {
     "Functional QA": "QA funcional",
@@ -1434,6 +1490,8 @@ assert small_english_before[0]["pdf_base64"] == small_english_after[0]["pdf_base
 assert "spanish_uses_english_canonical_section_contract" not in small_english_before[0]["premium_report_renderer"]
 assert small_spanish[0]["premium_report_renderer"]["spanish_uses_english_canonical_section_contract"] is True
 assert_structural_parity(small_english_before, small_spanish)
+assert "bandit: consecutive exact-SHA passes 1/2; requirement not met." in "\n".join(small_english_before[2])
+assert "bandit: pasadas consecutivas con SHA exacto 1/2; requisito no satisfecho." in "\n".join(small_spanish[2])
 
 rich_english = render(rich_input("en"))
 rich_spanish = render(rich_input("es-MX"))
@@ -1518,6 +1576,20 @@ for result in (small_spanish[0], rich_spanish[0], phase9_spanish[0]):
     assert pdf_text.count("Analizadores aplicables incompletos:") == 1
     assert "Ã" not in pdf_text
     assert "\x00" not in pdf_text
+
+# Each terminal format retains exactly one honest unavailable-contract explanation.
+# Valid supplied deductions are separately exercised through the installed stack.
+from nico.report_score_explanation import UNAVAILABLE, LABELS_ES
+for triple, spanish_locale in (
+    (small_english_before, False), (small_spanish, True),
+    (rich_english, False), (rich_spanish, True),
+    (phase9_english, False), (phase9_spanish, True),
+):
+    result, _, pages = triple
+    explanation = LABELS_ES[UNAVAILABLE] if spanish_locale else UNAVAILABLE
+    assert result["markdown"].count(explanation) == 1
+    assert result["html"].count(explanation) == 1
+    assert "\n".join(pages).count(explanation) == 1
 
 small_result, _, small_pages = small_spanish
 small_pdf_text = "\n".join(small_pages)

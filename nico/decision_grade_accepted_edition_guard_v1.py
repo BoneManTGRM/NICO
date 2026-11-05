@@ -31,6 +31,9 @@ def _sha256(value: bytes) -> str:
 def current_report_artifact_digests(
     package: Mapping[str, Any],
 ) -> dict[str, dict[str, Any]]:
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(package)
+
     try:
         pdf = base64.b64decode(str(package.get("pdf_base64") or ""), validate=True)
     except Exception:
@@ -73,6 +76,9 @@ def validate_accepted_edition(
     *,
     trusted_report_identity: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(package, candidate)
+
     errors: list[str] = []
     if candidate.get("artifact_schema") != ACCEPTED_EDITION_VERSION:
         errors.append("accepted_edition_schema_mismatch")

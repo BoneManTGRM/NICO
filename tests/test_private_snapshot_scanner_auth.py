@@ -91,11 +91,12 @@ def test_private_fetch_failure_does_not_disclose_process_output(monkeypatch, tmp
 
 
 def test_github_scan_persists_frozen_access_for_later_recovery(monkeypatch):
-    from tests.test_scanner_recovery import _MemoryStore
-    store = _MemoryStore([])
-    monkeypatch.setattr(worker, 'STORE', store)
+    from nico.storage import MemoryAdapter
+    store = MemoryAdapter()
+    monkeypatch.setattr(worker, 'STORE', SimpleNamespace(
+        get=store.get, put=store.put, audit=lambda *args, **kwargs: None))
     monkeypatch.setattr(worker, 'threading', SimpleNamespace(Thread=lambda **kw: SimpleNamespace(start=lambda: None)))
     result = worker.start_snapshot_scan(dict(repository='owner/private-repo', snapshot_id='snapshot_private', snapshot_commit_sha=SHA, run_id='comprun_private', authorized=True, authorized_by='owner', authorization_scope='defensive assessment', provider_access_mode='authenticated_read_only', provider_credential_used=True, tools=['gitleaks']))
-    saved = store.records[result['scan_id']]
+    saved = store.get('scanner_runs', result['scan_id'])
     assert saved['provider_access_mode'] == 'authenticated_read_only'
     assert saved['provider_credential_used'] is True

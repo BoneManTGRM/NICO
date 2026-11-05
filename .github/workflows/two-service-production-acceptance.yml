@@ -47,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check --no-cache-dir \
-            -e . "playwright==1.61.0" "pypdf==6.15.0" "pytest==9.1.1"
+            -e . "playwright==1.61.0" "pypdf==6.21.4" "pytest==9.1.1"
           python -m pytest -q tests/test_production_cli_scanner_validator_import.py tests/test_release_acceptance_scanner_retention.py
 
       - name: Compile acceptance runner and verify bounded contract
@@ -163,7 +163,7 @@ jobs:
           fetch-depth: 1
 
       - name: Download sole Comprehensive run handoff
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: spanish-comprehensive-production-proof-${{ github.event.workflow_run.head_sha }}-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
           path: source-proof
@@ -376,7 +376,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check --no-cache-dir \
-            -e . "playwright==1.61.0" "pypdf==6.15.0"
+            -e . "playwright==1.61.0" "pypdf==6.21.4"
           python scripts/completed_run_two_pass_acceptance_v1.py --help >/dev/null
           python scripts/completed_run_authenticated_two_pass_acceptance_v1.py --help >/dev/null
           python -m playwright install --with-deps chromium
@@ -398,6 +398,9 @@ jobs:
         id: acceptance
         continue-on-error: true
         run: |
+          # Separate runner mask commands from retained proof output.
+          exec 9>&1
+          export NICO_PROOF_MASK_FD=9
           set -euo pipefail
           PROOF_TOOL_SHA="$(git rev-parse HEAD)"
           python scripts/completed_run_authenticated_two_pass_acceptance_v1.py \

@@ -28,14 +28,12 @@ import {
 } from "./assessmentModel";
 import type {Copy, Locale, Result, Section} from "./assessmentTypes";
 import {localizeExactSpanishText} from "./AssessmentSpanishLocalization";
-import {
-  REPORT_LOCALE_CHANGE_EVENT,
-  reportLanguageForRequest,
-} from "./assessmentLocale";
+import {useReportActionState} from "./useReportActionState";
 import StrategicEvidenceForm from "./StrategicEvidenceForm";
 import {isAmbiguousIntakeOutcome} from "./assessmentRunRequests";
 import {useAssessmentClientMode} from "./useAssessmentClientMode";
 import {useAssessmentRun} from "./useAssessmentRun";
+import UnscoredSectionEvidence from "./UnscoredSectionEvidence";
 
 const FINAL_REPORT_STAGE = "final_comprehensive_report_generation";
 type ReportLanguage = "en" | "es-MX";
@@ -156,22 +154,6 @@ function acceptedPdfIdentityFor(result: Result | null): {pdfSha256: string; repo
   };
 }
 
-function useReportActionState(locale: Locale) {
-  const [copied, setCopied] = useState(false);
-  const [artifactAction, setArtifactAction] = useState<"markdown" | "pdf" | null>(null);
-  const [requestedReportLanguage, setRequestedReportLanguage] = useState<ReportLanguage>(
-    reportLanguageForRequest(locale),
-  );
-  useEffect(() => {
-    const syncRequestedReportLanguage = () => {
-      setRequestedReportLanguage(reportLanguageForRequest(locale));
-    };
-    syncRequestedReportLanguage();
-    window.addEventListener(REPORT_LOCALE_CHANGE_EVENT, syncRequestedReportLanguage);
-    return () => window.removeEventListener(REPORT_LOCALE_CHANGE_EVENT, syncRequestedReportLanguage);
-  }, [locale]);
-  return {copied, setCopied, artifactAction, setArtifactAction, requestedReportLanguage};
-}
 
 function acceptedPdfView(
   result: Result | null,
@@ -378,6 +360,7 @@ function Scorecard({sections, copy, locale}: {sections: NonNullable<ReturnType<t
         </div> : null}
       </div>
       <p>{presentation.summary}</p>
+      <UnscoredSectionEvidence section={section} locale={locale} />
       <details className="help-details"><summary>{copy.evidence} ({section.evidence?.length || 0})</summary><List items={section.evidence} empty={copy.notVerified} /></details>
       {section.findings?.length ? <details className="help-details"><summary>{copy.findings} ({section.findings.length})</summary><List items={section.findings} empty={copy.notVerified} /></details> : null}
       {section.unavailable?.length ? <details className="help-details"><summary>{copy.evidenceLimitations} ({section.unavailable.length})</summary><List items={section.unavailable} empty={copy.notVerified} /></details> : null}
@@ -412,7 +395,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     setHumanEvidence, setEngagementFieldValue, setEngagementFieldState, setError,
     run, retry, startNew,
   } = controller;
-  const {copied, setCopied, artifactAction, setArtifactAction, requestedReportLanguage} = useReportActionState(locale);
+  const {copied, setCopied, artifactAction, setArtifactAction, requestedReportLanguage, reportLocaleError} = useReportActionState(locale);
   const {issueRef, runIssueRef} = useIssueFocus(issue);
   const {hasExactRun, ambiguousIntakeOutcome} = runBoundaryView(protectedRunId, result, issue);
 
@@ -645,6 +628,8 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
     const markdownLabel = approvedLocaleMismatch
       ? `${copy.copy} · ${requestedLanguageLabel} · ${copy.newApprovalRequired}`
       : `${copy.copy} · ${requestedLanguageLabel}`;
+    const pdfActionDisabled = !pdfAvailable || artifactAction !== null;
+    const draftPdfActionDisabled = pdfActionDisabled;
     return <div
       className={`report-actions ${workspaceStyles.reportActionBar}`}
       data-assessment-report-actions="true"
@@ -667,16 +652,16 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         type="button"
         data-assessment-pdf-kind="accepted-edition"
         data-report-language={acceptedPdfIdentity?.reportLanguage}
-        data-assessment-action-disabled={!pdfAvailable || artifactAction !== null ? "true" : "false"}
-        disabled={!pdfAvailable || artifactAction !== null}
+        data-assessment-action-disabled={pdfActionDisabled ? "true" : "false"}
+        disabled={pdfActionDisabled}
         onClick={downloadApprovedPdf}
       >{copy.downloadApprovedPdf} · {acceptedLanguageLabel}</button> : null}
       {!exactApprovedPdfAvailable || approvedLocaleMismatch ? <button
         type="button"
         data-assessment-pdf-kind="localized-draft-pending-approval"
         data-report-language={requestedReportLanguage}
-        data-assessment-action-disabled={!pdfAvailable || artifactAction !== null ? "true" : "false"}
-        disabled={!pdfAvailable || artifactAction !== null}
+        data-assessment-action-disabled={draftPdfActionDisabled ? "true" : "false"}
+        disabled={draftPdfActionDisabled}
         onClick={downloadPdf}
       >{draftPdfLabel}</button> : null}
       {reportReady && result?.run_id ? <a
@@ -694,10 +679,12 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
   }
 
 
+
   function renderHero() {
     return (
         <section className={`hero ${workspaceStyles.hero}`}>
           <p className="eyebrow">{copy.heroEyebrow}</p>
+          {reportLocaleError ? <p role="alert">{reportLocaleError}</p> : null}
           <h1>{copy.title}</h1>
           {!compactMobile ? <>
             <p className={workspaceStyles.heroLead}>{copy.lead}</p>
@@ -869,7 +856,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
           <p className="eyebrow">{copy.state}</p>
           <h2 title={result?.run_id}>{result?.run_id ? compactIdentifier(result.run_id, 18, 8) : copy.phases[phase]}</h2>
         </div>
-        <span className={statusClass(phase)}>{internalReview.operatorApprovalCompleted ? copy.operatorApproved : copy.phases[phase]}</span>
+        <span className={statusClass(phase)}>{internalReview.operatorApprovalCompleted ? copy.operatorApproved : issue?.code === "assessment_poll_budget_exhausted" ? copy.pollingPausedTitle : copy.phases[phase]}</span>
       </div>
 
       {/* issue ? <div legacy source contract; run-created issues remain in the exact-run panel. */}

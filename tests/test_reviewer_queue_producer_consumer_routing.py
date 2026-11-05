@@ -61,11 +61,13 @@ const source = fs.readFileSync(process.argv[1], 'utf8');
 const logic = source.slice(source.indexOf('type JsonRecord'), source.indexOf('function evidenceLabel'));
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 // TypeScript emits strict mode; declare the result binding before VM execution.
+const before = JSON.stringify(input);
 const scope = {input, output: null};
 const appRequire = createRequire(require('node:path').resolve('apps/web/package.json'));
 const compiled = stripTypeScriptTypes ? stripTypeScriptTypes(logic)
   : appRequire('typescript').transpileModule(logic, {compilerOptions: {target: 7}}).outputText;
 vm.runInNewContext(compiled + '\noutput = buildQueue(input.payload, input.locale)', scope);
+if (JSON.stringify(input) !== before) throw new Error('Queue consumer mutated input');
 process.stdout.write(JSON.stringify(scope.output));
 """
     result = subprocess.run(

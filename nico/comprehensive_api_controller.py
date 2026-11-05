@@ -23,7 +23,7 @@ from nico.comprehensive_run_service import ComprehensiveRunService
 from nico.decision_grade_accepted_edition_guard_v1 import validate_accepted_edition
 
 VERSION = "nico.comprehensive_api_controller.v8"
-SECTION_ASSURANCE_POLICY = "retained-section-assurance-v1"
+SECTION_ASSURANCE_POLICY = "retained-section-assurance-v2"
 MAX_PROJECTED_STRING_CHARS = 1_200
 MAX_PROJECTED_LIST_ITEMS = 24
 MAX_PROJECTED_OBJECT_ITEMS = 24
@@ -313,6 +313,7 @@ def _human_evidence_summary(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _project_record(record: dict[str, Any]) -> dict[str, Any]:
+    from nico.candidate_capture_diagnostics import capture_diagnostics
     stage_results = (
         record.get("stage_results")
         if isinstance(record.get("stage_results"), dict)
@@ -327,6 +328,7 @@ def _project_record(record: dict[str, Any]) -> dict[str, Any]:
         "identity": _bounded_value(
             record.get("identity") if isinstance(record.get("identity"), dict) else {}
         ),
+        "candidate_source_capture_diagnostics": capture_diagnostics(record),
         "engagement_metadata": _project_engagement_metadata(
             record.get("engagement_metadata")
         ),
@@ -953,7 +955,7 @@ def _project_report_manifest(report: dict[str, Any]) -> dict[str, Any]:
     return projected
 
 
-def _project_assessment(assessment: dict[str, Any]) -> dict[str, Any]:
+def _project_assessment(assessment: dict[str, Any], identity: dict[str, Any] | None = None) -> dict[str, Any]:
     projected: dict[str, Any] = {}
     for key in (
         "executive_summary",
@@ -996,6 +998,14 @@ def _project_assessment(assessment: dict[str, Any]) -> dict[str, Any]:
             ):
                 if key in section:
                     item[key] = _bounded_value(section[key])
+            from nico.retained_section_measurements_v1 import project_measurements, score_reason
+            if section.get("id") in {"architecture_debt", "velocity_complexity"}:
+                reason = score_reason(section.get("score_input_provenance"))
+                if reason:
+                    item["score_input_provenance"] = reason
+                measurements = project_measurements(section.get("retained_measurements"), identity)
+                if measurements:
+                    item["retained_measurements"] = measurements
             projected_sections.append(item)
         projected["sections"] = projected_sections
     projected["human_review_required"] = True
@@ -1022,6 +1032,8 @@ class ComprehensiveApiController:
 
     def start(self, payload: dict[str, Any]) -> dict[str, Any]:
         body = self._object(payload)
+        from nico.ordinary_report_language_release_v1 import normalize_new_report_language
+        report_language = normalize_new_report_language(body.get("report_language"))
         repository = self._required(body.get("repository"), "repository")
         commit_sha = self._required(body.get("commit_sha"), "commit_sha")
         run_id = self._required(body.get("run_id"), "run_id")
@@ -1034,10 +1046,6 @@ class ComprehensiveApiController:
         assessment_depth = self._required(
             body.get("assessment_depth") or "strategic",
             "assessment_depth",
-        )
-        report_language = self._required(
-            body.get("report_language") or "en",
-            "report_language",
         )
         repository_provider = str(body.get("repository_provider") or "").strip()
         provider_access_mode = str(body.get("provider_access_mode") or "").strip()
@@ -1085,6 +1093,23 @@ class ComprehensiveApiController:
     def status(self, run_id: str) -> dict[str, Any]:
         record = self._service.load(self._required(run_id, "run_id"))
         return self._response(record, operation="status")
+
+    def candidate_capture_diagnostics_read_only(self, run_id: str) -> dict[str, Any]:
+        """Project only stored capture counts; never assemble artifacts or resume."""
+        from nico.candidate_capture_diagnostics import capture_diagnostics
+        requested = self._required(run_id, "run_id")
+        record = self._service.load_capture_diagnostics_record(requested)
+        identity = record.get("identity")
+        if not isinstance(identity, Mapping) or identity.get("run_id") != requested:
+            raise ValueError("capture_diagnostic_run_identity_mismatch")
+        if record.get("terminal") is not True:
+            raise ValueError("capture_diagnostic_requires_terminal_run")
+        return {
+            "artifact_schema": "nico.candidate-source-capture-status.v1",
+            "candidate_source_capture_diagnostics": capture_diagnostics(record),
+            "human_review_required": True,
+            "client_delivery_allowed": False,
+        }
 
     def status_read_only(self, run_id: str) -> dict[str, Any]:
         """Project stored truth without resuming or regenerating the assessment."""
@@ -1158,7 +1183,7 @@ class ComprehensiveApiController:
         call. The cache contains no authorization/session decision or run tree.
         """
 
-        from nico.retained_pdf_exact_input_cache_v1 import prepare_retained_pdf, finish_retained_pdf
+        from nico.retained_pdf_exact_input_cache_v1 import prepare_retained_pdf, finish_retained_pdf, RetainedPdfComputation
 
         normalized = self._required(run_id, "run_id")
 
@@ -1174,39 +1199,43 @@ class ComprehensiveApiController:
             )
             if prepared.cached is not None:
                 return prepared, None
+            computation.acquire()
             record = restore()
             # Check decoder-side mutation while the captured row is still here.
             # The compressed payload and SQL connection do not escape this callback.
             prepared = prepared.after_restore(row, record)
             return prepared, record
 
-        snapshot_reader = getattr(self._service, "_consume_read_only_snapshot", None)
-        if callable(snapshot_reader):
-            prepared, record = snapshot_reader(normalized, consume)
-            # The store has closed its connection and released the compressed row
-            # before any controller projection or installed PDF builder runs.
-            def build() -> Any:
-                current = record if record is not None else self._service.load_read_only(normalized)
-                validated = self._status_artifact_from_record(current)
-                response = builder(validated, report_language)
-                try:
-                    from nico.current_retained_metadata_observer_v13 import observe_validated_retained_pdf
-                    observe_validated_retained_pdf(current, validated.get("reports"), report_language, response)
-                except Exception:
-                    # Optional diagnostics start only after the original builder
-                    # succeeds. They cannot change its response or its failures.
+        with RetainedPdfComputation() as computation:
+            snapshot_reader = getattr(self._service, "_consume_read_only_snapshot", None)
+            if callable(snapshot_reader):
+                prepared, record = snapshot_reader(normalized, consume)
+                # The store has closed its connection and released the compressed row
+                # before any controller projection or installed PDF builder runs.
+                def build() -> Any:
+                    computation.acquire()
+                    current = record if record is not None else self._service.load_read_only(normalized)
+                    validated = self._status_artifact_from_record(current)
+                    response = builder(validated, report_language)
                     try:
-                        import logging
-                        logging.getLogger("uvicorn.error").info(
-                            'NICO_CURRENT_RETAINED_METADATA={"schema":"nico.current-retained-metadata.v13",'
-                            '"outcome":"observation_unavailable","reason_code":"optional_observer_unavailable"}'
-                        )
+                        from nico.current_retained_metadata_observer_v13 import observe_validated_retained_pdf
+                        observe_validated_retained_pdf(current, validated.get("reports"), report_language, response)
                     except Exception:
-                        pass
-                return response
+                        # Optional diagnostics start only after the original builder
+                        # succeeds. They cannot change its response or its failures.
+                        try:
+                            import logging
+                            logging.getLogger("uvicorn.error").info(
+                                'NICO_CURRENT_RETAINED_METADATA={"schema":"nico.current-retained-metadata.v13",'
+                                '"outcome":"observation_unavailable","reason_code":"optional_observer_unavailable"}'
+                            )
+                        except Exception:
+                            pass
+                    return response
 
-            return finish_retained_pdf(prepared, build)
-        return builder(self.status_artifact_read_only(normalized), report_language)
+                return finish_retained_pdf(prepared, build)
+            computation.acquire()
+            return builder(self.status_artifact_read_only(normalized), report_language)
 
     def continue_run(
         self,
@@ -1447,7 +1476,7 @@ class ComprehensiveApiController:
                     else _project_report(report)
                 )
             if assessment:
-                response["assessment"] = _project_assessment(assessment)
+                response["assessment"] = _project_assessment(assessment, identity)
             accepted_edition = (
                 _project_accepted_edition(canonical_record)
                 if approved_status

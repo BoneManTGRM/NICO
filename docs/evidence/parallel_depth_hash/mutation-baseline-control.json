@@ -1,0 +1,32 @@
+[
+  {
+    "variant": "paired_baseline",
+    "extension": "list",
+    "result": true
+  },
+  {
+    "variant": "paired_baseline",
+    "extension": "keys",
+    "result": true
+  },
+  {
+    "variant": "paired_baseline",
+    "extension": "values",
+    "result": true
+  },
+  {
+    "variant": "corrected_candidate",
+    "extension": "list",
+    "result": true
+  },
+  {
+    "variant": "corrected_candidate",
+    "extension": "keys",
+    "result": true
+  },
+  {
+    "variant": "corrected_candidate",
+    "extension": "values",
+    "result": true
+  }
+]

@@ -33,7 +33,13 @@ def _tool_name(value: Any) -> str:
 def _scanner_count(
     record: Mapping[str, Any],
     by_tool: Mapping[str, Any],
-) -> tuple[int, str]:
+) -> tuple[int | None, str]:
+    if record.get("compact_record") is True and record.get("raw_findings_embedded") is False:
+        summary = record.get("finding_summary")
+        raw = summary.get("raw") if isinstance(summary, Mapping) else None
+        if type(raw) is int and raw >= 0:
+            return raw, "retained compact scanner summary `raw`"
+        return None, "retained compact scanner count unavailable"
     findings = record.get("findings")
     if isinstance(findings, list) and findings:
         return len(findings), "retained finding records"
@@ -358,7 +364,7 @@ def install_comprehensive_report_content_render_v66() -> dict[str, Any]:
                     f"{_text(item.get('state') or item.get('status'))}; "
                     f"exact commit={'yes' if item.get('exact_commit_match') else 'no'}; "
                     f"artifact={'retained' if item.get('artifact_hash') else 'missing'}; "
-                    f"retained finding count={count}; count source={source}; "
+                    f"retained finding count={count if count is not None else 'unavailable'}; count source={source}; "
                     f"raw finding payload embedded={'yes' if item.get('findings') else 'no'}"
                 )
             limitations = [
@@ -418,6 +424,14 @@ def install_comprehensive_report_content_render_v66() -> dict[str, Any]:
                     stages[by_id[stage_id]] = candidate
                 else:
                     stages.append(candidate)
+            repeatability = canonical.get("analyzer_evidence_report")
+            identity = canonical.get("identity")
+            if (isinstance(repeatability, Mapping) and isinstance(identity, Mapping)
+                    and repeatability.get("commit_sha") == identity.get("commit_sha")
+                    and identity.get("commit_sha")):
+                for stage in stages:
+                    if stage.get("stage_id") == "dependency_security_static_analysis":
+                        stage["_repeatability_assurance"] = deepcopy(dict(repeatability))
             return stages
 
         setattr(canonical_stages, _STAGE_MARKER, True)

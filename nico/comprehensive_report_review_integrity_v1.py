@@ -326,10 +326,21 @@ def _client_summary_truth_evidence(
         triage = canonical["technical_triage"]
     if isinstance(assessment.get("technical_triage"), Mapping):
         triage = assessment["technical_triage"]
+    # The final reconciled scanner register supersedes earlier stage summaries.
+    # Automated triage counts never stand in for pending human dispositions.
+    for owner in (canonical, assessment):
+        register = owner.get("canonical_scanner_finding_register")
+        if isinstance(register, Mapping) and isinstance(register.get("technical_triage"), Mapping):
+            triage = register["technical_triage"]
+            break
     workload = triage.get("workload_metrics") if isinstance(triage.get("workload_metrics"), Mapping) else {}
     triage_status = str(triage.get("status") or "not_supplied")
-    triage_completed = number(workload, "technical_triage_completed")
-    triage_pending = number(workload, "technical_triage_pending", default=review_required)
+    unavailable = "no suministrado" if spanish else "not supplied"
+    def triage_count(key: str) -> int | str:
+        value = workload.get(key)
+        return value if type(value) is int and value >= 0 else unavailable
+    triage_completed = triage_count("technical_triage_completed")
+    triage_pending = triage_count("technical_triage_pending")
     from nico.review_workload_truth_v1 import review_workload_summary
 
     combined_workload = review_workload_summary(canonical)

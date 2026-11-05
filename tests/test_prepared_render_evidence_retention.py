@@ -87,6 +87,11 @@ def test_real_bilingual_single_pass_preserves_visible_content(locale, monkeypatc
 
     prepared = phase17._prepare_client_artifact_package(_package(locale))
     retained = _install_finalized_scanner_register(prepared["json"])
+    stage = {'stage_id': 'review_required_candidate_register', 'title': 'Candidate register',
+             'summary': 'Human review required', 'status': 'review_required',
+             'findings': ['Retained synthetic candidate'], 'evidence': [], 'unavailable': []}
+    prepared['json']['stage_summaries'] = [stage]
+    prepared['json']['assessment']['stage_summaries'] = [deepcopy(stage)]
     # Preparation supplies every publication contract; the fixture supplies only
     # one synthetic raw candidate, independent of the real decision register.
     with monkeypatch.context() as patch:
@@ -107,6 +112,52 @@ def test_real_bilingual_single_pass_preserves_visible_content(locale, monkeypatc
     def text(package):
         return [page.extract_text() for page in PdfReader(io.BytesIO(base64.b64decode(package["pdf_base64"]))).pages]
     assert text(actual) == text(expected)
+    rendered_text = ' '.join(text(actual))
+    assert '1 of 0 retained records' not in rendered_text
+    assert '1 de 0 registros' not in rendered_text
     assert actual["json"] == expected["json"]
     assert actual["human_review_required"] is True
     assert actual["client_delivery_allowed"] is False
+
+@pytest.mark.parametrize('spanish', [False, True])
+def test_compacted_candidate_population_is_not_zero_in_rendered_pdf(spanish):
+    import base64
+    import io
+    from pypdf import PdfReader
+    from nico.comprehensive_report_package import _pdf
+    from nico.report_preview_labels_v1 import stage_preview_labels
+    source = _eligible()
+    register = source['json']['assessment']['canonical_scanner_finding_register']
+    register['findings'] = [{'candidate_id': str(i)} for i in range(1678)]
+    register['candidate_record_count'] = 1678
+    original = deepcopy(source)
+    compact, retained, metadata = phase17._bounded_localized_preparation_input(source)
+    stage = {'stage_id': 'review_required_candidate_register', 'title': 'Candidates',
+             'summary': 'Review required', 'status': 'review_required', 'evidence': [],
+             'unavailable': [], 'findings': ['Retained candidate'] * 50}
+    labels = stage_preview_labels(stage, compact['json'], spanish=spanish)
+    assert ('50 de 1678' if spanish else '50 of 1678') in labels[0]
+    pdf, error, _ = _pdf({'run_id': 'synthetic', 'repository': 'example/repo', 'commit_sha': 'a'*40},
+                         compact['json']['assessment'], [stage], '2026-10-29',
+                         localize_presentation=(lambda value: value) if spanish else None)
+    assert not error
+    text = ' '.join(p.extract_text() for p in PdfReader(io.BytesIO(base64.b64decode(pdf))).pages)
+    assert '50 of 1678' in text or '50 de 1678' in text
+    assert source == original
+    assert phase17._restore_render_scanner_register(compact, retained, metadata)['json'] == original['json']
+
+
+def test_genuine_empty_register_ignores_unbound_declared_population():
+    from nico.report_preview_labels_v1 import stage_preview_labels
+    label = stage_preview_labels({'stage_id': 'review_required_candidate_register', 'findings': []},
+        {'assessment': {'canonical_scanner_finding_register': {'findings': [], 'candidate_record_count': 1678}}})
+    assert '0 of 0' in label[0]
+
+
+def test_compact_markdown_metadata_preserves_known_population():
+    from nico.report_preview_labels_v1 import stage_preview_labels
+    source = _eligible()
+    _, _, metadata = phase17._bounded_localized_preparation_input(source)
+    label = stage_preview_labels({'stage_id': 'review_required_candidate_register', 'findings': ['candidate']},
+        {'assessment': {'canonical_scanner_finding_register': metadata}})
+    assert '1 of 1 retained records' in label[0]

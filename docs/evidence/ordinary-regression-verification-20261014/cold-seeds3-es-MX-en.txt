@@ -1,0 +1,10 @@
+.                                                                        [100%]
+=============================== warnings summary ===============================
+tests/test_cross_locale_pdf_repeatability_v1.py::test_same_frozen_input_keeps_cross_locale_pdf_bytes[fresh_process-seeds3-es-MX-en]
+tests/test_cross_locale_pdf_repeatability_v1.py::test_same_frozen_input_keeps_cross_locale_pdf_bytes[fresh_process-seeds3-es-MX-en]
+tests/test_cross_locale_pdf_repeatability_v1.py::test_same_frozen_input_keeps_cross_locale_pdf_bytes[fresh_process-seeds3-es-MX-en]
+  /workspace/nico-venv/lib/python3.12/site-packages/pypdf/_page.py:1342: DeprecationWarning: Calling `PageObject.replace_contents()` for pages not assigned to a writer is deprecated and will be removed in pypdf 7.0.0. Attach the page to the writer first or use `PdfWriter(clone_from=...)` directly. The existing approach has proved being unreliable.
+    self.replace_contents(ContentStream(new_content_array, self.pdf))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1 passed, 3 warnings in 13.49s

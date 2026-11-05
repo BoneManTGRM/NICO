@@ -36,6 +36,14 @@ _CANONICAL_PARITY_EXACT = {
         "más pequeña, ejecute pruebas de regresión específicas y completas, y vuelva "
         "a ejecutar NICO sobre el commit de remediación."
     ),
+    "NOT_ASSESSED": "NO EVALUADO",
+    "Unscored controls are excluded from maturity; any resulting mean change is not evidence of improved source quality.": "Los controles sin puntuación se excluyen de la madurez; cualquier cambio resultante en la media no demuestra una mejora de la calidad del código fuente.",
+    "Architecture is not scored because a valid exact-source score input is unavailable; measured complexity evidence remains retained.": "La arquitectura no se puntúa porque no se dispone de una entrada de puntuación válida vinculada a la fuente exacta; se conservan las mediciones de complejidad.",
+    "Delivery capacity is not scored because architecture has no valid exact-source score input.": "La capacidad de entrega no se puntúa porque la arquitectura no tiene una entrada de puntuación válida vinculada a la fuente exacta.",
+    "Architecture and technical-debt score: not scored.": "Puntuación de arquitectura y deuda técnica: sin puntuación.",
+    "Status record retention does not establish raw execution evidence.": (
+        "La conservación del registro de estado no acredita evidencia sin procesar de la ejecución."
+    ),
     "Documented not-applicable dispositions do not establish analyzer execution.": "Las determinaciones documentadas de no aplicabilidad no demuestran la ejecución del analizador.",
     "Retain the required exact-SHA applicability dispositions.": "Conserve las determinaciones de aplicabilidad requeridas para el SHA exacto.",
     "Configure-first execution is incomplete; retained native evidence requires repair.": "La ejecución con configuración inicial está incompleta; la evidencia nativa conservada requiere reparación.",
@@ -46,6 +54,16 @@ _CANONICAL_PARITY_EXACT = {
     # This changes presentation only; the unavailable execution record stays raw.
     "eslint is not installed in the worker image.": "eslint no está instalado en la imagen del trabajador.",
     "eslint: eslint is not installed in the worker image.": "eslint: eslint no está instalado en la imagen del trabajador.",
+    "Trusted global ESLint identity, source boundary or complete output could not be verified. Project-aware ESLint remains disabled without NICO_ALLOW_PROJECT_COMMANDS=true.": (
+        "No se pudieron verificar la identidad de ESLint global de confianza, los límites de la fuente "
+        "o la integridad de la salida. ESLint con conocimiento del proyecto sigue deshabilitado "
+        "sin NICO_ALLOW_PROJECT_COMMANDS=true."
+    ),
+    "eslint: Trusted global ESLint identity, source boundary or complete output could not be verified. Project-aware ESLint remains disabled without NICO_ALLOW_PROJECT_COMMANDS=true.": (
+        "eslint: No se pudieron verificar la identidad de ESLint global de confianza, los límites de la fuente "
+        "o la integridad de la salida. ESLint con conocimiento del proyecto sigue deshabilitado "
+        "sin NICO_ALLOW_PROJECT_COMMANDS=true."
+    ),
     "Native target execution or parsing is incomplete; retained observations require review.": "La ejecución o el análisis nativo de los objetivos está incompleto; las observaciones conservadas requieren revisión.",
     "Native XML was not completely parsed.": "El XML nativo no se analizó por completo.",
     "Native target is outside the frozen population.": "El objetivo nativo está fuera de la población fijada.",
@@ -1242,6 +1260,34 @@ _PRESENTATION_REPLACEMENTS += (
         "La evidencia de secretos con conocimiento del historial se separó en hallazgos materiales verificados, candidatos que requieren revisión, marcadores explícitos de ejemplo y observaciones ajenas a producción.",
     ),
     (
+        'Static-analysis evidence is reported separately from analyzer execution coverage.',
+        'La evidencia de análisis estático se informa por separado de la cobertura de ejecución de los analizadores.',
+    ),
+    (
+        'TypeScript analysis completed with verified retained evidence for the exact commit.',
+        'El análisis de TypeScript se completó con evidencia conservada verificada para el commit exacto.',
+    ),
+    (
+        'TypeScript analysis failed; no completed analysis is claimed.',
+        'El análisis de TypeScript falló; no se afirma que el análisis se haya completado.',
+    ),
+    (
+        'TypeScript analysis was unavailable; no completed analysis is claimed.',
+        'El análisis de TypeScript no estuvo disponible; no se afirma que el análisis se haya completado.',
+    ),
+    (
+        'TypeScript analysis was not run or no execution evidence was retained.',
+        'El análisis de TypeScript no se ejecutó o no se conservó evidencia de ejecución.',
+    ),
+    (
+        'TypeScript analysis completion is not verified by retained evidence.',
+        'La finalización no está verificada por la evidencia conservada del análisis de TypeScript.',
+    ),
+    (
+        'TypeScript analysis is proven not applicable; no execution credit is claimed.',
+        'Se demostró que el análisis de TypeScript no es aplicable; no se atribuye crédito de ejecución.',
+    ),
+    (
         "Bandit, Semgrep, ESLint, and TypeScript evidence were evaluated independently against the exact immutable commit.",
         "La evidencia de Bandit, Semgrep, ESLint y TypeScript se evaluó de forma independiente contra el commit inmutable exacto.",
     ),
@@ -1808,6 +1854,8 @@ _PRESENTATION_PROSE_FIELDS = {
 }
 _RAW_CANONICAL_SUBTREES = {
     "supplied_human_evidence",
+    "source_function_conformance_v1",
+    "architecture_policy_conformance_v1",
     "source_observation",
     "structured_tables",
     "profile_coverage",
@@ -2207,6 +2255,10 @@ def _structured_presentation_es(value: str) -> str | None:
             "la mantenibilidad o la fiabilidad de la entrega; un candidato no confirmado "
             f"solo afecta la garantía de la evidencia. · Recomendación: {recommendation}"
         )
+    from nico.comprehensive_spanish_function_measurement_copy_v1 import translate_function_measurement_copy
+    measurement = translate_function_measurement_copy(value)
+    if measurement is not None:
+        return measurement
     source_sample = re.fullmatch(
         r"(?P<anchor>repository_evidence\.code_signal_evidence\.risk_pattern_samples\[\d+\]: "
         r"[A-Za-z0-9_@./+\-]+:\d+(?::\d+)?: [A-Za-z0-9_.\-]+ — )"
@@ -2302,22 +2354,26 @@ def _structured_presentation_es(value: str) -> str | None:
     if rate_status is not None:
         return rate_status
 
-    match = re.fullmatch(r"Exact-source locators: (?P<count>\d+) present\.", value)
-    if match is not None:
-        return f"Localizadores de fuente exacta: {match.group('count')} presentes."
-
-    match = re.fullmatch(
-        r"Collection notes recorded: (?P<count>\d+); informational acquisition notes: (?P<info>\d+); "
-        r"remaining limitation notes: (?P<limits>\d+)\.", value,
-    )
-    if match is not None:
-        return (f"Notas de recopilación registradas: {match.group('count')}; "
-                f"notas informativas de adquisición: {match.group('info')}; "
-                f"notas de limitación restantes: {match.group('limits')}.")
-
-    match = re.fullmatch(r"Collection limitations recorded: (?P<count>\d+)\.", value)
-    if match is not None:
-        return f"Limitaciones de recopilación registradas: {match.group('count')}."
+    # Keep these literal capture/template rules in first-match order.
+    for pattern, template in (
+        (
+            r'Exact-source locators: (?P<count>\d+) present\.',
+            'Localizadores de fuente exacta: {count} presentes.',
+        ),
+        (
+            r'Collection notes recorded: (?P<count>\d+); informational acquisition notes: '
+            r'(?P<info>\d+); remaining limitation notes: (?P<limits>\d+)\.',
+            'Notas de recopilación registradas: {count}; notas informativas de adquisición: {info};'
+            ' notas de limitación restantes: {limits}.',
+        ),
+        (
+            r'Collection limitations recorded: (?P<count>\d+)\.',
+            'Limitaciones de recopilación registradas: {count}.',
+        ),
+    ):
+        match = re.fullmatch(pattern, value)
+        if match is not None:
+            return template.format_map(match.groupdict())
 
     match = re.fullmatch(
         r"Capability (?P<capability>Repository|Commits|Branches|Source tree|Source objects|"
@@ -2494,59 +2550,44 @@ def _structured_presentation_es(value: str) -> str | None:
             "justificación completa se conserva en el JSON canónico."
         )
 
-    match = re.fullmatch(r"Unique classified hotspots: (?P<count>\d+)\.", value)
-    if match is not None:
-        return f"Puntos críticos únicos clasificados: {match.group('count')}."
-
-    match = re.fullmatch(
-        r"Actionable production/report hotspots at complexity >=30: "
-        r"(?P<count>\d+)\.",
-        value,
-    )
-    if match is not None:
-        return (
-            "Puntos críticos accionables de producción o generación de informes "
-            f"con complejidad >=30: {match.group('count')}."
-        )
-
-    match = re.fullmatch(
-        r"Classification counts: (?P<counts>\{[^\r\n]*\})\.",
-        value,
-    )
-    if match is not None:
-        return f"Conteos por clasificación: {match.group('counts')}."
-
-    match = re.fullmatch(
-        r"Raw high-complexity region count retained for audit: (?P<count>\d+)\.",
-        value,
-    )
-    if match is not None:
-        return (
-            "Conteo sin procesar de regiones de alta complejidad conservado para "
-            f"auditoría: {match.group('count')}."
-        )
-
-    match = re.fullmatch(
-        r"Technical maturity remains based on exact-commit technical controls\. "
-        r"Evidence-Adjusted (?:readiness|technical score) is (?P<adjusted>\d+(?:\.\d+)?)/100 versus "
-        r"technical maturity (?P<technical>\d+(?:\.\d+)?)/100\. NICO retains "
-        r"(?P<review>\d+) review-required candidates and (?P<material>\d+) "
-        r"confirmed material findings as explicit review context\. Candidate volume, "
-        r"clustering and reviewer workload do not change numeric (?:security or readiness|technical) "
-        r"scores\.",
-        value,
-    )
-    if match is not None:
-        return (
-            "La madurez técnica sigue basándose en controles técnicos del commit exacto. "
-            f"La puntuación técnica ajustada por evidencia es {match.group('adjusted')}/100 "
-            f"frente a una madurez técnica de {match.group('technical')}/100. NICO "
-            f"conserva {match.group('review')} candidatos que requieren revisión y "
-            f"{match.group('material')} hallazgos materiales confirmados como contexto "
-            "explícito de revisión. El volumen de candidatos, la agrupación y la carga "
-            "de trabajo de revisión no modifican las puntuaciones numéricas de "
-            "los controles técnicos."
-        )
+    # Keep these literal capture/template rules in first-match order.
+    for pattern, template in (
+        (
+            r'Unique classified hotspots: (?P<count>\d+)\.',
+            'Puntos críticos únicos clasificados: {count}.',
+        ),
+        (
+            r'Actionable production/report hotspots at complexity >=30: (?P<count>\d+)\.',
+            'Puntos críticos accionables de producción o generación de informes con complejidad '
+            '>=30: {count}.',
+        ),
+        (
+            r'Classification counts: (?P<counts>\{[^\r\n]*\})\.',
+            'Conteos por clasificación: {counts}.',
+        ),
+        (
+            r'Raw high-complexity region count retained for audit: (?P<count>\d+)\.',
+            'Conteo sin procesar de regiones de alta complejidad conservado para auditoría: '
+            '{count}.',
+        ),
+        (
+            r'Technical maturity remains based on exact-commit technical controls\. '
+            r'Evidence-Adjusted (?:readiness|technical score) is (?P<adjusted>\d+(?:\.\d+)?)/100 '
+            r'versus technical maturity (?P<technical>\d+(?:\.\d+)?)/100\. NICO retains '
+            r'(?P<review>\d+) review-required candidates and (?P<material>\d+) confirmed material '
+            r'findings as explicit review context\. Candidate volume, clustering and reviewer '
+            r'workload do not change numeric (?:security or readiness|technical) scores\.',
+            'La madurez técnica sigue basándose en controles técnicos del commit exacto. La '
+            'puntuación técnica ajustada por evidencia es {adjusted}/100 frente a una madurez '
+            'técnica de {technical}/100. NICO conserva {review} candidatos que requieren revisión y'
+            ' {material} hallazgos materiales confirmados como contexto explícito de revisión. El '
+            'volumen de candidatos, la agrupación y la carga de trabajo de revisión no modifican '
+            'las puntuaciones numéricas de los controles técnicos.',
+        ),
+    ):
+        match = re.fullmatch(pattern, value)
+        if match is not None:
+            return template.format_map(match.groupdict())
 
     match = re.fullmatch(
         r"(?P<scanner>[A-Za-z0-9_.+-]+): not applicable; No supported Python "
@@ -2682,49 +2723,33 @@ def _structured_presentation_es(value: str) -> str | None:
     if match is not None:
         return _repository_unavailable_note_es(match)
 
-    match = re.fullmatch(
-        r"Workflow jobs for run (?P<run_id>[^\r\n]+) were returned without a "
-        r"jobs list\.",
-        value,
-    )
-    if match is not None:
-        return (
-            "La evidencia de trabajos del flujo de trabajo de la ejecución "
-            f"{match.group('run_id')} se devolvió sin una lista de trabajos."
-        )
-
-    match = re.fullmatch(
-        r"GitHub deployment evidence: observed=(?P<observed>\d+), "
-        r"success=(?P<success>\d+), non-success=(?P<non_success>\d+)\.",
-        value,
-    )
-    if match is not None:
-        return (
-            "Evidencia de despliegues de GitHub: "
-            f"observados={match.group('observed')}, exitosos={match.group('success')}, "
-            f"no exitosos={match.group('non_success')}."
-        )
-
-    match = re.fullmatch(
-        r"OSV lookup returned HTTP (?P<status>\d{3}); dependency vulnerability "
-        r"status is incomplete\.",
-        value,
-    )
-    if match is not None:
-        return (
-            f"La consulta a OSV devolvió HTTP {match.group('status')}; el estado de "
-            "vulnerabilidades de dependencias está incompleto."
-        )
-
-    match = re.fullmatch(
-        r"OSV lookup unavailable: (?P<detail>[^\r\n]+)",
-        value,
-    )
-    if match is not None:
-        return (
-            "La consulta a OSV no estaba disponible; detalle técnico original: "
-            f"{match.group('detail')}"
-        )
+    # Keep these literal capture/template rules in first-match order.
+    for pattern, template in (
+        (
+            r'Workflow jobs for run (?P<run_id>[^\r\n]+) were returned without a jobs list\.',
+            'La evidencia de trabajos del flujo de trabajo de la ejecución {run_id} se devolvió sin'
+            ' una lista de trabajos.',
+        ),
+        (
+            r'GitHub deployment evidence: observed=(?P<observed>\d+), success=(?P<success>\d+), '
+            r'non-success=(?P<non_success>\d+)\.',
+            'Evidencia de despliegues de GitHub: observados={observed}, exitosos={success}, no '
+            'exitosos={non_success}.',
+        ),
+        (
+            r'OSV lookup returned HTTP (?P<status>\d{3}); dependency vulnerability status is '
+            r'incomplete\.',
+            'La consulta a OSV devolvió HTTP {status}; el estado de vulnerabilidades de '
+            'dependencias está incompleto.',
+        ),
+        (
+            r'OSV lookup unavailable: (?P<detail>[^\r\n]+)',
+            'La consulta a OSV no estaba disponible; detalle técnico original: {detail}',
+        ),
+    ):
+        match = re.fullmatch(pattern, value)
+        if match is not None:
+            return template.format_map(match.groupdict())
 
     match = re.fullmatch(
         r"OSV returned (?P<count>\d+) vulnerability record\(s\) for "
@@ -2872,6 +2897,22 @@ def _translate_presentation(value: Any) -> str:
             if segment != ""
         )
     stripped = text.strip()
+    from nico.comprehensive_spanish_function_measurement_copy_v1 import translate_function_measurement_copy
+    measurement = translate_function_measurement_copy(stripped)
+    if measurement is not None:
+        return text.replace(stripped, measurement, 1)
+    from nico.report_score_explanation import LABELS_ES
+    if stripped in LABELS_ES:
+        return text.replace(stripped, LABELS_ES[stripped], 1)
+    # Direct canonical readers can run before the v88 wrapper is installed.
+    # Reuse only its full-match acceptance contract, preserving exact-SHA,
+    # comparison semantics and the complete source location.
+    from nico.comprehensive_spanish_exit_criteria_v88 import (
+        _COMPLEXITY_ACCEPTANCE_RE,
+        _translate_generated_complexity_contract,
+    )
+    if _COMPLEXITY_ACCEPTANCE_RE.fullmatch(stripped):
+        return _translate_generated_complexity_contract(stripped)
     from nico.comprehensive_coverage_reconciliation_v1 import COPY_ES
     from nico.comprehensive_human_evidence_report_v1 import _STAKEHOLDER_METADATA_SUMMARY
     if stripped == _STAKEHOLDER_METADATA_SUMMARY[0]:
@@ -3420,6 +3461,8 @@ def _translate_presentation(value: Any) -> str:
     text = text.replace("exact commit=no", "commit exacto=no")
     text = text.replace("artifact=retained", "artefacto=conservado")
     text = text.replace("artifact=missing", "artefacto=faltante")
+    text = text.replace("status record=retained", "registro de estado=conservado")
+    text = text.replace("status record=missing", "registro de estado=faltante")
     text = text.replace("retained finding count=", "conteo de hallazgos conservados=")
     text = text.replace(
         "operations page has concentrated branching and elevated change risk",
@@ -3546,11 +3589,21 @@ def _render_inputs(
 ) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]], str]:
     identity = canonical.get("identity") if isinstance(canonical.get("identity"), Mapping) else {}
     assessment = canonical.get("assessment") if isinstance(canonical.get("assessment"), Mapping) else {}
+    from nico.comprehensive_commercial_ship_projection_v1 import _project_stage
     stages = [
-        item
+        deepcopy(dict(item))
         for item in canonical.get("stage_summaries") or []
         if isinstance(item, Mapping)
     ]
+    from nico.comprehensive_human_evidence_report_v1 import localize_engagement_state_lines
+    stages = [localize_engagement_state_lines(stage, canonical.get("engagement_metadata"), spanish=True)
+              for stage in stages]
+    for stage in stages:
+        # Borrow only the display-status qualifier. The commercial projection
+        # also rewrites page counts and deployment prose, which may be supplied
+        # literals here and must reach localization unchanged.
+        if "status" in stage:
+            stage["status"] = _project_stage(stage)["status"]
     generated_at = str(
         identity.get("generated_at")
         or identity.get("generation_timestamp")

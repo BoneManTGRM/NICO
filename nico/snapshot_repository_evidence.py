@@ -1231,6 +1231,8 @@ def collect_snapshot_repository_evidence(
     bundle["architecture_evidence"]["source_observation"] = analyze_source_architecture(
         files, run_id=run_id, repository=repository, commit_sha=snapshot_sha, snapshot_id=snapshot_id,
     )
+    # Candidate source capture belongs to the verified scanner workspace, after
+    # its candidate inventory exists. Do not spend a second capture budget here.
     measured = collect_complexity_evidence(files)
     coverage = profile_coverage(profile, measured)
     bundle["file_evidence"]["profile_coverage"] = coverage
@@ -1242,6 +1244,10 @@ def collect_snapshot_repository_evidence(
         "idempotent_reuse": False, "human_review_required": True,
         "guardrail": "Complexity measurements cover only readable sampled source files from the exact captured commit.",
     }
+    from nico.source_function_measurements_v1 import bind_measurements
+    bind_measurements(complexity)
+    from nico.source_function_collection_v1 import bind_collection
+    bind_collection(complexity)
     if profile["unavailable"]:
         complexity["unavailable_data_notes"] = sorted(set(list(complexity.get("unavailable_data_notes") or []) + [f"{len(profile['unavailable'])} captured-commit profile item(s) were unavailable; complexity coverage is limited to readable sampled files."]))
     _persist(bundle, active_store, "snapshot-repository-evidence.json")

@@ -1,4 +1,5 @@
 """Synthetic software checks, never evidence of an owner's production approval."""
+from unittest.mock import patch
 import base64
 import hashlib
 import io
@@ -211,10 +212,12 @@ def test_operator_source_and_localized_edition_have_independent_receipts(service
     run_id = source["identity"]["run_id"]
     approved = subject.approve_operator_report(service, run_id, payload(source))
     source_edition = subject.validated_operator_edition(approved)
-    _, entry, draft = localized.prepare_localized_edition(service, run_id, "es-MX", {
-        "preparation_authorized": True, "authorization_confirmed": True,
-        "expected_artifact_identity": subject.presented_operator_identity(approved, source_edition),
-    })
+    # Build an owned historical edition; keep approval/delivery validators real.
+    with patch("nico.ordinary_report_language_release_v1.require_new_report_language"):
+        _, entry, draft = localized.prepare_localized_edition(service, run_id, "es-MX", {
+            "preparation_authorized": True, "authorization_confirmed": True,
+            "expected_artifact_identity": subject.presented_operator_identity(approved, source_edition),
+        })
     assert "operator_approved_edition" not in draft
     assert "source_operator_approval_sha256" in entry["parent_binding"]
     _, _, approved_locale = localized.mutate_localized_edition(service, run_id, "es-MX", payload(draft, "test"))

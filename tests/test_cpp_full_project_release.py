@@ -12,8 +12,8 @@ from scripts import cpp_full_project_release as release
 from tests.test_cpp_assessment_collection import bundle
 
 
-def retained(tmp_path, kind='undefined'):
-    receipt, read, kwargs = bundle(tmp_path, kind=kind)
+def retained(tmp_path, kind='undefined', image='sha256:'+'a'*64):
+    receipt, read, kwargs = bundle(tmp_path, kind=kind, image=image)
     root = tmp_path / 'retained'
     (root / 'receipt.json').write_text(json.dumps(receipt))
     for name, key in zip(handoff.CONTRACTS, ('manifest_raw', 'baseline_raw', 'scope_raw')):
@@ -21,6 +21,78 @@ def retained(tmp_path, kind='undefined'):
     decision = validate_project_collection(receipt, read, **kwargs)
     (root / 'collection-acceptance.json').write_text(json.dumps(decision))
     return root, kwargs, decision
+
+
+def current_retained(tmp_path, kind, image):
+    # Use current raw producer evidence; the legacy helper above remains a
+    # downgrade control and must not satisfy the strict export contract.
+    from tests.test_cpp_completed_collection_projection import qualification_bundle
+    receipt, read, kwargs, _ = qualification_bundle(
+        tmp_path, failing=False, image=image, runtime_kind=kind)
+    root = tmp_path / 'qualification-artifacts'
+    (root / 'receipt.json').write_text(json.dumps(receipt))
+    for name, key in zip(handoff.CONTRACTS, ('manifest_raw', 'baseline_raw', 'scope_raw')):
+        (root / name).write_bytes(kwargs[key])
+    decision = validate_project_collection(receipt, read, **kwargs)
+    (root / 'collection-acceptance.json').write_text(json.dumps(decision))
+    assert decision['collection_complete'] is True
+    assert decision['target_tests_passed'] is (kind is None)
+    assert decision['runtime']['summary']['complete'] is (kind is None)
+    if kind:
+        sanitizer = next(row for row in decision['runtime']['summary']['sanitizers']
+                         if row['kind'] == kind)
+        assert sanitizer['state'] == 'failed' and sanitizer['passed'] == []
+    return root, kwargs, decision
+
+
+@pytest.mark.parametrize('kind', [None, 'undefined'])
+@pytest.mark.parametrize('fault', [None, 'owned_image', 'changed_collection'])
+def test_composed_v5_export_binds_image_and_preserves_target_outcome(tmp_path, kind, fault):
+    # Only native execution and Docker image saving are fixtures. The real
+    # collection producer/validators, archive verifier and v5 export compose.
+    from tests.test_cpp_worker_image_handoff import inputs, digest
+    proof, metadata, recipe, output, save_image, calls = inputs.__wrapped__(tmp_path)
+    image = metadata[0]['Id']
+    root, kwargs, decision = current_retained(tmp_path, kind, image)
+    original_files = {path.relative_to(root): path.read_bytes()
+                      for path in root.rglob('*') if path.is_file()}
+    proof['source_sha'] = kwargs['producer_source_sha']
+    if fault == 'owned_image':
+        proof['runtime_control']['contract']['image_digest'] = 'sha256:' + 'f' * 64
+    proof['evidence_sha256'] = digest(proof)
+
+    def exporter(expected, archive):
+        save_image(expected, archive)
+        if fault == 'changed_collection':
+            (root / 'collection-acceptance.json').write_text('{}')
+
+    if fault:
+        error = ('image_handoff_control_mismatch' if fault == 'owned_image'
+                 else 'image_collection_decision_mismatch')
+        with pytest.raises(ValueError, match=error):
+            handoff.export(root, proof, metadata, recipe, output,
+                           source_sha=kwargs['producer_source_sha'], exporter=exporter)
+        assert not output.exists()
+        assert calls == ([] if fault == 'owned_image' else [image])
+        expected_files = dict(original_files)
+        if fault == 'changed_collection':
+            expected_files[Path('collection-acceptance.json')] = b'{}'
+        assert {path.relative_to(root): path.read_bytes()
+                for path in root.rglob('*') if path.is_file()} == expected_files
+        return
+
+    result = handoff.export(root, proof, metadata, recipe, output,
+                            source_sha=kwargs['producer_source_sha'], exporter=exporter)
+    assert calls == [image]
+    assert result['schema'] == 'nico.qualified-image-handoff.v5'
+    assert result['image_config_id'] == image
+    assert result['production_qualified'] is False
+    assert result['registry_published'] is False
+    assert json.loads((output / 'handoff.json').read_bytes()) == result
+    assert json.loads((output / 'collection/collection-acceptance.json').read_bytes()) == decision
+    assert decision['target_tests_passed'] is (kind is None)
+    assert handoff.validate_collection(output / 'collection',
+        source_sha=kwargs['producer_source_sha'], image=image) == result['full_project_collection_sha256']
 
 
 @pytest.mark.parametrize('kind', [None, 'undefined'])
@@ -151,6 +223,18 @@ def test_release_workflow_separates_collection_from_write_authority():
     assert 'cpp_full_project_handoff import' in runs
     assert 'needs.qualify-image.outputs.handoff_sha256' in jobs['publish-image']['env']['NICO_IMAGE_HANDOFF_SHA256']
     assert 'full-project-image-handoff-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}' in path.read_text()
+
+
+def test_integration_runs_composed_handoff_checks_before_native_qualification():
+    path = Path(__file__).parents[1] / '.github/workflows/cpp-full-project-integration.yml'
+    workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
+    steps = workflow['jobs']['contract-regressions']['steps']
+    import shlex
+    command = next(line.strip() for step in steps for line in step.get('run', '').splitlines()
+                   if line.strip().startswith('python -m pytest '))
+    selection = set(shlex.split(command))
+    assert {'tests/test_cpp_full_project_release.py', 'tests/test_cpp_worker_image_handoff.py',
+            'tests/test_cpp_worker_image_promotion.py', 'tests/test_cpp_worker_image_release.py'} <= selection
 
 # The archive fixture is inert; native collection validation above uses actual
 # retained producer outputs and is independently tested against tampering.

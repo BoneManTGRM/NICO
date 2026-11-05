@@ -68,8 +68,9 @@ def test_download_contains_every_actual_format_and_manifest(source_status, langu
     assert response.headers["x-nico-localized-artifact-requires-new-approval"] == str(language != "en").lower()
 
 
+@pytest.mark.parametrize("language", ["en", "es-MX"])
 @pytest.mark.parametrize("mutation", ["nonterminal", "changed_truth", "changed_html"])
-def test_refuses_incomplete_or_corrupt_source(source_status, mutation):
+def test_refuses_incomplete_or_corrupt_source(source_status, mutation, language):
     status = deepcopy(source_status)
     if mutation == "nonterminal":
         status["terminal"] = False
@@ -77,8 +78,10 @@ def test_refuses_incomplete_or_corrupt_source(source_status, mutation):
         status["reports"]["canonical_truth_sha256"] = "0" * 64
     else:
         status["reports"]["html"] += "tampered"
+    before = deepcopy(status)
     with pytest.raises(ValueError):
-        localized_evidence_package(status, "es-MX")
+        localized_evidence_package(status, language)
+    assert status == before
 
 
 @pytest.mark.parametrize("language", ["en", "es-MX"])

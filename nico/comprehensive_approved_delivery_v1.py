@@ -57,6 +57,9 @@ def build_approved_delivery_package(
     manifest: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Build a deterministic delivery ZIP bound to an already-approved report edition."""
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(record, manifest)
+
 
     if _review_decision(manifest) != "approved":
         raise ValueError("approved_delivery_requires_approved_review_decision")
@@ -158,6 +161,9 @@ def validate_approved_delivery_package(
     record: Mapping[str, Any],
     package: Any,
 ) -> dict[str, Any]:
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(record, package)
+
     errors: list[str] = []
     if not isinstance(package, Mapping):
         return {"status": "invalid", "validation_errors": ["package_required"]}

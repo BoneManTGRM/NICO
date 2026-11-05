@@ -3,12 +3,14 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
-from nico.report_json_copy import deepcopy
+from nico.report_json_copy import deepcopy, copy_with_tree_ownership
 from nico.report_pdf_text import pdf_text_cache_scope
+from nico.report_delivery_timing_v1 import report_delivery_phase, report_delivery_phase_scope
 from collections.abc import Mapping
 from typing import Any
 
 from pypdf import PdfReader
+from nico.pdf_cap_failure_diagnostics import record_pdf_boundary
 
 from nico.canonical_section_status_v1 import normalize_report_package
 from nico.client_pdf_status_sanitizer_v1 import sanitize_client_pdf_status
@@ -229,9 +231,10 @@ def _sanitize_published_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     # This is the last mutable cross-format boundary before exact artifact hashes are
     # bound. Repair the narrow Phase 2 wording here so JSON/CSV/text/PDF cannot diverge.
     result = deepcopy(dict(_phase2_review_truth_node(package)))
-    pdf = sanitize_client_pdf_status(
-        base64.b64decode(str(result.get("pdf_base64") or ""))
-    )
+    pdf = base64.b64decode(str(result.get("pdf_base64") or ""))
+    record_pdf_boundary('sanitizer_input', pdf)
+    pdf = sanitize_client_pdf_status(pdf)
+    record_pdf_boundary('sanitizer_output', pdf)
     pdf = _rewrite_phase2_review_truth_pdf(pdf)
     markdown = _phase2_review_truth_text(
         sanitize_client_text_status(str(result.get("markdown") or ""))
@@ -317,9 +320,9 @@ def _populate_premium_stage_summaries(package: Mapping[str, Any]) -> dict[str, A
 
     from nico import v2_premium_report_renderer as premium
 
-    result = deepcopy(dict(package))
+    result, owned_tree = copy_with_tree_ownership(dict(package))
     canonical = (
-        deepcopy(dict(result.get("json") or {}))
+        (result["json"] if owned_tree else deepcopy(dict(result.get("json") or {})))
         if isinstance(result.get("json"), Mapping)
         else {}
     )
@@ -340,6 +343,7 @@ def _populate_premium_stage_summaries(package: Mapping[str, Any]) -> dict[str, A
     return result
 
 
+@report_delivery_phase("artifact_preparation")
 def _prepare_client_artifact_package(
     package: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -347,21 +351,31 @@ def _prepare_client_artifact_package(
 
     from nico import client_report_completion_v2 as completion
 
-    reconciled = _phase2_review_truth_node(_reconcile(package))
-    prepared = repair_canonical_truth(reconciled)
-    prepared = _phase2_review_truth_node(_reconcile(prepared))
-    # Normalize structured evidence before any presentation renderer can stringify it.
-    install_client_surface_structure_cleanup_v1()
-    prepared = completion.prepare_client_report_package(prepared)
-    install_client_surface_structure_cleanup_v1()
-    install_human_review_worksheet_title_contract_v1()
-    prepared = _populate_premium_stage_summaries(prepared)
-    prepared = _phase2_review_truth_node(project_client_stage_summaries(prepared))
-    install_human_review_worksheet_title_contract_v1()
-    from nico.comprehensive_human_evidence_report_v2 import refresh_stakeholder_classification
-    from nico.comprehensive_coverage_reconciliation_v1 import reconcile_report_coverage
-    prepared["json"] = refresh_stakeholder_classification(prepared.get("json") or {})
-    prepared["json"] = reconcile_report_coverage(prepared["json"])
+    with report_delivery_phase_scope("prep_reconcile"):
+        reconciled = _phase2_review_truth_node(_reconcile(package))
+    with report_delivery_phase_scope("prep_truth_repair"):
+        prepared = repair_canonical_truth(reconciled)
+    with report_delivery_phase_scope("prep_reconcile"):
+        prepared = _phase2_review_truth_node(_reconcile(prepared))
+    with report_delivery_phase_scope("prep_installed_completion"):
+        # Normalize structured evidence before any presentation renderer can stringify it.
+        install_client_surface_structure_cleanup_v1()
+        prepared = completion.prepare_client_report_package(prepared)
+    with report_delivery_phase_scope("prep_stage_projection"):
+        install_client_surface_structure_cleanup_v1()
+        install_human_review_worksheet_title_contract_v1()
+        prepared = _populate_premium_stage_summaries(prepared)
+        prepared = _phase2_review_truth_node(project_client_stage_summaries(prepared))
+        install_human_review_worksheet_title_contract_v1()
+    with report_delivery_phase_scope("prep_coverage"):
+        from nico.comprehensive_human_evidence_report_v2 import refresh_stakeholder_classification
+        from nico.comprehensive_coverage_reconciliation_v1 import reconcile_report_coverage
+        prepared["json"] = refresh_stakeholder_classification(prepared.get("json") or {})
+        prepared["json"] = reconcile_report_coverage(prepared["json"])
+        from nico.comprehensive_finding_roadmap_v1 import rebind_generated_roadmap
+        prepared["json"] = rebind_generated_roadmap(prepared["json"])
+    from nico.candidate_investigation_finalization_v1 import finalize_investigation
+    prepared['json'] = finalize_investigation(prepared['json'])
     return prepared
 
 
@@ -440,6 +454,9 @@ def _bounded_localized_preparation_input(
         for key, value in register.items()
         if str(key) != "findings"
     }
+    # Invocation-local display metadata; restoration removes this with the
+    # compact projection and verifies it was not changed during rendering.
+    compact_register["_render_population_count"] = len(findings)
     render_register = dict(compact_register)
     render_register["findings"] = []
     render_assessment = dict(assessment)
@@ -451,6 +468,7 @@ def _bounded_localized_preparation_input(
     return render_package, register, compact_register
 
 
+@report_delivery_phase("markdown_render")
 def build_localized_markdown_projection(
     package: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -616,7 +634,9 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
     try:
         source_tables = capture_source_table_evidence(package.get("json") or {})
         prepared = _prepare_client_artifact_package(package)
-        rendered = rebuild_single_pass_premium_artifacts(prepared)
+        with report_delivery_phase_scope("artifact_render"):
+            rendered = rebuild_single_pass_premium_artifacts(prepared)
+        record_pdf_boundary('premium_return', rendered.get('pdf_base64'), encoded=True)
 
         canonical = rendered.get("json") if isinstance(rendered.get("json"), Mapping) else {}
         repaired = (
@@ -624,6 +644,8 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
             if _is_spanish(canonical)
             else repair_rendered_report(rendered)
         )
+        if repaired.get("report_quality_repair_status") == "unavailable":
+            raise ValueError("report quality repair unavailable: scorecard ownership unknown")
         # Reconcile once more after report-quality repair, then sanitize every
         # mutable rendered surface before the exact-artifact finalizer computes the
         # PDF, Markdown, HTML, canonical JSON, and detached-manifest digests. No
@@ -634,13 +656,16 @@ def rebuild_client_artifacts(package: Mapping[str, Any]) -> dict[str, Any]:
         # preparation/rendering. Reassert the terminal language producer and validator at
         # the exact last mutable boundary, immediately before client-report finalization.
         _reassert_terminal_report_language_authority()
-        finalized = completion.finalize_client_report_package(sanitized)
+        with report_delivery_phase_scope("artifact_finalize"):
+            finalized = completion.finalize_client_report_package(sanitized)
         final_canonical = (
             finalized.get("json")
             if isinstance(finalized.get("json"), Mapping)
             else {}
         )
         if final_canonical:
+            from nico.comprehensive_finding_roadmap_v1 import assert_final_roadmap_binding
+            assert_final_roadmap_binding(final_canonical)
             # Finalization legitimately appends deterministic manifest/navigation
             # metadata. Bind the persisted truth hash only after that last mutation so
             # publication and read authority describe the same canonical object.

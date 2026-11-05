@@ -262,7 +262,7 @@ def test_final_report_has_one_source_aware_register_and_no_worker_paths() -> Non
     assert result["client_report_completion"]["unverified_tls_candidates_not_promoted"] is True
     assert result["client_report_completion"]["duplicate_full_page_finding_cards_absent"] is True
     assert result["client_report_completion"]["raw_stage_dump_excluded_from_client_pdf"] is True
-    assert len(reader.pages) <= result["client_report_completion"]["client_pdf_page_boundary"]
+    assert result["client_report_completion"]["client_pdf_page_boundary"] is None
     assert result["json"]["identity"]["generated_at"] == GENERATED_AT
     assert result["report_finality"] == "automated_draft"
     assert result["human_review_required"] is True

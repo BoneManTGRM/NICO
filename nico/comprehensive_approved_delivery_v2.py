@@ -43,6 +43,9 @@ def build_approved_delivery_package(
     record: Mapping[str, Any],
     manifest: Mapping[str, Any],
 ) -> dict[str, Any]:
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(record, manifest)
+
     if _review_decision(manifest) != "approved":
         raise ValueError("approved_delivery_requires_approved_review_decision")
     if manifest.get("accepted_edition") is not True:

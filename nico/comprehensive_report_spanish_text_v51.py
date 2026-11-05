@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_preview_labels_v1 import stage_preview_labels
+
 from typing import Any
 
 from nico.comprehensive_report_scanner_detection_v51 import _text
@@ -284,6 +286,7 @@ def _spanish_markdown(canonical: dict[str, Any]) -> str:
             "",
             f"### {_es(stage.get('title'))} — {_es(str(stage.get('status') or '').upper())}",
             _es(stage.get("summary")),
+            *stage_preview_labels(stage, canonical, spanish=True),
         ]
         if stage.get("evidence"):
             lines.append("**Evidencia conservada:**")

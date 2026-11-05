@@ -1,0 +1,23 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_installed_lifecycle_wrapper_preserves_embedded_evidence_and_rejects_real_labels _
+
+    def test_installed_lifecycle_wrapper_preserves_embedded_evidence_and_rejects_real_labels():
+        import pytest
+        from nico import comprehensive_approved_report_v1 as approved
+        from nico.comprehensive_approved_lifecycle_consistency_v1 import assert_approved_lifecycle_consistency
+    
+        install_approved_lifecycle_consistency()
+        evidence = 'Evidencia técnica: Decisión: Pendiente; identidad del revisor: Pendiente'
+        english = 'Technical evidence: Decision: pending; reviewer identity: pending'
+        for value in (evidence, english):
+>           assert approved._replace_finality_text(value) == value
+E           AssertionError: assert 'Evidencia té...visión humana' == 'Evidencia té...or: Pendiente'
+E             
+E             - Evidencia técnica: Decisión: Pendiente; identidad del revisor: Pendiente
+E             + Evidencia técnica: Decisión: Aprobada; Identidad del revisor: Registrada en el certificado de revisión humana
+
+tests/test_comprehensive_approved_lifecycle_consistency_v1.py:135: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_comprehensive_approved_lifecycle_consistency_v1.py::test_installed_lifecycle_wrapper_preserves_embedded_evidence_and_rejects_real_labels
+1 failed, 1 deselected in 0.19s

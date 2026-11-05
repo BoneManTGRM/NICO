@@ -110,7 +110,7 @@ def test_real_intake_persists_first_class_engagement_metadata_from_mobile_shape(
             "client_name": "NICO Acceptance Client",
             "project_name": "NICO Acceptance Project",
             "assessment_depth": "strategic",
-            "report_language": "es-MX",
+            "report_language": "en",
             "authorized": True,
             "authorization_confirmed": True,
             "human_evidence": _browser_shaped_human_evidence(authorized_scope),
@@ -220,7 +220,7 @@ def test_real_intake_persists_and_recovers_explicit_exclusions(tmp_path) -> None
             "client_name": "Cody Jenkins",
             "project_name": "NICO Audit",
             "assessment_depth": "strategic",
-            "report_language": "es-MX",
+            "report_language": "en",
             "authorized": True,
             "authorization_confirmed": True,
             "human_evidence": {

@@ -1,26 +1,18 @@
 "use client";
 
 import {FormEvent, useEffect, useMemo, useState} from "react";
+import {savedRun, useReviewScope, reviewResponse, reviewError, ambiguousWrite, reconciliationMessage, type WorkspaceProps} from "./reviewWorkspaceState";
+import {buildReviewActionPayload, type ReviewAction as Action} from "./reviewActionPayload";
 import ReviewSessionNotice from "./ReviewSessionNotice";
+import CandidateReviewAssistance, {type Assistance} from "./CandidateReviewAssistance";
 import EvidenceRequests from "./EvidenceRequests";
 import QualityControlRecords from "./QualityControlRecords";
 import styles from "./review-work.module.css";
 
 type Locale = "en" | "es-MX";
 type JsonRecord = Record<string, unknown>;
-type Action =
-  | "assign"
-  | "disposition_candidate"
-  | "disposition_group"
-  | "quality_control"
-  | "request_evidence"
-  | "resolve_evidence_request"
-  | "stakeholder_evidence"
-  | "start_session"
-  | "stop_session"
-  | "complete_empirical_study";
-
 type Projection = {
+  review_assistance?: Assistance;
   run_id?: string;
   repository?: string;
   commit_sha?: string;
@@ -160,37 +152,6 @@ function asRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
 }
 
-function errorMessage(value: unknown, locale: Locale): string {
-  const message = value instanceof Error ? value.message : String(value || "Review work request failed.");
-  if (locale === "es-MX") {
-    return message.startsWith("No fue posible")
-      ? message
-      : "No fue posible completar la solicitud protegida de trabajo de revisión.";
-  }
-  return message;
-}
-
-async function parseResponse(response: Response, locale: Locale): Promise<Projection> {
-  const payload = await response.json().catch(() => ({})) as Projection & {detail?: unknown; error?: unknown};
-  if (!response.ok) {
-    if (locale === "es-MX") {
-      const detail = payload.detail;
-      const detailRecord = detail && typeof detail === "object" ? detail as JsonRecord : {};
-      const rawCode = String(detailRecord.code || "").trim();
-      const code = /^[A-Z0-9_.-]+$/.test(rawCode) ? rawCode : "";
-      throw new Error(`No fue posible completar la solicitud protegida de trabajo de revisión (HTTP ${response.status}${code ? ` · ${code}` : ""}).`);
-    }
-    const detail = payload.detail;
-    const message = typeof detail === "string"
-      ? detail
-      : detail && typeof detail === "object"
-        ? String((detail as JsonRecord).message || (detail as JsonRecord).code || JSON.stringify(detail))
-        : String(payload.error || `HTTP ${response.status}`);
-    throw new Error(message);
-  }
-  return payload;
-}
-
 function empiricalStatus(value: unknown, locale: Locale): string {
   const status = String(value || "not_yet_measured");
   if (locale === "en") return status;
@@ -199,14 +160,43 @@ function empiricalStatus(value: unknown, locale: Locale): string {
     verified_within_four_hours: "Verificado dentro de cuatro horas",
     measured_over_four_hours: "Medido en más de cuatro horas",
   };
-  const label = labels[status];
-  return label || `Estado técnico: ${status}`;
+  return Object.prototype.hasOwnProperty.call(labels, status)
+    ? labels[status]
+    : `Estado técnico: ${status}`;
 }
 
-export default function ReviewWorkPanel() {
+type ProjectionSummaryProps = {projection: Projection; locale: Locale};
+
+function ReviewProgressSummary({projection, locale}: ProjectionSummaryProps) {
+  const copy = COPY[locale];
+  return <div className={styles.summary}>
+    <article><b>{projection.dispositioned_candidate_count ?? 0}/{projection.candidate_count ?? 0}</b><span>{locale === "es-MX" ? "candidatos con disposición" : "candidates dispositioned"}</span></article>
+    <article><b>{projection.quality_control_completed_count ?? 0}/{projection.quality_control_required_count ?? 0}</b><span>{locale === "es-MX" ? "muestras de control de calidad completadas" : "QC samples complete"}</span></article>
+    <article><b>{projection.open_evidence_request_count ?? 0}</b><span>{locale === "es-MX" ? "solicitudes de evidencia abiertas" : "open evidence requests"}</span></article>
+    <article><b>{Array.isArray(projection.unresolved_high_impact_candidate_ids) ? projection.unresolved_high_impact_candidate_ids.length : 0}</b><span>{locale === "es-MX" ? "escalamientos abiertos" : "open high-impact escalations"}</span></article>
+    <article className={styles.wide}><b>{projection.ready_for_final_approval ? copy.ready : copy.notReady}</b><span>{locale === "es-MX" ? "La aprobación final sigue siendo una decisión humana separada." : "Final approval remains a separate human decision."}</span></article>
+  </div>;
+}
+
+function EmpiricalStudySummary({projection, locale}: ProjectionSummaryProps) {
+  const copy = COPY[locale];
+  const empirical = asRecord(projection.empirical_measurement);
+  const ledger = asRecord(projection.ledger);
+  return <details className={styles.empirical}>
+    <summary>{copy.empirical}</summary>
+    <dl>
+      <div><dt>{copy.status}</dt><dd>{empiricalStatus(empirical.status, locale)}</dd></div>
+      <div><dt>{copy.combinedHours}</dt><dd>{String(empirical.combined_specialist_hours ?? 0)}</dd></div>
+      <div><dt>{copy.fourHoursVerified}</dt><dd>{empirical.four_combined_specialist_hours_empirically_proven === true ? copy.yes : copy.no}</dd></div>
+      <div><dt>{copy.auditEvents}</dt><dd>{String(projection.ledger ? (Array.isArray(ledger.audit_events) ? ledger.audit_events.length : 0) : 0)}</dd></div>
+    </dl>
+  </details>;
+}
+
+export default function ReviewWorkPanel({runId, refresh = 0, isCurrent, onChanged}: WorkspaceProps = savedRun()) {
+  const scope = useReviewScope(isCurrent);
   const [locale, setLocale] = useState<Locale>("en");
   const copy = COPY[locale];
-  const [runId, setRunId] = useState("");
   const [reviewer, setReviewer] = useState("");
   const [reviewerRole, setReviewerRole] = useState("");
   const [action, setAction] = useState<Action>("disposition_candidate");
@@ -230,11 +220,11 @@ export default function ReviewWorkPanel() {
   const [evidenceReference, setEvidenceReference] = useState("");
   const [projection, setProjection] = useState<Projection | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     const params = new URL(window.location.href).searchParams;
-    setRunId(params.get("run_id") || "");
     setLocale(params.get("lang") === "es-MX" ? "es-MX" : "en");
   }, []);
 
@@ -251,57 +241,37 @@ export default function ReviewWorkPanel() {
     [runId],
   );
 
-  async function load(): Promise<void> {
-    if (!runId.trim()) return;
-    setBusy(true);
-    setError("");
-    setProjection(null);
-    try {
-      const response = await fetch(url, {
-        method: "GET",
-        cache: "no-store",
-        credentials: "same-origin",
-        headers: {Accept: "application/json"},
-      });
-      setProjection(await parseResponse(response, locale));
-    } catch (caught) {
-      setError(errorMessage(caught, locale));
-    } finally {
-      setBusy(false);
-    }
+  useEffect(() => {if (refresh > 0) void load();}, [refresh]);
+
+  async function readProjection() {
+    const response = await fetch(url, {
+      method: "GET", cache: "no-store", credentials: "same-origin", headers: {Accept: "application/json"},
+    });
+    return reviewResponse(response, runId, locale);
   }
 
-  function actionPayload(): JsonRecord {
-    const common: JsonRecord = {
-      action,
-      reviewer: reviewer.trim(),
-      reviewer_role: reviewerRole.trim(),
-      review_authorized: true,
-      authorization_confirmed: true,
-    };
-    if (action === "assign") return {...common, target_id: targetId.trim(), assignee: assignee.trim(), specialist_role: specialistRole.trim()};
-    if (action === "disposition_candidate" || action === "disposition_group") {
-      return {
-        ...common,
-        ...(action === "disposition_candidate" ? {candidate_id: targetId.trim()} : {cluster_id: targetId.trim()}),
-        disposition,
-        rationale: rationale.trim(),
-        residual_risk: residualRisk.trim(),
-        residual_risk_owner: residualRiskOwner.trim(),
-        escalation_resolution: escalationResolution.trim(),
-        escalation_owner: escalationOwner.trim(),
-      };
+  async function load(): Promise<void> {
+    if (!runId.trim()) return;
+    // A sibling refresh must never supersede an in-flight write or unlock its form.
+    if (scope.mutation.current) {scope.refreshDeferred.current = true; return;}
+    const token = scope.begin();
+    setBusy(true); setError(""); setProjection(null);
+    try {
+      const next = await readProjection();
+      if (scope.current(token)) setProjection(next);
+    } catch (caught) {
+      if (scope.current(token)) setError(reviewError(caught, locale));
+    } finally {
+      if (scope.current(token)) setBusy(false);
+      scope.finish(token);
     }
-    if (action === "quality_control") return {...common, candidate_id: targetId.trim(), qc_outcome: qcOutcome, qc_note: qcNote.trim()};
-    if (action === "request_evidence") return {...common, candidate_id: targetId.trim(), request_text: requestText.trim(), owner: requestOwner.trim()};
-    if (action === "resolve_evidence_request") return {...common, request_id: targetId.trim(), resolution_note: resolutionNote.trim(), evidence_references: evidenceReferences.split("\n").map((item) => item.trim()).filter(Boolean)};
-    if (action === "stakeholder_evidence") return {...common, statement: stakeholderStatement.trim(), source_role: sourceRole.trim(), evidence_reference: evidenceReference.trim()};
-    return common;
   }
 
   async function submit(event?: FormEvent): Promise<void> {
     event?.preventDefault();
-    if (!runId.trim() || !reviewer.trim() || !reviewerRole.trim()) return;
+    if (!runId.trim() || !projection || scope.pending.current || !reviewer.trim() || !reviewerRole.trim()) return;
+    const token = scope.begin();
+    scope.mutation.current = true;
     setBusy(true);
     setError("");
     setProjection(null);
@@ -311,17 +281,40 @@ export default function ReviewWorkPanel() {
         cache: "no-store",
         credentials: "same-origin",
         headers: {"Content-Type": "application/json", Accept: "application/json"},
-        body: JSON.stringify(actionPayload()),
+        body: JSON.stringify(buildReviewActionPayload(action, {
+          reviewer, reviewerRole, targetId, disposition,
+          rationale, residualRisk, residualRiskOwner, escalationResolution,
+          escalationOwner, assignee, specialistRole, qcOutcome,
+          qcNote, requestText, requestOwner, resolutionNote,
+          evidenceReferences, stakeholderStatement, sourceRole, evidenceReference,
+        })),
       });
-      setProjection(await parseResponse(response, locale));
+      const next = await reviewResponse(response, runId, locale);
+      if (scope.current(token)) {setProjection(next); onChanged?.(runId);}
     } catch (caught) {
-      setError(errorMessage(caught, locale));
+      if (scope.current(token)) {
+        if (ambiguousWrite(caught)) {
+          try {
+            const next = await readProjection();
+            if (scope.current(token)) {setProjection(next); onChanged?.(runId);}
+          } catch { /* Keep actions blocked when reconciliation cannot verify saved state. */ }
+          if (scope.current(token)) setNotice(reconciliationMessage(locale));
+        } else setError(reviewError(caught, locale));
+      }
     } finally {
-      setBusy(false);
+      if (scope.current(token)) {
+        setBusy(false);
+        setTargetId(""); setRationale("");
+      }
+      scope.mutation.current = false;
+      scope.finish(token);
+      if (scope.current(token) && scope.refreshDeferred.current) {
+        scope.refreshDeferred.current = false;
+        void load();
+      }
     }
   }
 
-  const empirical = asRecord(projection?.empirical_measurement);
   const ledger = asRecord(projection?.ledger);
   const sessionActions = action === "start_session" || action === "stop_session" || action === "complete_empirical_study";
 
@@ -333,22 +326,18 @@ export default function ReviewWorkPanel() {
     <p>{copy.lead}</p>
     <p className={styles.boundary}>{copy.noDelivery}</p>
 
+    {notice ? <p role="alert">{notice}</p> : null}
     <ReviewSessionNotice runId={runId} locale={locale} />
     <div className={styles.identityGrid}>
-      <label>{copy.run}<input disabled={busy} value={runId} onChange={(event) => {setRunId(event.target.value); setProjection(null);}} autoComplete="off" /></label>
+      <label>{copy.run}<input disabled={busy} value={runId} readOnly autoComplete="off" /></label>
       <label>{copy.reviewer}<input value={reviewer} onChange={(event) => setReviewer(event.target.value)} autoComplete="off" /></label>
       <label>{copy.role}<input value={reviewerRole} onChange={(event) => setReviewerRole(event.target.value)} autoComplete="off" /></label>
     </div>
     <p className={styles.security}>{copy.warning}</p>
     <div className={styles.actions}><button type="button" onClick={load} disabled={busy || !runId.trim()}>{projection ? copy.refresh : copy.load}</button></div>
 
-    {projection ? <div className={styles.summary}>
-      <article><b>{projection.dispositioned_candidate_count ?? 0}/{projection.candidate_count ?? 0}</b><span>{locale === "es-MX" ? "candidatos con disposición" : "candidates dispositioned"}</span></article>
-      <article><b>{projection.quality_control_completed_count ?? 0}/{projection.quality_control_required_count ?? 0}</b><span>{locale === "es-MX" ? "muestras de control de calidad completadas" : "QC samples complete"}</span></article>
-      <article><b>{projection.open_evidence_request_count ?? 0}</b><span>{locale === "es-MX" ? "solicitudes de evidencia abiertas" : "open evidence requests"}</span></article>
-      <article><b>{Array.isArray(projection.unresolved_high_impact_candidate_ids) ? projection.unresolved_high_impact_candidate_ids.length : 0}</b><span>{locale === "es-MX" ? "escalamientos abiertos" : "open high-impact escalations"}</span></article>
-      <article className={styles.wide}><b>{projection.ready_for_final_approval ? copy.ready : copy.notReady}</b><span>{locale === "es-MX" ? "La aprobación final sigue siendo una decisión humana separada." : "Final approval remains a separate human decision."}</span></article>
-    </div> : null}
+    {projection ? <ReviewProgressSummary projection={projection} locale={locale} /> : null}
+    {projection?.review_assistance ? <CandidateReviewAssistance key={runId} value={projection.review_assistance} locale={locale} /> : null}
 
     {projection ? <QualityControlRecords records={ledger.quality_control} blockers={projection.quality_control_blockers} events={ledger.audit_events} locale={locale} busy={busy} onSelect={(candidateId) => {
       setAction("quality_control"); setTargetId(candidateId); setQcNote(""); setQcOutcome("agree");
@@ -381,7 +370,7 @@ export default function ReviewWorkPanel() {
       <div className={`${styles.actions} ${styles.full}`}><button type="submit" disabled={busy || !projection || !reviewer.trim() || !reviewerRole.trim()}>{busy ? copy.recording : action === "start_session" ? copy.sessionStart : action === "stop_session" ? copy.sessionStop : action === "complete_empirical_study" ? copy.completeStudy : copy.submit}</button></div>
     </form>
 
-    {projection ? <details className={styles.empirical}><summary>{copy.empirical}</summary><dl><div><dt>{copy.status}</dt><dd>{empiricalStatus(empirical.status, locale)}</dd></div><div><dt>{copy.combinedHours}</dt><dd>{String(empirical.combined_specialist_hours ?? 0)}</dd></div><div><dt>{copy.fourHoursVerified}</dt><dd>{empirical.four_combined_specialist_hours_empirically_proven === true ? copy.yes : copy.no}</dd></div><div><dt>{copy.auditEvents}</dt><dd>{String(projection.ledger ? (Array.isArray(ledger.audit_events) ? ledger.audit_events.length : 0) : 0)}</dd></div></dl></details> : null}
+    {projection ? <EmpiricalStudySummary projection={projection} locale={locale} /> : null}
     {error ? <p className={styles.error} role="alert">{error}</p> : null}
   </section>;
 }

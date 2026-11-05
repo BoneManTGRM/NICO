@@ -6,6 +6,9 @@ import io
 import json
 import os
 import re
+import signal
+import threading
+from contextlib import contextmanager
 import sys
 import time
 from functools import wraps
@@ -27,7 +30,6 @@ from comprehensive_production_run_handoff_v1 import (
     require_matching_canonical_truth_digest,
     source_binding_marker,
 )
-from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
 from nico.spanish_client_evidence_summary_contract_v1 import (
     client_evidence_summary_has_five_fields,
 )
@@ -49,6 +51,8 @@ SPANISH_MATURITY_LABELS = {"Excepcional", "Sólido", "Moderado", "Débil", "Crí
 FORBIDDEN_ENGLISH_MATURITY_LABELS = {"Exceptional", "Strong", "Moderate", "Weak", "Critical"}
 LOCALIZED_PDF_CONNECT_TIMEOUT_SECONDS = 300.0
 LOCALIZED_PDF_READ_TIMEOUT_SECONDS = 300.0
+LOCALIZED_PDF_TOTAL_TIMEOUT_SECONDS = 300.0
+LOCALIZED_PDF_MAX_ATTEMPTS = 6
 CANONICAL_JSON_CONNECT_TIMEOUT_SECONDS = 300.0
 CANONICAL_JSON_READ_TIMEOUT_SECONDS = 300.0
 ENGAGEMENT_VISIBILITY_TIMEOUT_SECONDS = 180.0
@@ -481,6 +485,57 @@ def _fetch_and_verify_durable_engagement(
     }
 
 
+@contextmanager
+def _localized_pdf_wallclock_limit():
+    # httpx read timeouts bound idle reads, not an entire streaming transfer.
+    # This proof runs on the Linux main thread; fail closed elsewhere or when
+    # another alarm owns the process rather than silently losing the hard cap.
+    assert threading.current_thread() is threading.main_thread() and hasattr(signal, "setitimer"), "localized PDF wallclock guard unavailable"
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0), "localized PDF wallclock guard already in use"
+    previous = signal.getsignal(signal.SIGALRM)
+    def expired(_signum, _frame):
+        raise AssertionError("localized PDF aggregate deadline exhausted")
+    signal.signal(signal.SIGALRM, expired)
+    signal.setitimer(signal.ITIMER_REAL, LOCALIZED_PDF_TOTAL_TIMEOUT_SECONDS)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+def _localized_pdf_response(client, *, frontend_origin: str, run_id: str, report_language: str):
+    route = f"/api/nico/assessment/comprehensive-run/{run_id}/localized-report/{report_language}/pdf"
+    url = frontend_origin + route
+    deadline = time.monotonic() + LOCALIZED_PDF_TOTAL_TIMEOUT_SECONDS
+    with _localized_pdf_wallclock_limit():
+        for attempt in range(1, LOCALIZED_PDF_MAX_ATTEMPTS + 1):
+            remaining = deadline - time.monotonic()
+            assert remaining > 0, "localized PDF aggregate deadline exhausted"
+            response = client.get(url, headers={
+                "Accept": "application/pdf", "Accept-Encoding": "identity", "Cache-Control": "no-store",
+            }, timeout=httpx.Timeout(connect=min(LOCALIZED_PDF_CONNECT_TIMEOUT_SECONDS, remaining),
+                                     read=min(LOCALIZED_PDF_READ_TIMEOUT_SECONDS, remaining),
+                                     write=min(30.0, remaining), pool=min(30.0, remaining)))
+            retain_response(f"pdf-attempt-{report_language}-{attempt}", route=route,
+                            status=response.status_code, headers=response.headers, content=response.content)
+            assert time.monotonic() < deadline, "localized PDF aggregate deadline exhausted"
+            delay = response.headers.get("retry-after", "")
+            qualified = False
+            if response.status_code == 503 and re.fullmatch(r"[1-9][0-9]?", delay) and int(delay) <= 60:
+                try:
+                    body = response.json()
+                    qualified = isinstance(body, dict) and isinstance(body.get("detail"), dict) and body["detail"].get("reason") == "retained_pdf_preparing"
+                except (ValueError, UnicodeError):
+                    pass
+            if not qualified:
+                return response
+            assert attempt < LOCALIZED_PDF_MAX_ATTEMPTS, "localized PDF busy attempt limit exhausted"
+            assert time.monotonic() + int(delay) < deadline, "localized PDF aggregate deadline exhausted"
+            time.sleep(int(delay))
+    raise AssertionError("localized PDF busy attempt limit exhausted")
+
+
 def _fetch_localized_pdf(
     *,
     frontend_origin: str,
@@ -499,13 +554,8 @@ def _fetch_localized_pdf(
         follow_redirects=False,
         trust_env=False,
     ) as client:
-        response = client.get(
-            f"{frontend_origin}/api/nico/assessment/comprehensive-run/{run_id}/localized-report/{report_language}/pdf",
-            headers={
-                "Accept": "application/pdf",
-                "Accept-Encoding": "identity",
-                "Cache-Control": "no-store",
-            },
+        response = _localized_pdf_response(
+            client, frontend_origin=frontend_origin, run_id=run_id, report_language=report_language,
         )
         pdf_bytes = response.content
     retain_response(
@@ -542,10 +592,10 @@ def _fetch_localized_pdf(
 
     reader = PdfReader(io.BytesIO(pdf_bytes))
     page_count = len(reader.pages)
-    assert 0 < page_count <= MAX_CLIENT_PDF_PAGES, {
+    assert page_count > 0, {
         "report_language": report_language,
         "page_count": page_count,
-        "renderer_page_boundary": MAX_CLIENT_PDF_PAGES,
+        "renderer_page_boundary": None,
     }
     rendered = base._pdf_text(pdf_bytes)
     rendered_compact = " ".join(rendered.split())
@@ -589,7 +639,7 @@ def _fetch_localized_pdf(
         "size_bytes": len(pdf_bytes),
         "sha256": observed_sha,
         "page_count": page_count,
-        "renderer_page_boundary": MAX_CLIENT_PDF_PAGES,
+        "renderer_page_boundary": None,
         "signature_verified": True,
         "run_identity_verified": True,
         "commercial_metadata_verified": True,
@@ -876,7 +926,7 @@ def _verify_localized_spanish_terminal_artifacts(
         "terminal_state_before_localized_reads": terminal_state_before_localized_reads,
         "terminal_state_after_localized_reads": terminal_state_after_localized_reads,
         "terminal_state_unchanged_after_localized_reads": True,
-        "pdf_renderer_page_boundary": MAX_CLIENT_PDF_PAGES,
+        "pdf_renderer_page_boundary": None,
         **pending_human_review,
     }
 
@@ -942,6 +992,51 @@ def _verify_excluded_engagement_ui(page: Any) -> dict[str, Any]:
         "exclusion_rationale_supplied": True,
         "exclusion_rationale": PROOF_EXCLUSION_RATIONALE,
     }
+
+
+def _submit_and_verify_spanish_intake(page: Any, *, frontend_origin: str) -> str:
+    """Observe acceptance; a browser-persisted pending ID is not a backend run."""
+    expected_url = f"{frontend_origin}/api/nico/assessment/comprehensive-intake"
+    with page.expect_response(
+        lambda response: (
+            response.request.method == "POST"
+            and response.url == expected_url
+        ),
+        timeout=180_000,
+    ) as pending:
+        page.locator(base.recovery.ACTION_SELECTOR).click()
+    response = pending.value
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+    if not response.ok:
+        detail = payload.get("detail") if isinstance(payload, dict) else None
+        code = detail.get("code") if isinstance(detail, dict) else None
+        # Never retain arbitrary server text, response bodies, or credentials.
+        safe_code = (
+            code
+            if code in ("spanish_report_generation_unavailable", "unsupported_report_language")
+            else "unclassified_intake_rejection"
+        )
+        raise AssertionError(
+            f"Spanish intake rejected: HTTP {int(response.status)} "
+            f"(code={safe_code}); backend acceptance not established"
+        )
+    operation = payload.get("operation") if isinstance(payload, dict) else None
+    assert (operation in ("intake_started", "intake_idempotent_reuse")
+            and payload.get("intake_reserved") is not True), (
+        "intake response does not establish backend acceptance"
+    )
+    run_id = payload.get("run_id") if isinstance(payload, dict) else None
+    valid_identity = (
+        isinstance(run_id, str)
+        and run_id.startswith("comprun_")
+        and len(run_id) == 40
+        and all(character in "0123456789abcdef" for character in run_id[8:])
+    )
+    assert valid_identity, "accepted intake response lacks a valid run identity"
+    return run_id
 
 
 def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
@@ -1024,10 +1119,14 @@ def _commercial_spanish_run_proof(browser: Any, args: Any) -> dict[str, Any]:
                 PROOF_AUTHORIZED_SCOPE
             )
         page.locator(base.recovery.AUTHORIZATION_SELECTOR).check()
-        page.locator(base.recovery.ACTION_SELECTOR).click()
+        accepted_run_id = _submit_and_verify_spanish_intake(
+            page, frontend_origin=origin,
+        )
 
-        run_id, initial_stored = base.recovery._wait_for_run_id(page, 180.0)
+        run_id = accepted_run_id
         args.proof_run_id = run_id
+        browser_run_id, initial_stored = base.recovery._wait_for_run_id(page, 180.0)
+        assert browser_run_id == run_id, "browser and accepted intake run identities differ"
         assert base.recovery._start_count(requests) == 1
         languages = base._intake_languages(requests)
         assert languages == ["es-MX"], (

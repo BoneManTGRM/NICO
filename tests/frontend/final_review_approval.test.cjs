@@ -111,7 +111,9 @@ function harness({locale = 'en', edition = 'source', post, get, ios = false, pop
     useMemo: fn => fn(),
     useEffect(fn) {if (!effectMounted) effects.push(fn);},
   };
-  const jsx = (type, props) => ({type, props});
+  // Presentation components are stateless; resolve them to the same host tree
+  // observed before extraction, without allocating another hook frame.
+  const jsx = (type, props) => typeof type === 'function' ? type(props) : ({type, props});
   class TestURL extends URL {
     static createObjectURL(blob) {const id = `blob:unit-${blobs.size}`; blobs.set(id, blob); return id;}
     static revokeObjectURL() {}
@@ -151,7 +153,7 @@ function harness({locale = 'en', edition = 'source', post, get, ios = false, pop
     require(name) {
       if (name === 'react') return react;
       if (name === 'react/jsx-runtime') return {jsx, jsxs: jsx, Fragment: 'fragment'};
-      if (name.endsWith('.css')) return {default: {}};
+      if (name.endsWith('.css')) return {__esModule: true, default: new Proxy({}, {get: (_, key) => String(key)})};
       throw new Error(`Unexpected import ${name}`);
     },
   };
@@ -164,7 +166,7 @@ function harness({locale = 'en', edition = 'source', post, get, ios = false, pop
       require: name => name === 'react' ? {useEffect: fn => fn()} : {},
     }).default();
   }
-  vm.runInNewContext(compiled.outputText, context, {filename});
+  vm.runInNewContext(compiled.outputText + '\nexports.testCopy = COPY;', context, {filename});
   function render() {cursor = 0; tree = context.exports.default(); return tree;}
   render(); effectMounted = true; effects.forEach(fn => fn()); render();
   function button(label) {return nodes(tree).find(n => n.type === 'button' && text(n) === label);}
@@ -198,7 +200,7 @@ function harness({locale = 'en', edition = 'source', post, get, ios = false, pop
     change(locale === 'en' ? 'I reviewed this exact' : 'Revisé este informe', true);
   }
   return {button, field, change, click, load, ready, render, requests, downloads, popups, reviewerLabel, roleLabel, reviewLabel, approveLabel,
-    text: () => text(tree), elements: () => nodes(tree)};
+    copy: context.exports.testCopy[locale], text: () => text(tree), elements: () => nodes(tree)};
 }
 
 test('pending approval remains actionable with blank reviewer metadata', async () => {
@@ -434,7 +436,7 @@ test('final review navigation preserves exact run and locale without copying cre
   assert.equal(finalReviewHref('/operations', '?run_id=comprun_unit_fixture'), '/operations');
 });
 
-test('workflow banner retains the reviewed run and edition in both languages', () => {
+test('workflow banner preserves identity and distinguishes operator permission from outstanding specialist review', () => {
   const navigation = loadHelpers('apps/web/app/PrimaryNavigation.tsx');
   for (const lang of ['en', 'es-MX']) {
     const jsx = (type, props) => ({type, props});
@@ -446,7 +448,23 @@ test('workflow banner retains the reviewed run and edition in both languages', (
       if (name === './PrimaryNavigation') return navigation;
       throw new Error(`Unexpected import ${name}`);
     }});
-    const link = nodes(component.default()).find(n => n.type === 'a' && /Final Review|Revisión final/.test(text(n)));
+    const rendered = component.default();
+    const boundary = nodes(rendered).find(n => n.props?.className === 'workflow-boundary');
+    const message = text(boundary);
+    if (lang === 'en') {
+      assert.match(message, /records operator approval and client-delivery permission together/);
+      assert.match(message, /Delivery remains blocked until both are recorded/);
+      assert.match(message, /Outstanding specialist review and independent QC remain disclosed/);
+      assert.match(message, /no report is sent automatically/);
+      assert.doesNotMatch(message, /Human review and separate delivery authorization required/);
+    } else {
+      assert.match(message, /aprobación del operador y el permiso de entrega al cliente en una misma acción/);
+      assert.match(message, /entrega permanece bloqueada hasta registrar ambos/);
+      assert.match(message, /revisión especializada y el control de calidad independiente pendientes siguen declarados/);
+      assert.match(message, /no se envía ningún informe automáticamente/);
+      assert.doesNotMatch(message, /revisión humana y una autorización de entrega independiente/);
+    }
+    const link = nodes(rendered).find(n => n.type === 'a' && /Final Review|Revisión final/.test(text(n)));
     const target = new URL(link.props.href, 'https://unit.invalid');
     assert.equal(target.pathname, '/operations/final-review');
     assert.equal(target.searchParams.get('run_id'), 'comprun_unit_fixture');
@@ -809,17 +827,53 @@ test('Spanish edition cannot hydrate an English authorized report from the same 
   assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
 });
 
-test('Spanish preparation may read its approved English source without granting either decision', async () => {
-  const h = harness({edition: 'es-MX', get: async () => response(fixture(true)), post: async () => response(fixture(false))});
-  h.change('Operator password', 'unit-test-not-a-secret');
-  await h.click('Prepare Spanish final assessment report');
-  assert.equal(h.requests.length, 2);
-  assert.equal(h.requests[0].method, 'GET');
+for (const locale of ['en', 'es-MX']) test(`${locale}: explicit Spanish preparation binds source identity without approval`, async () => {
+  const source=fixture(false, true, 'en');
+  const h = harness({locale, edition: 'es-MX', get: async () => response(source), post: async () => response(fixture(false, true, 'es-MX'))});
+  const label=locale==='en'?'Prepare Spanish final assessment report':'Preparar informe final en español';
+  await assert.rejects(h.click(label), /Disabled button/);
+  assert.equal(h.requests.length,0);
+  h.change(locale==='en'?'Operator password':'Contraseña del operador', 'unit-test-not-a-secret');
+  await h.click(label);
+  assert.deepEqual(h.requests.map(r=>r.method),['GET','POST']);
   assert.ok(h.requests[0].url.endsWith('/comprun_unit_fixture'));
-  assert.equal(h.requests[1].body.preparation_authorized, true);
-  assert.ok(h.requests[1].url.endsWith('/localized-editions/es-MX'));
-  assert.equal(h.requests[1].body.delivery_authorized, undefined);
-  assert.equal(h.downloads.length, 0);
+  assert.ok(h.requests[1].url.endsWith('/comprun_unit_fixture/localized-editions/es-MX'));
+  assert.deepEqual(JSON.parse(JSON.stringify(h.requests[1].body)),{
+    preparation_authorized:true,authorization_confirmed:true,expected_artifact_identity:source.review_artifact_identity,
+  });
+  assert.equal(h.requests[1].headers['X-NICO-Admin-Token'],'unit-test-not-a-secret');
+  assert.equal(h.downloads.length,0);
+  assert.equal(h.button(h.approveLabel).props.disabled,true);
+});
+test('Spanish preparation rejects mismatched source before mutation',async()=>{
+  const source=fixture();source.review_artifact_identity.run_id='comprun_other';
+  const h=harness({edition:'es-MX',get:async()=>response(source)});
+  h.change('Operator password','unit-test-not-a-secret');
+  await h.click('Prepare Spanish final assessment report');
+  assert.deepEqual(h.requests.map(r=>r.method),['GET']);
+  assert.equal(h.downloads.length,0);
+});
+test('Spanish preparation rejects an unready source before mutation',async()=>{
+  const source=fixture();delete source.reports.pdf_base64;
+  const h=harness({edition:'es-MX',get:async()=>response(source)});
+  h.change('Operator password','unit-test-not-a-secret');
+  await h.click('Prepare Spanish final assessment report');
+  assert.deepEqual(h.requests.map(r=>r.method),['GET']);
+  assert.ok(!h.button(h.approveLabel) || h.button(h.approveLabel).props.disabled);
+});
+test('Spanish preparation dispatches once while a source read is pending',async()=>{
+  let release;
+  const h=harness({edition:'es-MX',get:()=>new Promise(resolve=>{release=resolve;}),
+    post:async()=>response(fixture(false,true,'es-MX'))});
+  h.change('Operator password','unit-test-not-a-secret');
+  const prepare=h.button('Prepare Spanish final assessment report').props.onClick;
+  const pending=prepare();
+  await prepare();
+  assert.equal(h.requests.length,1);
+  release(response(fixture()));
+  await pending;
+  assert.deepEqual(h.requests.map(r=>r.method),['GET','POST']);
+  assert.equal(h.downloads.length,0);
 });
 
 for (const locale of ['en', 'es-MX']) test(`${locale}: retained approval does not instruct a first approval again`, async () => {
@@ -890,3 +944,135 @@ for (const locale of ['en', 'es-MX']) test(`retained digest without final PDF st
   assert.equal(h.downloads.length, 0);
   assert.equal(h.requests.filter(r => r.method === 'POST').length, 0);
 });
+
+// Characterize the active workspace's artifact summary before consolidating its
+// repeated cards. These are display values, never approval or delivery evidence.
+const summaryLabels = {
+  en: ['Report artifact digest', 'Approval certificate', 'Accepted-edition manifest',
+    'Delivery package digest', 'Delivery authorization certificate', 'PDF'],
+  'es-MX': ['Hash de artefactos del informe', 'Certificado de aprobación', 'Manifiesto de edición aceptada',
+    'Hash del paquete de entrega', 'Certificado de autorización de entrega', 'PDF'],
+};
+const summaryCases = [
+  {name: 'missing fields', values: [], displays: [], pdf: undefined, pdfDisplay: null},
+  {name: 'distinct ordered identities', values: ['report-1', 'certificate-2', 'manifest-3', 'package-4', 'delivery-5'],
+    displays: ['report-1', 'certificate-2', 'manifest-3', 'package-4', 'delivery-5'], pdf: 'report.pdf', pdfDisplay: 'report.pdf'},
+  {name: 'format boundaries and raw titles',
+    values: ['1234567890123456789012', '12345678901234567890123', '  short  ', '   ', 'abcdef'.repeat(12)],
+    displays: ['1234567890123456789012', '123456789012…67890123', 'short', '', 'abcdefabcdef…efabcdef'],
+    pdf: '  exact-name.pdf  ', pdfDisplay: '  exact-name.pdf  '},
+  {name: 'empty and non-string source fields', values: ['', null, false, 0, 12345],
+    displays: [null, null, null, null, '12345'], pdf: 42, pdfDisplay: '42'},
+  {name: 'zero filename is absent', values: [], displays: [], pdf: 0, pdfDisplay: null},
+  {name: 'text remains text', values: ['<script>private</script>', '"quoted"', '&', 'same', 'same'],
+    displays: ['<script>priv…/script>', '"quoted"', '&', 'same', 'same'], pdf: '<report>.pdf', pdfDisplay: '<report>.pdf'},
+];
+function summaryCards(h) {
+  // The three review/delivery status cards precede the six artifact cards.
+  return h.elements().filter(node => node.type === 'article').slice(3).map(node => {
+    assert.equal(node.props.dangerouslySetInnerHTML, undefined);
+    const children = node.props.children;
+    assert.deepEqual(Array.from(children, child => child.type), ['span', 'strong']);
+    return {label: text(children[0]), value: text(children[1]), title: children[1].props.title};
+  });
+}
+for (const locale of ['en', 'es-MX']) {
+  test(`artifact summary is absent before load in ${locale}`, () => {
+    const h = harness({locale});
+    assert.deepEqual(summaryCards(h), []);
+    assert.equal(h.requests.length, 0);
+  });
+  for (const sample of summaryCases) test(`artifact summary preserves ${sample.name} in ${locale}`, async () => {
+    const [report, certificate, manifest, packageDigest, delivery] = sample.values;
+    const value = {
+      status: 'review_required', human_review_completed: false, client_delivery_allowed: false,
+      accepted_edition: {report_artifact_digest: report, accepted_edition_manifest_sha256: manifest,
+        review: {approval_certificate_sha256: certificate}},
+      approved_delivery_package: {zip_sha256: packageDigest},
+      delivery_authorization: {delivery_authorization_certificate_sha256: delivery},
+      reports: {pdf_filename: sample.pdf},
+    };
+    const original = JSON.stringify(value);
+    const h = harness({locale, get: async () => response(value)});
+    await h.load();
+    const fallback = locale === 'en' ? 'Not issued' : 'No emitido';
+    const expected = summaryLabels[locale].map((label, index) => index === 5
+      ? {label, value: sample.pdfDisplay ?? fallback, title: undefined}
+      : {label, value: sample.displays[index] ?? fallback, title: String(sample.values[index] || '')});
+    assert.deepEqual(summaryCards(h), expected);
+    // Populating display identities must not manufacture a usable PDF, enable
+    // approval, mutate retained data, or perform any decision/authorization POST.
+    assert.equal(h.button(h.reviewLabel).props.disabled, true);
+    assert.equal(h.button(h.approveLabel).props.disabled, true);
+    assert.equal(h.requests.length, 1);
+    assert.equal(h.requests[0].method, 'GET');
+    assert.equal(h.downloads.length, 0);
+    assert.equal(JSON.stringify(value), original);
+  });
+}
+
+// Expected presentation selections are explicit, not derived by the production
+// flags/formula. COPY is exposed only inside this VM harness to avoid duplicating
+// translations; literal source-copy preservation is also reviewed in the diff.
+const statusCases = [
+  {name: 'not loaded', make: () => null, heading: 'title', step: 'approveHeading', lead: 'approveLead',
+    review: 'review', status: ['Waiting for secure access', 'Esperando acceso seguro'], specialist: 'specialistIncomplete', allowed: false, banner: null},
+  {name: 'pending', make: () => fixture(), heading: 'title', step: 'approveHeading', lead: 'approveLead',
+    review: 'review', status: ['Human review required', 'Se requiere revisión humana'], specialist: 'specialistIncomplete', allowed: false, banner: 'blockedDelivery'},
+  {name: 'operator approved but not specialist reviewed', approveEnabled: true, make: () => fixture(true), heading: 'approvedHeading', step: 'approvedHeading', lead: 'pendingAuthorization',
+    review: 'operatorReview', status: ['Approved', 'Aprobada'], specialist: 'specialistIncomplete', allowed: false, banner: 'pendingAuthorization'},
+  {name: 'specialist approved', make: () => fixture(true, false), heading: 'approvedHeading', step: 'approvedHeading', lead: 'pendingAuthorization',
+    review: 'review', status: ['Approved', 'Aprobada'], specialist: 'specialistComplete', allowed: false, banner: 'pendingAuthorization'},
+  {name: 'authorized operator edition', make: () => authorizedFixture({body: {expected_artifact_identity: fixture(true).review_artifact_identity}}),
+    heading: 'approvedHeading', step: 'approvedHeading', lead: 'authorizationNotice', review: 'operatorReview', status: ['Approved', 'Aprobada'],
+    specialist: 'specialistIncomplete', allowed: true, banner: 'readyDelivery'},
+  {name: 'authorized specialist edition', make: () => ({...fixture(true, false), client_delivery_allowed: true}),
+    heading: 'approvedHeading', step: 'approvedHeading', lead: 'authorizationNotice', review: 'review', status: ['Approved', 'Aprobada'],
+    specialist: 'specialistComplete', allowed: true, banner: 'readyDelivery'},
+  {name: 'truthy strings are not completion or authorization', make: () => ({...fixture(), human_review_completed: 'true', client_delivery_allowed: 'true'}),
+    heading: 'title', step: 'approveHeading', lead: 'approveLead', review: 'review', status: ['Human review required', 'Se requiere revisión humana'],
+    specialist: 'specialistIncomplete', allowed: false, banner: 'blockedDelivery'},
+  {name: 'pending with independent specialist flag', make: () => ({...fixture(), human_review_completed: true}),
+    heading: 'title', step: 'approveHeading', lead: 'approveLead', review: 'review', status: ['Human review required', 'Se requiere revisión humana'],
+    specialist: 'specialistComplete', allowed: false, banner: 'blockedDelivery'},
+  {name: 'pending with independent delivery flag', make: () => ({...fixture(), client_delivery_allowed: true}),
+    heading: 'title', step: 'approveHeading', lead: 'approveLead', review: 'review', status: ['Human review required', 'Se requiere revisión humana'],
+    specialist: 'specialistIncomplete', allowed: true, banner: 'readyDelivery'},
+  {name: 'unknown review status remains visible', make: () => ({...fixture(), review_status: 'custom_pending_state'}),
+    heading: 'title', step: 'approveHeading', lead: 'approveLead', review: 'review', status: ['custom pending state', 'custom pending state'],
+    specialist: 'specialistIncomplete', allowed: false, banner: 'blockedDelivery'},
+];
+for (const locale of ['en', 'es-MX']) for (const sample of statusCases) {
+  test(`status presentation preserves ${sample.name} in ${locale}`, async () => {
+    const value = sample.make();
+    // Operator receipt source-language checks are independent of UI locale.
+    const original = JSON.stringify(value);
+    const h = harness({locale, get: async () => response(value)});
+    if (value) await h.load();
+    const elements = h.elements(), copy = h.copy;
+    assert.equal(text(elements.find(node => node.type === 'h1')), copy[sample.heading]);
+    const decisionHeading = elements.filter(node => node.props?.className === 'stepHeading')[1];
+    assert.equal(text(nodes(decisionHeading).find(node => node.type === 'h2')), copy[sample.step]);
+    const paragraphs = nodes(decisionHeading).filter(node => node.type === 'p');
+    assert.equal(text(paragraphs[0]), copy.finalDecision);
+    assert.equal(text(paragraphs[1]), copy[sample.lead]);
+    const cards = elements.filter(node => node.type === 'article').slice(0, 3);
+    assert.deepEqual(cards.map(node => Array.from(node.props.children, text)), [
+      [copy[sample.review], sample.status[locale === 'en' ? 0 : 1]],
+      [copy.specialistReview, copy[sample.specialist]],
+      [copy.delivery, copy[sample.allowed ? 'authorized' : 'blocked']],
+    ]);
+    assert.deepEqual(cards.map(node => node.props.className), ['statusCard', 'statusCard', sample.allowed ? 'statusCardReady' : 'statusCardBlocked']);
+    const banners = elements.filter(node => ['deliveryReady', 'deliveryBlocked'].includes(node.props?.className));
+    assert.equal(banners.length, sample.banner === null ? 0 : 1);
+    if (sample.banner) {
+      assert.equal(text(banners[0]), copy[sample.banner]);
+      assert.equal(banners[0].props.className, sample.allowed ? 'deliveryReady' : 'deliveryBlocked');
+    }
+    assert.equal(h.requests.length, value ? 1 : 0);
+    assert.equal(h.requests.filter(request => request.method !== 'GET').length, 0);
+    assert.equal(h.downloads.length, 0);
+    assert.equal(JSON.stringify(value), original);
+    if (value && !sample.allowed) assert.equal(h.button(h.approveLabel).props.disabled, sample.approveEnabled !== true);
+  });
+}

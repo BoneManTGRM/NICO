@@ -148,6 +148,8 @@ def prepare_localized_edition(service: Any, run_id: str, language: str, payload:
     if language in (root.get("localized_editions") or {}):
         # Preparation is idempotent and cannot overwrite an inspected/accepted edition.
         return read_localized_edition(service, run_id, language)
+    from nico.ordinary_report_language_release_v1 import require_new_report_language
+    require_new_report_language(language)
     from nico.comprehensive_same_run_locale_report_v1 import _assemble_target
     package = _assemble_target(report_package_from_record(root)["json"], language)
     entry = {

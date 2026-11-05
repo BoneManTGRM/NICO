@@ -19,30 +19,38 @@ def sqlite_mount_verified(path: Path) -> bool:
     if _explicit_mount_verification():
         return True
     target = path.resolve()
+    # A separate device or mount point can still be tmpfs/overlay. Inspect the
+    # closest containing mount, including ephemeral children of durable mounts.
+    ephemeral = {'autofs', 'devtmpfs', 'overlay', 'proc', 'ramfs',
+                 'securityfs', 'squashfs', 'sysfs', 'tmpfs'}
+    candidates = []
     try:
-        if os.path.ismount(target):
-            return True
-        if target.exists() and target.stat().st_dev != Path("/").stat().st_dev:
-            return True
-    except OSError:
-        return False
-    try:
-        for line in Path("/proc/self/mountinfo").read_text(encoding="utf-8").splitlines():
-            before, _separator, _after = line.partition(" - ")
-            fields = before.split()
-            if len(fields) < 5:
+        for line in Path('/proc/self/mountinfo').read_text(encoding='utf-8').splitlines():
+            before, separator, after = line.partition(' - ')
+            fields, filesystem = before.split(), after.split()
+            if not separator or len(fields) < 5 or not filesystem:
                 continue
-            mount_path = Path(fields[4].replace("\\040", " ")).resolve()
-            if mount_path == Path("/"):
-                continue
+            mount_text = fields[4]
+            for escaped, literal in ((r'\040', ' '), (r'\011', '\t'),
+                                     (r'\012', '\n'), (r'\134', '\\')):
+                mount_text = mount_text.replace(escaped, literal)
+            mount_path = Path(mount_text).resolve()
             try:
                 target.relative_to(mount_path)
-                return True
             except ValueError:
                 continue
-    except OSError:
+            candidates.append((len(mount_path.parts), mount_path, filesystem[0].lower()))
+    except (OSError, UnicodeError):
         return False
-    return False
+    if not candidates:
+        return False
+    depth = max(item[0] for item in candidates)
+    closest = [item for item in candidates if item[0] == depth]
+    # Overmounts can share a mountpoint. Text order cannot prove which is active.
+    if len(closest) != 1:
+        return False
+    _, mount_path, filesystem = closest[0]
+    return mount_path != Path('/') and filesystem not in ephemeral
 
 
 def _wrap_status(cls: type, durability: Callable[[Any, dict[str, Any]], bool]) -> bool:

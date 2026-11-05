@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_preview_labels_v1 import stage_preview_labels
+
 import base64
 import hashlib
 import html
@@ -210,6 +212,7 @@ def _spanish_pdf(canonical: dict[str, Any]) -> tuple[bytes, int]:
     story += [PageBreak(), p("Apéndice de evidencia", h1)]
     for stage in stages:
         story += [p(f"{_es(stage.get('title'))} — {_es(str(stage.get('status') or '').upper())}", h2), p(stage.get("summary"))]
+        story.extend(p(label) for label in stage_preview_labels(stage, canonical, spanish=True))
         for label, field in (("Evidencia conservada", "evidence"), ("Hallazgos", "findings"), ("Evidencia no disponible o limitada", "unavailable")):
             values = stage.get(field) or []
             if values:

@@ -254,7 +254,7 @@ def _publish_local_deadline_and_recover(
     lease_id: str,
     executor,
     context: Mapping[str, Any],
-    state: Mapping[str, Any],
+    state: dict[str, Any],
     render_started_epoch: float,
 ) -> str:
     """Persist a local render timeout and consume the existing one-retry budget.
@@ -268,36 +268,53 @@ def _publish_local_deadline_and_recover(
     """
 
     run_id = _text(context.get("run_id"))
-    blocked = _local_deadline_blocked_result(
-        context,
-        lease_id=lease_id,
-        state=state,
-        render_started_epoch=render_started_epoch,
-    )
+    state["recovery_pending"] = True
+    recovery_state = state.setdefault("recovery_state", {})
+    blocked = state.get("deadline_result")
+    if blocked is None:
+        blocked = _local_deadline_blocked_result(
+            context, lease_id=lease_id, state=state,
+            render_started_epoch=render_started_epoch,
+        )
+        state["deadline_result"] = blocked
     for attempt in range(_LOCAL_DEADLINE_PERSIST_RETRIES):
         try:
-            published = self._publish_result(
-                lease_id=lease_id,
-                run_id=run_id,
-                result=blocked,
-            )
-            if published == "failed":
-                raise RuntimeError("local_deadline_publication_conflict")
-            if published in {"complete", "superseded"}:
-                return published
-
+            if state.get("recovery_record") is None:
+                current = self._store.load(run_id)
+                expected_stage = state.get("deadline_stage")
+                if expected_stage is None and background._marker_lease(current) == lease_id:
+                    planned = background.apply_comprehensive_stage_result(
+                        current, stage_id=FINAL_REPORT_STAGE_ID, result=blocked,
+                    )
+                    expected_stage = planned["stage_results"][FINAL_REPORT_STAGE_ID]
+                    state["deadline_stage"] = expected_stage
+                # Reconcile the normalized timeout if publication committed before
+                # raising; never republish an already fenced lease.
+                if expected_stage is None or current.get("stage_results", {}).get(FINAL_REPORT_STAGE_ID) != expected_stage:
+                    published = self._publish_result(
+                        lease_id=lease_id, run_id=run_id, result=blocked,
+                    )
+                    if published == "failed":
+                        raise RuntimeError("local_deadline_publication_conflict")
+                    if published in {"complete", "superseded"}:
+                        state["recovery_pending"] = False
+                        return published
+                    current = self._store.load(run_id)
+                state["recovery_record"] = current
             self._safe_job_update(lease_id, status="expired")
-            current = self._store.load(run_id)
+            if not _terminate_state_process(state):
+                raise RuntimeError("local_deadline_worker_exit_unconfirmed")
             self._recover_after_deadline(
-                current,
-                executor=executor,
-                context=context,
+                state["recovery_record"], executor=executor, context=context,
+                recovery_state=recovery_state,
             )
+            state["recovery_pending"] = False
             return "expired"
         except Exception:
             if attempt + 1 >= _LOCAL_DEADLINE_PERSIST_RETRIES:
                 break
             time.sleep(min(1.0, 0.1 * (attempt + 1)))
+    # The autonomous supervisor retains this phase after the bounded burst.
     return "expired"
 
 
@@ -323,9 +340,8 @@ def _isolated_stop_local_task(
     _terminate_state_process(state)
     _wait_for_invoke_shutdown(state)
     background._release_local_task_capacity(state)
-    with background._LOCAL_TASKS_LOCK:
-        if background._LOCAL_TASKS.get(lease) is state:
-            background._LOCAL_TASKS.pop(lease, None)
+    if not state.get("recovery_pending"):
+        state["supervisor_stop"].set()
 
 
 def _isolated_start_worker(
@@ -345,9 +361,13 @@ def _isolated_start_worker(
         )
 
     stop = threading.Event()
+    supervisor_stop = threading.Event()
+    recovery_lock = threading.RLock()
     state_lock = threading.RLock()
     state: dict[str, Any] = {
         "stop": stop,
+        "supervisor_stop": supervisor_stop,
+        "recovery_state": {},
         "phase": "queued",
         "state_lock": state_lock,
         "slot_acquired": False,
@@ -368,42 +388,114 @@ def _isolated_start_worker(
                 durable_status = "rendering" if phase in {"rendering", "terminating"} else phase
                 self._safe_job_update(lease_id, status=durable_status)
 
+    def recover_deadline(record, *, executor, context):
+        # Serialize request/watchdog recovery without holding the renderer lock
+        # across stop/join: invoke cleanup also needs state_lock.
+        with recovery_lock:
+            run_id = _text(context.get("run_id"))
+            with state_lock:
+                if state.get("deadline_owner") == "local" or state.get("recovery_complete"):
+                    return self._store.load(run_id)
+                state["deadline_owner"] = "watchdog"
+                state["recovery_pending"] = True
+            expired = state.get("recovery_record")
+            if expired is None:
+                # A request may have advanced canonical state since the watchdog
+                # read it outside recovery_lock; always reconcile a fresh record.
+                current = self._store.load(run_id)
+                stage = current.get("stage_results", {}).get(FINAL_REPORT_STAGE_ID, {})
+                execution = stage.get("stage_execution", {})
+                if (current.get("terminal") is True
+                    and stage.get("reason") == "final_report_publication_deadline_exceeded"
+                    and execution.get("publication_lease_id") == lease_id):
+                    expired = current
+                else:
+                    expired = self._expire_publication(
+                        current, lease_id=lease_id, context=context,
+                    )
+                if (background._marker_lease(expired) == lease_id
+                    and state.get("local_render_deadline_expired") is True):
+                    # The local timer may finish the job before a watchdog save
+                    # commits. Persist coordinator timeout evidence with canonical
+                    # CAS; never reopen the job or permit late renderer publication.
+                    if not _wait_for_invoke_shutdown(state):
+                        return expired
+                    blocked = _local_deadline_blocked_result(
+                        context, lease_id=lease_id, state=state,
+                        render_started_epoch=state.get("render_started_epoch", 0.0),
+                    )
+                    updated = background.apply_comprehensive_stage_result(
+                        expired, stage_id=FINAL_REPORT_STAGE_ID, result=blocked,
+                    )
+                    expired = self._store.save(updated, expected_revision=int(expired["revision"]))
+                if background._marker_lease(expired) == lease_id:
+                    with state_lock:
+                        state["recovery_pending"] = False
+                        state.pop("deadline_owner", None)
+                    return expired
+                state["recovery_record"] = expired
+            with state_lock:
+                state["phase"] = "terminating"
+                state["deadline_expired"] = True
+            stop.set()
+            terminated = _wait_for_invoke_shutdown(state)
+            state["worker_termination_confirmed"] = terminated
+            if not terminated:
+                return self._store.load(run_id)
+            self._safe_job_update(lease_id, status="expired")
+            recovered = self._recover_after_deadline(
+                expired, executor=executor, context=context,
+                recovery_state=state["recovery_state"],
+            )
+            state["recovery_pending"] = False
+            state["recovery_complete"] = True
+            return recovered
+
+    state["recover_deadline"] = recover_deadline
+
     def watchdog() -> None:
         interval = max(0.05, min(background._heartbeat_seconds(), 5.0))
         run_id = _text(context.get("run_id"))
-        while not stop.wait(interval):
-            try:
-                job = self._store.load_final_report_job(lease_id)
-                deadline = background._job_deadline_state(job, now_epoch=time.time())
-            except Exception:
-                continue
-            if not bool(deadline.get("overdue")):
-                continue
-
-            try:
-                current = self._store.load(run_id)
-                expired = self._expire_publication(
-                    current,
-                    lease_id=lease_id,
-                    context=context,
-                )
-                if background._marker_lease(expired) == lease_id:
+        try:
+            while not supervisor_stop.wait(interval):
+                with background._LOCAL_TASKS_LOCK:
+                    if background._LOCAL_TASKS.get(lease_id) is not state:
+                        return
+                try:
+                    if (state.get("local_render_deadline_expired") is True
+                        and state.get("deadline_owner") != "watchdog"):
+                        # The invoke thread owns the initial bounded persistence
+                        # burst. Join before resuming its retained phase.
+                        if not _wait_for_invoke_shutdown(state):
+                            continue
+                        if not state.get("recovery_pending"):
+                            return
+                        _publish_local_deadline_and_recover(
+                            self, lease_id=lease_id, executor=executor,
+                            context=context, state=state,
+                            render_started_epoch=state.get("render_started_epoch", 0.0),
+                        )
+                        if state.get("recovery_pending"):
+                            continue
+                        return
+                    current = state.get("recovery_record")
+                    if current is None and not state.get("recovery_pending"):
+                        job = self._store.load_final_report_job(lease_id)
+                        deadline = background._job_deadline_state(job, now_epoch=time.time())
+                        if not bool(deadline.get("overdue")):
+                            continue
+                        current = self._store.load(run_id)
+                    recover_deadline(current, executor=executor, context=context)
+                    if state.get("recovery_complete"):
+                        return
+                except Exception:
+                    # Renderer cancellation must not abandon canonical recovery.
                     continue
-                with state_lock:
-                    state["phase"] = "terminating"
-                    state["deadline_expired"] = True
-                stop.set()
-                terminated = _wait_for_invoke_shutdown(state)
-                state["worker_termination_confirmed"] = terminated
-                if terminated:
-                    self._recover_after_deadline(
-                        expired,
-                        executor=executor,
-                        context=context,
-                    )
-            except Exception:
-                pass
-            return
+        finally:
+            supervisor_stop.set()
+            with background._LOCAL_TASKS_LOCK:
+                if background._LOCAL_TASKS.get(lease_id) is state:
+                    background._LOCAL_TASKS.pop(lease_id, None)
 
     def invoke() -> None:
         outcome = "failed"
@@ -456,7 +548,13 @@ def _isolated_start_worker(
                 ),
             )
         except IsolatedFinalReportCancelled:
-            if state.get("local_render_deadline_expired") is True:
+            with state_lock:
+                local_owner = (state.get("local_render_deadline_expired") is True
+                               and state.get("deadline_owner") != "watchdog")
+                if local_owner:
+                    state["deadline_owner"] = "local"
+                    state["recovery_pending"] = True
+            if local_owner:
                 outcome = _publish_local_deadline_and_recover(
                     self,
                     lease_id=lease_id,
@@ -487,9 +585,9 @@ def _isolated_start_worker(
                 release_slot_once()
             stop.set()
             self._safe_job_update(lease_id, status=outcome)
-            with background._LOCAL_TASKS_LOCK:
-                if background._LOCAL_TASKS.get(lease_id) is state:
-                    background._LOCAL_TASKS.pop(lease_id, None)
+            with state_lock:
+                if not state.get("recovery_pending"):
+                    supervisor_stop.set()
 
     heartbeat_thread = threading.Thread(
         target=heartbeat,
@@ -522,6 +620,7 @@ def _isolated_start_worker(
         invoke_thread.start()
     except BaseException:
         stop.set()
+        supervisor_stop.set()
         _terminate_state_process(state)
         release_slot_once()
         self._safe_job_update(lease_id, status="failed")

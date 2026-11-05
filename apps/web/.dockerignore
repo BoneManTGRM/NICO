@@ -1,0 +1,17 @@
+node_modules
+**/node_modules
+.next
+**/.next
+.git
+.env
+.env.*
+**/.env
+**/.env.*
+# Keep the tracked, nonsecret configuration template.
+!.env.example
+.npmrc
+**/.npmrc
+*.pem
+*.key
+**/*.pem
+**/*.key

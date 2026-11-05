@@ -113,6 +113,11 @@ def build_production_capability_executors(app: FastAPI) -> dict[str, CapabilityE
                         "evidence_available": False,
                     },
                 )
+            if _capability == 'architecture_data_flow':
+                from nico.source_function_witness_v1 import STORE_STATE_KEY, load_witness, witness_scope
+                witness = load_witness(getattr(app.state, STORE_STATE_KEY, None), context)
+                with witness_scope(witness):
+                    return _normalize_result(_capability, context, provider(dict(context)))
             return _normalize_result(_capability, context, provider(dict(context)))
 
         executors[capability] = execute

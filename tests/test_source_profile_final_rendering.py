@@ -27,9 +27,11 @@ def collected_package(monkeypatch, tmp_path, *, spanish=False):
     canonical["identity"] = identity
     canonical["repository_evidence"] = repository
     canonical["complexity_evidence"] = complexity
+    from source_function_witness_fixture import architecture_from_persisted
+    architecture = architecture_from_persisted(context,repository,complexity,tmp_path)
     canonical["stage_summaries"] = [
         report._stage_summary("deployment_and_infrastructure", deployment_review_provider(context)),
-        report._stage_summary("architecture_and_data_flow", architecture_data_flow_provider(context)),
+        report._stage_summary("architecture_and_data_flow", architecture),
     ]
     return package, repository["architecture_evidence"]["source_observation"]
 
@@ -83,7 +85,7 @@ def test_actual_final_package_retains_source_tables_and_bilingual_pdf(monkeypatc
     assert result["json"]["stage_summaries"][1]["structured_tables"] == retained_tables
     assert result["human_review_required"] is True
     assert result["client_delivery_allowed"] is False
-    assert len(reader.pages) <= result["client_report_completion"]["client_pdf_page_boundary"]
+    assert result["client_report_completion"]["client_pdf_page_boundary"] is None
     (tmp_path / ("source-profile-es-MX.pdf" if spanish else "source-profile-en.pdf")).write_bytes(pdf)
     (tmp_path / ("source-profile-es-MX.json" if spanish else "source-profile-en.json")).write_text(json.dumps(result["json"], ensure_ascii=False, sort_keys=True))
 
@@ -109,4 +111,6 @@ def test_shared_source_projection_is_complete_in_both_stage_orders(monkeypatch, 
     assert forward == reverse
     assert len(forward) == 1
     assert forward[0]["profile_coverage"]
-    assert len(forward[0]["structured_tables"]) == 3
+    assert forward[0]["structured_tables"][:3] == stages[1]["structured_tables"][:3]
+    assert any(table["title"] in {"Function measurement scope", "Function measurement availability"}
+               for table in forward[0]["structured_tables"])

@@ -53,6 +53,7 @@ jobs:
       STATUS_CONTEXT: NICO Spanish Comprehensive Production Proof
       PYTHONUNBUFFERED: "1"
       NICO_SPANISH_PROOF_TELEMETRY_SECONDS: "30"
+      NICO_PROOF_CHROMIUM_CHANNEL: "chrome"
       NICO_PROOF_HEADED_CHROMIUM: "1"
       NICO_PROOF_NATIVE_VISIBILITY: "1"
 
@@ -160,7 +161,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check --no-cache-dir \
-            . "playwright==1.61.0" "pypdf==6.15.0" "pytest==9.1.1"
+            . "playwright==1.61.0" "pypdf==6.21.4" "pytest==9.1.1" "PyYAML==6.0.3"
           python scripts/prepare_playwright_native_visibility_v1.py
           if [ -f /etc/apt/apt-mirrors.txt ]; then
             printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
@@ -179,11 +180,25 @@ jobs:
             | sudo tee /etc/apt/apt.conf.d/99nico-ci-network >/dev/null
           timeout --signal=TERM --kill-after=30s 12m python -m playwright install --with-deps chromium webkit
 
+      - name: Verify installed Chrome before production proof
+        run: |
+          set -euo pipefail
+          test -x /opt/google/chrome/chrome
+          test -r /etc/apparmor.d/chrome
+          command -v xvfb-run
+          command -v xauth
+          printf '%s\n' 'browser_channel=chrome' 'apparmor_profile_present=true'
+          readlink -f /opt/google/chrome/chrome
+          /opt/google/chrome/chrome --version
+          stat -c '%n owner=%U group=%G mode=%a' /opt/google/chrome/chrome /etc/apparmor.d/chrome
+          sha256sum /opt/google/chrome/chrome /etc/apparmor.d/chrome
+
       - name: Verify Spanish proof entrypoint before assessment
         run: |
           set -euo pipefail
           command -v xvfb-run
           xvfb-run -a python -m pytest -q \
+            tests/test_proof_runner_mask_channel.py \
             tests/test_mobile_visibility_lifecycle_proof_v1.py \
             tests/test_github_actions_production_proof_auth_v1.py \
             tests/test_production_frontend_specialist_gate_v2.py \
@@ -221,6 +236,9 @@ jobs:
         continue-on-error: true
         timeout-minutes: 100
         run: |
+          # Separate runner mask commands from retained proof output.
+          exec 9>&1
+          export NICO_PROOF_MASK_FD=9
           set -uo pipefail
           mkdir -p audit-results
           SOURCE_PROOF_LOG="audit-results/spanish-comprehensive-source-proof.log"
@@ -256,6 +274,9 @@ jobs:
         continue-on-error: true
         timeout-minutes: 100
         run: |
+          # Separate runner mask commands from retained proof output.
+          exec 9>&1
+          export NICO_PROOF_MASK_FD=9
           set -euo pipefail
           FAILED_SOURCE_PROOF="audit-results/spanish-comprehensive-failed-source-proof.json"
           RECOVERED_PROOF="audit-results/spanish-comprehensive-existing-run-recovery-proof.json"
@@ -291,6 +312,9 @@ jobs:
         env:
           NICO_SPANISH_PROOF_ENGAGEMENT_FIXTURE: excluded
         run: |
+          # Separate runner mask commands from retained proof output.
+          exec 9>&1
+          export NICO_PROOF_MASK_FD=9
           set -uo pipefail
           mkdir -p audit-results
           EXCLUSION_PROOF_LOG="audit-results/spanish-comprehensive-exclusion-source-proof.log"
@@ -327,6 +351,9 @@ jobs:
         continue-on-error: true
         timeout-minutes: 65
         run: |
+          # Separate runner mask commands from retained proof output.
+          exec 9>&1
+          export NICO_PROOF_MASK_FD=9
           set -euo pipefail
           python scripts/comprehensive_fresh_browser_matrix_v1.py \
             --expected-sha "${RELEASE_SHA}" \
@@ -393,7 +420,6 @@ jobs:
           import subprocess
           from pathlib import Path
 
-          from nico.comprehensive_client_ready_projection_v1 import MAX_CLIENT_PDF_PAGES
           from scripts.comprehensive_production_run_handoff_v1 import SOURCE_SCHEMA, load_source_proof
 
           matrix = json.loads(Path("audit-results/fresh-browser-matrix/matrix.json").read_text())
@@ -546,9 +572,9 @@ jobs:
           assert payload["authorized_scope_verified_in_canonical_truth"] is True
           assert payload["same_run_bilingual_pdf_verified"] is True
           assert payload["same_run_bilingual_assessment_rerun"] is False
-          assert payload["pdf_renderer_page_boundary"] == MAX_CLIENT_PDF_PAGES
-          assert 0 < int(payload["spanish_pdf_page_count"]) <= MAX_CLIENT_PDF_PAGES
-          assert 0 < int(payload["english_pdf_page_count"]) <= MAX_CLIENT_PDF_PAGES
+          assert payload["pdf_renderer_page_boundary"] is None
+          assert int(payload["spanish_pdf_page_count"]) > 0
+          assert int(payload["english_pdf_page_count"]) > 0
           for key in (
               "client_name",
               "project_name",
@@ -679,6 +705,9 @@ jobs:
       - run: python -m pip install --disable-pip-version-check 'httpx==0.28.1'
       - name: Read existing failure with the unchanged production-proof authentication
         run: |
+          # Separate runner mask commands from retained proof output.
+          exec 9>&1
+          export NICO_PROOF_MASK_FD=9
           python scripts/production_blocked_run_diagnostic_v1.py \
             --run-id "$DIAGNOSTIC_RUN_ID" \
             --expected-commit "$DIAGNOSTIC_SOURCE_COMMIT" \

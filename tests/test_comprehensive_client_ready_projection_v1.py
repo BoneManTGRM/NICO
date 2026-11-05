@@ -324,7 +324,7 @@ def test_phase17_installs_and_enforces_the_client_ready_projection() -> None:
     assert "sanitize_client_pdf_status" in phase17
     assert "render_compact_finding_register_pdf" in completion
     assert "compose_compact_client_pdf" in completion
-    assert "MAX_CLIENT_PDF_PAGES" in completion
+    assert '"client_pdf_page_boundary": None' in completion
     assert '"full_evidence_appendix_in_client_pdf": False' in completion
     assert '"report_finality": REPORT_FINALITY' in completion
     assert "_APPROVAL_SUFFIX = APPROVAL_SUFFIX" in pipeline

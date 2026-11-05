@@ -64,7 +64,12 @@ def render_phase1_evidence_review_gate_pdf(
     maturity = assessment.get("maturity_signal") if isinstance(assessment.get("maturity_signal"), Mapping) else {}
     technical_score = assessment.get("technical_score", maturity.get("technical_score", maturity.get("score")))
     adjusted_score = assessment.get("canonical_evidence_adjusted_score", assessment.get("evidence_adjusted_score"))
-    scanners = [item for item in canonical.get("scanner_execution_records") or [] if isinstance(item, Mapping)]
+    from nico.client_report_completion_v1 import _scanner_records
+
+    # Summary counts use the complete retained population, including exclusions.
+    # scanner_execution_summary still denies exclusions execution credit.
+    required_scanners, excluded_scanners = _scanner_records(canonical)
+    scanners = required_scanners + excluded_scanners
     completed_scanners = sum(1 for item in scanners if item.get("completed") is True)
     review, _, categories = projection._candidate_summary(canonical)
     triage = _find(canonical, "technical_triage")
@@ -381,6 +386,8 @@ def render_phase1_evidence_review_gate_pdf(
                 ),
             ])
         story.extend([p(labels["candidate_state"], h2), table(rows, [1.05 * inch, .55 * inch, .75 * inch, .9 * inch, 4.15 * inch])])
+    from nico.report_preview_labels_v1 import retained_coverage_disclosures
+    story.extend(p(line, small) for line in retained_coverage_disclosures(canonical, spanish=spanish))
     story.append(KeepTogether([
         p(labels["client_boundary"], h2),
         p(

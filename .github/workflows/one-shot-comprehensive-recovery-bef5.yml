@@ -74,6 +74,9 @@ jobs:
 
       - name: Recover and continue the exact preserved Comprehensive run
         run: |
+          # Separate runner mask commands from retained proof output.
+          exec 9>&1
+          export NICO_PROOF_MASK_FD=9
           set -euo pipefail
           mkdir -p audit-results
           python - <<'PY'
@@ -389,6 +392,9 @@ jobs:
         run: python -m pip install --disable-pip-version-check 'httpx==0.28.1'
       - name: Read only the existing bounded failure
         run: |
+          # Separate runner mask commands from retained proof output.
+          exec 9>&1
+          export NICO_PROOF_MASK_FD=9
           set -euo pipefail
           python scripts/production_blocked_run_diagnostic_v1.py \
             --run-id "$DIAGNOSTIC_RUN_ID" \

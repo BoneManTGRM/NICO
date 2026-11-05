@@ -100,7 +100,7 @@ def test_english_premium_renderer_restores_multi_chapter_report():
     assert contract["canonical_scanner_truth_only"] is True
     assert contract["full_evidence_retained_in_structured_exports"] is True
     assert contract["full_evidence_appendix_in_client_pdf"] is False
-    assert result["pdf_page_count"] <= contract["client_pdf_page_boundary"]
+    assert contract["client_pdf_page_boundary"] is None
     assert base64.b64decode(result["pdf_base64"]).startswith(b"%PDF")
     assert "Executive Decision Brief" in result["markdown"]
     assert "Technical Scorecard" in result["markdown"]
@@ -123,7 +123,7 @@ def test_spanish_premium_renderer_keeps_localized_layout_and_truth():
     assert contract["bilingual_premium_output"] is True
     assert contract["full_evidence_retained_in_structured_exports"] is True
     assert contract["full_evidence_appendix_in_client_pdf"] is False
-    assert result["pdf_page_count"] <= contract["client_pdf_page_boundary"]
+    assert contract["client_pdf_page_boundary"] is None
     assert base64.b64decode(result["pdf_base64"]).startswith(b"%PDF")
     assert "Evaluación Técnica Integral NICO" in result["markdown"]
     assert "Hoja de ruta de seis meses" in result["markdown"]

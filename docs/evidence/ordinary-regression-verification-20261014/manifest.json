@@ -1,0 +1,186 @@
+{
+  "commit": "506880a4cf9ffba28c9926b48b886ae35d15fa9c",
+  "jobs": [
+    {
+      "name": "cold-seeds1-en-es-MX",
+      "command": [
+        "/workspace/nico-venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_cross_locale_pdf_repeatability_v1.py::test_same_frozen_input_keeps_cross_locale_pdf_bytes[fresh_process-seeds1-en-es-MX]",
+        "--junitxml=/workspace/nico-verification-506880a4/cold-seeds1-en-es-MX.xml"
+      ],
+      "outer_timeout_seconds": 420,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 16.364
+    },
+    {
+      "name": "cold-seeds1-es-MX-en",
+      "command": [
+        "/workspace/nico-venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_cross_locale_pdf_repeatability_v1.py::test_same_frozen_input_keeps_cross_locale_pdf_bytes[fresh_process-seeds1-es-MX-en]",
+        "--junitxml=/workspace/nico-verification-506880a4/cold-seeds1-es-MX-en.xml"
+      ],
+      "outer_timeout_seconds": 420,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 16.066
+    },
+    {
+      "name": "cold-seeds2-en-es-MX",
+      "command": [
+        "/workspace/nico-venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_cross_locale_pdf_repeatability_v1.py::test_same_frozen_input_keeps_cross_locale_pdf_bytes[fresh_process-seeds2-en-es-MX]",
+        "--junitxml=/workspace/nico-verification-506880a4/cold-seeds2-en-es-MX.xml"
+      ],
+      "outer_timeout_seconds": 420,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 15.213
+    },
+    {
+      "name": "cold-seeds2-es-MX-en",
+      "command": [
+        "/workspace/nico-venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_cross_locale_pdf_repeatability_v1.py::test_same_frozen_input_keeps_cross_locale_pdf_bytes[fresh_process-seeds2-es-MX-en]",
+        "--junitxml=/workspace/nico-verification-506880a4/cold-seeds2-es-MX-en.xml"
+      ],
+      "outer_timeout_seconds": 420,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 15.31
+    },
+    {
+      "name": "cold-seeds3-en-es-MX",
+      "command": [
+        "/workspace/nico-venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_cross_locale_pdf_repeatability_v1.py::test_same_frozen_input_keeps_cross_locale_pdf_bytes[fresh_process-seeds3-en-es-MX]",
+        "--junitxml=/workspace/nico-verification-506880a4/cold-seeds3-en-es-MX.xml"
+      ],
+      "outer_timeout_seconds": 420,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 16.116
+    },
+    {
+      "name": "cold-seeds3-es-MX-en",
+      "command": [
+        "/workspace/nico-venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_cross_locale_pdf_repeatability_v1.py::test_same_frozen_input_keeps_cross_locale_pdf_bytes[fresh_process-seeds3-es-MX-en]",
+        "--junitxml=/workspace/nico-verification-506880a4/cold-seeds3-es-MX-en.xml"
+      ],
+      "outer_timeout_seconds": 420,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 15.056
+    },
+    {
+      "name": "cold-seeds4-en-es-MX",
+      "command": [
+        "/workspace/nico-venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_cross_locale_pdf_repeatability_v1.py::test_same_frozen_input_keeps_cross_locale_pdf_bytes[fresh_process-seeds4-en-es-MX]",
+        "--junitxml=/workspace/nico-verification-506880a4/cold-seeds4-en-es-MX.xml"
+      ],
+      "outer_timeout_seconds": 420,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 15.51
+    },
+    {
+      "name": "cold-seeds4-es-MX-en",
+      "command": [
+        "/workspace/nico-venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_cross_locale_pdf_repeatability_v1.py::test_same_frozen_input_keeps_cross_locale_pdf_bytes[fresh_process-seeds4-es-MX-en]",
+        "--junitxml=/workspace/nico-verification-506880a4/cold-seeds4-es-MX-en.xml"
+      ],
+      "outer_timeout_seconds": 420,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 15.006
+    },
+    {
+      "name": "ordinary-python",
+      "command": [
+        "/workspace/nico-venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_comprehensive_approved_review_truth_v1.py",
+        "tests/test_comprehensive_approved_lifecycle_consistency_v1.py",
+        "tests/test_comprehensive_operator_presentation_v1.py",
+        "tests/test_comprehensive_spanish_final_report_runtime_cache_v94.py",
+        "tests/test_comprehensive_scanner_inventory_v1.py",
+        "tests/test_comprehensive_same_run_locale_report_v1.py",
+        "tests/test_frozen_source_pdf_readonly_work_v1.py",
+        "tests/test_spanish_absent_literal_fast_path.py",
+        "tests/test_spanish_presentation_parity_v1.py",
+        "tests/test_spanish_canonical_report_parity_v87.py",
+        "tests/test_spanish_canonical_evidence_literals_v95.py",
+        "tests/test_scanner_status_record_retention.py",
+        "tests/test_review_pdf_download_incident.py",
+        "tests/test_retained_pdf_exact_input_cache_v1.py",
+        "tests/test_cross_locale_pdf_repeatability_v1.py",
+        "-k",
+        "not fresh_process",
+        "--junitxml=/workspace/nico-verification-506880a4/ordinary-python.xml",
+        "--durations=10"
+      ],
+      "outer_timeout_seconds": 900,
+      "status": "failed",
+      "exit_code": 1,
+      "elapsed_seconds": 117.709
+    },
+    {
+      "name": "ordinary-javascript",
+      "command": [
+        "node",
+        "--test",
+        "tests/js/assessment-poll-exhaustion.test.cjs",
+        "tests/js/review-pdf-download.test.cjs",
+        "tests/js/pdf-proxy-stream-diagnostics.test.cjs",
+        "tests/js/workspace-review-pdf-fallback.test.cjs"
+      ],
+      "outer_timeout_seconds": 120,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 3.735
+    },
+    {
+      "name": "typescript",
+      "command": [
+        "npm",
+        "--prefix",
+        "apps/web",
+        "run",
+        "lint"
+      ],
+      "outer_timeout_seconds": 120,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 6.508
+    }
+  ]
+}

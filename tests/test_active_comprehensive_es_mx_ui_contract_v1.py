@@ -115,8 +115,14 @@ def test_report_actions_and_terminal_truth_keep_locale_and_approval_boundaries_s
     assert 'path.startsWith("/es-mx/")' in review_action
     assert 'path === "/es-mx"' in markdown
     assert 'path.startsWith("/es-mx/")' in markdown
-    assert "separate delivery authorization required" in workflow
-    assert "autorización de entrega independiente" in workflow
+    assert "records operator approval and client-delivery permission together" in workflow
+    assert "Delivery remains blocked until both are recorded" in workflow
+    assert "Outstanding specialist review and independent QC remain disclosed" in workflow
+    assert "no report is sent automatically" in workflow
+    assert "aprobación del operador y el permiso de entrega al cliente en una misma acción" in workflow
+    assert "entrega permanece bloqueada hasta registrar ambos" in workflow
+    assert "revisión especializada y el control de calidad independiente pendientes siguen declarados" in workflow
+    assert "no se envía ningún informe automáticamente" in workflow
 
 
 def test_evidence_completion_labels_are_locale_owned_while_counts_remain_canonical() -> None:
@@ -187,9 +193,12 @@ def test_markdown_copy_uses_same_run_locale_projection_and_locale_keyed_cache() 
     assert "payload.assessment_rerun !== false" in workspace
 
     assert "reportLanguage: ReportLanguage" in bridge
-    assert "cache.current.reportLanguage !== reportLanguage" in bridge
-    assert "cache.current.runId !== runId" in bridge
-    assert "cache.current.commitSha !== commitSha" in bridge
+    assert "JSON.stringify([runId, commitSha, reportLanguage])" in bridge
+    assert "cache.current.get(key)" in bridge
+    assert "otherKey !== key && !other.promise" in bridge
+    assert "activeReportLanguage() === entry.reportLanguage" in bridge
+    assert "visibleRunId(actions) === entry.runId" in bridge
+    assert "visibleCommitSha(actions) === entry.commitSha" in bridge
     assert "markdownHref(entry.runId, entry.reportLanguage)" in bridge
     assert "payload.report?.markdown" in bridge
     assert "markdown_report_language_mismatch" in bridge
@@ -230,7 +239,12 @@ def test_accepted_source_and_cross_locale_draft_actions_remain_distinct() -> Non
     assert 'header("x-nico-artifact-sha256").toLowerCase() !== declaredSha' in bridge
     assert 'header("content-type").split(";", 1)[0].trim().toLowerCase() !== "application/pdf"' in bridge
     assert "responseLanguage !== acceptedPdfIdentity?.reportLanguage" in workspace
-    assert "REPORT_LOCALE_CHANGE_EVENT" in workspace
+    actions = source("apps/web/app/assessment/useReportActionState.ts")
+    assert 'from "./useReportActionState"' in workspace
+    assert "requestedReportLanguage, reportLocaleError} = useReportActionState(locale)" in workspace
+    assert "setRequestedReportLanguage(reportLanguageForRequest(locale))" in actions
+    assert "window.addEventListener(REPORT_LOCALE_CHANGE_EVENT, syncRequestedReportLanguage)" in actions
+    assert "window.removeEventListener(REPORT_LOCALE_CHANGE_EVENT, syncRequestedReportLanguage)" in actions
     assert 'data-report-language={acceptedPdfIdentity?.reportLanguage}' in workspace
     assert 'data-report-language={requestedReportLanguage}' in workspace
 

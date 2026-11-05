@@ -30,10 +30,12 @@ def test_phase1_audit_keeps_dependency_reachability_fail_safe() -> None:
 
 def test_runtime_revalidates_retained_triage_before_workload_routing() -> None:
     source = RUNTIME_PATCH.read_text(encoding="utf-8")
-    triage = source.index("register = apply_candidate_technical_triage(register)")
+    triage = source.index("register = apply_candidate_technical_triage(")
     revalidate = source.index("register = revalidate_retained_candidate_triage(register)")
     refine = source.index("return refine_candidate_review_workload(register)")
 
     assert triage < revalidate < refine
+    assert "source_capture=scan.get('candidate_source_observations')" in source[triage:revalidate]
+    assert "if scan.get('snapshot_commit_sha') == commit_sha else None" in source[triage:revalidate]
     assert '"client_delivery_allowed": False' in source
     assert '"human_approval_may_carry_forward": False' in source

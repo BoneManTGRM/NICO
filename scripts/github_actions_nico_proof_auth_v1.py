@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import http.client
 import json
 import os
+import stat
+import sys
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
@@ -9,6 +14,57 @@ from typing import Any
 DEFAULT_AUDIENCE = "https://app.nicoaudit.com/nico-production-proof"
 SESSION_COOKIE = "nico-specialist-session"
 SESSION_HEADER = "X-NICO-Operator-Session"
+
+
+_PROOF_SECRETS: set[str] = set()
+
+# Script entrypoints and package callers must share the same redaction registry.
+for _alias in ('github_actions_nico_proof_auth_v1', 'scripts.github_actions_nico_proof_auth_v1'):
+    sys.modules.setdefault(_alias, sys.modules[__name__])
+
+
+def _runner_mask_command(value: str) -> None:
+    """FD9 is reserved and opened BEFORE any retained stdout/stderr pipeline.
+
+    Affected xvfb-run versions own/close FD3 for their client; reserve FD9.
+
+    Mask data intentionally contains the credential and may go only to this
+    runner command pipe, never ordinary stdout/stderr or an artifact file.
+    Missing/closed/file-backed channels fail closed; there is no log fallback.
+    """
+    try:
+        if os.getenv('NICO_PROOF_MASK_FD') != '9' or not stat.S_ISFIFO(os.fstat(9).st_mode):
+            raise ValueError
+        escaped = value.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+        data = ('::add-mask::' + escaped + '\n').encode('utf-8')
+        while data:
+            written = os.write(9, data)
+            if written <= 0:
+                raise OSError
+            data = data[written:]
+    except (OSError, ValueError):
+        raise RuntimeError('production_proof_runner_mask_channel_unavailable') from None
+
+
+def _register_proof_secret(value: str) -> None:
+    if not value:
+        return
+    _PROOF_SECRETS.add(value)
+    if os.getenv("GITHUB_ACTIONS") == "true":
+        _runner_mask_command(value)
+
+
+def redact_proof_secrets(value: Any) -> Any:
+    """Sanitize artifacts too: Actions masks do not cover uploaded file bytes."""
+    if isinstance(value, str):
+        for secret in sorted(_PROOF_SECRETS, key=len, reverse=True):
+            value = value.replace(secret, "[REDACTED]")
+        return value
+    if isinstance(value, dict):
+        return {redact_proof_secrets(key): redact_proof_secrets(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [redact_proof_secrets(item) for item in value]
+    return value
 
 
 def _https_origin(value: str) -> str:
@@ -29,11 +85,41 @@ def _read_json(response: Any) -> dict[str, Any]:
     return value
 
 
+def _open_oidc_response(request: urllib.request.Request, deadline: float) -> Any:
+    """Retry only temporary HTTP gateway/service failures before token parsing.
+
+    Three attempts share a 30-second monotonic budget, with 1/2-second backoff.
+    Each socket timeout is capped at 10 seconds (previously 30 for the single GET).
+    urllib's timeout bounds socket operations, not total wall time; callers must
+    also reject a response that finishes after the deadline before exchanging it.
+    """
+    for attempt in range(3):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("github_actions_oidc_get_deadline_exceeded")
+        try:
+            return urllib.request.urlopen(request, timeout=min(10.0, remaining))
+        except urllib.error.HTTPError as exc:
+            status = exc.code
+            exc.close()
+            if status not in {502, 503, 504}:
+                raise RuntimeError("github_actions_oidc_get_http_failure") from None
+            if attempt == 2:
+                raise RuntimeError("github_actions_oidc_get_temporary_failure_exhausted") from None
+        except (urllib.error.URLError, OSError, http.client.HTTPException):
+            raise RuntimeError("github_actions_oidc_get_transport_failure") from None
+        delay = attempt + 1
+        if deadline - time.monotonic() <= delay:
+            raise RuntimeError("github_actions_oidc_get_deadline_exceeded")
+        time.sleep(delay)
+    raise AssertionError("unreachable")
+
+
 def acquire_production_proof_session(frontend_url: str) -> tuple[str, dict[str, str]]:
     """Exchange the current GitHub Actions OIDC identity for a restricted NICO session.
 
-    Neither the GitHub OIDC token nor the resulting NICO session is printed, persisted,
-    written to workflow outputs, or included in retained proof artifacts.
+    Credentials are registered with Actions masking, never emitted as ordinary
+    log text or workflow outputs. Registered values are scrubbed from proof artifacts.
     """
 
     origin = _https_origin(frontend_url)
@@ -41,6 +127,7 @@ def acquire_production_proof_session(frontend_url: str) -> tuple[str, dict[str, 
     request_token = str(os.getenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "")).strip()
     if not request_url or not request_token:
         raise ValueError("github_actions_oidc_environment_unavailable")
+    _register_proof_secret(request_token)
     audience = str(
         os.getenv("NICO_GITHUB_ACTIONS_OIDC_AUDIENCE", DEFAULT_AUDIENCE)
     ).strip()
@@ -54,12 +141,22 @@ def acquire_production_proof_session(frontend_url: str) -> tuple[str, dict[str, 
             "User-Agent": "nico-production-proof-auth",
         },
     )
-    with urllib.request.urlopen(oidc_request, timeout=30) as response:
-        oidc_payload = _read_json(response)
-    oidc_token = str(oidc_payload.get("value") or "").strip()
-    if not oidc_token:
+    deadline = time.monotonic() + 30.0
+    with _open_oidc_response(oidc_request, deadline) as response:
+        try:
+            oidc_payload = _read_json(response)
+        except (ValueError, UnicodeError):
+            raise ValueError("github_actions_oidc_response_invalid") from None
+        except (urllib.error.URLError, OSError, http.client.HTTPException):
+            raise RuntimeError("github_actions_oidc_get_transport_failure") from None
+    if time.monotonic() >= deadline:
+        raise RuntimeError("github_actions_oidc_get_deadline_exceeded")
+    oidc_token = oidc_payload.get("value")
+    if not isinstance(oidc_token, str) or not oidc_token.strip():
         raise ValueError("github_actions_oidc_token_unavailable")
+    oidc_token = oidc_token.strip()
 
+    _register_proof_secret(oidc_token)
     exchange_request = urllib.request.Request(
         origin + "/api/nico/ci-session",
         data=b"",
@@ -74,6 +171,7 @@ def acquire_production_proof_session(frontend_url: str) -> tuple[str, dict[str, 
     with urllib.request.urlopen(exchange_request, timeout=45) as response:
         session_payload = _read_json(response)
     session = str(session_payload.get("session_token") or "").strip()
+    _register_proof_secret(session)
     scope = str(session_payload.get("scope") or "").strip()
     release_sha = str(session_payload.get("release_sha") or "").strip().lower()
     expected_sha = str(os.getenv("RELEASE_SHA", "")).strip().lower()
