@@ -31,13 +31,19 @@ _PRODUCERS = (
     'phase15_production_integration_v1', 'phase16_client_delivery_verification_v1',
     'phase17_canonical_artifact_rebuild_v1', 'v2_premium_report_renderer',
     'v2_pipeline_adapter', 'source_function_conformance_report_v1',
+    'scanner_evidence_pipeline_v1', 'comprehensive_authoritative_scanner_truth_v62',
+    'comprehensive_client_readiness_v59', 'comprehensive_scanner_stage_wording_v1',
+    'snapshot_repository_evidence', 'scanner_worker',
+    'comprehensive_retained_scanner_evidence_v1', 'comprehensive_requested_scanner_projection_v62',
 )
+_SCANNERS = frozenset(('bandit', 'semgrep', 'eslint', 'typescript', 'gitleaks',
+                      'trufflehog', 'osv-scanner', 'pip-audit', 'npm-audit', 'lizard'))
 _MAX_SOURCE_BYTES = 1_000_000
 _MAX_NODES = 100_000
 
 
 def _source_locations(source: str):
-    """Separate complete static literals from tentative long f-string prefixes."""
+    """Separate static literals from tentative long f-string prefixes/fragments."""
     tree = ast.parse(source)
     pending = [tree]
     visited = 0
@@ -53,6 +59,14 @@ def _source_locations(source: str):
                     prefix = ' '.join(prefix[:180].split())
                     if len(prefix) >= 32:
                         yield 'dynamic', prefix, node.lineno
+            for part in node.values:
+                visited += 1
+                if visited > _MAX_NODES:
+                    raise ValueError('source_catalog_budget')
+                if isinstance(part, ast.Constant) and type(part.value) is str:
+                    fragment = ' '.join(part.value[:180].split())
+                    if len(fragment) >= 32:
+                        yield 'fragment', fragment, node.lineno
             continue
         if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
             continue
@@ -66,7 +80,7 @@ def _source_locations(source: str):
 
 @lru_cache(maxsize=1)
 def _source_catalog():
-    catalog = {'static': {}, 'dynamic': {}}
+    catalog = {'static': {}, 'dynamic': {}, 'fragment': {}}
     root = Path(__file__).resolve().parent
     for module in _PRODUCERS:
         try:
@@ -91,10 +105,17 @@ def spanish_translation_failure_diagnostic(error):
         return result
     result['field'] = field
     catalog = _source_catalog()
-    matches = catalog['static'].get(snippet, set())
+    matches = set(catalog['static'].get(snippet, set()))
+    scanner, scanner_separator, detail = snippet.partition(': ')
+    detail_matches = set()
+    if scanner_separator and scanner.casefold() in _SCANNERS:
+        detail_matches = catalog['static'].get(detail, set())
+        matches.update(detail_matches)
     if len(matches) == 1:
         module, line = next(iter(matches))
         result.update(source_match='unique_static_literal', source_module=module, source_line=line)
+        if detail_matches:
+            result['source_scope'] = 'scanner_detail'
     elif matches:
         result['source_match'] = 'ambiguous_static_literal'
     else:
@@ -107,4 +128,14 @@ def spanish_translation_failure_diagnostic(error):
             result.update(source_match='unique_dynamic_prefix_candidate', source_module=module, source_line=line)
         elif candidates:
             result['source_match'] = 'ambiguous_dynamic_prefix_candidate'
+        else:
+            fragments = set()
+            for fragment, locations in catalog.get('fragment', {}).items():
+                if fragment in snippet:
+                    fragments.update(locations)
+            if len(fragments) == 1:
+                module, line = next(iter(fragments))
+                result.update(source_match='unique_dynamic_fragment_candidate', source_module=module, source_line=line)
+            elif fragments:
+                result['source_match'] = 'ambiguous_dynamic_fragment_candidate'
     return result
