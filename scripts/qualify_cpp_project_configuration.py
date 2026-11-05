@@ -207,6 +207,75 @@ def qualification_probe_receipt(value):
     return projected
 
 
+def runtime_failure_diagnostic(probe, plan):
+    """Bounded classifications only; never copy arbitrary evidence into logs."""
+    probe = probe if isinstance(probe, dict) else {}
+    runtime = probe.get('runtime_evidence')
+    value = runtime if isinstance(runtime, dict) else {}
+    schemas = {'nico.cpp-runtime-evidence.v' + str(n) for n in range(1, 5)}
+    schema = value.get('schema')
+    known_schema = isinstance(schema, str) and schema in schemas
+    fields = {'schema', 'plan_sha256', 'functional', 'sanitizers', 'fuzz',
+              'complete', 'error', 'duration_ms'}
+    if known_schema and schema != 'nico.cpp-runtime-evidence.v1':
+        fields.add('reclamations')
+    if known_schema and schema in {'nico.cpp-runtime-evidence.v3', 'nico.cpp-runtime-evidence.v4'}:
+        fields.add('failure_diagnostics')
+    allowed_errors = {
+        'worker_configuration_probe_native_tests_failed',
+        'worker_configuration_probe_compiler_failed',
+        'worker_configuration_probe_compiler_evidence_invalid',
+        'worker_configuration_probe_compiler_incomplete',
+        'worker_configuration_probe_snapshot_failed',
+        'worker_configuration_probe_snapshot_invalid',
+        'worker_configuration_probe_snapshot_capacity_exceeded',
+        'worker_configuration_probe_interrupted',
+        'worker_configuration_probe_failed',
+    }
+    error = probe.get('error')
+    status = probe.get('status')
+    duration = value.get('duration_ms')
+    budget = plan.get('total_seconds') if isinstance(plan, dict) else None
+    try:
+        digest_matches = value.get('plan_sha256') == hashlib.sha256(canonical_bytes(plan)).hexdigest()
+    except (TypeError, ValueError):
+        digest_matches = False
+    import re
+    runtime_error = value.get('error')
+    return {
+        'schema': 'nico.cpp-runtime-failure-diagnostic.v1',
+        'probe_status': status if isinstance(status, str) and status in
+            {'UNPROVEN', 'BASELINE_EXECUTED', 'CONFIGURATION_CAPTURED'} else 'other',
+        'probe_error': error if isinstance(error, str) and error in allowed_errors else
+            'none' if error is None else 'other',
+        'runtime_present': runtime is not None,
+        'runtime_is_object': isinstance(runtime, dict),
+        'runtime_schema_known': known_schema,
+        'runtime_fields_match': isinstance(runtime, dict) and set(runtime) == fields,
+        'plan_digest_matches': digest_matches,
+        'plan_budget_valid': type(budget) is int and budget == 6000,
+        'complete_is_boolean': type(value.get('complete')) is bool,
+        'duration_is_integer': type(duration) is int,
+        'duration_in_bounds': type(duration) is int and type(budget) is int
+            and 0 <= duration <= (budget + 5) * 1000,
+        'runtime_error_format_valid': runtime_error is None or
+            isinstance(runtime_error, str) and re.fullmatch(r'worker_runtime_[a-z_]+', runtime_error) is not None,
+    }
+
+
+def validate_qualification_runtime(raw, targets, options, scope, probe, plan):
+    """Keep rejection authoritative; diagnostics cannot change its exception."""
+    from nico.assessment_cpp_runtime_scope import validate_retained_runtime
+    try:
+        return validate_retained_runtime(raw, targets, options, scope)
+    except ValueError:
+        try:
+            print(json.dumps(runtime_failure_diagnostic(probe, plan), sort_keys=True), flush=True)
+        except Exception:
+            pass  # A log/output failure must not replace the original rejection.
+        raise
+
+
 def qualify_configuration_checkout(args):
     """Prepare the next frozen execution contract using real isolated configure."""
     from nico.assessment_cpp_full_project import _json
@@ -296,11 +365,11 @@ def qualify_configuration_checkout(args):
             evidence['status']=result['status']
             evidence.update(compiled=result['compiled'], tests_executed=result['tests_executed'])
             if runtime_plan is not None:
-                from nico.assessment_cpp_runtime_scope import retained_runtime_bytes, validate_retained_runtime
+                from nico.assessment_cpp_runtime_scope import retained_runtime_bytes
                 runtime_raw=retained_runtime_bytes(runtime_interfaces,runtime_plan,result.get('runtime_evidence'))
                 reference=persist_project_artifact(args.output,'project-runtime-evidence',runtime_raw)
-                reconstructed=validate_retained_runtime(runtime_raw,evidence['source']['targets'],
-                    manifest['project_options'],runtime_scope)
+                reconstructed=validate_qualification_runtime(runtime_raw,evidence['source']['targets'],
+                    manifest['project_options'],runtime_scope,result,runtime_plan)
                 evidence['runtime']={'complete':reconstructed['summary']['complete'],
                     'artifact':reference,'native_evidence_sha256':reconstructed['native_evidence_sha256'],
                     'duration_ms':reconstructed['duration_ms']}
