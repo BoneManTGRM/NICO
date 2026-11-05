@@ -110,7 +110,12 @@ def compiler_message_categories(raw):
         driver = re.fullmatch(
             r'(?:cc1plus|cc1|g\+\+|gcc|c\+\+|/usr/local/bin/g\+\+|/usr/local/bin/gcc): '
             r'(?P<kind>fatal error|error|internal compiler error): (?P<message>.*)', line)
-        located = _LOCATION.fullmatch(line)
+        # Classification may observe a generated/private/toolchain location,
+        # but never returns that location. Public path disclosure remains
+        # separately restricted by locations() and the frozen inventory.
+        located = re.fullmatch(
+            r'[^:\r\n]{1,512}:[1-9][0-9]{0,6}:(?:[1-9][0-9]{0,6}:)? '
+            r'(?P<kind>fatal error|error|internal compiler error): (?P<message>.*)', line)
         match = driver or located
         if match is None or match['kind'] == 'runtime error':
             continue
