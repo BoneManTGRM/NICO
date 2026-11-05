@@ -207,6 +207,19 @@ def qualification_probe_receipt(value):
     return projected
 
 
+def validate_qualification_collection(evidence, read_artifact, **kwargs):
+    from nico.assessment_cpp_collection import validate_project_collection
+    from nico.qualification_failure_diagnostics import collection_failure_diagnostic
+    try:
+        return validate_project_collection(evidence, read_artifact, **kwargs)
+    except ValueError:
+        try:
+            print(json.dumps(collection_failure_diagnostic(evidence)), flush=True)
+        except Exception:
+            pass
+        raise
+
+
 def runtime_failure_diagnostic(probe, plan):
     """Bounded classifications only; never copy arbitrary evidence into logs."""
     probe = probe if isinstance(probe, dict) else {}
@@ -385,12 +398,11 @@ def qualify_configuration_checkout(args):
         print(json.dumps({'status':evidence['status'],'stage':evidence['stage'],
                           'compiled':evidence['compiled'],'tests_executed':evidence['tests_executed'],'production_qualified':False}))
     if collection_policy:
-        from nico.assessment_cpp_collection import validate_project_collection
         from nico.assessment_cpp_project_snapshot import _stable_bytes, PROJECT_GENERATED_STREAM_LIMIT
         # The CLI accepts relative output paths. Preserve no-follow descriptor
         # reads: make the root absolute without resolving symbolic links.
         artifact_root = args.output.absolute()
-        decision = validate_project_collection(evidence,
+        decision = validate_qualification_collection(evidence,
             lambda ref: _stable_bytes(artifact_root, ref['path'], PROJECT_GENERATED_STREAM_LIMIT),
             manifest_raw=raw, baseline_raw=raw_execution, scope_raw=raw_runtime,
             producer_source_sha=producer, image=args.image)

@@ -218,6 +218,31 @@ def advance_diagnostic_run(service, run_id, record):
     return service.resume(run_id, max_stages=1)
 
 
+def emit_scanner_failure_diagnostic(record):
+    # Only this isolated qualification CLI emits provider classifications.
+    from nico.qualification_failure_diagnostics import classification, object_value
+    try:
+        stage = object_value(object_value(record.get('stage_results')).get('dependency_security_static_analysis'))
+        if stage.get('status') != 'blocked':
+            return
+        retained = object_value(stage.get('scanner_diagnostic'))
+        result = {'schema': 'nico.scanner-failure-diagnostic.v1',
+                  'reason': classification(stage.get('reason'), ('attached_snapshot_required', 'snapshot_scanner_not_verified'))}
+        for key, allowed in {
+            'status': ('queued', 'running', 'complete', 'unavailable', 'failed', 'error', 'cancelled', 'blocked', 'partial'),
+            'current_stage': ('execution_limited', 'complete', 'snapshot_verification_failed', 'worker_cleanup_unconfirmed', 'failed', 'error', 'queued', 'running'),
+            'execution_limit_reason': ('repository_size_limit_exceeded', 'repository_size_unverified'),
+        }.items():
+            result[key] = classification(retained.get(key), allowed)
+        for key in ('snapshot_match', 'execution_limit_present', 'tools_run_present', 'failed_tools_present',
+                    'timed_out_tools_present', 'unavailable_tools_present'):
+            result[key] = retained.get(key) is True
+        print(json.dumps(result), flush=True)
+    except Exception:
+        # Optional diagnostics cannot replace or conceal the qualification failure.
+        pass
+
+
 def poll_diagnostic_run(service, run_id, record, *, started, language):
     last_progress = None
     while not record.get("terminal") and record.get("status") not in {"blocked", "failed", "error"}:
@@ -231,6 +256,7 @@ def poll_diagnostic_run(service, run_id, record, *, started, language):
             last_progress = progress
         if not record.get("terminal"):
             time.sleep(2)
+    emit_scanner_failure_diagnostic(record)
     return record
 
 
