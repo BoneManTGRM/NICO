@@ -10,7 +10,12 @@ Shift+Tab and Enter. They require the current-page marker, native focus-visible
 state and changed focus styles, keyboard opening of More, locale-preserving links,
 and removal/replacement of stale run/customer/project/edition scope. Primary,
 brand and language hrefs are checked before and after the URL transition. Final
-Review is activated with Enter and its observed navigation URL is checked exactly.
+Review is tested after a full document navigation to the actual reviewer workspace,
+where operator links belong. On assessment pages, More is opened and the operator
+group must be hidden with aria-hidden=true; exposed menu links remain keyboard
+reachable. On the reviewer workspace, Final Review is activated with Enter and its
+observed navigation URL is checked exactly. Each completed case records both
+the public-page boundary and operator source route.
 
 Reset and run switch are simulated through native history.replaceState; this is
 not a test of the application's reset button or assessment creation. Primary and

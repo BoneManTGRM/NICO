@@ -116,29 +116,27 @@ def run(browser, origin, base_classifier, raw, cases, start, artifact_limit):
                 tab_to(page, more)
                 page.keyboard.press('Enter')
                 assert nav.locator('.nav-more').get_attribute('open') is not None
-                tab_to(page, final)
-                old_expected = {k: [v] for k, v in OLD_SCOPE.items()}
-                old_expected['service'] = ['comprehensive']
-                if locale == 'es-MX':
-                    old_expected['lang'] = ['es-MX']
-                validate_destination(origin + final.get_attribute('href'), origin, old_expected)
+                operator = nav.locator('.nav-more-group').filter(
+                    has=page.locator('a[href^="/operations/final-review"]'))
+                assert operator.count() == 1
+                page.wait_for_function("""() => {
+                    const link=document.querySelector('a[href^="/operations/final-review"]');
+                    const group=link?.closest('.nav-more-group');
+                    return group?.hidden === true && group.getAttribute('aria-hidden') === 'true';
+                }""")
+                assert operator.is_hidden()
+                # With More open, traverse every exposed menu link. Hidden operator
+                # controls must never receive keyboard focus on the public page.
+                public_links = nav.locator('.nav-more-panel a:visible')
+                assert public_links.count() > 0
+                for index in range(public_links.count()):
+                    tab_to(page, public_links.nth(index))
+                    assert not operator.evaluate('el => el.contains(document.activeElement)')
 
                 # Native replaceState models the application's reset/switch URL boundary.
                 # No link DOM or application handler is replaced by the test.
                 query = {**scope, 'new_assessment': 'synthetic'} if case == 'reset' else scope
                 page.evaluate('(url) => history.replaceState(null, "", url)', path + '?' + urlencode(query))
-                page.keyboard.press('Shift+Tab')
-                assert not final.evaluate('el => el === document.activeElement')
-                unfocused = final.evaluate(STYLE)
-                page.keyboard.press('Tab')
-                assert final.evaluate("el => el === document.activeElement && el.matches(':focus-visible')")
-                page.wait_for_function('(before) => {const el=document.activeElement;'
-                                       'return (' + STYLE + ')(el)!==before;}', arg=unfocused)
-                focused = final.evaluate(STYLE)
-                expected = expected_scope(locale, case)
-                validate_destination(origin + final.get_attribute('href'), origin, expected)
-                # Traverse back through the real menu, then verify all primary links
-                # also refresh after the same reset/switch boundary.
                 tab_to(page, brand, key='Shift+Tab')
                 for link, expected_path in ((brand, path), (primary, path), (language,
                         '/assessment' if locale == 'es-MX' else '/es/assessment')):
@@ -150,7 +148,39 @@ def run(browser, origin, base_classifier, raw, cases, start, artifact_limit):
                     for field in OLD_SCOPE:
                         assert observed.get(field) == ([scope[field]] if field in scope else None)
                     assert observed.get('new_assessment') == (['synthetic'] if case == 'reset' else None)
+                assert operator.evaluate("el => el.hidden && el.getAttribute('aria-hidden') === 'true'")
+
+                # A real document navigation resets the public guard's hidden DOM.
+                # Final Review belongs to the operator workspace, not assessment.
+                workspace = '/operations/reviewer-queue'
+                locale_query = {'lang': 'es-MX'} if locale == 'es-MX' else {}
+                page.goto(origin + workspace + '?' + urlencode({**OLD_SCOPE, **locale_query}),
+                          wait_until='domcontentloaded', timeout=10000)
+                page.wait_for_function('(locale) => document.querySelector(".global-nav")?.dataset.locale === locale',
+                                       arg='es-MX' if locale == 'es-MX' else 'en-US')
+                page.wait_for_function("""() => {
+                    const link=document.querySelector('a[href^="/operations/final-review"]');
+                    return link && new URL(link.href).searchParams.get('run_id') === 'comprun_old';
+                }""")
+                page.evaluate('document.fonts.ready')
+                tab_to(page, more)
+                page.keyboard.press('Enter')
+                assert nav.locator('.nav-more').get_attribute('open') is not None
                 tab_to(page, final)
+                old_expected = {k: [v] for k, v in {**OLD_SCOPE, **locale_query}.items()}
+                old_expected['service'] = ['comprehensive']
+                validate_destination(origin + final.get_attribute('href'), origin, old_expected)
+                page.evaluate('(url) => history.replaceState(null, "", url)',
+                              workspace + '?' + urlencode({**query, **locale_query}))
+                page.keyboard.press('Shift+Tab')
+                assert not final.evaluate('el => el === document.activeElement')
+                unfocused = final.evaluate(STYLE)
+                page.keyboard.press('Tab')
+                assert final.evaluate("el => el === document.activeElement && el.matches(':focus-visible')")
+                page.wait_for_function('(before) => {const el=document.activeElement;'
+                                       'return (' + STYLE + ')(el)!==before;}', arg=unfocused)
+                focused = final.evaluate(STYLE)
+                expected = expected_scope(locale, case)
                 validate_destination(origin + final.get_attribute('href'), origin, expected)
                 screenshot = None
                 if case == 'reset':
@@ -168,6 +198,8 @@ def run(browser, origin, base_classifier, raw, cases, start, artifact_limit):
                 assert not [r for r in requests if r['method'] != 'GET'], requests
                 cases.append({'locale': locale, 'case': case, 'status': 'passed',
                               'native_keys': ['Tab', 'Shift+Tab', 'Enter'],
+                              'assessment_operator_links_hidden': True,
+                              'final_review_source_path': workspace,
                               'primary_focus_styles': [primary_unfocused, primary_focused],
                               'final_review_focus_styles': [unfocused, focused],
                               'destination': destinations[0], 'requests': requests,
