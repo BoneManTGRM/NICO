@@ -254,6 +254,10 @@ def collect_project_compiler(request):
                 raise ValueError('worker_project_compiler_deadline')
             if context['origin'] == 'original':
                 _verify_input('/work/source', context['path'], request['targets'][context['path']])
+            # Source verification consumes the same shared allocation. Never
+            # start a compiler after that work has exhausted the deadline.
+            if time.monotonic() >= deadline:
+                raise ValueError('worker_project_compiler_deadline')
             stem = str(directory / ('u' + str(context['index'])))
             record['execution'] = _run(context['invocation'], stem,
                 min(deadline, time.monotonic() + limits['case_seconds']), environment)
