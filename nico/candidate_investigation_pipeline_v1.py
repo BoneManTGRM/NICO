@@ -9,12 +9,85 @@ import time
 from nico.candidate_source_observations_v1 import observe_python_source, investigate_candidate, candidate_source_path
 
 from nico.candidate_source_reason_detail_v1 import capture_detail, packet_detail
+from nico.candidate_call_resolution_v1 import candidate_call_fact, VERSION as CALL_VERSION, QUALIFIED_APIS
 
 from nico import dependency_identity_evidence_v1 as dependency_identity
+from nico import exception_handler_evidence_v1 as handler_evidence
 
 VERSION = 'nico.persisted-candidate-investigation.v1'
 REASONS = frozenset({'source_scope_unavailable_or_stale', 'investigation_budget_exhausted', 'source_identity_mismatch', 'unsupported_or_missing_exact_source_evidence', 'source_parse_unavailable', 'source_file_binding_mismatch', 'source_line_missing', 'rule_semantics_require_specialist_review', 'rule_source_line_mismatch', 'ambiguous_call_expression', 'retained_observation_invalid', 'exact_line_structure_only'})
 SCOPE_KEYS = ('run_id', 'repository', 'commit_sha', 'customer_id', 'project_id')
+
+
+# Optional evidence extension; legacy packets remain readable but cannot claim binding.
+BINDING_VERSION = 'nico.reviewer-lexical-binding.v1'
+BINDING_MAX_BYTES = 2048
+BINDING_TOTAL_BYTES = 256 * 1024
+BINDING_FIELDS = frozenset({'version', 'resolver_version', 'api', 'import_line', 'line',
+    'source_sha256', 'blob_oid', 'scope', 'path', 'candidate_input_sha256'})
+
+
+ARGUMENT_ENUMS = {
+    'argument_form': frozenset({'sequence_expression', 'literal_text', 'dynamic_or_absent'}),
+    'executable_path': frozenset({'absolute_literal', 'relative_literal', 'unknown'}),
+    'shell_keyword': frozenset({'true', 'false', 'unspecified', 'dynamic'}),
+}
+
+
+def _sanitize_arguments(value):
+    """Preserve existing syntax enums only; absence never means shell=False.
+
+    At most three short enum strings. Embedded API binding is not qualified proof
+    and neither it nor source/argument values belong in persisted assistance.
+    """
+    if not isinstance(value, Mapping):
+        return {}
+    return {key: value[key] for key, allowed in ARGUMENT_ENUMS.items()
+            if isinstance(value.get(key), str) and value[key] in allowed}
+
+
+def _binding_size(value):
+    return len(json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode())
+
+
+def _display_binding(value, row, scope, reference):
+    """Validate a trusted persisted proof, not an issuer authentication mechanism.
+
+    Reads never parse source. Only investigate_register issues this extension from
+    the trusted capture; a scanner-supplied field on a candidate is never consumed.
+    """
+    if not isinstance(value, Mapping) or set(value) != BINDING_FIELDS:
+        return None
+    if (value.get('version') != BINDING_VERSION or value.get('resolver_version') != CALL_VERSION
+            or not isinstance(value.get('api'), str) or value.get('api') not in QUALIFIED_APIS or value.get('scope') != scope
+            or not all(isinstance(scope.get(k), str) and scope[k] for k in SCOPE_KEYS)
+            or value.get('candidate_input_sha256') != fingerprint(row)
+            or value.get('path') != candidate_source_path(row.get('source_path') or row.get('path'))
+            or not value.get('path') or row.get('category') != 'static'
+            or (row.get('scanner') or row.get('tool')) != 'bandit'
+            or (row.get('rule_id') or row.get('rule')) not in {'B603', 'B607'}
+            or type(value.get('line')) is not int or value['line'] != row.get('line')
+            or type(value.get('import_line')) is not int or not 0 < value['import_line'] < value['line']
+            or value.get('source_sha256') != reference.get('source_sha256')
+            or value.get('line') != reference.get('line')
+            or not re.fullmatch('[0-9a-f]{64}', str(value.get('source_sha256', '')))
+            or not re.fullmatch('[0-9a-f]{40}', str(value.get('blob_oid', '')))):
+        return None
+    try:
+        if _binding_size(value) > BINDING_MAX_BYTES:
+            return None
+    except (TypeError, ValueError):
+        return None
+    return dict(value)
+
+
+def _issue_binding(row, capture, scope, reference):
+    fact = candidate_call_fact(row, capture, scope)
+    if not fact or fact.get('status') != 'resolved':
+        return None
+    value = {key: fact[key] for key in ('api', 'import_line', 'line', 'source_sha256', 'blob_oid', 'scope', 'path')}
+    value.update(version=BINDING_VERSION, resolver_version=CALL_VERSION, candidate_input_sha256=fingerprint(row))
+    return _display_binding(value, row, scope, reference)
 
 
 def scope_of(value):
@@ -104,6 +177,7 @@ def investigate_register(register, retained, scope, *, clock=time.monotonic):
     if not isinstance(observations, Mapping):
         observations = {}
     packets = []
+    binding_bytes = 0
     identity_bytes = 0
     identity_cache = {}
     identity_attempted = 0
@@ -146,14 +220,41 @@ def investigate_register(register, retained, scope, *, clock=time.monotonic):
                 identity = proposal
                 identity_bytes += size
         reference = packet.get('source_reference') or {}
+        binding = _issue_binding(row, retained, scope, reference) if valid and packet['bounded_rule_analysis_completed'] else None
+        if binding is not None:
+            size = _binding_size(binding)
+            if binding_bytes + size > BINDING_TOTAL_BYTES:
+                binding = None
+            else:
+                binding_bytes += size
         # Persist compact versioned reasoning codes, not repeated prose and scope.
         packets.append({**({'dependency_identity': identity} if identity else {}), 'candidate_id': row.get('candidate_id'),
             'candidate_input_sha256': fingerprint(row), 'rule_id': row.get('rule_id') or row.get('rule'),
             'bounded_rule_analysis_completed': packet['bounded_rule_analysis_completed'],
             'reason': packet.get('reason', 'unresolved'),
             'source_reference': {k: reference[k] for k in ('source_sha256', 'line') if k in reference},
-            'argument_observations': packet.get('argument_observations', {}),
+            'argument_observations': _sanitize_arguments(packet.get('argument_observations')),
+            **({'lexical_binding': binding} if binding is not None else {}),
             **({'source_availability_detail': detail} if detail is not None else {})})
+    # Optional facts follow all baseline investigations, so their work cannot
+    # consume another candidate's existing analysis budget or completion slot.
+    handler_bytes = 0
+    handler_attempts = 0
+    if valid and handler_evidence.CAPTURE_FIELD in retained:
+        for row, packet in zip(register.get('findings') or [], packets):
+            if handler_attempts >= handler_evidence.RECEIPT_COUNT_LIMIT or clock() - started >= 2:
+                break
+            if not handler_evidence.eligible(row) or packet['reason'] != 'rule_semantics_require_specialist_review':
+                continue
+            handler_attempts += 1
+            receipt = handler_evidence.qualify(row, retained, scope)
+            if clock() - started >= 2:
+                break
+            if receipt is not None:
+                size = handler_evidence.encoded_size(receipt)
+                if handler_bytes + size <= handler_evidence.RECEIPT_TOTAL_BYTES:
+                    packet['exception_handler'] = receipt
+                    handler_bytes += size
     return {'artifact_schema': VERSION, 'scope': scope, 'input_sha256': fingerprint(register.get('findings') or []),
             'candidate_count': len(packets),
             'dependency_identity_attempted_count': identity_attempted,
@@ -184,9 +285,12 @@ def display_investigation(register, scope, *, trusted_capture=None):
             or value.get('input_sha256') != fingerprint(rows) or len(value.get('packets', [])) != len(rows)):
         return {'available': False, 'reason': 'retained_investigation_missing_or_stale', 'packets': []}
     packets = []
+    binding_bytes = 0
     identity_cache = {}
     identity_output_bytes = 0
-    for row, packet in zip(rows, value['packets']):
+    handler_output_bytes = 0
+    handler_attempts = 0
+    for record_index, (row, packet) in enumerate(zip(rows, value['packets'])):
         if (not isinstance(row, Mapping) or not isinstance(packet, Mapping)
                 or not isinstance(packet.get('source_reference', {}), Mapping)
                 or packet.get('candidate_input_sha256') != fingerprint(row)):
@@ -205,6 +309,13 @@ def display_investigation(register, scope, *, trusted_capture=None):
         reason = packet.get('reason') if isinstance(packet.get('reason'), str) and packet['reason'] in REASONS else 'unresolved'
         if claimed_complete and not valid_reference:
             reason = 'retained_observation_invalid'
+        binding = _display_binding(packet.get('lexical_binding'), row, scope_of(scope), reference) if claimed_complete and valid_reference else None
+        if binding is not None:
+            size = _binding_size(binding)
+            if binding_bytes + size > BINDING_TOTAL_BYTES:
+                binding = None
+            else:
+                binding_bytes += size
         identity = packet.get('dependency_identity')
         qualified_identity = None
         if (row.get('category') == 'dependency' and isinstance(identity, Mapping)
@@ -223,12 +334,26 @@ def display_investigation(register, scope, *, trusted_capture=None):
             if expected is not None and identity == expected and identity_output_bytes + size <= 262144:
                 qualified_identity = expected
                 identity_output_bytes += size
+        handler = None
+        if (handler_evidence.eligible(row) and not claimed_complete
+                and reason == 'rule_semantics_require_specialist_review'
+                and isinstance(packet.get('exception_handler'), Mapping)
+                and handler_attempts < handler_evidence.RECEIPT_COUNT_LIMIT):
+            handler_attempts += 1
+            expected = handler_evidence.qualify(row, trusted_capture, scope_of(scope))
+            if expected is not None and packet['exception_handler'] == expected:
+                size = handler_evidence.encoded_size(expected)
+                if handler_output_bytes + size <= handler_evidence.RECEIPT_TOTAL_BYTES:
+                    handler = expected
+                    handler_output_bytes += size
         packets.append({**({'dependency_identity': qualified_identity} if qualified_identity else {}),
                         **({'dependency_next_step': dependency_identity.next_step(row, trusted_capture, scope_of(scope), qualified=qualified_identity is not None)} if row.get('category') == 'dependency' else {}),
-                        'record_index': len(packets), 'candidate_input_sha256': fingerprint(row),
+                        'record_index': record_index, 'candidate_input_sha256': fingerprint(row),
+                        **({'lexical_binding': binding} if binding is not None else {}),
+                        **({'exception_handler': handler} if handler is not None else {}),
                         'source_path': path if safe_path else None, 'candidate_id': row.get('candidate_id'), 'rule_id': row.get('rule_id') or row.get('rule'),
                         'completed': claimed_complete and valid_reference and (row.get('rule_id') or row.get('rule')) in {'B101', 'B404', 'B405', 'B603', 'B607'},
-                        'source_sha256': source_hash if valid_hash else None,
+                        'source_sha256': handler['source_sha256'] if handler is not None else source_hash if valid_hash else None,
                         'line': row.get('line') if type(row.get('line')) is int and row['line'] > 0 else None,
                         'reason': reason,
                         **({'source_availability_detail': packet_detail(packet)} if reason == 'source_parse_unavailable' and not claimed_complete else {})})

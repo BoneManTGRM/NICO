@@ -253,7 +253,7 @@ export default function ReviewQueueBrowser({runId, refresh = 0, isCurrent, onCha
       </div>
 
       <div className={styles.queueStrip}>
-        {QUEUES.slice(1).map((item) => <button key={item.value} type="button" className={queue === item.value ? styles.activeQueue : ""} onClick={() => setQueue(item.value)}><span>{locale === "es-MX" ? item.es : item.en}</span><b>{text(queueCounts[item.value]) || "0"}</b></button>)}
+        {QUEUES.slice(1).map((item) => <button key={item.value} type="button" aria-pressed={queue === item.value} className={queue === item.value ? styles.activeQueue : ""} onClick={() => setQueue(item.value)}><span>{locale === "es-MX" ? item.es : item.en}</span><b>{text(queueCounts[item.value]) || "0"}</b></button>)}
       </div>
 
       <div className={styles.filters}>
@@ -289,7 +289,7 @@ export default function ReviewQueueBrowser({runId, refresh = 0, isCurrent, onCha
           <div className={styles.detailGrid}>
             <p><b>{tr(locale, "Cluster", "Grupo")}</b>{text(candidate.cluster_id) || "—"}</p><p><b>{tr(locale, "Confidence", "Confianza")}</b>{numberValue(candidate.technical_triage_confidence).toFixed(3)}</p><p><b>{tr(locale, "Path", "Ruta")}</b>{text(candidate.path) || text(candidate.file_path) || "—"}</p><p><b>{tr(locale, "Package / advisory", "Paquete / aviso")}</b>{text(candidate.package) || text(candidate.package_name) || text(candidate.advisory) || "—"}</p><p><b>{tr(locale, "Rule", "Regla")}</b>{text(candidate.rule) || text(candidate.rule_id) || "—"}</p><p><b>{tr(locale, "Evidence change", "Cambio en la evidencia")}</b>{text(candidate.evidence_change_state) || "—"}</p><p><b>{tr(locale, "Primary queue", "Cola principal")}</b>{text(candidate.primary_review_queue)}</p><p><b>{tr(locale, "Review mode", "Modalidad de revisión")}</b>{boolValue(candidate.individual_attention_required) ? tr(locale, "Individual", "Individual") : boolValue(candidate.grouped_review_eligible) ? tr(locale, "Grouped eligible", "Elegible para agrupación") : tr(locale, "Standard", "Estándar")}</p>
           </div>
-          <pre>{renderDetail(candidate)}</pre>
+          <pre tabIndex={0} role="region" aria-label={tr(locale, `Retained evidence for ${text(candidate.candidate_id)}`, `Evidencia conservada de ${text(candidate.candidate_id)}`)}>{renderDetail(candidate)}</pre>
         </details>)}
       </div>
 
@@ -298,7 +298,7 @@ export default function ReviewQueueBrowser({runId, refresh = 0, isCurrent, onCha
         <p>{tr(locale, "Clusters summarize homogeneous review work. Expand any cluster to inspect its exact underlying candidate IDs and retained metadata.", "Los grupos resumen trabajo homogéneo de revisión. Expande cualquier grupo para inspeccionar los ID exactos de sus candidatos subyacentes y los metadatos conservados.")}</p>
         {clusters.map((cluster) => {
           const count = Array.isArray(cluster.candidate_ids) ? cluster.candidate_ids.length : 0;
-          return <details key={text(cluster.cluster_id)}><summary><b>{text(cluster.cluster_id)}</b><span>{count} {tr(locale, count === 1 ? "candidate" : "candidates", count === 1 ? "candidato" : "candidatos")}</span></summary><pre>{JSON.stringify(cluster, null, 2)}</pre></details>;
+          return <details key={text(cluster.cluster_id)}><summary><b>{text(cluster.cluster_id)}</b><span>{count} {tr(locale, count === 1 ? "candidate" : "candidates", count === 1 ? "candidato" : "candidatos")}</span></summary><pre tabIndex={0} role="region" aria-label={tr(locale, `Retained cluster record for ${text(cluster.cluster_id)}`, `Registro de grupo conservado de ${text(cluster.cluster_id)}`)}>{JSON.stringify(cluster, null, 2)}</pre></details>;
         })}
       </section>
     </> : null}

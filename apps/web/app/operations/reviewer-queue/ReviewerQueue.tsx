@@ -328,8 +328,8 @@ function CandidateSummary({candidate, locale}: {candidate: JsonRecord; locale: L
       <div><dt>{tr(locale, "Boundary assessment", "Evaluación de límites")}</dt><dd>{text(candidate.technical_triage_boundary_assessment) || text(candidate.boundary_assessment) || tr(locale, "not established", "no establecida")}</dd></div>
     </dl>
     <div className={styles.evidenceGrid}>
-      <section><h4>{tr(locale, "Evidence used", "Evidencia utilizada")}</h4><pre>{JSON.stringify(candidate.evidence_used ?? candidate.evidence ?? [], null, 2)}</pre></section>
-      <section><h4>{tr(locale, "Counterevidence", "Contraevidencia")}</h4><pre>{JSON.stringify(candidate.counterevidence ?? [], null, 2)}</pre></section>
+      <section><h4>{tr(locale, "Evidence used", "Evidencia utilizada")}</h4><pre tabIndex={0} role="region" aria-label={tr(locale, `Evidence used for ${candidateId(candidate)}`, `Evidencia utilizada de ${candidateId(candidate)}`)}>{JSON.stringify(candidate.evidence_used ?? candidate.evidence ?? [], null, 2)}</pre></section>
+      <section><h4>{tr(locale, "Counterevidence", "Contraevidencia")}</h4><pre tabIndex={0} role="region" aria-label={tr(locale, `Counterevidence for ${candidateId(candidate)}`, `Contraevidencia de ${candidateId(candidate)}`)}>{JSON.stringify(candidate.counterevidence ?? [], null, 2)}</pre></section>
     </div>
     <p>{text(candidate.technical_triage_rationale) || tr(locale, "No automated rationale was retained.", "No se conservó una justificación automatizada.")}</p>
     {proofGaps.length ? <p className={styles.proofGap}><strong>{tr(locale, "Proof gaps:", "Brechas de evidencia:")}</strong> {proofGaps.join(" · ")}</p> : null}
@@ -351,7 +351,7 @@ function CandidateDisclosure({candidate, locale, representative = false}: {candi
       <section className={styles.canonicalRecord} data-canonical-candidate-record="true" aria-label={tr(locale, `Complete canonical record for ${candidateId(candidate)}`, `Registro canónico completo de ${candidateId(candidate)}`)}>
         <h4>{tr(locale, "Complete retained canonical candidate record", "Registro canónico completo del candidato conservado")}</h4>
         <p>{tr(locale, "All retained evidence, counterevidence, source context, dependency context, scope, reachability, exploitability, proof gaps, lineage, clustering, and technical-triage fields are shown below without creating a human disposition.", "A continuación se muestran toda la evidencia y contraevidencia conservadas, el contexto de origen y dependencias, el alcance, la alcanzabilidad, la explotabilidad, las brechas de evidencia, el linaje, la agrupación y los campos de triaje técnico, sin crear una disposición humana.")}</p>
-        <pre>{JSON.stringify(candidate, null, 2)}</pre>
+        <pre tabIndex={0} role="region" aria-label={tr(locale, `Complete canonical record for ${candidateId(candidate)}`, `Registro canónico completo de ${candidateId(candidate)}`)}>{JSON.stringify(candidate, null, 2)}</pre>
       </section>
     </div> : null}
   </details>;
@@ -391,7 +391,7 @@ function FindingDisclosure({finding, locale}: {finding: JsonRecord; locale: Loca
       <span className={styles.summaryMeta}>{location || tr(locale, "finding retained in the canonical report", "hallazgo conservado en el informe canónico")}</span>
       <span className={styles.disclosureState}><span className={styles.closedLabel}>{tr(locale, "Expand finding", "Expandir hallazgo")}</span><span className={styles.openLabel}>{tr(locale, "Collapse finding", "Contraer hallazgo")}</span></span>
     </summary>
-    <div className={styles.candidateBody}><pre className={styles.exactSourceRecord}>{JSON.stringify(finding, null, 2)}</pre></div>
+    <div className={styles.candidateBody}><pre className={styles.exactSourceRecord} tabIndex={0} role="region" aria-label={tr(locale, `Retained finding record for ${identifier}`, `Registro de hallazgo conservado de ${identifier}`)}>{JSON.stringify(finding, null, 2)}</pre></div>
   </details>;
 }
 

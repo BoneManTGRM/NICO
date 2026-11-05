@@ -79,7 +79,7 @@ def test_empty_baseline_cannot_be_relabelled_as_a_full_test_population(tmp_path)
         validate_baseline_collection(probe, contract(), no_artifacts)
 
 
-def bundle(tmp_path, *, kind='undefined'):
+def bundle(tmp_path, *, kind='undefined', image='sha256:'+'a'*64):
     """The real producer creates every transport row; only Docker is substituted."""
     from nico.assessment_cpp_configuration_probe import probe_project_configuration, READ_PROGRAM
     from nico.assessment_cpp_project_compiler import PROGRAM as COMPILER_PROGRAM
@@ -119,6 +119,11 @@ def bundle(tmp_path, *, kind='undefined'):
             super().__init__(targets)
             self.static = EnvironmentDocker(targets)
         def __call__(self, args, **kwargs):
+            if args[:3] == ['docker', 'image', 'inspect']:
+                assert args == ['docker', 'image', 'inspect', image]
+                self.calls.append((args, kwargs))
+                return {'exit_code': 0, 'timed_out': False, 'output_truncated': False,
+                        'output': json.dumps([{'Id': image}]).encode()}
             # The real producer chooses which sandbox runs each command.
             if any(arg.startswith('nico-project-static-') for arg in args):
                 return self.static(args, **kwargs)
@@ -141,7 +146,6 @@ def bundle(tmp_path, *, kind='undefined'):
     output = tmp_path/'retained'; output.mkdir()
     def retain(key, raw):
         return persist_project_artifact(output, key, raw)
-    image = 'sha256:'+'a'*64
     probe = probe_project_configuration(root, targets, image, project_options=options,
         baseline_execution=baseline, command=WholeNative(), capture_generated_context=True,
         project_compiler_evidence=True, project_static_analysis=True, extended_compiler_budget=True,
