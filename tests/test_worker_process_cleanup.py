@@ -205,6 +205,7 @@ def test_zombie_only_group_is_not_live(tmp_path,monkeypatch):
         def __enter__(self):return iter([Entry()])
         def __exit__(self,*args):pass
     monkeypatch.setattr(os,'scandir',lambda _:Entries())
+    monkeypatch.setattr(os,'killpg',lambda group, sig: None)  # group exists; inspect zombie state
     assert not worker._live_group(1234)
 
 
@@ -287,3 +288,54 @@ def test_cleanup_control_wrong_identity_fails_closed(monkeypatch):
         'cleanup_identity':{**snapshot._cleanup_control_identity(payload),'customer_id':'other'}})
     with pytest.raises(worker.WorkerCleanupError,match='admission blocked'):
         snapshot._cleanup_control(payload)
+
+
+def test_completed_group_absence_does_not_require_unrelated_proc_inventory(tmp_path, monkeypatch):
+    # A real owned child is reaped by communicate; the kernel can prove its
+    # process group no longer exists without reading unrelated process records.
+    def inaccessible_inventory(path):
+        raise PermissionError('synthetic unrelated process inventory denial')
+    monkeypatch.setattr(os, 'scandir', inaccessible_inventory)
+    result = worker.run_command([sys.executable, '-c', 'print("done")'], cwd=tmp_path)
+    assert result.returncode == 0 and result.stdout == 'done\n'
+    assert not worker._CLEANUP_UNCERTAIN.is_set()
+
+
+def test_existing_group_still_requires_readable_inventory(monkeypatch):
+    calls = []
+    def present(group, sig):
+        calls.append((group, sig))
+    def inaccessible_inventory(path):
+        raise PermissionError('synthetic inventory denial')
+    monkeypatch.setattr(os, 'killpg', present)
+    monkeypatch.setattr(os, 'scandir', inaccessible_inventory)
+    with pytest.raises(PermissionError):
+        worker._live_group(987654)
+    assert calls == [(987654, 0)]
+
+
+@pytest.mark.parametrize('error', [PermissionError, OSError])
+def test_group_probe_uncertainty_is_not_absence(monkeypatch, error):
+    def uncertain(*args):
+        raise error('synthetic group probe uncertainty')
+    monkeypatch.setattr(os, 'killpg', uncertain)
+    with pytest.raises(error):
+        worker._live_group(987654)
+
+
+def test_group_probe_permission_failure_latches_and_blocks_next_command(tmp_path, monkeypatch):
+    # The real direct child has already completed; injecting uncertainty must
+    # still fail closed rather than interpreting EPERM as group absence.
+    def denied(group, sig):
+        assert sig == 0
+        raise PermissionError('synthetic group probe denial')
+    monkeypatch.setattr(os, 'killpg', denied)
+    with pytest.raises(worker.WorkerCleanupError) as failure:
+        worker.run_command([sys.executable, '-c', 'pass'], cwd=tmp_path)
+    assert isinstance(failure.value.__cause__, PermissionError)
+    assert worker._CLEANUP_UNCERTAIN.is_set()
+    def forbidden(*args, **kwargs):
+        raise AssertionError('next command launched')
+    monkeypatch.setattr(subprocess, 'Popen', forbidden)
+    with pytest.raises(worker.WorkerCleanupError, match='prior'):
+        worker.run_command([sys.executable, '-c', 'pass'], cwd=tmp_path)
