@@ -30,6 +30,13 @@ def translate_scanner_unavailable_contract(value: str) -> str | None:
         return None
     match = _FAILURE.fullmatch(value)
     if match:
+        from nico.comprehensive_spanish_canonical_report_v87 import (
+            _CANONICAL_PARITY_EXACT, _ES_EXTRA_EXACT, ES_EXACT,
+        )
+        for approved in (_CANONICAL_PARITY_EXACT, _ES_EXTRA_EXACT, ES_EXACT):
+            existing = approved.get(value)
+            if existing is not None:
+                return existing
         return f"{match['scanner']}: {_FAILURE_ES[match['reason']]}"
     match = _EVIDENCE.fullmatch(value)
     if match:

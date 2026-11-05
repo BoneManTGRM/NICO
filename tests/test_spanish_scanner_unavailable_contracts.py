@@ -200,3 +200,14 @@ def test_scanner_evidence_counts_and_payload_states_translate_without_rewriting_
         assert '=' + str(material) + ';' in translated
         assert '=' + str(review) + ';' in translated and '=' + str(raw) + ';' in translated
         assert canonical == before
+
+
+
+@_isolated_preflight_test
+def test_registered_exact_scanner_translation_keeps_precedence():
+    from nico.comprehensive_current_report_truth_parity_v1 import install_comprehensive_current_report_truth_parity_v1
+    from nico.spanish_scanner_unavailable_contracts import translate_scanner_unavailable_contract
+    install_comprehensive_current_report_truth_parity_v1()
+    source = 'typescript: typescript did not retain a complete exact-SHA scanner record.'
+    assert translate_scanner_unavailable_contract(source) == (
+        'typescript: TypeScript no conservó un registro completo del analizador para el SHA exacto.')
