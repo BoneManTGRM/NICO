@@ -191,7 +191,11 @@ def _translate_targeted_presentation_literal(value: Any) -> str | None:
     if translated is not None:
         return translated
     from nico.spanish_retained_candidate_contracts import translate_retained_candidate_contract
-    return translate_retained_candidate_contract(text)
+    translated = translate_retained_candidate_contract(text)
+    if translated is not None:
+        return translated
+    from nico.spanish_scanner_unavailable_contracts import translate_scanner_unavailable_contract
+    return translate_scanner_unavailable_contract(text)
 
 
 def _translate_complexity_method(method: str) -> str | None:

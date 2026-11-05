@@ -91,4 +91,4 @@ def test_incomplete_scanner_remains_review_required() -> None:
 
     assert stage["status"] == "review_required"
     assert "Scanner execution: 1/2 complete." in stage["summary"]
-    assert stage["unavailable"] == ["semgrep: Scanner failed."]
+    assert stage["unavailable"] == ["semgrep exact-SHA evidence remains failed: Scanner failed."]
