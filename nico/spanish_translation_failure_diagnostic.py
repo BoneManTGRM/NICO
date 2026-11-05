@@ -1,6 +1,7 @@
 """Classify missing translations without emitting report text or identifiers."""
 
 import ast
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -37,7 +38,8 @@ _PRODUCERS = (
     'comprehensive_retained_scanner_evidence_v1', 'comprehensive_requested_scanner_projection_v62',
 )
 _SCANNERS = frozenset(('bandit', 'semgrep', 'eslint', 'typescript', 'gitleaks',
-                      'trufflehog', 'osv-scanner', 'pip-audit', 'npm-audit', 'lizard'))
+                      'trufflehog', 'osv-scanner', 'pip-audit', 'npm-audit', 'lizard',
+                      'coverage', 'cppcheck'))
 _MAX_SOURCE_BYTES = 1_000_000
 _MAX_NODES = 100_000
 _CONTAINERS = frozenset(('identity', 'assessment', 'stage_summaries'))
@@ -178,4 +180,21 @@ def spanish_translation_failure_diagnostic(error):
                 result.update(source_match='unique_dynamic_fragment_candidate', source_module=module, source_line=line)
             elif fragments:
                 result['source_match'] = 'ambiguous_dynamic_fragment_candidate'
+    if field == 'unavailable' and scanner_separator and scanner.casefold() in _SCANNERS:
+        # Fixed tool labels and source-authored predicates only. An unmatched
+        # message does not establish whether its origin was stderr or our code.
+        tool = scanner.casefold()
+        family = 'unclassified'
+        if re.fullmatch(re.escape(tool) + r' exceeded its [0-9]{1,6}-second timeout\.', detail):
+            family = 'tool_timeout'
+        elif detail == 'scanner output could not be captured and parsed completely':
+            family = 'output_incomplete'
+        elif detail == 'full git history was not verified for the secret scanner':
+            family = 'history_unverified'
+        elif detail == 'scanner execution evidence incomplete':
+            family = 'execution_incomplete'
+        elif re.fullmatch(r'unexpected return code -?[0-9]{1,6}', detail):
+            family = 'unexpected_return_code'
+        result['scanner_reason'] = {'scanner': tool, 'family': family,
+            'snippet_at_limit': len(snippet) == 180, 'semicolon_present': ';' in detail}
     return result

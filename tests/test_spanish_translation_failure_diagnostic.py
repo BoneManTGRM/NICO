@@ -111,12 +111,13 @@ def test_ast_node_budget_is_enforced(monkeypatch):
 
 def test_real_scanner_reason_with_dynamic_leading_name_is_only_a_candidate():
     from nico.comprehensive_authoritative_scanner_truth_v62 import _failure_reason
-    # A known tool drives the real producer; no tool value enters the result.
+    # A known tool drives the real producer; only its fixed enum label is emitted.
     reason = _failure_reason('bandit', {'timed_out_tools': ['bandit']})
     result = diagnostic.spanish_translation_failure_diagnostic(_error('bandit: ' + reason, 'unavailable'))
     assert result == {'field': 'unavailable', 'source_match': 'unique_dynamic_fragment_candidate',
-                      'source_module': 'comprehensive_authoritative_scanner_truth_v62', 'source_line': 204}
-    assert 'bandit' not in json.dumps(result)
+                      'source_module': 'comprehensive_authoritative_scanner_truth_v62', 'source_line': 204,
+                      'scanner_reason': {'scanner': 'bandit', 'family': 'unclassified',
+                                        'snippet_at_limit': False, 'semicolon_present': False}}
 
 
 def test_noninitial_fragment_does_not_expose_dynamic_values(monkeypatch):
@@ -162,8 +163,29 @@ def test_known_scanner_detail_can_match_exact_static_literal_without_echo(monkey
         'static': {literal: {('scanner_worker', 100)}}, 'dynamic': {}, 'fragment': {}})
     result = diagnostic.spanish_translation_failure_diagnostic(_error(scanner + ': ' + literal, 'unavailable'))
     assert result == {'field': 'unavailable', 'source_match': 'unique_static_literal',
-        'source_module': 'scanner_worker', 'source_line': 100, 'source_scope': 'scanner_detail'}
-    assert literal not in json.dumps(result) and scanner not in json.dumps(result)
+        'source_module': 'scanner_worker', 'source_line': 100, 'source_scope': 'scanner_detail',
+        'scanner_reason': {'scanner': scanner.casefold(), 'family': 'unclassified',
+                           'snippet_at_limit': False, 'semicolon_present': False}}
+    assert literal not in json.dumps(result)
+
+
+@pytest.mark.parametrize('tool', ['semgrep', 'coverage', 'cppcheck'])
+def test_unclassified_scanner_reason_never_echoes_private_text(tool):
+    result = diagnostic.spanish_translation_failure_diagnostic(_error(
+        tool + ': PRIVATE server/path evidence could not be read; PRIVATE token', 'unavailable'))
+    assert result['scanner_reason'] == {'scanner': tool, 'family': 'unclassified',
+        'snippet_at_limit': False, 'semicolon_present': True}
+    assert 'PRIVATE' not in json.dumps(result)
+
+
+def test_reason_family_is_a_fixed_predicate_and_unknown_tool_is_not_echoed():
+    result = diagnostic.spanish_translation_failure_diagnostic(_error(
+        'semgrep: semgrep exceeded its 600-second timeout.', 'unavailable'))
+    assert result['scanner_reason']['family'] == 'tool_timeout'
+    result = diagnostic.spanish_translation_failure_diagnostic(_error(
+        'PRIVATE: semgrep exceeded its 600-second timeout.', 'unavailable'))
+    assert 'scanner_reason' not in result
+    assert 'PRIVATE' not in json.dumps(result)
 
 
 def test_private_prefix_does_not_enable_static_substring_lookup(monkeypatch):
