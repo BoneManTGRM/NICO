@@ -15,10 +15,22 @@ _EVIDENCE = re.compile(
     r'raw candidates=(?P<raw>[0-9]+); raw candidate payload=(?P<payload>retained|count-only|unavailable)'
 )
 
+_FAILURE_ES = {
+    'timed out before complete exact-SHA evidence was retained.': 'agotó el tiempo antes de conservar evidencia completa del SHA exacto.',
+    'was unavailable for the exact-run scanner execution.': 'no estuvo disponible para la ejecución del analizador vinculada a esta ejecución exacta.',
+    'failed during the exact-run scanner execution.': 'falló durante la ejecución del analizador vinculada a esta ejecución exacta.',
+    'did not retain a complete exact-SHA scanner record.': 'no conservó un registro completo del analizador para el SHA exacto.',
+}
+_FAILURE = re.compile(r'(?P<scanner>[A-Za-z0-9_.+-]+): (?P=scanner) (?P<reason>'
+    + '|'.join(re.escape(reason) for reason in _FAILURE_ES) + r')')
+
 
 def translate_scanner_unavailable_contract(value: str) -> str | None:
     if type(value) is not str:
         return None
+    match = _FAILURE.fullmatch(value)
+    if match:
+        return f"{match['scanner']}: {_FAILURE_ES[match['reason']]}"
     match = _EVIDENCE.fullmatch(value)
     if match:
         from nico.comprehensive_spanish_canonical_report_v87 import _SCANNER_STATUS_ES, _scanner_status_visible

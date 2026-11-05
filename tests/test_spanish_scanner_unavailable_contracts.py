@@ -5,7 +5,7 @@ import pytest
 from tests.test_spanish_retained_candidate_contracts import _isolated_preflight_test
 
 
-_TOOLS = ('bandit', 'semgrep', 'gitleaks', 'trufflehog', 'osv', 'eslint', 'typescript', 'lizard')
+_TOOLS = ('bandit', 'semgrep', 'gitleaks', 'trufflehog', 'osv-scanner', 'eslint', 'typescript', 'lizard')
 
 
 @_isolated_preflight_test
@@ -32,9 +32,7 @@ def test_installed_scanner_failure_families_preflight_without_changing_truth():
                          'human_review_required': True, 'client_delivery_allowed': False}
             original = deepcopy(canonical)
             stage = renderer._scanner_stages(canonical)[0]
-            assert len(stage['unavailable']) == 1
-            assert stage['unavailable'][0].startswith(tool + ' exact-SHA evidence remains ')
-            assert stage['unavailable'][0].endswith(': ' + reason)
+            assert stage['unavailable'] == [tool + ': ' + reason]
             assert stage['status'] == 'review_required'
             before = deepcopy(stage)
             report = {**canonical, 'stage_summaries': [stage]}
@@ -43,8 +41,15 @@ def test_installed_scanner_failure_families_preflight_without_changing_truth():
             localized = _localize_tree(report)
             translated = localized['stage_summaries'][0]['unavailable'][0]
             assert translated != stage['unavailable'][0]
-            assert tool in translated and reason in translated
-            assert 'detalle técnico original:' in translated
+            assert translated.startswith(tool + ': ') and tool in translated
+            assert 'detalle técnico original:' not in translated
+            expected = {
+                'timed_out_tools': 'agotó el tiempo',
+                'unavailable_tools': 'no estuvo disponible',
+                'failed_tools': 'falló',
+                None: 'no conservó',
+            }
+            assert expected[field] in translated, (tool, field, translated)
             assert localized['scanner_execution_records'] == original['scanner_execution_records']
             assert localized['human_review_required'] is True
             assert localized['client_delivery_allowed'] is False
@@ -63,8 +68,7 @@ def test_installed_scanner_missing_reason_fallback_remains_incomplete():
         original = deepcopy(canonical)
         stage = renderer._scanner_stages(canonical)[0]
         source = stage['unavailable'][0]
-        assert source.startswith(tool + ' exact-SHA evidence remains ')
-        assert source.endswith(': scanner execution evidence incomplete')
+        assert source == tool + ': scanner execution evidence incomplete'
         translated = _translate_presentation_field(source, 'unavailable')
         assert tool in translated and translated != source
         assert stage['status'] == 'review_required' and canonical == original
@@ -86,10 +90,11 @@ def test_unknown_scanner_prose_is_not_accepted_by_new_translation_contract():
 
 
 @_isolated_preflight_test
-def test_producer_labels_custom_scanner_detail_without_changing_record():
+def test_custom_scanner_detail_is_not_accepted_by_new_translation_helper():
     from nico.api import final_report_worker_bootstrap
     from nico import v2_premium_report_renderer as renderer
     from nico.comprehensive_spanish_canonical_report_v87 import _translate_presentation_field
+    from nico.spanish_scanner_unavailable_contracts import translate_scanner_unavailable_contract
     assert final_report_worker_bootstrap.FINAL_REPORT_WORKER_RUNTIME
     reason = 'Owned parser failed at src/owned.py:17; exit_code=2'
     record = {'scanner_name': 'bandit', 'status': 'partial', 'completed': False,
@@ -99,11 +104,10 @@ def test_producer_labels_custom_scanner_detail_without_changing_record():
     before = deepcopy(canonical)
     stage = renderer._scanner_stages(canonical)[0]
     source = stage['unavailable'][0]
-    assert source.startswith('bandit exact-SHA evidence remains ')
-    assert source.endswith(': ' + reason)
-    translated = _translate_presentation_field(source, 'unavailable')
-    assert 'detalle técnico original: Owned parser failed at src/owned.py:17' in translated
-    assert 'detalle técnico original: exit_code=2' in translated
+    assert source == 'bandit: ' + reason
+    assert translate_scanner_unavailable_contract(source) is None
+    with pytest.raises(ValueError):
+        _translate_presentation_field(source, 'unavailable')
     assert canonical == before and stage['status'] == 'review_required'
 
 
@@ -118,9 +122,9 @@ def test_successful_command_status_does_not_claim_complete_evidence():
             'completed': False, 'exact_commit_match': False, 'artifact_retained': False}]}
         before = deepcopy(canonical)
         stage = renderer._scanner_stages(canonical)[0]
-        assert stage['unavailable'] == ['bandit exact-SHA evidence remains partial: scanner execution evidence incomplete']
+        assert stage['unavailable'] == ['bandit: scanner execution evidence incomplete']
         translated = _translate_presentation_field(stage['unavailable'][0], 'unavailable')
-        assert 'permanece parcial' in translated
+        assert translated != stage['unavailable'][0]
         assert 'execution=' + status in stage['evidence'][0]
         assert stage['status'] == 'review_required' and canonical == before
 
@@ -130,13 +134,16 @@ def test_unknown_scanner_state_remains_rejected():
     from nico.api import final_report_worker_bootstrap
     from nico import v2_premium_report_renderer as renderer
     from nico.comprehensive_spanish_canonical_report_v87 import _translate_presentation_field
+    from nico.spanish_scanner_unavailable_contracts import translate_scanner_unavailable_contract
     assert final_report_worker_bootstrap.FINAL_REPORT_WORKER_RUNTIME
-    canonical = {'scanner_execution_records': [{'scanner_name': 'bandit', 'status': 'future_unknown_state',
+    canonical = {'scanner_execution_records': [{'scanner_name': 'eslint', 'status': 'future_unknown_state',
         'completed': False, 'failure_reason': 'Owned technical detail'}]}
     before = deepcopy(canonical)
     stage = renderer._scanner_stages(canonical)[0]
     with pytest.raises(ValueError, match='missing Spanish scanner status translation'):
-        _translate_presentation_field(stage['unavailable'][0], 'unavailable')
+        translate_scanner_unavailable_contract(stage['evidence'][0])
+    with pytest.raises(ValueError, match='missing Spanish scanner status translation'):
+        _translate_presentation_field(stage['evidence'][0], 'evidence')
     assert canonical == before
 
 

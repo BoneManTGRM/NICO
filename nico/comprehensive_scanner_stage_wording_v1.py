@@ -12,15 +12,6 @@ def _text(value: Any, limit: int = 1200) -> str:
     return normalized if len(normalized) <= limit else normalized[: limit - 3].rstrip() + "..."
 
 
-def _limitation_evidence_state(record: Mapping[str, Any]) -> str:
-    state = _text(record.get('state') or record.get('status') or 'unavailable', 80)
-    # This list contains only incomplete evidence records. A successful command
-    # status cannot imply complete evidence when verification/retention is missing.
-    if state in {'complete', 'completed', 'completed_clean', 'completed_with_findings', 'success', 'passed'}:
-        return 'partial'
-    return state
-
-
 def _integer(value: Any) -> int:
     if isinstance(value, bool):
         return 0
@@ -81,8 +72,7 @@ def scanner_stages(canonical: Mapping[str, Any]) -> list[dict[str, Any]]:
             f"raw candidates={raw_count}; raw candidate payload={payload_state}"
         )
     limitations = [
-        f"{_text(item.get('scanner_name') or item.get('tool'))} exact-SHA evidence remains "
-        f"{_limitation_evidence_state(item)}: "
+        f"{_text(item.get('scanner_name') or item.get('tool'))}: "
         f"{_text(item.get('failure_reason') or item.get('reason') or 'scanner execution evidence incomplete')}"
         for item in incomplete
     ]
