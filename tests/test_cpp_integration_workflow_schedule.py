@@ -42,7 +42,18 @@ def test_contract_tests_do_not_consume_the_native_job_execution_budget():
     native_commands = '\n'.join(step.get('run', '') for step in native['steps'])
     assert 'pytest' not in native_commands
     assert '--generated-headers --bounded-fuzz' in native_commands
-    assert 'timeout 210s docker build --network=none' in native_commands
+    build_commands = [step['run'] for job in jobs.values() for step in job['steps']
+                      if 'docker build ' in step.get('run', '')]
+    assert len(build_commands) == 2
+    for build in build_commands:
+        assert 'set -euo pipefail' in build
+        assert 'timeout --kill-after=10s 300s docker build --network=none' in build
+        assert '--iidfile full-project-image-id.txt' in build
+        assert build.index('docker build ') < build.index('docker image inspect ')
+    recipe = (ROOT / 'docker/assessment-full-project-fuzz.Dockerfile').read_text()
+    assert 'timeout 180s make -C /opt/tool-src -j2 MATCHCOMPILER=yes' in recipe
+    assert 'timeout 180s /opt/cmake-wheel/cmake/data/bin/cmake --build /opt/capnp-build --parallel 2' in recipe
+    assert 'timeout 180s python3 /opt/build_cpp_clang_header_observer.py' in recipe
     assert 'services' in native and native['services']['postgres']
     assert not any(s.get('continue-on-error') for job in jobs.values() for s in job['steps'])
 
