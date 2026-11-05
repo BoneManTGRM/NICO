@@ -40,6 +40,46 @@ _SCANNERS = frozenset(('bandit', 'semgrep', 'eslint', 'typescript', 'gitleaks',
                       'trufflehog', 'osv-scanner', 'pip-audit', 'npm-audit', 'lizard'))
 _MAX_SOURCE_BYTES = 1_000_000
 _MAX_NODES = 100_000
+_CONTAINERS = frozenset(('identity', 'assessment', 'stage_summaries'))
+_STAGES = frozenset(('dependency_security_static_analysis', 'review_required_candidate_register',
+    'risk_reduction_and_executive_briefing', 'six_month_roadmap', 'staffing_sequencing_and_cost',
+    'ci_cd_architecture_complexity_velocity', 'client_evidence_summary'))
+
+
+def sanitize_translation_context(value):
+    """Accept only fixed context labels, never report text or arbitrary paths."""
+    if type(value) is not dict:
+        return None
+    result = {}
+    for key, allowed in (('container', _CONTAINERS), ('stage', _STAGES)):
+        item = value.get(key)
+        if type(item) is str and item in allowed:
+            result[key] = item
+    return result or None
+
+
+def translation_exception_context(error):
+    """Inspect bounded source-owned localization frames before traceback is lost."""
+    if not isinstance(error, ValueError) or not str(error).startswith(_PREFIX):
+        return None
+    result = {}
+    frame_trace = error.__traceback__
+    for _ in range(80):
+        if frame_trace is None:
+            break
+        frame = frame_trace.tb_frame
+        if (frame.f_globals.get('__name__') == 'nico.comprehensive_spanish_canonical_report_v87'
+                and frame.f_code.co_name == '_localize_tree'):
+            path = frame.f_locals.get('path')
+            if type(path) is tuple and path and type(path[0]) is str and path[0] in _CONTAINERS:
+                result['container'] = path[0]
+            value = frame.f_locals.get('value')
+            if type(value) is dict:
+                stage = value.get('stage_id')
+                if type(stage) is str and stage in _STAGES:
+                    result['stage'] = stage
+        frame_trace = frame_trace.tb_next
+    return sanitize_translation_context(result)
 
 
 def _source_locations(source: str):

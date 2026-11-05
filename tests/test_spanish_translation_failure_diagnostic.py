@@ -9,6 +9,38 @@ def _error(text, field='evidence'):
     return 'missing Spanish presentation translation for ' + field + ': ' + text
 
 
+def test_real_localization_trace_discloses_only_fixed_context():
+    from nico.comprehensive_spanish_canonical_report_v87 import _localize_tree
+    source = {'stage_id': 'dependency_security_static_analysis',
+              'unavailable': ['PRIVATE scanner execution requires missing evidence PRIVATE/path']}
+    with pytest.raises(ValueError) as caught:
+        _localize_tree([source], path=('stage_summaries',))
+    context = diagnostic.translation_exception_context(caught.value)
+    assert context == {'container': 'stage_summaries', 'stage': 'dependency_security_static_analysis'}
+    assert 'PRIVATE' not in json.dumps(context)
+    assert source['unavailable'][0].startswith('PRIVATE')
+
+
+def test_translation_context_rejects_untrusted_fields_and_other_errors():
+    assert diagnostic.sanitize_translation_context({'container': 'PRIVATE', 'stage': 'PRIVATE',
+        'text': 'PRIVATE'}) is None
+    assert diagnostic.sanitize_translation_context({'container': 'assessment', 'text': 'PRIVATE'}) == {
+        'container': 'assessment'}
+    assert diagnostic.translation_exception_context(ValueError('PRIVATE')) is None
+    assert diagnostic.translation_exception_context(RuntimeError(_error('PRIVATE'))) is None
+
+
+def test_context_consumer_only_discloses_fixed_values_for_matching_failure():
+    from nico.qualification_failure_diagnostics import v2_publication_failure_diagnostic
+    value = {'error_type': 'ValueError', 'error': _error('PRIVATE', 'unavailable'),
+             'translation_context': {'container': 'assessment', 'stage': 'PRIVATE', 'text': 'PRIVATE'}}
+    result = v2_publication_failure_diagnostic(value)
+    assert result['translation']['context'] == {'container': 'assessment'}
+    assert 'PRIVATE' not in json.dumps(result)
+    value['error'] = 'some other error'
+    assert 'translation' not in v2_publication_failure_diagnostic(value)
+
+
 def test_real_source_literal_match_is_unique_and_reveals_only_location():
     literal = ('The core decision-report artifacts were generated and retained. '
                'One or more strict package-quality conditions remain review-limited; '

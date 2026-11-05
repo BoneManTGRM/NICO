@@ -137,6 +137,10 @@ def v2_publication_failure_diagnostic(value):
     if category == 'spanish_translation_missing':
         from nico.spanish_translation_failure_diagnostic import spanish_translation_failure_diagnostic
         result['translation'] = spanish_translation_failure_diagnostic(error)
+        from nico.spanish_translation_failure_diagnostic import sanitize_translation_context
+        context = sanitize_translation_context(value.get('translation_context'))
+        if context is not None:
+            result['translation']['context'] = context
     return result
 
 
