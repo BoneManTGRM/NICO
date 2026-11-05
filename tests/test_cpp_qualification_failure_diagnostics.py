@@ -463,6 +463,24 @@ def test_owned_real_gcc_failures_have_sanitized_categories(tmp_path, case, categ
     assert compiler_message_categories(result.stdout + result.stderr) == [category]
 
 
+@pytest.mark.parametrize('filename', ['generated.capnp.c++', 'PRIVATE_SOURCE/header.hpp'])
+def test_owned_gcc_nonpublic_locations_are_classified_without_disclosing_paths(tmp_path, filename):
+    import shutil
+    from scripts.cpp_qualification_diagnostic_details import compiler_message_categories
+    compiler = shutil.which('g++')
+    if compiler is None:
+        pytest.skip('local GCC unavailable')
+    source = tmp_path / filename
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text('#error PRIVATE_SOURCE\n')
+    result = subprocess.run([compiler, '-x', 'c++', '-fsyntax-only', str(source)],
+        env={'PATH': '/usr/bin:/bin', 'LANG': 'C'}, capture_output=True, timeout=10, check=False)
+    assert result.returncode != 0
+    categories = compiler_message_categories(result.stderr)
+    assert categories == ['explicit_error_directive']
+    assert str(tmp_path) not in json.dumps(categories) and 'PRIVATE_SOURCE' not in json.dumps(categories)
+
+
 @pytest.mark.parametrize('fault', ['hash', 'size', 'path', 'population', 'duplicate_json',
                                  'oversize', 'base64', 'output_hash', 'non_utf8'])
 def test_compiler_corrupt_details_fail_closed(fault):
