@@ -129,6 +129,8 @@ def compiler_details(proof, read, public_paths):
         # untrusted identifier or the command that produced it.
         row = {'context_index': index, 'outcome': _outcome(execution)}
         if execution is not None:
+            from scripts.cpp_qualification_diagnostics import execution_summary
+            row['execution'] = execution_summary(execution)
             row.update(locations(_decoded_output(execution), public_paths))
         rows.append(row)
     return {'state': 'available', 'failed_records': total, 'omitted': total - len(rows), 'records': rows}

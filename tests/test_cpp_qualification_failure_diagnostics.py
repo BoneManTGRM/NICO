@@ -9,6 +9,79 @@ import pytest
 from scripts import qualify_cpp_project_configuration as cli
 
 
+@pytest.mark.parametrize('fault,consistent', [
+    (None, True), ('test', False), ('junit', False), ('truncated', None),
+    ('target_failure', True),
+])
+def test_baseline_diagnostics_distinguish_real_probe_evidence_without_changing_it(tmp_path, fault, consistent):
+    from tests.test_cpp_baseline_execution import execute
+    from scripts.cpp_qualification_diagnostics import failure_diagnostic
+    probe, _, _ = execute(tmp_path, fault)
+    before = deepcopy(probe)
+    summary = failure_diagnostic({'probe': probe}, ValueError('qualification_collection_invalid'))
+    baseline = summary['baseline_tests']
+    assert probe == before
+    assert baseline['junit_state'] == 'parsed'
+    assert baseline['junit_consistent_with_exit'] is consistent
+    assert baseline['counts']['required'] == baseline['counts']['executed'] == 1
+    assert baseline['tests_passed'] is (fault is None)
+    assert baseline['operations']['baseline-tests']['output_truncated'] is (fault == 'truncated')
+    assert 'owned_suite' not in json.dumps(summary)
+    if fault in ('test', 'junit', 'truncated'):
+        assert probe['error'] == 'worker_configuration_probe_native_tests_failed'
+        assert probe['status'] == 'UNPROVEN'
+
+
+@pytest.mark.parametrize('raw,state', [
+    (b'<testsuite tests="1"><testcase name="private"/></testsuite>', 'population_mismatch'),
+    (b'<broken', 'invalid_xml'),
+    (b'<!DOCTYPE x><testsuite tests="0"/>', 'invalid_xml'),
+])
+def test_baseline_junit_diagnostic_states_never_echo_native_text(raw, state):
+    import base64
+    from scripts.cpp_qualification_diagnostics import failure_diagnostic
+    value = {'probe': {'tests_discovered': ['owned'],
+                      'tests_result': {'junit': base64.b64encode(raw).decode()}}}
+    summary = failure_diagnostic(value, ValueError('qualification_collection_invalid'))
+    assert summary['baseline_tests']['junit_state'] == state
+    assert summary['baseline_tests']['junit_consistent_with_exit'] is None
+    assert 'private' not in json.dumps(summary)
+
+
+def test_baseline_diagnostics_bound_invalid_duplicate_and_private_fields():
+    from scripts.cpp_qualification_diagnostics import failure_diagnostic
+    secret = 'PRIVATE_SOURCE\n::error::injected'
+    operation = {'id': 'baseline-tests', 'exit_code': True, 'timed_out': secret,
+                 'output_truncated': 1, 'duration_ms': -1, 'invocation': secret,
+                 'output': secret}
+    value = {'probe': {'operations': [operation], 'tests_discovered': [secret],
+                      'tests_result': {'junit': '!'+secret, 'log_truncated': secret}}}
+    summary = failure_diagnostic(value, ValueError('qualification_collection_invalid'))
+    baseline = summary['baseline_tests']
+    assert baseline['junit_state'] == 'invalid_encoding'
+    assert baseline['log_truncated'] is None
+    assert all(v is None for k, v in baseline['operations']['baseline-tests'].items() if k != 'state')
+    assert secret not in json.dumps(summary) and len(json.dumps(summary).encode()) < 4096
+    value['probe']['operations'].append(dict(operation, exit_code=0))
+    duplicate = failure_diagnostic(value, ValueError('qualification_collection_invalid'))
+    assert duplicate['baseline_tests']['operations']['baseline-tests']['state'] == 'ambiguous'
+    value['probe']['tests_result']['junit'] = 'A' * (3 * 1024 * 1024)
+    assert failure_diagnostic(value, ValueError('qualification_collection_invalid'))['baseline_tests']['junit_state'] == 'oversized'
+
+
+def test_baseline_timeout_remains_distinct_from_junit_inconsistency():
+    from scripts.cpp_qualification_diagnostics import failure_diagnostic
+    summary = failure_diagnostic({'probe': {'operations': [
+        {'id': 'baseline-tests', 'exit_code': -15, 'timed_out': True,
+         'output_truncated': False, 'duration_ms': 480000}]}},
+        ValueError('qualification_probe_unproven_without_runtime_evidence'))
+    baseline = summary['baseline_tests']
+    assert baseline['operations']['baseline-tests']['timed_out'] is True
+    assert baseline['operations']['baseline-tests']['duration_ms'] == 480000
+    assert baseline['junit_state'] == 'unavailable'
+    assert baseline['junit_consistent_with_exit'] is None
+
+
 def test_failure_summary_reports_only_retained_counts_and_known_codes():
     from scripts.cpp_qualification_diagnostics import failure_diagnostic
     evidence = {'probe': {
@@ -314,6 +387,9 @@ def test_compiler_details_keep_failed_record_indexes_and_omissions():
     result = compiler_details(proof, read, {'src/test/a.cpp'})
     assert result['failed_records'] == 20 and result['omitted'] == 4
     assert result['records'][0]['context_index'] == 1
+    assert result['records'][0]['execution']['exit_code'] == 1
+    assert result['records'][0]['execution']['timed_out'] is False
+    assert result['records'][0]['execution']['output_truncated'] is False
     assert 'SECRET' not in json.dumps(result)
     assert result['records'][0]['locations'][0]['path'] == 'src/test/a.cpp'
 
