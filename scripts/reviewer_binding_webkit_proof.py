@@ -13,6 +13,7 @@ import time
 import threading
 import shutil
 import re
+import reviewer_desktop_navigation_proof as desktop_navigation
 from reviewer_proof_environment import environment
 from reviewer_proof_diagnostics import RESERVED_BYTES, run_with_diagnostics, set_stage
 from urllib.parse import urlsplit
@@ -149,6 +150,20 @@ def validate_styles(styles, responses, computed):
 TOTAL_ARTIFACT_BYTES = 20 * 1024 * 1024 - RESERVED_BYTES
 
 
+def proof_complete(manifest, succeeded):
+    reviewer = manifest['cases']
+    desktop = manifest['desktop_navigation_cases']
+    reviewer_expected = {f'{locale}-{viewport}-{scenario}' for locale in ('en', 'es-MX')
+                         for viewport in VIEWPORTS for scenario in SCENARIOS}
+    desktop_expected = {(locale, case) for locale in desktop_navigation.LOCALES
+                        for case in desktop_navigation.CASES}
+    return bool(succeeded and len(reviewer) == len(reviewer_expected)
+                and {case['name'] for case in reviewer} == reviewer_expected
+                and len(desktop) == len(desktop_expected)
+                and {(case['locale'], case['case']) for case in desktop} == desktop_expected
+                and all(case['status'] == 'passed' for case in reviewer + desktop))
+
+
 def finalize_artifacts(raw, publish, manifest):
     """Only finalized bytes are uploadable; over-budget failure emits no artifact."""
     (raw/'manifest.json').write_text(json.dumps(manifest,indent=2))
@@ -173,7 +188,9 @@ def main():
     args.output.mkdir(parents=True,exist_ok=False)
     raw=args.output/'raw';raw.mkdir()
     manifest={'schema':'nico.reviewer-binding-webkit-proof.v1','checkout_sha':sha,'reviewed_head_sha':args.reviewed_head,'tree_sha':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],cwd=root,text=True).strip(),'cases':[],
-              'synthetic_only':True,'authentication_verified':False,'production_deployment_verified':False}
+              'synthetic_only':True,'authentication_verified':False,'production_deployment_verified':False,
+              'desktop_navigation_cases':[], 'screen_reader_observed':False}
+    proof_succeeded = False
     set_stage('playwright-import')
     from playwright.sync_api import sync_playwright
     start=time.monotonic()
@@ -262,7 +279,11 @@ def main():
                                 'screenshot':image.name,'screenshot_sha256':hashlib.sha256(image.read_bytes()).hexdigest(),'status':'passed'})
                             assert sum(f.stat().st_size for f in raw.iterdir() if f.is_file()) <= 20*1024*1024, 'artifact budget exhausted'
                             context.close()
+                desktop_navigation.run(browser, ORIGIN, request_kind, raw,
+                                       manifest['desktop_navigation_cases'], start, TOTAL_ARTIFACT_BYTES)
+                assert time.monotonic()-start < 180, 'browser proof budget exhausted'
                 browser.close()
+                proof_succeeded = True
         finally:
             server.terminate()
             try:server.wait(timeout=5)
@@ -270,7 +291,7 @@ def main():
             reader.join(timeout=5);assert not reader.is_alive(), 'server log drain incomplete'
             log.flush()
             manifest['elapsed_seconds']=time.monotonic()-start
-            manifest['complete']=len(manifest['cases'])==len(SCENARIOS)*len(VIEWPORTS)*2
+            manifest['complete']=proof_complete(manifest, proof_succeeded)
             finalize_artifacts(raw,args.output/'publish',manifest)
     assert manifest['complete']
 
