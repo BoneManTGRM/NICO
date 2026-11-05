@@ -101,6 +101,42 @@ def provider_failure_classification(value):
     return 'none' if value is None else 'other', 'none'
 
 
+def v2_publication_failure_diagnostic(value):
+    value = object_value(value)
+    error = value.get('error')
+    codes = {
+        'spanish_presentation_preflight_failed:': 'spanish_presentation_preflight_failed',
+        'missing Spanish presentation translation for': 'spanish_translation_missing',
+        'unrecognized Spanish presentation contract:': 'spanish_presentation_contract_unrecognized',
+        'canonical Spanish PDF renderer failed:': 'spanish_pdf_renderer_failed',
+        'premium PDF renderer failed:': 'premium_pdf_renderer_failed',
+        'report package is missing canonical JSON': 'canonical_json_missing',
+        'v2 publication did not bind a canonical truth hash': 'canonical_truth_hash_missing',
+        'v2 publication did not produce the canonical findings CSV': 'findings_csv_missing',
+        'Authoritative PDF contains control-character glyphs:': 'pdf_control_character_glyphs',
+        'final Spanish premium PDF omitted pending-approval semantics': 'spanish_pending_approval_missing',
+        'final premium PDF omitted required identity text:': 'pdf_identity_text_missing',
+        'technical scorecard page was not found for safe replacement;': 'pdf_scorecard_missing',
+    }
+    category = 'none' if error is None else 'other'
+    if type(error) is str:
+        for prefix, code in codes.items():
+            if error.startswith(prefix):
+                category = code
+                break
+    result = {'error_type': classification(value.get('error_type'), _RENDERER_EXCEPTIONS),
+        'error_category': category, 'canonical_only_source_used': value.get('canonical_only_source_used') is True}
+    # Reuse existing strict cap validation, then discard all identity/hash fields.
+    from nico.pdf_cap_failure_diagnostics import sanitize_pdf_cap_diagnostic
+    cap = sanitize_pdf_cap_diagnostic(value.get('pdf_cap_diagnostic'))
+    if cap is not None:
+        result['pdf_cap'] = {key: cap[key] for key in (
+            'failure_reason', 'page_limit', 'base_pages', 'retained_body_pages_before_reflow',
+            'retained_body_pages_after_reflow', 'register_pages', 'gate_pages', 'review_pages',
+            'ci_boundary_pages', 'human_evidence_pages', 'required_pages', 'total_pages', 'reflow_attempted')}
+    return result
+
+
 def renderer_failure_diagnostic(stage, language):
     stage = object_value(stage)
     execution = object_value(stage.get('stage_execution'))
@@ -141,6 +177,7 @@ def renderer_failure_diagnostic(stage, language):
         'worker_failure_class': classification(stage.get('worker_failure_class'), ('process_signal', 'child_exception', 'worker_process_exit')),
         'worker_error_type': classification(stage.get('worker_error_type'), _RENDERER_EXCEPTIONS),
         'provider_failure_class': provider_class,
+        'v2_publication': v2_publication_failure_diagnostic(stage.get('v2_production_authority')),
         'provider_error_type': provider_error,
         'package_present': bool(package),
         'pdf_error_present': type(package.get('pdf_error')) is str and bool(package['pdf_error']),

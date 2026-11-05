@@ -106,3 +106,41 @@ def test_quality_failure_names_are_fixed_and_unknown_values_are_counted():
     assert result['quality_failed_checks'] == ['semantic_html']
     assert result['quality_unclassified_count'] == 20
     assert 'PRIVATE' not in json.dumps(result)
+
+
+
+def test_real_v2_wrapper_rejection_exposes_only_sanitized_cap_evidence(monkeypatch, capsys):
+    from nico import v2_production_authority as authority
+    from tests.test_pdf_cap_failure_diagnostics import _total_failure
+    source = {'status': 'complete', 'report_package': {'json': {'identity': {'run_id': 'comprun_' + 'c'*32}}}}
+    monkeypatch.setattr(authority, '_canonical_source', lambda context: (source, context, 0))
+    monkeypatch.setattr(authority, '_inject_live_runtime_truth', lambda result, context: result)
+    monkeypatch.setattr(authority, '_reassert_terminal_report_language_authority', lambda: {'bound': True})
+    def fail(result):
+        raise _total_failure()
+    monkeypatch.setattr(authority, 'finalize_report_package', fail)
+    result = authority.wrap_final_report_publication(lambda _: pytest.fail('legacy called'))({})
+    before = deepcopy(result)
+    emit_renderer_failure_diagnostic({'stage_results': {FINAL_STAGE: result}}, 'es-MX')
+    summary = json.loads(capsys.readouterr().out)['v2_publication']
+    assert summary['error_type'] == 'ValueError'
+    assert summary['canonical_only_source_used'] is True
+    assert summary['pdf_cap']['total_pages'] == 62
+    assert summary['pdf_cap']['failure_reason'] == 'pdf_total_pages_limit'
+    assert 'comprun_' not in json.dumps(summary) and 'sha256' not in json.dumps(summary)
+    assert result == before and result['status'] == 'blocked'
+
+
+@pytest.mark.parametrize('error,expected', [
+    ('spanish_presentation_preflight_failed:PRIVATE', 'spanish_presentation_preflight_failed'),
+    ('missing Spanish presentation translation for PRIVATE', 'spanish_translation_missing'),
+    ('unrecognized Spanish presentation contract:PRIVATE', 'spanish_presentation_contract_unrecognized'),
+    ('canonical Spanish PDF renderer failed:PRIVATE', 'spanish_pdf_renderer_failed'),
+    ('premium PDF renderer failed:PRIVATE', 'premium_pdf_renderer_failed'),
+    ('PRIVATE'*10000, 'other'), ({'PRIVATE': 'PRIVATE'}, 'other')])
+def test_v2_private_error_is_never_echoed(error, expected):
+    stage = {'status': 'blocked', 'v2_production_authority': {'error': error, 'error_type': 'PRIVATE',
+        'pdf_cap_diagnostic': {'schema': 'PRIVATE'}, 'canonical_only_source_used': 'PRIVATE'}}
+    result = renderer_failure_diagnostic(stage, 'es-MX')['v2_publication']
+    assert result['error_category'] == expected and result['error_type'] == 'other'
+    assert 'PRIVATE' not in json.dumps(result)
