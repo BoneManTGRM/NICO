@@ -411,7 +411,8 @@ def test_installed_backend_rejects_unbound_or_false_collection_before_canonical_
     assert original_record['cpp_build_evidence']['collection_complete'] is False
 
 
-def qualification_bundle(tmp_path, *, failing=True, collection=True):
+def qualification_bundle(tmp_path, *, failing=True, collection=True,
+                         image="sha256:" + "a" * 64, runtime_kind=None):
     """Qualification-only fixed-DB/runtime extension; original controls stay intact.
 
     The declared runtime fixture and native operations are owned substitutions,
@@ -435,7 +436,8 @@ def qualification_bundle(tmp_path, *, failing=True, collection=True):
         (source/name).write_bytes(raw); targets[name] = sha(raw)
     options = {}
     runtime_plan = derive_runtime_plan(source, targets, options, scope)
-    observer = Observe()
+    from tests.test_cpp_completed_sanitizer_failure_collection import CompletedTestFailure
+    observer = CompletedTestFailure(runtime_kind) if runtime_kind else Observe()
     def runtime_observed(key, argv, **kwargs):
         value = observer(key, argv, **kwargs)
         if key == 'runtime-functional-results':
@@ -445,9 +447,13 @@ def qualification_bundle(tmp_path, *, failing=True, collection=True):
         elif key == 'runtime-fuzz-corpus-stage':
             value['output'] = canonical_bytes([{'path': '/work/runtime-corpus/connect_block/s'+str(i),
                 'sha256': row['sha256'], 'bytes': row['bytes']} for i, row in enumerate(runtime_plan['fuzz']['corpus'])])
+        elif key.endswith('-resources'):
+            value['output'] = canonical_bytes({'memory_current_bytes': 100, 'memory_peak_bytes': 200,
+                'memory_events': {'oom': 0, 'oom_kill': 0, 'oom_group_kill': 0},
+                'scratch_capacity_bytes': 1000, 'scratch_available_bytes': 100})
         return value
     runtime_evidence = execute_runtime_plan(runtime_observed, 'owned', runtime_plan, options)
-    assert runtime_evidence['complete'] is True
+    assert runtime_evidence['complete'] is (runtime_kind is None)
     runtime_rows = []
     def visit(value):
         if isinstance(value, dict):
@@ -460,6 +466,11 @@ def qualification_bundle(tmp_path, *, failing=True, collection=True):
 
     class QualificationDocker(CompletedDocker):
         def __call__(self, args, **kwargs):
+            if args[:3] == ['docker', 'image', 'inspect']:
+                assert args == ['docker', 'image', 'inspect', image]
+                self.calls.append((args, kwargs))
+                return {'exit_code': 0, 'timed_out': False, 'output_truncated': False,
+                        'output': canonical_bytes([{'Id': image}])}
             for operation in runtime_rows:
                 argv = operation['argv']
                 if args[-len(argv):] == argv:
@@ -477,7 +488,6 @@ def qualification_bundle(tmp_path, *, failing=True, collection=True):
     baseline = fixed_baseline()
     baseline['compilation_database_sha256'] = sha((FIXTURE/'compile_commands.json').read_bytes())
     docker = QualificationDocker(targets, tmp_path, failing, template)
-    image = 'sha256:'+'a'*64
     probe = probe_api.probe_project_configuration(source, targets, image, project_options=options,
         baseline_execution=baseline, command=docker, runtime_plan=runtime_plan, retain_artifact=retain,
         capture_generated_context=True, project_compiler_evidence=True, project_static_analysis=True,
@@ -485,7 +495,7 @@ def qualification_bundle(tmp_path, *, failing=True, collection=True):
         capture_native_commands=True, materialize_generated_inputs=True,
         collect_completed_compiler_failures=collection)
     assert probe['project_static_stage']['collection_complete' if collection else 'complete'] is True, probe['error']
-    assert probe['runtime_summary']['complete'] is True, probe['error']
+    assert probe['runtime_summary']['complete'] is (runtime_kind is None), probe['error']
     runtime_raw = retained_runtime_bytes(capture_runtime_interfaces(source, targets), runtime_plan, probe['runtime_evidence'])
     runtime = validate_retained_runtime(runtime_raw, targets, options, scope)
     manifest = {'repository': 'nico/owned-generated-runtime-fixture', 'commit_sha': 'a'*40,
@@ -494,12 +504,12 @@ def qualification_bundle(tmp_path, *, failing=True, collection=True):
     receipt = {'schema': 'nico.cpp-configuration-qualification.v2', 'producer_source_sha': 'c'*40,
         'production_qualified': False, 'production_dispatch_exercised': False,
         'compiled': probe['compiled'], 'tests_executed': probe['tests_executed'], 'error': None,
-        'status': probe['status'], 'stage': 'execution_unproven' if failing else 'completed',
+        'status': probe['status'], 'stage': 'execution_unproven' if failing or runtime_kind else 'completed',
         'benchmark_sha256': sha(manifest_raw), 'execution_contract_sha256': sha(baseline_raw),
         'runtime_scope_sha256': sha(scope_raw), 'runtime_plan_sha256': sha(canonical_bytes(runtime_plan)),
         'source': {**{k: manifest[k] for k in ('repository', 'commit_sha', 'tree_sha')},
             'inventory_complete': True, 'targets': targets}, 'probe': qualification_probe_receipt(probe),
-        'runtime': {'complete': True, 'artifact': retain('project-runtime-evidence', runtime_raw),
+        'runtime': {'complete': runtime['summary']['complete'], 'artifact': retain('project-runtime-evidence', runtime_raw),
             'native_evidence_sha256': sha(runtime_raw), 'duration_ms': runtime['duration_ms']}}
     kwargs = {'manifest_raw': manifest_raw, 'baseline_raw': baseline_raw, 'scope_raw': scope_raw,
         'producer_source_sha': 'c'*40, 'image': image, 'enabled_targets_required': True,
