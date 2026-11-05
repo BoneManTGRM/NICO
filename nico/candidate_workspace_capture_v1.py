@@ -12,6 +12,8 @@ import time
 from nico.candidate_investigation_pipeline_v1 import VERSION, scope_of
 from nico.candidate_source_observations_v1 import candidate_source_path, observe_python_source
 from nico.candidate_source_reason_detail_v1 import path_digest
+from nico import dependency_identity_evidence_v1 as dependency_identity
+from nico import exception_handler_evidence_v1 as handler_evidence
 
 INPUT_LIMIT = 8 * 1024 * 1024
 OUTPUT_LIMIT = 2 * 1024 * 1024
@@ -45,6 +47,8 @@ def capture_candidates(rows, scope, inventory, read_blob, *, started=None, clock
               'candidate_inventory_complete': len(rows) <= CANDIDATE_LIMIT,
               'input_byte_limit': INPUT_LIMIT, 'output_byte_limit': OUTPUT_LIMIT}
     priorities = {}
+    handler_lines = {}
+    handler_tree = None
     outcomes = {'artifact_schema': OUTCOME_SCHEMA, 'path_sha256_reasons': {}, 'recording_truncated': False}
     result['path_capture_outcomes'] = outcomes
     outcome_bytes = len(encoded(outcomes))
@@ -75,14 +79,19 @@ def capture_candidates(rows, scope, inventory, read_blob, *, started=None, clock
             reasons['unsupported_source'] += 1
             continue
         path = candidate_source_path(row.get('source_path') or row.get('path'))
-        if (path is None or '.git' in path.split('/') or not path.endswith('.py')
-                or row.get('category') != 'static' or row.get('exact_commit_sha') != scope['commit_sha']
+        dependency = row.get('category') == 'dependency' and isinstance(row.get('dependency_identity_request'), Mapping)
+        supported_path = path is not None and ((row.get('category') == 'static' and path.endswith('.py')) or (dependency and path.split('/')[-1] == 'package-lock.json'))
+        if (not supported_path or '.git' in path.split('/') or row.get('exact_commit_sha') != scope['commit_sha']
                 or row.get('source_commit_sha', scope['commit_sha']) not in ('', scope['commit_sha'])
                 or row.get('source_repository', scope['repository']) not in ('', scope['repository'])):
             reasons['unsupported_source'] += 1
             continue
         priority = int((row.get('rule_id') or row.get('rule')) not in SUPPORTED)
         priorities[path] = min(priority, priorities.get(path, 1))
+        if handler_evidence.eligible(row):
+            lines = handler_lines.setdefault(path, set())
+            if len(lines) < handler_evidence.MAX_LINES:
+                lines.add(row['line'])
     result['candidate_path_count'] = len(priorities)
     if len(rows) > CANDIDATE_LIMIT:
         reasons['candidate_inventory_limit'] = len(rows) - CANDIDATE_LIMIT
@@ -120,8 +129,11 @@ def capture_candidates(rows, scope, inventory, read_blob, *, started=None, clock
                 record(path, 'blob_integrity_unavailable')
                 reasons['source_analysis_failed'] += 1
                 continue
-            observation = observe_python_source(data, repository=scope['repository'],
-                commit_sha=scope['commit_sha'], path=path, blob_oid=oid)
+            trees = []
+            optional = {'tree_sink': trees.append} if handler_tree is None and path in handler_lines else {}
+            observation = (dependency_identity.observe(data, scope=scope, path=path, blob_oid=oid)
+                if path.split('/')[-1] == 'package-lock.json' else observe_python_source(data, repository=scope['repository'],
+                commit_sha=scope['commit_sha'], path=path, blob_oid=oid, **optional))
             if clock() >= deadline:
                 reasons['source_time_budget'] += len(ordered) - index
                 record(path, 'capture_deadline')
@@ -134,13 +146,28 @@ def capture_candidates(rows, scope, inventory, read_blob, *, started=None, clock
                 continue
             result['observations'][path] = observation
             retained += size
+            if trees and handler_tree is None:
+                # First successfully retained eligible path in the existing
+                # deterministic order. Keep at most one <=FILE_LIMIT source AST.
+                handler_tree = (path, trees[0])
     except (OSError, ValueError, TypeError, RecursionError, subprocess.SubprocessError):
         if path is not None:
             record(path, 'capture_deadline' if clock() >= deadline else 'capture_operation_failed')
         reasons['source_time_budget' if clock() >= deadline else 'source_analysis_failed'] += 1
     result['unavailable_reasons'] = dict(reasons)
+    if handler_tree is not None and clock() < deadline:
+        optional_path, tree = handler_tree
+        handlers = handler_evidence.observe_tree(tree, handler_lines[optional_path], clock=clock, deadline=deadline)
+        if handlers and clock() < deadline:
+            extra = handler_evidence.make_capture(optional_path, result['observations'][optional_path], handlers)
+            if extra is not None and clock() < deadline:
+                result[handler_evidence.CAPTURE_FIELD] = extra
+    handler_tree = None
     result['elapsed_seconds'] = round(clock() - started, 6)
     result['deadline_exhausted'] = clock() >= deadline
+    if len(encoded(result)) > OUTPUT_LIMIT:
+        # Optional metadata must never displace baseline observations/outcomes.
+        result.pop(handler_evidence.CAPTURE_FIELD, None)
     if len(encoded(result)) > OUTPUT_LIMIT:
         # A whole-envelope fallback invalidates individual allocation outcomes.
         result.pop('path_capture_outcomes', None)

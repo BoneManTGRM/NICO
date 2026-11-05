@@ -119,3 +119,127 @@ for (const locale of ['en', 'es-MX']) {
     assert.equal(h.calls.length, 1);
   });
 }
+
+for (const locale of ['en', 'es-MX']) {
+  for (const mode of ['valid', 'duplicate', 'wrong-fingerprint', 'legacy', 'invalid-api']) {
+    test(`${locale}: qualified lexical binding ${mode} never clears candidate`, async () => {
+      const item = {candidate_id: 'same', record_index: 0, recommendation: 'resolve_evidence_gaps', limitations: [], source_url: null,
+        input_sha256: 'a'.repeat(64), existing_review_profile_cluster_id: 'group'};
+      const source = {candidate_id: 'same', record_index: 0, candidate_input_sha256: item.input_sha256,
+        rule_id: 'B603', completed: true, source_sha256: 'b'.repeat(64), source_path: 'app.py', line: 2,
+        reason: 'exact_line_structure_only', lexical_binding: {version: 'nico.reviewer-lexical-binding.v1',
+          api: 'subprocess.run', import_line: 1, line: 2, source_sha256: 'b'.repeat(64)}};
+      if (mode === 'wrong-fingerprint') source.candidate_input_sha256 = 'invalid';
+      if (mode === 'legacy') delete source.record_index;
+      if (mode === 'invalid-api') source.lexical_binding.api = 'PRIVATE_SENTINEL';
+      const queue = [item];
+      if (mode === 'duplicate') queue.push({...item, record_index: 1, input_sha256: 'd'.repeat(64)});
+      const h = harness(locale, () => Response.json(payload({review_assistance: {
+        artifact_schema: 'nico.candidate-review-assistance.v1', pending_record_count: queue.length, queue,
+        source_investigation: {available: true, candidate_count: queue.length, completed_count: 1, packets: [source]}}})));
+      await h.load();
+      assert.equal(h.find(n => n.props['data-lexical-binding'] === 'true').length, mode === 'valid' ? 1 : 0);
+      if (mode === 'valid') {
+        assert.match(h.html(), /subprocess.run/);
+        assert.match(h.html(), locale === 'en' ? /import hooks.*working directory.*mitigations/ : /mecanismos de importación.*directorio de trabajo.*mitigaciones/);
+        assert.match(h.html(), locale === 'en' ? /retain for human contextual review/i : /conservar para revisión contextual humana/i);
+      }
+      assert.doesNotMatch(h.html(), /PRIVATE_SENTINEL/);
+      assert.equal(h.calls.length, 1);
+    });
+  }
+}
+
+for (const locale of ['en', 'es-MX']) {
+  for (const mode of ['qualified', 'stale', 'duplicate', 'unqualified']) {
+    test(`${locale}: dependency tasks ${mode} retain safety questions`, async () => {
+      const identity = {package: 'demo', locked_version: '1.2.3', lockfile_path: 'package-lock.json', source_sha256:'b'.repeat(64)};
+      const source = {candidate_id:'dep', record_index:3, candidate_input_sha256:'c'.repeat(64), completed:false, rule_id:'CVE-fixture', reason:'unsupported_or_missing_exact_source_evidence', dependency_identity:identity};
+      const sources = mode === 'duplicate' ? [source,source] : mode === 'unqualified' ? [] : [{...source, candidate_input_sha256:mode==='stale'?'d'.repeat(64):source.candidate_input_sha256}];
+      const h=harness(locale,()=>Response.json(payload({review_assistance:{artifact_schema:'nico.candidate-review-assistance.v1',pending_record_count:1,
+        queue:[{candidate_id:'dep',record_index:0,source_record_index:3,source_candidate_input_sha256:'c'.repeat(64),recommendation:'resolve_evidence_gaps',limitations:['unresolved_proof_gaps'],source_url:null,input_sha256:'a'.repeat(64),existing_review_profile_cluster_id:'',evidence_tasks:['identify_package','identify_locked_version','verify_affectedness','verify_runtime_use']}],
+        source_investigation:{available:true,packets:sources}}})));
+      await h.load();
+      const html=h.html();
+      assert.match(html,locale==='en'?/affectedness remains unresolved/:/afectación sigue sin resolverse/);
+      assert.match(html,locale==='en'?/Keep the candidate pending/:/Mantener el candidato pendiente/);
+      if(mode==='qualified') {
+        assert.match(html,/1\.2\.3/);
+        assert.match(html,locale==='en'?/not proof of installation or safety/:/no confirma instalación ni seguridad/);
+        assert.doesNotMatch(html,locale==='en'?/Identify the package in/:/Identificar el paquete en/);
+      } else {
+        assert.doesNotMatch(html,/1\.2\.3/);
+        assert.match(html,locale==='en'?/Identify the package in/:/Identificar el paquete en/);
+      }
+      assert.equal(h.calls.length,1);
+    });
+  }
+}
+
+for (const locale of ['en', 'es-MX']) {
+  for (const code of ['supply_scanner_identity','supply_current_capture','supply_lockfile_observation','inspect_lockfile_capture','reconcile_lockfile_identity','verify_installation_and_use','injected raw narrative','__proto__']) {
+    test(`${locale}: next-step guidance ${code}`, async () => {
+      const source={candidate_id:'dep',record_index:2,candidate_input_sha256:'c'.repeat(64),completed:false,rule_id:'x',reason:'unresolved',dependency_next_step:code, ...(code==='verify_installation_and_use'?{dependency_identity:{package:'demo',locked_version:'1.2.3',lockfile_path:'package-lock.json',source_sha256:'b'.repeat(64)}}:{})};
+      const h=harness(locale,()=>Response.json(payload({review_assistance:{artifact_schema:'nico.candidate-review-assistance.v1',pending_record_count:1,
+        queue:[{candidate_id:'dep',record_index:0,source_record_index:2,source_candidate_input_sha256:'c'.repeat(64),recommendation:'resolve_evidence_gaps',limitations:[],source_url:null,input_sha256:'a'.repeat(64),existing_review_profile_cluster_id:'',evidence_tasks:['identify_package','identify_locked_version','verify_affectedness','verify_runtime_use']}],
+        source_investigation:{available:true,packets:[source]}}})));
+      await h.load();
+      const allowed=!['injected raw narrative','__proto__'].includes(code);
+      assert.equal(h.find(n=>n.props['data-dependency-next-step']==='true').length,allowed?1:0);
+      assert.doesNotMatch(h.html(),/injected raw narrative/);
+      assert.match(h.html(),locale==='en'?/Keep the candidate pending/:/Mantener el candidato pendiente/);
+      if(code==='supply_lockfile_observation') assert.match(h.html(),locale==='en'?/cause is unknown/:/causa se desconoce/);
+      if(code==='reconcile_lockfile_identity') assert.match(h.html(),locale==='en'?/do not assume that matching was attempted/:/no suponer que se intentó la coincidencia/);
+      assert.equal(h.calls.length,1);
+    });
+  }
+}
+
+for (const locale of ['en','es-MX']) {
+  test(`${locale}: collected guidance requires an actual identity receipt`, async()=>{
+    const h=harness(locale,()=>Response.json(payload({review_assistance:{artifact_schema:'nico.candidate-review-assistance.v1',pending_record_count:1,
+      queue:[{candidate_id:'dep',record_index:0,source_record_index:2,source_candidate_input_sha256:'c'.repeat(64),recommendation:'resolve_evidence_gaps',limitations:[],source_url:null,input_sha256:'a'.repeat(64),existing_review_profile_cluster_id:'',evidence_tasks:['identify_package','identify_locked_version','verify_affectedness','verify_runtime_use']}],
+      source_investigation:{available:true,packets:[{candidate_id:'dep',record_index:2,candidate_input_sha256:'c'.repeat(64),completed:false,rule_id:'x',reason:'unresolved',dependency_next_step:'verify_installation_and_use'}]}}})));
+    await h.load();
+    assert.equal(h.find(n=>n.props['data-dependency-next-step']==='true').length,0);
+    assert.match(h.html(),locale==='en'?/Identify the package in/:/Identificar el paquete en/);
+    assert.equal(h.calls.length,1);
+  });
+}
+
+for (const locale of ['en', 'es-MX']) {
+  for (const mode of ['valid', 'continue', 'legacy', 'wrong-index', 'wrong-fingerprint', 'wrong-kind', 'wrong-line', 'wrong-version', 'wrong-blob', 'wrong-path', 'wrong-receipt-fingerprint', 'missing-scope']) {
+    test(`${locale}: unresolved handler evidence ${mode} preserves human review`, async () => {
+      const queue = {candidate_id: 'HANDLER', record_index: 0, source_record_index: 2,
+        source_candidate_input_sha256: 'c'.repeat(64), recommendation: 'resolve_evidence_gaps',
+        limitations: [], source_url: null, input_sha256: 'a'.repeat(64), existing_review_profile_cluster_id: ''};
+      const source = {candidate_id: 'HANDLER', record_index: 2, candidate_input_sha256: 'c'.repeat(64),
+        rule_id: 'B110', completed: false, source_sha256: 'b'.repeat(64), source_path: 'app.py', line: 3,
+        reason: 'rule_semantics_require_specialist_review', exception_handler: {
+          version: 'nico.exception-handler-evidence.v1', body_kind: 'single_pass', line: 3, source_sha256: 'b'.repeat(64), blob_oid: 'e'.repeat(40), path: 'app.py', candidate_input_sha256: 'c'.repeat(64), scope: {run_id: 'synthetic', repository: 'example/repo', commit_sha: 'f'.repeat(40), customer_id: 'synthetic', project_id: 'synthetic'}}};
+      if (mode === 'continue') { source.rule_id = 'B112'; source.exception_handler.body_kind = 'single_continue'; }
+      if (mode === 'wrong-blob') source.exception_handler.blob_oid = 'invalid';
+      if (mode === 'wrong-path') source.exception_handler.path = 'other.py';
+      if (mode === 'wrong-receipt-fingerprint') source.exception_handler.candidate_input_sha256 = 'd'.repeat(64);
+      if (mode === 'missing-scope') delete source.exception_handler.scope;
+      if (mode === 'legacy') delete queue.source_candidate_input_sha256;
+      if (mode === 'wrong-index') queue.source_record_index = 1;
+      if (mode === 'wrong-fingerprint') queue.source_candidate_input_sha256 = 'd'.repeat(64);
+      if (mode === 'wrong-kind') source.exception_handler.body_kind = 'single_continue';
+      if (mode === 'wrong-line') source.exception_handler.line = 8;
+      if (mode === 'wrong-version') source.exception_handler.version = 'foreign';
+      const h = harness(locale, () => Response.json(payload({review_assistance: {
+        artifact_schema: 'nico.candidate-review-assistance.v1', pending_record_count: 1, queue: [queue],
+        source_investigation: {available: true, candidate_count: 1, completed_count: 0, packets: [source]}}})));
+      await h.load();
+      assert.equal(h.find(n => n.props['data-exception-handler-evidence'] === 'true').length, ['valid', 'continue'].includes(mode) ? 1 : 0);
+      if (mode === 'continue') assert.match(h.html(), locale === 'en' ? /Handler body contains only continue/ : /El cuerpo del manejador contiene solo continue/);
+      if (mode === 'valid') {
+        assert.match(h.html(), locale === 'en' ? /Handler body contains only pass/ : /El cuerpo del manejador contiene solo pass/);
+        assert.match(h.html(), locale === 'en' ? /Consequences and production reachability remain unknown/ : /Las consecuencias y la alcanzabilidad en producción siguen sin conocerse/);
+        assert.match(h.html(), locale === 'en' ? /Retain for human contextual review/ : /Conservar para revisión contextual humana/);
+      }
+      assert.equal(h.calls.length, 1);
+    });
+  }
+}

@@ -1,10 +1,14 @@
 "use client";
 
 import {useState} from "react";
+import styles from "./reviewer-queue.module.css";
 
 type Packet = {
   candidate_id: string;
   record_index: number;
+  source_candidate_input_sha256?: string;
+  source_record_index?: number;
+  evidence_tasks?: string[];
   recommendation: string;
   limitations: string[];
   source_url: string | null;
@@ -16,7 +20,23 @@ export type Assistance = {
   pending_record_count: number;
   queue: Packet[];
   source_investigation?: {available: boolean; candidate_count?: number; completed_count?: number; source_availability_counts?: Record<string, number>;
-    packets: {candidate_id: string; rule_id: string; completed: boolean; source_sha256?: string; source_path?: string; line?: number; reason: string; source_availability_detail?: string}[]};
+    packets: {exception_handler?: {version: string; body_kind: string; line: number; source_sha256: string; blob_oid: string; path: string; candidate_input_sha256: string; scope: Record<string, string>}; dependency_next_step?: string; record_index?: number; candidate_input_sha256?: string; dependency_identity?: {package: string; locked_version: string; lockfile_path: string; source_sha256: string}; lexical_binding?: {version: string; api: string; import_line: number; line: number; source_sha256: string}; candidate_id: string; rule_id: string; completed: boolean; source_sha256?: string; source_path?: string; line?: number; reason: string; source_availability_detail?: string}[]};
+};
+
+const dependencyNextSteps: Record<string, [string, string]> = {
+  supply_scanner_identity: ["First obtain the scanner's package name and exact lockfile path. A supported, consistent identity request is missing; do not guess it from the advisory.", "Primero obtener el nombre del paquete y la ruta exacta del archivo de bloqueo del escáner. Falta una solicitud de identidad compatible y coherente; no deducirla del aviso."],
+  supply_current_capture: ["First obtain retained source evidence for this run, customer and commit. Current matching capture is not established.", "Primero obtener evidencia conservada del código para esta ejecución, cliente y commit. No se estableció una captura coincidente actual."],
+  supply_lockfile_observation: ["First obtain an observation of the exact lockfile through the normal assessment evidence path. No usable observation is retained; the cause is unknown.", "Primero obtener una observación del archivo de bloqueo exacto mediante la ruta normal de evidencia de evaluación. No se conserva una observación utilizable; la causa se desconoce."],
+  inspect_lockfile_capture: ["First inspect the retained capture outcome and supported lockfile format. Identity observations are unavailable; this does not by itself prove a parser failure.", "Primero revisar el resultado conservado de captura y el formato compatible del archivo de bloqueo. Las observaciones de identidad no están disponibles; esto por sí solo no demuestra un fallo del analizador."],
+  reconcile_lockfile_identity: ["First reconcile the scanner claim with the retained lockfile and investigation limits. No qualified receipt is available; do not assume that matching was attempted or that the package is absent.", "Primero conciliar la afirmación del escáner con el archivo de bloqueo conservado y los límites de investigación. No hay un comprobante calificado; no suponer que se intentó la coincidencia ni que el paquete está ausente."],
+  verify_installation_and_use: ["Locked identity is collected. Next verify what is installed, the advisory range and production use; keep the disposition pending.", "La identidad bloqueada está recopilada. Ahora verificar qué está instalado, el rango del aviso y el uso en producción; mantener la decisión pendiente."],
+};
+
+const dependencyTasks: Record<string, [string, string]> = {
+  identify_package: ["Identify the package in the exact-source lockfile; do not use an advisory's package name as proof.", "Identificar el paquete en el archivo de bloqueo del código exacto; el nombre de un aviso no es prueba."],
+  identify_locked_version: ["Read the uniquely matched locked version. A locked version does not prove what is installed.", "Leer la versión bloqueada con coincidencia única. No demuestra qué versión está instalada."],
+  verify_affectedness: ["Check the applicable advisory against the actual installed version; affectedness remains unresolved.", "Comparar el aviso aplicable con la versión realmente instalada; la afectación sigue sin resolverse."],
+  verify_runtime_use: ["Establish whether production uses this package and what independent controls apply. Keep the candidate pending until reviewed.", "Determinar si producción usa este paquete y qué controles independientes existen. Mantener el candidato pendiente de revisión."],
 };
 
 const investigationReasons: Record<string, [string, string]> = {
@@ -108,10 +128,21 @@ export default function CandidateReviewAssistance({value, locale}: {value: Assis
   const es = locale === "es-MX";
   const language = es ? 1 : 0;
   const investigation = value.source_investigation;
-  const sourcePackets = new Map((investigation?.packets || []).map(p => [p.candidate_id, p]));
+  const sourcePackets = investigation?.available ? investigation.packets : [];
+  const sourceFor = (packet: Packet) => {
+    // The queue is sorted/enriched separately from the canonical register. Never
+    // equate its index or fingerprint with a canonical record. Ambiguity hides
+    // source assistance rather than attaching another record's proof.
+    const matches = sourcePackets.filter(p => p.candidate_id === packet.candidate_id);
+    if (matches.length !== 1 || value.queue.filter(p => p.candidate_id === packet.candidate_id).length !== 1)
+      return undefined;
+    const source = matches[0];
+    return source.record_index !== undefined && /^[0-9a-f]{64}$/.test(source.candidate_input_sha256 || "")
+      ? source : {...source, lexical_binding: undefined};
+  };
   const pages = Math.max(1, Math.ceil(value.queue.length / 25));
   const current = Math.min(page, pages - 1);
-  return <section aria-label={es ? "Asistencia para revisión" : "Review assistance"}>
+  return <section className={styles.assistance} aria-label={es ? "Asistencia para revisión" : "Review assistance"}>
     <h3>{es ? "Cola priorizada de revisión asistida" : "Prioritized assisted-review queue"}</h3>
     <p>{investigation?.available ? (es ? "Investigación acotada del código conservada durante la evaluación; sin consultas a modelos. Cada disposición sigue siendo humana." : "Bounded source investigation retained during assessment; no model calls. Every disposition remains human.") : es ? "Análisis determinista conservado; no se realizó una nueva investigación del código ni se consultó un modelo. Los enlaces son ubicaciones, no prueba de inspección. Cada disposición sigue siendo humana." : "Retained deterministic analysis; no new source investigation or model call was performed. Links are locators, not proof of inspection. Every disposition remains human."}</p>
     <p>{value.pending_record_count} {es ? "registros pendientes. Los grupos comparten un perfil de revisión; no demuestran equivalencia ni permiten descartar candidatos." : "pending records. Groups share a review profile; they do not establish equivalence or permit candidate dismissal."}</p>
@@ -132,19 +163,65 @@ export default function CandidateReviewAssistance({value, locale}: {value: Assis
           <summary><code>{packet.candidate_id}</code> — {(Object.hasOwn(recommendations, packet.recommendation) ? recommendations[packet.recommendation] : recommendations.resolve_evidence_gaps)[language]}</summary>
           {packet.source_url && /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/blob\/[0-9a-f]{40}\//.test(packet.source_url) ? <p><a href={packet.source_url} target="_blank" rel="noopener noreferrer">{es ? "Abrir ubicación del código exacto" : "Open exact source location"}</a></p> : null}
           <ul>{packet.limitations.map(code => <li key={code}>{(Object.hasOwn(limitations, code) ? limitations[code] : ["Additional evidence review required", "Se requiere revisión adicional de evidencia"])[language]}</li>)}</ul>
-          {sourcePackets.has(packet.candidate_id) ? (() => {
-            const source = sourcePackets.get(packet.candidate_id)!;
-            if (!source.completed) return <p>{(Object.hasOwn(investigationReasons, source.reason) ? investigationReasons[source.reason] : ["Investigation unresolved", "Investigación sin resolver"])[language]}. {source.reason === "source_parse_unavailable" ? (Object.hasOwn(sourceAvailabilityLabels, source.source_availability_detail || "") ? sourceAvailabilityLabels[source.source_availability_detail!] : sourceAvailabilityLabels.not_recorded)[language] + ". " : ""}{es ? "Solicitar evidencia antes de decidir." : "Request evidence before disposition."}</p>;
+          {packet.evidence_tasks ? (() => {
+            const matches = investigation?.available ? investigation.packets.filter(p =>
+              p.record_index === packet.source_record_index && p.candidate_id === packet.candidate_id &&
+              typeof packet.source_candidate_input_sha256 === "string" && /^[a-f0-9]{64}$/.test(packet.source_candidate_input_sha256) &&
+              p.candidate_input_sha256 === packet.source_candidate_input_sha256) : [];
+            const identity = matches.length === 1 ? matches[0].dependency_identity : undefined;
+            const nextStep = matches.length === 1 ? matches[0].dependency_next_step : undefined;
+            const tasks = packet.evidence_tasks.slice(0, 4).filter(code => Object.hasOwn(dependencyTasks, code) &&
+              (!identity || (code !== "identify_package" && code !== "identify_locked_version")));
+            return <div data-dependency-evidence="true">
+              {nextStep && (nextStep !== "verify_installation_and_use" || identity) && Object.hasOwn(dependencyNextSteps, nextStep) ? <p data-dependency-next-step="true">{dependencyNextSteps[nextStep][language]}</p> : null}
+              {identity ? <p>{es ? "Identidad obtenida del archivo de bloqueo (no confirma instalación ni seguridad):" : "Identity collected from lockfile (not proof of installation or safety):"} <code>{identity.package}</code> · <code>{identity.locked_version}</code> · <code>{identity.lockfile_path}</code> · SHA-256: <code>{identity.source_sha256}</code></p> : null}
+              <ul>{tasks.map(code => <li key={code}>{dependencyTasks[code][language]}</li>)}</ul>
+            </div>;
+          })() : null}
+          {(() => {
+            if (packet.evidence_tasks) return null;
+            const source = sourceFor(packet);
+            if (!source) return null;
+            const handler = source.exception_handler;
+            const handlerBound = !source.completed && handler?.version === "nico.exception-handler-evidence.v1" &&
+              ((source.rule_id === "B110" && handler.body_kind === "single_pass") ||
+               (source.rule_id === "B112" && handler.body_kind === "single_continue")) &&
+              Number.isSafeInteger(source.record_index) && source.record_index === packet.source_record_index &&
+              /^[0-9a-f]{64}$/.test(packet.source_candidate_input_sha256 || "") &&
+              source.candidate_input_sha256 === packet.source_candidate_input_sha256 &&
+              handler.candidate_input_sha256 === source.candidate_input_sha256 &&
+              Number.isSafeInteger(handler.line) && handler.line > 0 && handler.line === source.line &&
+              /^[0-9a-f]{64}$/.test(handler.source_sha256) && handler.source_sha256 === source.source_sha256 &&
+              /^[0-9a-f]{40}$/.test(handler.blob_oid) && handler.path === source.source_path &&
+              handler.scope && ["run_id", "repository", "commit_sha", "customer_id", "project_id"].every(key =>
+                typeof handler.scope[key] === "string" && handler.scope[key].length > 0 && handler.scope[key].length <= 200) &&
+              /^[0-9a-f]{40}$/.test(handler.scope.commit_sha);
+            if (!source.completed) return <div>
+              {handlerBound ? <div data-exception-handler-evidence="true">
+                <p>{es ? `El cuerpo del manejador contiene solo ${handler.body_kind === "single_pass" ? "pass" : "continue"}` : `Handler body contains only ${handler.body_kind === "single_pass" ? "pass" : "continue"}`}.</p>
+                <p>{es ? "Las consecuencias y la alcanzabilidad en producción siguen sin conocerse. Conservar para revisión contextual humana." : "Consequences and production reachability remain unknown. Retain for human contextual review."}</p>
+                <p><code>{handler.path}</code> · {es ? "Línea" : "Line"}: {handler.line} · SHA-256: <code>{handler.source_sha256}</code> · Git blob: <code>{handler.blob_oid}</code></p>
+                <p>{es ? "Alcance exacto" : "Exact scope"}: {Object.entries(handler.scope).filter(([key]) => ["run_id", "repository", "commit_sha", "customer_id", "project_id"].includes(key)).map(([key, value]) => <span key={key}>{key}: <code>{value}</code> </span>)}</p>
+              </div> : null}
+              <p>{(Object.hasOwn(investigationReasons, source.reason) ? investigationReasons[source.reason] : ["Investigation unresolved", "Investigación sin resolver"])[language]}. {source.reason === "source_parse_unavailable" ? (Object.hasOwn(sourceAvailabilityLabels, source.source_availability_detail || "") ? sourceAvailabilityLabels[source.source_availability_detail!] : sourceAvailabilityLabels.not_recorded)[language] + ". " : ""}{es ? "Solicitar evidencia antes de decidir." : "Request evidence before disposition."}</p></div>;
             const assertion = source.rule_id === "B101";
             const imported = source.rule_id === "B404" || source.rule_id === "B405";
+            const proof = source.lexical_binding;
+            const bound = proof?.version === "nico.reviewer-lexical-binding.v1" &&
+              ["B603", "B607"].includes(source.rule_id) &&
+              ["subprocess.run", "subprocess.Popen", "subprocess.call", "subprocess.check_call", "subprocess.check_output"].includes(proof.api) &&
+              Number.isSafeInteger(proof.import_line) && proof.import_line > 0 && proof.import_line < proof.line &&
+              proof.line === source.line && proof.source_sha256 === source.source_sha256;
             return <div data-source-investigation="true">
+              {bound ? <p data-lexical-binding="true">{es ? "Vinculación léxica estática" : "Static lexical binding"}: <code>{proof.api}</code> · {es ? "Importación en línea" : "Import line"} {proof.import_line} · {es ? "Llamada en línea" : "Call line"} {proof.line}. {es ? "Vinculación del nombre establecida para este código; no demuestra seguridad en ejecución." : "Name binding established for this source; runtime safety is not established."}</p> : null}
+              {!assertion && !imported ? <p>{bound ? (es ? "Aún sin resolver: despacho en ejecución, mecanismos de importación, alcance en producción, datos no confiables, entorno, directorio de trabajo, búsqueda del ejecutable y mitigaciones." : "Still unresolved: runtime dispatch, import hooks, production reachability, untrusted input, environment, working directory, executable lookup and mitigations.") : (es ? "La vinculación léxica de la API sigue sin estar calificada; también requiere revisión del comportamiento en ejecución y del contexto." : "API lexical binding remains unqualified; runtime behavior and context still require review.")}</p> : null}
               <p>{es ? "Evidencia y razonamiento" : "Evidence and rationale"}: {assertion ? (es ? "Se observó una aserción en la línea exacta; Python optimizado puede eliminarla." : "An assertion was observed at the exact line; optimized Python can remove it.") : imported ? (es ? "Se observó una importación de una familia de API que requiere revisión contextual." : "An import from an API family requiring contextual review was observed.") : (es ? "Se examinó una llamada y la forma de sus argumentos; no se estableció su comportamiento en ejecución." : "A call and its argument shape were examined; runtime behavior was not established.")}</p>
               <p>{es ? "Contraevidencia: la presencia de esta estructura no demuestra una vulnerabilidad ni permite descartarla." : "Counterevidence: this structure alone neither establishes a vulnerability nor clears the candidate."}</p>
               <p>{es ? "Preguntas pendientes: ¿es alcanzable en producción?, ¿recibe datos no confiables?, ¿qué controles independientes existen?" : "Open questions: is it production-reachable, does it receive untrusted input, and what independent controls exist?"}</p>
               <p>{es ? "Recomendación: conservar para revisión contextual humana." : "Recommendation: retain for human contextual review."}</p>
               <p><code>{source.source_path || "—"}</code> · {es ? "Línea" : "Line"}: {source.line} · SHA-256: <code>{source.source_sha256 && /^[0-9a-f]{64}$/.test(source.source_sha256) ? source.source_sha256 : "—"}</code></p>
             </div>;
-          })() : null}
+          })()}
           <p>{es ? "Grupo de revisión existente" : "Existing review group"}: <code>{packet.existing_review_profile_cluster_id || "—"}</code></p>
           <p>{es ? "Huella de los datos de entrada" : "Input fingerprint"}: <code>{packet.input_sha256}</code></p>
         </details>
