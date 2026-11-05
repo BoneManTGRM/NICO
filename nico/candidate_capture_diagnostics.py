@@ -3,7 +3,7 @@ from collections import Counter
 from collections.abc import Mapping
 
 _SCOPE = ('run_id', 'repository', 'commit_sha', 'customer_id', 'project_id')
-_STATUSES = frozenset({'parsed', 'source_size_limit', 'source_binding_invalid', 'source_parse_unavailable'})
+_STATUSES = frozenset({'parsed', 'source_size_limit', 'source_binding_invalid', 'source_parse_unavailable', 'observed', 'unavailable'})
 _REASONS = frozenset({'source_scope_missing', 'unsupported_source', 'source_time_budget',
                      'source_size_budget', 'source_analysis_failed', 'observation_size_budget',
                      'candidate_inventory_limit', 'source_missing_or_unsupported'})

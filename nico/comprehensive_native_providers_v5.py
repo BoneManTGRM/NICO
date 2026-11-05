@@ -355,7 +355,10 @@ def _normalized_record(
     if provenance.get("origin", "").casefold() in {"toolchain", "compiler_predefines"}:
         # Exact native coordinates do not identify a file in the assessed tree.
         evidence_quality = "source_path" if path else "payload_without_source"
+    from nico.dependency_identity_evidence_v1 import request as dependency_request
+    identity_request = dependency_request(finding, path) if category == "dependency" else None
     return {
+        **({'dependency_identity_request': identity_request} if identity_request else {}),
         **provenance,
         "finding_id": f"NICO-SCAN-{fingerprint[:16].upper()}",
         "raw_fingerprint": fingerprint,
@@ -497,6 +500,8 @@ def build_canonical_scanner_finding_register(
         else:
             deduped[fingerprint]["occurrence_count"] += _int(record.get("occurrence_count"))
             deduped[fingerprint]["source_record_count"] += 1
+            if deduped[fingerprint].get('dependency_identity_request') != record.get('dependency_identity_request'):
+                deduped[fingerprint].pop('dependency_identity_request', None)
 
     canonical = sorted(
         deduped.values(),

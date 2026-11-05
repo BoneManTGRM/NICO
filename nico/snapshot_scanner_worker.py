@@ -18,7 +18,7 @@ from nico import scanner_tool_runners as tool_runners
 from nico.dependency_materiality import classify_dependency_finding
 from nico import scanner_worker as base
 from nico.storage import STORE
-from nico.worker_execution import WorkerWorkspace, WorkerCleanupError
+from nico.worker_execution import WorkerWorkspace, WorkerCleanupError, scanner_suite_deadline, WorkerLimits, run_command
 
 _COMMIT_SHA_RE = re.compile(r"^[0-9a-fA-F]{40,64}$")
 _EXCLUDED_PATH_PARTS = {"tests", "test", "fixtures", "fixture", "examples", "example", "samples", "sample"}
@@ -49,16 +49,18 @@ class RepositoryExecutionLimit(Exception):
 
 
 def _git(command: list[str], *, cwd: Path | None, env: dict[str, str], timeout: int = 90) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        command,
-        cwd=str(cwd) if cwd else None,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        env=env,
-        shell=False,
-        check=False,
+    result = run_command(
+        command, cwd=cwd or Path.cwd(), extra_env=env,
+        limits=WorkerLimits(timeout_seconds=timeout, max_output_chars=20 * 1024 * 1024),
     )
+    if result.timed_out:
+        # Preserve the acquisition caller's existing timeout exception contract.
+        raise subprocess.TimeoutExpired(command, timeout, output=result.stdout.encode('utf-8'), stderr=result.stderr.encode('utf-8'))
+    stderr = result.stderr
+    if result.output_limit_exceeded:
+        stderr += "\nGit diagnostic output exceeded the bounded capture limit."
+    return subprocess.CompletedProcess(command, result.returncode, result.stdout, stderr)
+
 
 
 def clone_repository_at_snapshot(
@@ -387,6 +389,8 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any], *, execution_recor
                 job["progress_percent"] = 20
                 if not _persist_snapshot_scan(job):
                     return
+                suite_deadline = time.monotonic() + base.TOTAL_SCAN_TIMEOUT_SECONDS
+                job['scanner_suite_budget_seconds'] = base.TOTAL_SCAN_TIMEOUT_SECONDS
                 for index, spec in enumerate(specs, start=1):
                     job["active_tool"] = spec.name
                     job["progress_percent"] = 20 + round((index - 1) / max(1, len(specs)) * 70)
@@ -394,7 +398,26 @@ def _run_snapshot_scan(scan_id: str, payload: dict[str, Any], *, execution_recor
                     if not _persist_snapshot_scan(job):
                         return
                     try:
-                        result = tool_runners.run_scanner_tool(spec, workspace)
+                        if time.monotonic() >= suite_deadline:
+                            result = {
+                                'tool': spec.name, 'category': spec.category, 'status': 'unavailable',
+                                'reason': 'scanner_suite_deadline_exhausted_before_launch',
+                                'execution_observed': False, 'execution_observed_for_this_report': False,
+                                'verified': False, 'verified_complete': False, 'completed': False,
+                                'verified_for_this_report': False, 'findings': [],
+                                'commit_sha': actual_commit_sha,
+                            }
+                        else:
+                            with scanner_suite_deadline(suite_deadline):
+                                result = tool_runners.run_scanner_tool(spec, workspace)
+                            if time.monotonic() >= suite_deadline:
+                                result.update(status='timeout', execution_state='timeout', timed_out=True, completed=False,
+                                              verified=False, verified_complete=False,
+                                              failure_reason='scanner_suite_deadline_exhausted',
+                                              failure_or_unavailable_reason='scanner_suite_deadline_exhausted',
+                                              verified_for_this_report=False,
+                                              output_capture_complete=False,
+                                              reason='scanner_suite_deadline_exhausted')
                     except Exception as exc:  # pragma: no cover - defensive per-tool boundary
                         result = {
                             "tool": spec.name,

@@ -84,6 +84,7 @@ def run_bandit_json(
         cwd=workspace.repo_dir,
         limits=WorkerLimits(
             timeout_seconds=max(spec.timeout_seconds, 360),
+            native_report_flag="-o",
             max_output_chars=max(spec.max_output_chars, 4_000_000),
         ),
         stdout_path=log,
