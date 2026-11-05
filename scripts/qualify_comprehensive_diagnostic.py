@@ -243,6 +243,17 @@ def emit_scanner_failure_diagnostic(record):
         pass
 
 
+def emit_renderer_failure_diagnostic(record, language):
+    from nico.qualification_failure_diagnostics import object_value, renderer_failure_diagnostic
+    try:
+        stage = object_value(object_value(record.get('stage_results')).get(FINAL_STAGE))
+        if stage.get('status') in ('blocked', 'failed', 'error'):
+            print(json.dumps(renderer_failure_diagnostic(stage, language)), flush=True)
+    except Exception:
+        # Diagnostic failure must not replace or suppress the original rejection.
+        pass
+
+
 def poll_diagnostic_run(service, run_id, record, *, started, language):
     last_progress = None
     while not record.get("terminal") and record.get("status") not in {"blocked", "failed", "error"}:
@@ -257,6 +268,7 @@ def poll_diagnostic_run(service, run_id, record, *, started, language):
         if not record.get("terminal"):
             time.sleep(2)
     emit_scanner_failure_diagnostic(record)
+    emit_renderer_failure_diagnostic(record, language)
     return record
 
 
