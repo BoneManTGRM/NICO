@@ -73,3 +73,29 @@ def test_provider_blocked_scan_reaches_console_without_scan_contents(monkeypatch
 def test_successful_scanner_is_silent(capsys):
     emit_scanner_failure_diagnostic({'stage_results': {'dependency_security_static_analysis': {'status': 'complete'}}})
     assert capsys.readouterr().out == ''
+
+
+@pytest.mark.parametrize('fault', ['runtime-functional', 'runtime-address-build', 'runtime-fuzz-build'])
+def test_reconstructed_runtime_prefix_is_classified_but_still_rejected(tmp_path, fault):
+    from tests.test_cpp_runtime_collection import fixture
+    from nico.assessment_cpp_runtime_scope import retained_runtime_bytes, validate_retained_runtime
+    from nico.assessment_cpp_runtime_collection import validate_runtime_collection
+    value, targets, options, scope = fixture(tmp_path, later_fault=fault)
+    raw = retained_runtime_bytes(value['interfaces'], value['plan'], value['evidence'])
+    summary = validate_retained_runtime(raw, targets, options, scope)['summary']
+    result = collection_failure_diagnostic({'probe': {'runtime_summary': summary}})
+    assert result['runtime_failure_operation'] == fault
+    assert result['runtime_error'].startswith('worker_runtime_')
+    with pytest.raises(ValueError, match='^worker_runtime_collection_incomplete$'):
+        validate_runtime_collection(raw, targets, options, scope)
+
+
+@pytest.mark.parametrize('value,expected', [
+    ('runtime-fuzz-replay-12', 'runtime-fuzz-replay'), ('runtime-fuzz-replay-PRIVATE', 'other'),
+    ('runtime-PRIVATE-build', 'other'), (['PRIVATE'], 'other'), (None, 'none')])
+def test_runtime_operation_names_are_not_arbitrary_output(value, expected):
+    result = collection_failure_diagnostic({'probe': {'runtime_summary': {
+        'failure_operation': value, 'error': 'worker_runtime_PRIVATE'}}})
+    assert result['runtime_failure_operation'] == expected
+    assert result['runtime_error'] == 'other'
+    assert 'PRIVATE' not in json.dumps(result)

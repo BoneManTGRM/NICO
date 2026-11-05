@@ -80,3 +80,29 @@ def test_nonfailure_and_absent_stage_are_silent(status, capsys):
     'comprehensive_final_report_semantic_contract_failed', 'final_report_provider_unavailable'])
 def test_source_defined_provider_rejections_remain_specific(reason):
     assert renderer_failure_diagnostic({'status': 'blocked', 'reason': reason}, 'es-MX')['reason'] == reason
+
+
+@pytest.mark.parametrize('prefix,category', [
+    ('PDF export unavailable: ', 'pdf_export_unavailable'),
+    ('Decision-grade PDF export unavailable: ', 'decision_grade_pdf_export_unavailable'),
+    ('Decision-grade contract unavailable: ', 'decision_grade_contract_unavailable'),
+    ('Decision-grade backlog export unavailable: ', 'decision_grade_backlog_export_unavailable'),
+    ('Historical delta unavailable: ', 'historical_delta_unavailable')])
+def test_provider_templates_never_copy_unknown_suffix(prefix, category):
+    for suffix, expected in [('LayoutError', 'LayoutError'), ('LayoutError: PRIVATE_SOURCE', 'other'),
+                             ('PRIVATE_TOKEN' * 10000, 'other')]:
+        result = renderer_failure_diagnostic({'status': 'blocked', 'reason': prefix + suffix}, 'es-MX')
+        assert result['provider_failure_class'] == category
+        assert result['provider_error_type'] == expected
+        assert 'PRIVATE' not in json.dumps(result)
+
+
+def test_quality_failure_names_are_fixed_and_unknown_values_are_counted():
+    result = renderer_failure_diagnostic({'status': 'blocked',
+        'reason': 'decision_grade_report_contract_failed', 'report_package': {
+        'report_quality_contract': {'semantic_html': False, 'scope_boundaries_present': True,
+        'pdf_page_count_label_matches_artifact': 'PRIVATE', 'PRIVATE': False}}}, 'es-MX')
+    assert result['reason'] == 'decision_grade_report_contract_failed'
+    assert result['quality_failed_checks'] == ['semantic_html']
+    assert result['quality_unclassified_count'] == 20
+    assert 'PRIVATE' not in json.dumps(result)

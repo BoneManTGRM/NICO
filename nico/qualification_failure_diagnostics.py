@@ -27,6 +27,18 @@ def scanner_failure_diagnostic(scan):
     }
 
 
+def runtime_operation_classification(value):
+    import re
+    allowed = ('runtime-functional-setup', 'runtime-functional', 'runtime-functional-results',
+        'runtime-fuzz-corpus-stage', 'runtime-fuzz-configure', 'runtime-fuzz-build', 'runtime-fuzz-campaign')
+    allowed += tuple('runtime-' + kind + '-' + suffix for kind in ('address', 'undefined')
+        for suffix in ('configure', 'build', 'discover', 'tests', 'test-log', 'resources', 'junit'))
+    allowed += tuple('runtime-reclaim-' + phase for phase in ('baseline', 'address', 'undefined'))
+    if type(value) is str and len(value) <= 64 and re.fullmatch(r'runtime-fuzz-replay-[0-9]+', value):
+        return 'runtime-fuzz-replay'  # Never print an arbitrary operation ID.
+    return classification(value, allowed)
+
+
 def collection_failure_diagnostic(receipt):
     receipt = object_value(receipt)
     probe = object_value(receipt.get('probe'))
@@ -41,6 +53,7 @@ def collection_failure_diagnostic(receipt):
         'boundary_invalid', 'cleanup_failed', 'contract_invalid', 'deadline', 'environment_failed',
         'environment_flag_invalid', 'failed', 'fallback_failed', 'image_mismatch', 'interrupted',
         'operation_failed', 'private_invalid', 'restore_mismatch', 'source_mismatch', 'storage_invalid'))
+    runtime = object_value(probe.get('runtime_summary'))
     observed = (receipt.get('status'), receipt.get('stage'), probe.get('status'), probe.get('error'))
     return {
         'schema': 'nico.collection-failure-diagnostic.v1',
@@ -57,8 +70,35 @@ def collection_failure_diagnostic(receipt):
         'static_analysis_complete': object_value(stage.get('analysis')).get('complete') is True,
         'static_boundary_verified': stage.get('boundary_verified') is True,
         'static_cleanup_verified': stage.get('cleanup_verified') is True,
-        'runtime_complete': object_value(probe.get('runtime_summary')).get('complete') is True,
+        'runtime_complete': runtime.get('complete') is True,
+        'runtime_error': classification(runtime.get('error'), tuple('worker_runtime_' + suffix for suffix in (
+            'functional_failed', 'artifact_unavailable', 'sanitizer_failed', 'fuzz_failed',
+            'reclamation_failed', 'deadline', 'failed'))),
+        'runtime_failure_operation': runtime_operation_classification(runtime.get('failure_operation')),
     }
+
+
+_RENDERER_EXCEPTIONS = (
+    'LayoutError', 'KeyError', 'ValueError', 'TypeError', 'MemoryError', 'TimeoutError',
+    'RuntimeError', 'WorkerProcessExit', 'WorkerPayloadError', 'ImportError',
+    'ModuleNotFoundError', 'UnicodeEncodeError', 'UnicodeDecodeError', 'OSError',
+    'PermissionError', 'FileNotFoundError', 'RecursionError', 'AttributeError')
+
+
+def provider_failure_classification(value):
+    templates = {
+        'PDF export unavailable: ': 'pdf_export_unavailable',
+        'Decision-grade PDF export unavailable: ': 'decision_grade_pdf_export_unavailable',
+        'Decision-grade contract unavailable: ': 'decision_grade_contract_unavailable',
+        'Decision-grade backlog export unavailable: ': 'decision_grade_backlog_export_unavailable',
+        'Historical delta unavailable: ': 'historical_delta_unavailable',
+    }
+    if type(value) is str:
+        for prefix, category in templates.items():
+            if value.startswith(prefix):
+                # Return only predefined labels; never the exception message/type suffix.
+                return category, classification(value[len(prefix):], _RENDERER_EXCEPTIONS)
+    return 'none' if value is None else 'other', 'none'
 
 
 def renderer_failure_diagnostic(stage, language):
@@ -70,7 +110,7 @@ def renderer_failure_diagnostic(stage, language):
         'prior_stage_results_unavailable', 'canonical_scoring_stage_unavailable',
         'canonical_scoring_assessment_unavailable', 'comprehensive_provider_registry_unavailable',
         'final_report_provider_unavailable', 'spanish_report_translation_surface_unavailable',
-        'spanish_report_runtime_cache_binding_failed') + tuple('final_report_' + suffix for suffix in (
+        'spanish_report_runtime_cache_binding_failed', 'decision_grade_report_contract_failed') + tuple('final_report_' + suffix for suffix in (
         'execution_timeout', 'publication_deadline_exceeded', 'provider_invalid_result',
         'result_identity_mismatch', 'package_missing', 'id_missing', 'markdown_missing',
         'html_missing', 'json_missing', 'markdown_hash_missing', 'markdown_hash_invalid',
@@ -78,6 +118,18 @@ def renderer_failure_diagnostic(stage, language):
         'canonical_hash_missing', 'canonical_hash_invalid', 'canonical_hash_mismatch',
         'pdf_missing', 'pdf_invalid_base64', 'pdf_invalid', 'pdf_hash_missing',
         'pdf_hash_invalid', 'pdf_hash_mismatch', 'identity_missing', 'identity_mismatch'))
+    provider_class, provider_error = provider_failure_classification(stage.get('reason'))
+    quality = object_value(package.get('report_quality_contract'))
+    quality_keys = (
+        'score_band_separated_from_assurance', 'bounded_static_scoring_discloses_assurance',
+        'weighted_scoring_explicit', 'shared_control_truth_reconciled', 'executive_risk_truth_reconciled',
+        'executive_risk_register_consolidated', 'executive_risks_use_stable_ids',
+        'executive_risks_include_cost_and_residual', 'unverified_medium_candidates_not_p1',
+        'evidence_health_summary_present', 'scope_boundaries_present', 'assumption_register_present',
+        'how_to_use_present', 'express_quality_front_matter', 'pdf_page_count_label_matches_artifact',
+        'semantic_html', 'markdown_evidence_appendix', 'markdown_human_review_acceptance_gate',
+        'decision_grade_contract_serialized', 'backlog_export_generated', 'backlog_items_unique',
+        'historical_delta_generated_only_when_comparable')
     def flag(value):
         return 'true' if value is True else 'false' if value is False else 'missing' if value is None else 'other'
     return {
@@ -87,11 +139,14 @@ def renderer_failure_diagnostic(stage, language):
         'reason': classification(stage.get('reason'), reasons),
         'error_code': classification(stage.get('error_code'), reasons),
         'worker_failure_class': classification(stage.get('worker_failure_class'), ('process_signal', 'child_exception', 'worker_process_exit')),
-        'worker_error_type': classification(stage.get('worker_error_type'), (
-            'LayoutError', 'KeyError', 'ValueError', 'TypeError', 'MemoryError', 'TimeoutError',
-            'RuntimeError', 'WorkerProcessExit', 'WorkerPayloadError', 'ImportError',
-            'ModuleNotFoundError', 'UnicodeEncodeError', 'UnicodeDecodeError', 'OSError',
-            'PermissionError', 'FileNotFoundError', 'RecursionError', 'AttributeError')),
+        'worker_error_type': classification(stage.get('worker_error_type'), _RENDERER_EXCEPTIONS),
+        'provider_failure_class': provider_class,
+        'provider_error_type': provider_error,
+        'package_present': bool(package),
+        'pdf_error_present': type(package.get('pdf_error')) is str and bool(package['pdf_error']),
+        'quality_present': bool(quality),
+        'quality_failed_checks': [key for key in quality_keys if quality.get(key) is False],
+        'quality_unclassified_count': sum(type(quality.get(key)) is not bool for key in quality_keys),
         'worker_exit_signal': classification(stage.get('worker_exit_signal'), ('SIGKILL', 'SIGTERM', 'SIGSEGV', 'SIGABRT', 'SIGBUS', 'SIGILL', 'SIGXCPU', 'SIGXFSZ')),
         'local_render_deadline_expired': flag(stage.get('local_render_deadline_expired')),
         'worker_termination_confirmed': flag(execution.get('worker_termination_confirmed')),
