@@ -23,11 +23,21 @@ _FAILURE_ES = {
 }
 _FAILURE = re.compile(r'(?P<scanner>[A-Za-z0-9_.+-]+): (?P=scanner) (?P<reason>'
     + '|'.join(re.escape(reason) for reason in _FAILURE_ES) + r')')
+_CI_TYPESCRIPT_FAILURE_ES = {
+    'typescript: Retained CI TypeScript evidence is incomplete or invalid.':
+        'typescript: La evidencia conservada de TypeScript en CI está incompleta o no es válida.',
+    'typescript: Retained CI TypeScript capture did not complete.':
+        'typescript: La captura conservada de TypeScript en CI no se completó.',
+    'typescript: Authenticated current-main CI TypeScript evidence is unavailable.':
+        'typescript: La evidencia autenticada de TypeScript en CI para el commit actual de main no está disponible.',
+}
 
 
 def translate_scanner_unavailable_contract(value: str) -> str | None:
     if type(value) is not str:
         return None
+    if value in _CI_TYPESCRIPT_FAILURE_ES:
+        return _CI_TYPESCRIPT_FAILURE_ES[value]
     match = _FAILURE.fullmatch(value)
     if match:
         from nico.comprehensive_spanish_canonical_report_v87 import (
