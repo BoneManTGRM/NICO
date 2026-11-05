@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
+import pytest
 from pypdf import PdfReader
 
 from nico import comprehensive_native_providers as legacy
@@ -232,6 +233,16 @@ def test_provider_reports_triage_workload_without_numeric_score_deterioration(mo
     assert contract["candidate_volume_affects_numeric_score"] is False
     assert contract["review_workload_affects_numeric_score"] is False
     assert "do not change numeric technical scores" in assessment["executive_summary"]
+
+
+@pytest.mark.parametrize("status", ["blocked", "pending", "unavailable", "failed", None])
+def test_installed_workload_wrapper_preserves_noncomplete_result(monkeypatch, status):
+    result = {"status": status, "reason": "scoring_evidence_identity_mismatch",
+              "human_review_required": True, "client_delivery_allowed": False}
+    monkeypatch.setattr(scoring, "canonical_scoring_provider", lambda context: result)
+    install_candidate_volume_assurance_v2()
+    assert scoring.canonical_scoring_provider(_context()) is result
+    assert "assessment" not in result and "summary" not in result
 
 
 def test_review_companion_retains_all_eight_sections_across_four_paired_pages() -> None:

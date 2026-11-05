@@ -1,7 +1,8 @@
 "use client";
 
 import {useEffect, useState} from "react";
-import type {ChangeEvent, FormEvent, SyntheticEvent} from "react";
+import type {FormEvent, SyntheticEvent} from "react";
+import {savedRun, useReviewScope, type WorkspaceProps} from "./reviewWorkspaceState";
 import ReviewSessionNotice from "./ReviewSessionNotice";
 import styles from "./reviewer-queue.module.css";
 
@@ -106,17 +107,105 @@ function addMetricError(errors: string[], value: unknown, actual: number, label:
   ));
 }
 
-function buildQueue(payload: ReviewQueuePayload, locale: Locale): QueueModel {
-  const register = canonicalRegister(payload);
-  if (!Array.isArray(register.findings)) throw new Error(tr(locale, "The exact terminal report does not contain a canonical scanner candidate register.", "El informe terminal exacto no contiene un registro canónico de candidatos de los analizadores."));
-  const findings = asRecords(register.findings);
-  const triage = asRecord(register.technical_triage);
-  const integrityErrors: string[] = [];
-  const rawClusters = register.review_workload_clusters;
-  if (!Array.isArray(rawClusters)) integrityErrors.push(tr(locale, "Canonical deterministic cluster metadata is unavailable.", "Los metadatos canónicos de los grupos deterministas no están disponibles."));
-  const clusterRecords = asRecords(rawClusters);
-  if (Array.isArray(rawClusters) && clusterRecords.length !== rawClusters.length) integrityErrors.push(tr(locale, "Canonical cluster metadata contains a malformed record.", "Los metadatos canónicos de los grupos contienen un registro con formato incorrecto."));
+type ClusterValidationContext = {
+  cluster: JsonRecord;
+  index: number;
+  clusterId: string;
+  candidateIds: string[];
+  grouped: boolean;
+  locale: Locale;
+  integrityErrors: string[];
+};
 
+function validateClusterIdentity(cluster: JsonRecord, index: number, observedClusterIds: Set<string>, integrityErrors: string[], locale: Locale): ClusterValidationContext {
+  const clusterId = text(cluster.cluster_id);
+  if (!clusterId) integrityErrors.push(tr(locale, `Cluster record ${index + 1} has no canonical identity.`, `El registro de grupo ${index + 1} no tiene identidad canónica.`));
+  if (clusterId && observedClusterIds.has(clusterId)) integrityErrors.push(tr(locale, `Cluster identity ${clusterId} is duplicated.`, `La identidad del grupo ${clusterId} está duplicada.`));
+  if (clusterId) observedClusterIds.add(clusterId);
+
+  const candidateIds = textList(cluster.candidate_ids);
+  if (!Array.isArray(cluster.candidate_ids)) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} has no canonical candidate list.`, `El grupo ${clusterId || index + 1} no tiene una lista canónica de candidatos.`));
+  if (new Set(candidateIds).size !== candidateIds.length) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} repeats a candidate identity.`, `El grupo ${clusterId || index + 1} repite una identidad de candidato.`));
+  const declaredCount = finiteNumber(cluster.candidate_record_count);
+  const declaredSize = finiteNumber(cluster.cluster_size);
+  if (declaredCount !== candidateIds.length || declaredSize !== candidateIds.length) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} size does not match its candidate list.`, `El tamaño del grupo ${clusterId || index + 1} no coincide con su lista de candidatos.`));
+
+  const grouped = cluster.grouped_review_eligible === true;
+  return {cluster, index, clusterId, candidateIds, grouped, locale, integrityErrors};
+}
+
+function validateClusterMember(context: ClusterValidationContext, candidate: JsonRecord, id: string): void {
+  const {cluster, clusterId, candidateIds, grouped, locale, integrityErrors} = context;
+  if (text(candidate.cluster_id) !== clusterId) integrityErrors.push(tr(locale, `Candidate ${id} does not match cluster ${clusterId}.`, `El candidato ${id} no corresponde al grupo ${clusterId}.`));
+  if (finiteNumber(candidate.cluster_size) !== candidateIds.length) integrityErrors.push(tr(locale, `Candidate ${id} has inconsistent cluster size.`, `El candidato ${id} tiene un tamaño de grupo inconsistente.`));
+  if (!sameList(textList(candidate.cluster_candidate_ids), candidateIds)) integrityErrors.push(tr(locale, `Candidate ${id} has inconsistent deterministic cluster membership.`, `El candidato ${id} tiene una pertenencia inconsistente al grupo determinista.`));
+  if (text(candidate.representative_candidate_id) !== text(cluster.representative_candidate_id)) integrityErrors.push(tr(locale, `Candidate ${id} has inconsistent representative identity.`, `El candidato ${id} tiene una identidad representativa inconsistente.`));
+  if (candidate.grouped_review_eligible !== cluster.grouped_review_eligible) integrityErrors.push(tr(locale, `Candidate ${id} has inconsistent grouped-review eligibility.`, `El candidato ${id} tiene una elegibilidad inconsistente para revisión agrupada.`));
+  if (candidate.homogeneous_evidence !== cluster.homogeneous_evidence || candidate.homogeneous_verdict !== cluster.homogeneous_verdict) integrityErrors.push(tr(locale, `Candidate ${id} has inconsistent cluster homogeneity metadata.`, `El candidato ${id} tiene metadatos inconsistentes de homogeneidad del grupo.`));
+  const expectedReviewUnit = grouped ? clusterId : id;
+  if (text(candidate.review_unit_id) !== expectedReviewUnit) integrityErrors.push(tr(locale, `Candidate ${id} has inconsistent deterministic review-unit identity.`, `El candidato ${id} tiene una identidad inconsistente de unidad de revisión determinista.`));
+}
+
+function collectClusterMembers(context: ClusterValidationContext, candidateById: Map<string, JsonRecord>, clusteredCandidateIds: string[]): JsonRecord[] {
+  const {clusterId, index, candidateIds, locale, integrityErrors} = context;
+  const candidates: JsonRecord[] = [];
+  for (const id of candidateIds) {
+    clusteredCandidateIds.push(id);
+    const candidate = candidateById.get(id);
+    if (!candidate) {
+      integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} references unknown candidate ${id}.`, `El grupo ${clusterId || index + 1} hace referencia al candidato desconocido ${id}.`));
+      continue;
+    }
+    candidates.push(candidate);
+    validateClusterMember(context, candidate, id);
+  }
+  return candidates;
+}
+
+function validateClusterRouting(context: ClusterValidationContext, candidates: JsonRecord[]): {representative: JsonRecord | undefined; humanAttention: boolean} {
+  const {cluster, clusterId, index, candidateIds, grouped, locale, integrityErrors} = context;
+  const routingClasses = Array.from(new Set(candidates.map((candidate) => text(candidate.review_routing_class)).filter(Boolean))).sort();
+  const declaredRoutingClasses = textList(cluster.review_routing_classes).sort();
+  if (!sameList(routingClasses, declaredRoutingClasses)) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} has inconsistent review-routing classes.`, `El grupo ${clusterId || index + 1} tiene clases inconsistentes de enrutamiento de revisión.`));
+  if (!text(cluster.cluster_reason) || !text(cluster.homogeneous_evidence_basis)) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} is missing its deterministic grouping basis.`, `Al grupo ${clusterId || index + 1} le falta su fundamento de agrupación determinista.`));
+
+  const representativeId = text(cluster.representative_candidate_id);
+  const representative = candidates.find((candidate) => candidateId(candidate) === representativeId);
+  const humanAttention = candidates.some(requiresHumanAttention);
+  if (cluster.grouped_human_review_cluster !== (grouped && humanAttention)) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} has inconsistent human-review routing.`, `El grupo ${clusterId || index + 1} tiene un enrutamiento inconsistente de revisión humana.`));
+  if (!representative || !candidateIds.includes(representativeId)) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} has an invalid representative candidate.`, `El grupo ${clusterId || index + 1} tiene un candidato representativo no válido.`));
+  return {representative, humanAttention};
+}
+
+function validateClusterReviewPolicy(context: ClusterValidationContext, candidates: JsonRecord[], humanAttention: boolean): void {
+  const {cluster, clusterId, index, candidateIds, grouped, locale, integrityErrors} = context;
+  if (grouped) {
+    if (candidateIds.length < 2 || candidates.some((candidate) => requiresHumanAttention(candidate) !== humanAttention)) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} is not a valid grouped review unit.`, `El grupo ${clusterId || index + 1} no es una unidad válida de revisión agrupada.`));
+    if (cluster.homogeneous_evidence !== true || cluster.homogeneous_verdict !== true) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} is not homogeneous enough for grouped review.`, `El grupo ${clusterId || index + 1} no es suficientemente homogéneo para la revisión agrupada.`));
+    if (candidates.some((candidate) => candidate.grouped_review_eligible !== true || candidate.review_requires_individual_attention === true)) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} contains a candidate that requires individual attention.`, `El grupo ${clusterId || index + 1} contiene un candidato que requiere atención individual.`));
+  } else {
+    if (cluster.grouped_human_review_cluster === true || candidateIds.length !== 1) integrityErrors.push(tr(locale, `Individual cluster ${clusterId || index + 1} does not contain exactly one candidate.`, `El grupo individual ${clusterId || index + 1} no contiene exactamente un candidato.`));
+    if (candidates.some((candidate) => candidate.grouped_review_eligible === true || candidate.review_requires_individual_attention !== humanAttention)) integrityErrors.push(tr(locale, `Individual cluster ${clusterId || index + 1} has inconsistent routing.`, `El grupo individual ${clusterId || index + 1} tiene un enrutamiento inconsistente.`));
+  }
+  if (cluster.underlying_candidate_disposition_required !== true) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} does not preserve candidate-level human disposition requirements.`, `El grupo ${clusterId || index + 1} no conserva los requisitos de disposición humana a nivel de candidato.`));
+}
+
+function buildClusterUnit(context: ClusterValidationContext, candidates: JsonRecord[], representative: JsonRecord | undefined, humanAttention: boolean): QueueUnit | null {
+  const {cluster, clusterId, grouped} = context;
+  if (candidates.length) {
+    return {
+      id: grouped ? clusterId : candidateId(candidates[0]),
+      kind: grouped ? "group" : "individual",
+      requiresHumanAttention: humanAttention,
+      candidates: [...candidates],
+      representative: representative || candidates[0],
+      cluster,
+    };
+  }
+  return null;
+}
+
+function indexQueueCandidates(findings: JsonRecord[], payload: ReviewQueuePayload, locale: Locale, integrityErrors: string[]) {
   const candidateById = new Map<string, JsonRecord>();
   const sourceIds: string[] = [];
   for (const candidate of findings) {
@@ -135,73 +224,48 @@ function buildQueue(payload: ReviewQueuePayload, locale: Locale): QueueModel {
     if (candidate.human_review_required !== true || candidate.client_delivery_allowed === true) integrityErrors.push(tr(locale, `Candidate ${id} does not preserve the mandatory pre-approval review boundary.`, `El candidato ${id} no conserva el límite obligatorio de revisión previa a la aprobación.`));
     if (candidate.human_disposition !== null && candidate.human_disposition !== undefined) integrityErrors.push(tr(locale, `Candidate ${id} already contains a human disposition outside this read-only work package.`, `El candidato ${id} ya contiene una disposición humana fuera de este paquete de trabajo de solo lectura.`));
   }
+  return {candidateById, sourceIds};
+}
+
+function validateReviewFindingWorkload(payload: ReviewQueuePayload, units: QueueUnit[], locale: Locale, integrityErrors: string[]) {
+  const exactSourceFindings = asRecords(payload.exact_source_review_findings);
+  const operationalContextFindings = asRecords(payload.operational_context_review_findings);
+  const scannerCandidateReviewWorkUnits = finiteNumber(payload.scanner_candidate_review_work_units);
+  const exactSourceReviewWorkUnits = finiteNumber(payload.exact_source_review_work_units);
+  const operationalContextReviewWorkUnits = finiteNumber(payload.operational_context_review_work_units);
+  const totalUnresolvedHumanReviewWorkUnits = finiteNumber(payload.total_unresolved_human_review_work_units);
+  if (scannerCandidateReviewWorkUnits === null || scannerCandidateReviewWorkUnits !== units.length) integrityErrors.push(tr(locale, "Scanner-candidate review work units do not reconcile with the displayed scanner queue.", "Las unidades de revisión de candidatos de analizadores no coinciden con la cola de analizadores mostrada."));
+  if (exactSourceReviewWorkUnits === null || exactSourceReviewWorkUnits !== exactSourceFindings.length) integrityErrors.push(tr(locale, "Exact-source review work units do not reconcile with the retained exact-source findings.", "Las unidades de revisión con fuente exacta no coinciden con los hallazgos con fuente exacta conservados."));
+  if (operationalContextReviewWorkUnits === null || operationalContextReviewWorkUnits !== operationalContextFindings.length) integrityErrors.push(tr(locale, "Operational/context review work units do not reconcile with the retained operational findings.", "Las unidades de revisión operativa o contextual no coinciden con los hallazgos operativos conservados."));
+  const combinedUnits = units.length + exactSourceFindings.length + operationalContextFindings.length;
+  if (totalUnresolvedHumanReviewWorkUnits === null || totalUnresolvedHumanReviewWorkUnits !== combinedUnits) integrityErrors.push(tr(locale, "Total unresolved human-review work units do not reconcile across scanner, exact-source, and operational/context findings.", "El total de unidades de revisión humana sin resolver no coincide entre los hallazgos de analizadores, de fuente exacta y operativos o contextuales."));
+  if (payload.operator_attention_required !== (combinedUnits > 0)) integrityErrors.push(tr(locale, "Operator-attention state does not reconcile with the combined unresolved workload.", "El estado de atención del operador no coincide con la carga combinada sin resolver."));
+  return {exactSourceFindings, operationalContextFindings, scannerCandidateReviewWorkUnits, exactSourceReviewWorkUnits, operationalContextReviewWorkUnits, totalUnresolvedHumanReviewWorkUnits};
+}
+
+function buildQueue(payload: ReviewQueuePayload, locale: Locale): QueueModel {
+  const register = canonicalRegister(payload);
+  if (!Array.isArray(register.findings)) throw new Error(tr(locale, "The exact terminal report does not contain a canonical scanner candidate register.", "El informe terminal exacto no contiene un registro canónico de candidatos de los analizadores."));
+  const findings = asRecords(register.findings);
+  const triage = asRecord(register.technical_triage);
+  const integrityErrors: string[] = [];
+  const rawClusters = register.review_workload_clusters;
+  if (!Array.isArray(rawClusters)) integrityErrors.push(tr(locale, "Canonical deterministic cluster metadata is unavailable.", "Los metadatos canónicos de los grupos deterministas no están disponibles."));
+  const clusterRecords = asRecords(rawClusters);
+  if (Array.isArray(rawClusters) && clusterRecords.length !== rawClusters.length) integrityErrors.push(tr(locale, "Canonical cluster metadata contains a malformed record.", "Los metadatos canónicos de los grupos contienen un registro con formato incorrecto."));
+
+  const {candidateById, sourceIds} = indexQueueCandidates(findings, payload, locale, integrityErrors);
 
   const observedClusterIds = new Set<string>();
   const clusteredCandidateIds: string[] = [];
   const builtUnits: QueueUnit[] = [];
   clusterRecords.forEach((cluster, index) => {
-    const clusterId = text(cluster.cluster_id);
-    if (!clusterId) integrityErrors.push(tr(locale, `Cluster record ${index + 1} has no canonical identity.`, `El registro de grupo ${index + 1} no tiene identidad canónica.`));
-    if (clusterId && observedClusterIds.has(clusterId)) integrityErrors.push(tr(locale, `Cluster identity ${clusterId} is duplicated.`, `La identidad del grupo ${clusterId} está duplicada.`));
-    if (clusterId) observedClusterIds.add(clusterId);
-
-    const candidateIds = textList(cluster.candidate_ids);
-    if (!Array.isArray(cluster.candidate_ids)) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} has no canonical candidate list.`, `El grupo ${clusterId || index + 1} no tiene una lista canónica de candidatos.`));
-    if (new Set(candidateIds).size !== candidateIds.length) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} repeats a candidate identity.`, `El grupo ${clusterId || index + 1} repite una identidad de candidato.`));
-    const declaredCount = finiteNumber(cluster.candidate_record_count);
-    const declaredSize = finiteNumber(cluster.cluster_size);
-    if (declaredCount !== candidateIds.length || declaredSize !== candidateIds.length) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} size does not match its candidate list.`, `El tamaño del grupo ${clusterId || index + 1} no coincide con su lista de candidatos.`));
-
-    const grouped = cluster.grouped_review_eligible === true;
-    const candidates: JsonRecord[] = [];
-    for (const id of candidateIds) {
-      clusteredCandidateIds.push(id);
-      const candidate = candidateById.get(id);
-      if (!candidate) {
-        integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} references unknown candidate ${id}.`, `El grupo ${clusterId || index + 1} hace referencia al candidato desconocido ${id}.`));
-        continue;
-      }
-      candidates.push(candidate);
-      if (text(candidate.cluster_id) !== clusterId) integrityErrors.push(tr(locale, `Candidate ${id} does not match cluster ${clusterId}.`, `El candidato ${id} no corresponde al grupo ${clusterId}.`));
-      if (finiteNumber(candidate.cluster_size) !== candidateIds.length) integrityErrors.push(tr(locale, `Candidate ${id} has inconsistent cluster size.`, `El candidato ${id} tiene un tamaño de grupo inconsistente.`));
-      if (!sameList(textList(candidate.cluster_candidate_ids), candidateIds)) integrityErrors.push(tr(locale, `Candidate ${id} has inconsistent deterministic cluster membership.`, `El candidato ${id} tiene una pertenencia inconsistente al grupo determinista.`));
-      if (text(candidate.representative_candidate_id) !== text(cluster.representative_candidate_id)) integrityErrors.push(tr(locale, `Candidate ${id} has inconsistent representative identity.`, `El candidato ${id} tiene una identidad representativa inconsistente.`));
-      if (candidate.grouped_review_eligible !== cluster.grouped_review_eligible) integrityErrors.push(tr(locale, `Candidate ${id} has inconsistent grouped-review eligibility.`, `El candidato ${id} tiene una elegibilidad inconsistente para revisión agrupada.`));
-      if (candidate.homogeneous_evidence !== cluster.homogeneous_evidence || candidate.homogeneous_verdict !== cluster.homogeneous_verdict) integrityErrors.push(tr(locale, `Candidate ${id} has inconsistent cluster homogeneity metadata.`, `El candidato ${id} tiene metadatos inconsistentes de homogeneidad del grupo.`));
-      const expectedReviewUnit = grouped ? clusterId : id;
-      if (text(candidate.review_unit_id) !== expectedReviewUnit) integrityErrors.push(tr(locale, `Candidate ${id} has inconsistent deterministic review-unit identity.`, `El candidato ${id} tiene una identidad inconsistente de unidad de revisión determinista.`));
-    }
-
-    const routingClasses = Array.from(new Set(candidates.map((candidate) => text(candidate.review_routing_class)).filter(Boolean))).sort();
-    const declaredRoutingClasses = textList(cluster.review_routing_classes).sort();
-    if (!sameList(routingClasses, declaredRoutingClasses)) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} has inconsistent review-routing classes.`, `El grupo ${clusterId || index + 1} tiene clases inconsistentes de enrutamiento de revisión.`));
-    if (!text(cluster.cluster_reason) || !text(cluster.homogeneous_evidence_basis)) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} is missing its deterministic grouping basis.`, `Al grupo ${clusterId || index + 1} le falta su fundamento de agrupación determinista.`));
-
-    const representativeId = text(cluster.representative_candidate_id);
-    const representative = candidates.find((candidate) => candidateId(candidate) === representativeId);
-    const humanAttention = candidates.some(requiresHumanAttention);
-    if (cluster.grouped_human_review_cluster !== (grouped && humanAttention)) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} has inconsistent human-review routing.`, `El grupo ${clusterId || index + 1} tiene un enrutamiento inconsistente de revisión humana.`));
-    if (!representative || !candidateIds.includes(representativeId)) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} has an invalid representative candidate.`, `El grupo ${clusterId || index + 1} tiene un candidato representativo no válido.`));
-    if (grouped) {
-      if (candidateIds.length < 2 || candidates.some((candidate) => requiresHumanAttention(candidate) !== humanAttention)) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} is not a valid grouped review unit.`, `El grupo ${clusterId || index + 1} no es una unidad válida de revisión agrupada.`));
-      if (cluster.homogeneous_evidence !== true || cluster.homogeneous_verdict !== true) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} is not homogeneous enough for grouped review.`, `El grupo ${clusterId || index + 1} no es suficientemente homogéneo para la revisión agrupada.`));
-      if (candidates.some((candidate) => candidate.grouped_review_eligible !== true || candidate.review_requires_individual_attention === true)) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} contains a candidate that requires individual attention.`, `El grupo ${clusterId || index + 1} contiene un candidato que requiere atención individual.`));
-    } else {
-      if (cluster.grouped_human_review_cluster === true || candidateIds.length !== 1) integrityErrors.push(tr(locale, `Individual cluster ${clusterId || index + 1} does not contain exactly one candidate.`, `El grupo individual ${clusterId || index + 1} no contiene exactamente un candidato.`));
-      if (candidates.some((candidate) => candidate.grouped_review_eligible === true || candidate.review_requires_individual_attention !== humanAttention)) integrityErrors.push(tr(locale, `Individual cluster ${clusterId || index + 1} has inconsistent routing.`, `El grupo individual ${clusterId || index + 1} tiene un enrutamiento inconsistente.`));
-    }
-    if (cluster.underlying_candidate_disposition_required !== true) integrityErrors.push(tr(locale, `Cluster ${clusterId || index + 1} does not preserve candidate-level human disposition requirements.`, `El grupo ${clusterId || index + 1} no conserva los requisitos de disposición humana a nivel de candidato.`));
-
-    if (candidates.length) {
-      builtUnits.push({
-        id: grouped ? clusterId : candidateId(candidates[0]),
-        kind: grouped ? "group" : "individual",
-        requiresHumanAttention: humanAttention,
-        candidates: [...candidates],
-        representative: representative || candidates[0],
-        cluster,
-      });
-    }
+    const context = validateClusterIdentity(cluster, index, observedClusterIds, integrityErrors, locale);
+    const candidates = collectClusterMembers(context, candidateById, clusteredCandidateIds);
+    const {representative, humanAttention} = validateClusterRouting(context, candidates);
+    validateClusterReviewPolicy(context, candidates, humanAttention);
+    const unit = buildClusterUnit(context, candidates, representative, humanAttention);
+    if (unit) builtUnits.push(unit);
   });
 
   const queuedIds = clusteredCandidateIds;
@@ -231,18 +295,7 @@ function buildQueue(payload: ReviewQueuePayload, locale: Locale): QueueModel {
   if (finiteNumber(payload.candidate_count) !== candidateCount) integrityErrors.push(tr(locale, "Protected queue candidate count does not match the canonical register.", "El número de candidatos de la cola protegida no coincide con el registro canónico."));
   if (finiteNumber(payload.human_review_work_units) !== units.length) integrityErrors.push(tr(locale, "Protected queue work-unit count does not reconcile with the displayed queue.", "El número de unidades de trabajo de la cola protegida no coincide con la cola mostrada."));
 
-  const exactSourceFindings = asRecords(payload.exact_source_review_findings);
-  const operationalContextFindings = asRecords(payload.operational_context_review_findings);
-  const scannerCandidateReviewWorkUnits = finiteNumber(payload.scanner_candidate_review_work_units);
-  const exactSourceReviewWorkUnits = finiteNumber(payload.exact_source_review_work_units);
-  const operationalContextReviewWorkUnits = finiteNumber(payload.operational_context_review_work_units);
-  const totalUnresolvedHumanReviewWorkUnits = finiteNumber(payload.total_unresolved_human_review_work_units);
-  if (scannerCandidateReviewWorkUnits === null || scannerCandidateReviewWorkUnits !== units.length) integrityErrors.push(tr(locale, "Scanner-candidate review work units do not reconcile with the displayed scanner queue.", "Las unidades de revisión de candidatos de analizadores no coinciden con la cola de analizadores mostrada."));
-  if (exactSourceReviewWorkUnits === null || exactSourceReviewWorkUnits !== exactSourceFindings.length) integrityErrors.push(tr(locale, "Exact-source review work units do not reconcile with the retained exact-source findings.", "Las unidades de revisión con fuente exacta no coinciden con los hallazgos con fuente exacta conservados."));
-  if (operationalContextReviewWorkUnits === null || operationalContextReviewWorkUnits !== operationalContextFindings.length) integrityErrors.push(tr(locale, "Operational/context review work units do not reconcile with the retained operational findings.", "Las unidades de revisión operativa o contextual no coinciden con los hallazgos operativos conservados."));
-  const combinedUnits = units.length + exactSourceFindings.length + operationalContextFindings.length;
-  if (totalUnresolvedHumanReviewWorkUnits === null || totalUnresolvedHumanReviewWorkUnits !== combinedUnits) integrityErrors.push(tr(locale, "Total unresolved human-review work units do not reconcile across scanner, exact-source, and operational/context findings.", "El total de unidades de revisión humana sin resolver no coincide entre los hallazgos de analizadores, de fuente exacta y operativos o contextuales."));
-  if (payload.operator_attention_required !== (combinedUnits > 0)) integrityErrors.push(tr(locale, "Operator-attention state does not reconcile with the combined unresolved workload.", "El estado de atención del operador no coincide con la carga combinada sin resolver."));
+  const {exactSourceFindings, operationalContextFindings, scannerCandidateReviewWorkUnits, exactSourceReviewWorkUnits, operationalContextReviewWorkUnits, totalUnresolvedHumanReviewWorkUnits} = validateReviewFindingWorkload(payload, units, locale, integrityErrors);
 
   return {units, individualUnits, groupedUnits, retainedUnits, candidateCount, clusterCount: clusterRecords.length, exactSourceFindings, operationalContextFindings, scannerCandidateReviewWorkUnits: scannerCandidateReviewWorkUnits ?? 0, exactSourceReviewWorkUnits: exactSourceReviewWorkUnits ?? 0, operationalContextReviewWorkUnits: operationalContextReviewWorkUnits ?? 0, totalUnresolvedHumanReviewWorkUnits: totalUnresolvedHumanReviewWorkUnits ?? 0, integrityErrors: Array.from(new Set(integrityErrors))};
 }
@@ -348,9 +401,9 @@ function RetainedUnitDisclosure({unit, locale}: {unit: QueueUnit; locale: Locale
     : <CandidateDisclosure candidate={unit.representative} locale={locale} />;
 }
 
-export default function ReviewerQueue() {
+export default function ReviewerQueue({runId, refresh = 0, isCurrent, onChanged}: WorkspaceProps = savedRun()) {
+  const scope = useReviewScope(isCurrent);
   const [locale, setLocale] = useState<Locale>("en");
-  const [runId, setRunId] = useState("");
   const [payload, setPayload] = useState<ReviewQueuePayload | null>(null);
   const [model, setModel] = useState<QueueModel | null>(null);
   const [loading, setLoading] = useState(false);
@@ -359,7 +412,6 @@ export default function ReviewerQueue() {
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
     const requestedLocale: Locale = query.get("lang") === "es-MX" ? "es-MX" : "en";
-    setRunId(query.get("run_id") || "");
     setLocale(requestedLocale);
     document.documentElement.lang = requestedLocale;
     document.title = tr(requestedLocale, "Human review workspace | NICO", "Espacio de revisión humana | NICO");
@@ -373,12 +425,15 @@ export default function ReviewerQueue() {
     window.location.assign(`${target.pathname}${target.search}${target.hash}`);
   }
 
-  async function loadQueue(event: FormEvent): Promise<void> {
-    event.preventDefault();
+  useEffect(() => {if (refresh > 0) void loadQueue();}, [refresh]);
+
+  async function loadQueue(event?: FormEvent): Promise<void> {
+    event?.preventDefault();
     if (!runId.trim()) {
       setError(tr(locale, "Enter the exact Comprehensive run ID.", "Ingresa el ID exacto de la ejecución Comprehensive."));
       return;
     }
+    const token = scope.begin();
     setLoading(true); setError(""); setPayload(null); setModel(null);
     try {
       const requestedRunId = runId.trim();
@@ -395,11 +450,12 @@ export default function ReviewerQueue() {
       if (text(next.source) !== "canonical_terminal_comprehensive_report_json") throw new Error(tr(locale, "The reviewer queue is not bound to the terminal canonical Comprehensive report.", "La cola de revisión no está vinculada al informe Comprehensive canónico terminal."));
       if (next.human_review_required !== true || next.client_delivery_allowed === true) throw new Error(tr(locale, "The exact run does not preserve the mandatory pre-approval human-review boundary.", "La ejecución exacta no conserva el límite obligatorio de revisión humana previa a la aprobación."));
       const queue = buildQueue(next, locale);
-      setPayload(next); setModel(queue);
+      if (scope.current(token)) {setPayload(next); setModel(queue);}
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : tr(locale, "Unable to load the exact review queue.", "No fue posible cargar la cola de revisión exacta."));
+      if (scope.current(token)) setError(caught instanceof Error ? caught.message : tr(locale, "Unable to load the exact review queue.", "No fue posible cargar la cola de revisión exacta."));
     } finally {
-      setLoading(false);
+      if (scope.current(token)) setLoading(false);
+      scope.finish(token);
     }
   }
 
@@ -417,7 +473,7 @@ export default function ReviewerQueue() {
       <h2>{tr(locale, "Open an exact terminal run", "Abrir una ejecución terminal exacta")}</h2>
       <ReviewSessionNotice runId={runId} locale={locale} />
       <form className={styles.form} onSubmit={loadQueue}>
-        <label>{tr(locale, "Exact Comprehensive run ID", "ID exacto de la ejecución Comprehensive")}<input disabled={loading} value={runId} onChange={(event: ChangeEvent<HTMLInputElement>) => {setRunId(event.target.value); setPayload(null); setModel(null);}} placeholder="comprun_…" autoCapitalize="none" autoCorrect="off" spellCheck={false} /></label>
+        <label>{tr(locale, "Exact Comprehensive run ID", "ID exacto de la ejecución Comprehensive")}<input disabled={loading} value={runId} readOnly placeholder="comprun_…" autoCapitalize="none" autoCorrect="off" spellCheck={false} /></label>
         <button type="submit" disabled={loading || !runId.trim()}>{loading ? tr(locale, "Loading exact queue…", "Cargando la cola exacta…") : tr(locale, "Load reviewer queue", "Cargar cola de revisión")}</button>
       </form>
       {error ? <div className={styles.error} role="alert">{error}</div> : null}

@@ -369,6 +369,22 @@ def _canonical_stages(canonical: Mapping[str, Any]) -> list[dict[str, Any]]:
         )
         by_id["staffing_sequencing_and_cost"] = staffing
 
+    from nico.retained_section_measurements_v1 import report_tables, report_measurement_identity
+    measurement_tables = report_tables(canonical.get("assessment") or {}, spanish=_is_spanish(canonical), expected_identity=report_measurement_identity(canonical))
+    technical = by_id.get("ci_cd_architecture_complexity_velocity")
+    if technical is not None:
+        # Keep derived prose out of source-table population commitments. Replace
+        # only lines explicitly owned by the preceding display projection.
+        previous = technical.get("_retained_measurement_lines")
+        previous = previous if isinstance(previous, list) else []
+        evidence = list(technical.get("evidence") or [])
+        for line in previous:
+            if isinstance(line, str) and line in evidence:
+                evidence.remove(line)
+        lines = [f"{table['title']} · {row[0]}: {row[1]}; {row[2]}"
+                 for table in measurement_tables for row in table['rows']]
+        technical["evidence"] = evidence + lines
+        technical["_retained_measurement_lines"] = lines
     return list(by_id.values())
 
 
@@ -412,7 +428,11 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
         pdf_base64 = base64.b64encode(pdf_bytes).decode("ascii")
         pdf_error = None
     else:
-        markdown = _markdown(dict(identity), dict(assessment), stages, generated_at).replace(
+        # Full populations are available to renderer-local preview labels without
+        # adding presentation metadata to the canonical assessment.
+        preview_source = {key: canonical[key] for key in ("roadmap", "review_candidate_register") if key in canonical}
+        presentation_assessment = {**assessment, "_preview_context": preview_source}
+        markdown = _markdown(dict(identity), presentation_assessment, stages, generated_at).replace(
             "DRAFT — HUMAN REVIEW REQUIRED — CLIENT DELIVERY NOT AUTHORIZED",
             f"{EN_BOUNDARY} — CLIENT DELIVERY NOT AUTHORIZED",
         )
@@ -420,7 +440,13 @@ def rebuild_premium_client_artifacts(package: Mapping[str, Any]) -> dict[str, An
         markdown = markdown.replace(marker, f"{score_summary}\n{marker}", 1) if marker in markdown else f"{score_summary}\n{markdown}"
         title = f"NICO Comprehensive Technical Assessment — {_text(identity.get('repository'))}"
         rendered_html = _semantic_html(markdown, title)
-        pdf_base64, pdf_error, original_page_count = _pdf(dict(identity), dict(assessment), pdf_stages, generated_at)
+        # This by-value alias can predate the compact installer. Observe its actual
+        # inputs without rebinding it or changing the effective stage population.
+        from nico.pdf_cap_failure_diagnostics import record_render_arguments
+        from nico.comprehensive_final_report_compact_base_v1 import _COMPACT_FINAL_PDF
+        record_render_arguments(dict(identity), presentation_assessment, pdf_stages, pdf_stages,
+                                _COMPACT_FINAL_PDF.get(), boundary='premium_render_arguments')
+        pdf_base64, pdf_error, original_page_count = _pdf(dict(identity), presentation_assessment, pdf_stages, generated_at)
         pdf_bytes = base64.b64decode(pdf_base64) if pdf_base64 else b""
         if pdf_bytes.startswith(b"%PDF"):
             pdf_bytes = _prepend_score_summary_pdf(pdf_bytes, identity=identity, assessment=assessment, spanish=False)

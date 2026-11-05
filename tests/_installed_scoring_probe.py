@@ -78,7 +78,14 @@ repo["dependency_evidence"]["lockfile_paths"] = ["requirements.txt"] if language
 context["prior_stage_results"] = {
     "repository_and_delivery_evidence": {
         "repository_evidence": repo,
-        "complexity_evidence": {"complexity_score": 78, "files_analyzed": len(sources[language]), "risk_level": "moderate"},
+        "complexity_evidence": {
+            # Synthetic numeric inputs must satisfy the same retained identity
+            # contract as production; absent identity must remain NOT SCORED.
+            **{key: context[key] for key in
+               ("run_id", "repository", "customer_id", "project_id", "evidence_ledger_id")},
+            "snapshot_commit_sha": SHA, "evidence_id": "owned-synthetic-complexity",
+            "complexity_score": 78, "files_analyzed": len(sources[language]), "risk_level": "moderate",
+        },
     },
     "dependency_security_static_analysis": {"scan_id": "owned-fixed-scoring"},
 }

@@ -22,8 +22,8 @@ def canonical(state, language='es-MX'):
     ]}
 
 
-def summary(state):
-    return (f'bandit: {state}; exact commit=yes; artifact=retained; '
+def summary(state, retention_label='status record'):
+    return (f'bandit: {state}; exact commit=yes; {retention_label}=retained; '
             'confirmed material finding count=0; raw finding payload embedded=no.')
 
 
@@ -34,7 +34,7 @@ def test_producer_localizes_entire_sentence_without_erasing_machine_identifiers(
     stage = build_scanner_execution_stage(value, StageRenderer)
     generated = next(s for s in stage['evidence'] if s.startswith('bandit:'))
     line = localize_current_report_copy_v98(generated)
-    assert 'commit exacto=sí; artefacto=conservado' in line
+    assert 'commit exacto=sí; registro de estado=conservado' in line
     assert 'carga de hallazgos sin procesar incluida=no.' in line
     assert 'exact commit=' not in line
     assert 'raw finding payload' not in line
@@ -47,16 +47,22 @@ def test_producer_localizes_entire_sentence_without_erasing_machine_identifiers(
 
 
 @pytest.mark.parametrize('state', sorted(_SCANNER_STATUS_ES))
-def test_full_sentence_translator_accepts_all_registered_scanner_states(state):
-    line = localize_current_report_copy_v98(summary(state))
-    assert '; commit exacto=sí; artefacto=conservado;' in line
+@pytest.mark.parametrize('retention_label,localized_label', [
+    ('status record', 'registro de estado'),
+    ('artifact', 'artefacto'),  # Retained legacy summaries remain translatable.
+])
+def test_full_sentence_translator_accepts_all_registered_scanner_states(
+    state, retention_label, localized_label,
+):
+    line = localize_current_report_copy_v98(summary(state, retention_label))
+    assert f'; commit exacto=sí; {localized_label}=conservado;' in line
     assert '; carga de hallazgos sin procesar incluida=no.' in line
     assert 'raw finding payload' not in line
     if '_' in state:
         assert f'{state} ({_SCANNER_STATUS_ES[state]})' in line
 
 
-def test_english_producer_and_canonical_evidence_are_unchanged():
+def test_english_producer_names_status_retention_without_mutating_canonical_evidence():
     value = canonical('completed_with_findings', 'en')
     before = deepcopy(value)
     stage = build_scanner_execution_stage(value, StageRenderer)
@@ -80,7 +86,13 @@ def test_review_required_identifier_remains_exact_with_its_display_label():
 
 
 @pytest.mark.parametrize('state', ['not applicable', 'not assessed', 'execution completed', 'not_assessed'])
-def test_existing_multiword_and_underscore_aliases_remain_supported(state):
-    line = localize_current_report_copy_v98(summary(state))
-    assert '; commit exacto=sí; artefacto=conservado;' in line
+@pytest.mark.parametrize('retention_label,localized_label', [
+    ('status record', 'registro de estado'),
+    ('artifact', 'artefacto'),
+])
+def test_existing_multiword_and_underscore_aliases_remain_supported(
+    state, retention_label, localized_label,
+):
+    line = localize_current_report_copy_v98(summary(state, retention_label))
+    assert f'; commit exacto=sí; {localized_label}=conservado;' in line
     assert '; carga de hallazgos sin procesar incluida=no.' in line

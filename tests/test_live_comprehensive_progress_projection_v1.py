@@ -38,8 +38,7 @@ def test_live_progress_uses_all_same_run_progress_truth_before_showing_zero() ->
     assert "contiguousCompleted" in source
     assert "stageIndex / totalStages" in source
     assert "active_stage_progress_percent" in source
-    assert "if (running && stageIndex === 0 && display === 0) display = 1;" in source
-    assert "if (running && stageIndex < 0 && display === 0) display = 1;" in source
+    assert "if (running && stageIndex <= 0 && display === 0) display = 1;" in source
 
 
 def test_live_progress_is_presentation_only_and_bounded() -> None:

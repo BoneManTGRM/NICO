@@ -1,0 +1,2 @@
+{"helper": "legacy", "seconds": 0.6392280140000821, "texts": 20, "phrases": 79, "repeats": 3}
+{"helper": "_safe_replace", "seconds": 0.4237013920001118, "texts": 20, "phrases": 79, "repeats": 3}

@@ -10,19 +10,21 @@ const STATUS_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+$/;
 const SCANNER_EVIDENCE_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/scanner-evidence$/;
 const CHECKOUT_RECOVERY_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/scanner-checkout-recovery$/;
 const CONTINUE_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/continue$/;
-const ARTIFACT_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/(?:report\/(?:markdown|html|json|pdf|evidence-package)|localized-report\/(?:en|es-MX)(?:\/(?:pdf|evidence-package))?|approved-delivery-package)$/;
+const PDF_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/(?:report\/pdf|localized-report\/(?:en|es-MX)\/pdf|review-pdf\/(?:en|es-MX)\/pdf)$/;
+const ARTIFACT_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/(?:report\/(?:markdown|html|json|pdf|evidence-package)|localized-report\/(?:en|es-MX)(?:\/(?:pdf|evidence-package))?|approved-delivery-package|review-pdf\/(?:en|es-MX)\/pdf)$/;
 const ALLOWED_PATH = /^\/assessment\/(?:comprehensive-intake|comprehensive-run(?:\/[^/?#]+(?:\/(?:continue|review-queue|review-work|review|authorize-delivery|approved-delivery-package|automated-delivery-package|report\/(?:markdown|html|json|pdf|evidence-package)|localized-report\/(?:en|es-MX)(?:\/(?:pdf|evidence-package))?))?)?)$/;
 const LOCALIZED_EDITION_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/localized-editions\/es-MX(?:\/(?:review|authorize-delivery|approved-delivery-package))?$/;
+const REVIEW_PREPARATION_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/review-pdf\/(?:en|es-MX)(?:\/(?:pdf|cancel))?$/;
 const RESPONSE_HEADERS = [
   "content-type", "content-length", "content-disposition", "retry-after",
-  "x-nico-run-id", "x-nico-commit-sha", "x-nico-report-id",
+  "x-nico-run-id", "x-nico-commit-sha", "x-nico-report-id", "x-nico-admission-trace",
   "x-nico-report-language", "x-nico-assessment-rerun", "x-nico-pdf-sha256",
   "x-nico-artifact-sha256", "x-nico-accepted-pdf-sha256",
   "x-nico-accepted-edition-language", "x-nico-accepted-edition-manifest-sha256",
   "x-nico-canonical-truth-sha256", "x-nico-human-review-required", "x-nico-human-review-completed",
   "x-nico-approval-status", "x-nico-delivery-status",
   "x-nico-client-delivery-allowed", "x-nico-localized-artifact-requires-new-approval",
-  "x-nico-localized-artifact-approval-invalidated", "x-nico-artifact-finality",
+  "x-nico-localized-artifact-approval-invalidated", "x-nico-artifact-finality", "x-nico-review-pdf-artifact-mode",
   "x-nico-frozen-source-artifact", "x-nico-delivery-package-sha256",
   "x-nico-certified-package-sha256", "x-nico-authorization-mode",
   "x-nico-human-reviewed", "x-nico-accepted-edition-sha256",
@@ -58,10 +60,79 @@ function backendOrigin(): URL | null {
 }
 
 function timeoutFor(method: string, path: string): number {
+  if (method === "GET" && REVIEW_PREPARATION_PATH.test(path) && path.endsWith("/pdf")) return 240_000;
   if (method === "GET" && (ARTIFACT_PATH.test(path) || LOCALIZED_EDITION_PATH.test(path))) return 240_000;
   if (method === "GET" && STATUS_PATH.test(path)) return 60_000;
   if (method === "POST" && CONTINUE_PATH.test(path)) return 240_000;
   return method === "GET" ? 30_000 : 240_000;
+}
+
+function pdfTransferDiagnostics(startedAt: number) {
+  // Never log request IDs, paths, credentials, exception text, or body content.
+  const traceId = crypto.randomUUID();
+  let headersMs: number | null = null;
+  let firstByteMs: number | null = null;
+  let bytes = 0;
+  let finished = false;
+  let metadata: Record<string, number | string | null> = {};
+  const elapsed = () => Math.max(0, Date.now() - startedAt);
+  function emit(outcome: string) {
+    try {
+      console.info(JSON.stringify({event: "nico_pdf_proxy_transfer", trace_id: traceId,
+        outcome, elapsed_ms: elapsed(), headers_ms: headersMs,
+        first_byte_read_ms: firstByteMs, upstream_body_bytes: bytes, ...metadata}));
+    } catch {
+      // Telemetry availability must not change artifact transport.
+    }
+  }
+  function finish(outcome: string) {
+    if (finished) return;
+    finished = true;
+    emit(outcome);
+  }
+  return {
+    finish,
+    wrap(response: Response, headers: Headers) {
+      headersMs = elapsed();
+      const length = response.headers.get("content-length") || "";
+      const encoding = (response.headers.get("content-encoding") || "").trim().toLowerCase();
+      const framing = (response.headers.get("transfer-encoding") || "").trim().toLowerCase();
+      metadata = {upstream_status: response.status,
+        declared_content_length: /^\d{1,15}$/.test(length) ? Number(length) : null,
+        content_encoding: ["gzip", "br", "deflate", "identity"].includes(encoding) ? encoding : encoding ? "other" : "absent",
+        transfer_encoding: framing === "chunked" ? "chunked" : framing ? "other" : "absent"};
+      headers.set("X-NICO-Proxy-Trace-ID", traceId);
+      headers.set("X-NICO-Proxy-Headers-Ms", String(headersMs));
+      emit("headers_received");
+      if (!response.body) {
+        finish("no_body");
+        return null;
+      }
+      const reader = response.body.getReader();
+      return new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          try {
+            const {done, value} = await reader.read();
+            if (done) {
+              finish("upstream_complete");
+              controller.close();
+            } else {
+              bytes += value.byteLength;
+              if (firstByteMs === null && value.byteLength) firstByteMs = elapsed();
+              controller.enqueue(value);
+            }
+          } catch (error) {
+            finish("body_error");
+            controller.error(error);
+          }
+        },
+        async cancel(reason) {
+          finish("consumer_cancelled");
+          await reader.cancel(reason);
+        },
+      }, {highWaterMark: 0});
+    },
+  };
 }
 
 async function proxyAssessment(
@@ -73,9 +144,15 @@ async function proxyAssessment(
     return errorResponse(404, "nico_assessment_route_not_allowed", "The requested assessment route is unavailable.");
   }
   const path = `/assessment/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
-  if (!ALLOWED_PATH.test(path) && !LOCALIZED_EDITION_PATH.test(path) && !SCANNER_EVIDENCE_PATH.test(path) && !CHECKOUT_RECOVERY_PATH.test(path)) {
+  if (!ALLOWED_PATH.test(path) && !LOCALIZED_EDITION_PATH.test(path) && !SCANNER_EVIDENCE_PATH.test(path) && !CHECKOUT_RECOVERY_PATH.test(path) && !REVIEW_PREPARATION_PATH.test(path)) {
     return errorResponse(404, "nico_assessment_route_not_allowed", "Only bounded NICO Comprehensive lifecycle routes are available.");
   }
+
+  if (REVIEW_PREPARATION_PATH.test(path) && (
+    (path.endsWith("/pdf") && request.method !== "GET")
+    || (path.endsWith("/cancel") && request.method !== "POST")
+    || (!path.endsWith("/pdf") && !path.endsWith("/cancel") && !["GET", "POST"].includes(request.method))
+  )) return errorResponse(405, "review_pdf_method_rejected", "Use the explicit review preparation controls.");
 
   if (RETAINED_EVIDENCE_PATH.test(path) && request.method !== "GET") {
     return errorResponse(405, "retained_evidence_read_only", "Retained evidence download is read-only.");
@@ -133,6 +210,8 @@ async function proxyAssessment(
   const timeoutMs = timeoutFor(request.method, path);
   const artifactRead = request.method === "GET" && (ARTIFACT_PATH.test(path) || LOCALIZED_EDITION_PATH.test(path));
   const startedAt = Date.now();
+  const pdfDiagnostics = request.method === "GET" && PDF_PATH.test(path)
+    ? pdfTransferDiagnostics(startedAt) : null;
 
   try {
     const response = await fetch(upstream, {
@@ -153,12 +232,14 @@ async function proxyAssessment(
       const value = response.headers.get(name);
       if (value) responseHeaders.set(name, value);
     }
-    return new Response(response.body, {
+    const responseBody = pdfDiagnostics ? pdfDiagnostics.wrap(response, responseHeaders) : response.body;
+    return new Response(responseBody, {
       status: response.status,
       statusText: response.statusText,
       headers: responseHeaders,
     });
   } catch (error) {
+    pdfDiagnostics?.finish("before_response_error");
     const timedOut = error instanceof DOMException && error.name === "TimeoutError";
     return errorResponse(
       timedOut ? 504 : 502,

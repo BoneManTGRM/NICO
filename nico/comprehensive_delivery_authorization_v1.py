@@ -61,6 +61,9 @@ def validate_delivery_authorization(
     authorization: Any,
 ) -> dict[str, Any]:
     """Validate a separate delivery receipt without changing human approval."""
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(record, manifest, authorization)
+
 
     errors: list[str] = []
     if not isinstance(authorization, Mapping):
@@ -168,6 +171,9 @@ def authorize_accepted_edition(
     expected_artifact_identity: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     """Create a delivery receipt bound to, but outside, immutable approval."""
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(record, manifest)
+
 
     if _text(record.get("status")).casefold() != "approved":
         raise ValueError("delivery_authorization_requires_approved_run")

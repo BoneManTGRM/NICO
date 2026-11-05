@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.review_pdf_admission_observability_v1 import timed as _admission_timed
+
 from nico.report_delivery_timing_v1 import report_delivery_phase
 
 import hashlib
@@ -43,31 +45,42 @@ _HASH_NATIVE_NODE_LIMIT = 8192
 _HASH_NATIVE_BYTES_LIMIT = 1024 * 1024
 
 
-def _bounded_native_json(value: Any) -> bool:
+def _bounded_native_json(value: Any, *, max_depth: int = 64) -> bool:
     """Limit native encoding to small plain-JSON subtrees, including escaped bytes."""
 
     pending = [value]
+    depths = [0]
     nodes_left = _HASH_NATIVE_NODE_LIMIT
     bytes_left = _HASH_NATIVE_BYTES_LIMIT
     while pending:
         item = pending.pop()
+        depth = depths.pop()
         nodes_left -= 1
         if nodes_left < 0:
             return False
         kind = type(item)
+        # Native encoding must not bypass the outer traversal's deep-input
+        # fallback: its recursion behavior differs from standard iterencode.
+        if kind in (dict, list, tuple) and depth >= max_depth:
+            return False
         if kind is dict:
             if len(pending) + 2 * len(item) > nodes_left:
                 return False
             if any(type(key) is not str for key in item):
                 return False
             bytes_left -= 2 + 2 * len(item)
+            # Count private copies, not a caller-owned container that may change.
+            pending_before = len(pending)
             pending.extend(item.keys())
             pending.extend(item.values())
+            depths.extend([depth + 1] * (len(pending) - pending_before))
         elif kind in (list, tuple):
             if len(pending) + len(item) > nodes_left:
                 return False
             bytes_left -= 2 + len(item)
+            pending_before = len(pending)
             pending.extend(item)
+            depths.extend([depth + 1] * (len(pending) - pending_before))
         elif kind is str:
             bytes_left -= 2 + 6 * len(item)
         elif kind is int:
@@ -131,7 +144,7 @@ def _canonical_hash_chunks(value: Any, encoder: json.JSONEncoder, ancestors: set
             kind is dict and any(type(key) is not str for key in current)
         ) or len(ancestors) >= 64:
             raise _LegacyHashEncodingRequired
-        if _bounded_native_json(current):
+        if _bounded_native_json(current, max_depth=64 - len(ancestors)):
             yield from encoder.iterencode(current, _one_shot=True)
             continue
         identity = id(current)
@@ -677,6 +690,7 @@ def apply_comprehensive_review_decision(
     return updated
 
 
+@_admission_timed("record_restore_validation")
 def restore_comprehensive_run_record(payload: dict[str, Any]) -> dict[str, Any]:
     restored = _copy_record_for_update(payload)
     validation = validate_comprehensive_run_record(restored)

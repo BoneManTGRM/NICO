@@ -28,6 +28,9 @@ def retained_report_zip(report: Mapping[str, Any]) -> bytes:
     These are the existing files identified by the detached manifest, not a new
     report projection. Refuse absent or mismatched members rather than rebuilding.
     """
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(report)
+
     manifest_text = report.get("evidence_manifest_json")
     if not isinstance(manifest_text, str) or not manifest_text:
         raise ValueError("retained_manifest_missing")

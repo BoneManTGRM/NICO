@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from nico.report_json_copy import deepcopy
+from nico.report_json_copy import deepcopy, copy_with_tree_ownership
 from collections.abc import Mapping
 from typing import Any
 
@@ -284,7 +284,7 @@ def normalize_scanner_applicability_canonical(value: Mapping[str, Any]) -> dict[
     remain unavailable or failed.
     """
 
-    canonical = deepcopy(dict(value))
+    canonical, owned_tree = copy_with_tree_ownership(dict(value))
     signals = _repository_signals(canonical)
     records = [_normalize_record(item, signals) for item in _record_list(canonical)]
 
@@ -300,7 +300,13 @@ def normalize_scanner_applicability_canonical(value: Mapping[str, Any]) -> dict[
     canonical["requested_scanner_records"] = deepcopy(records)
     canonical["scanner_execution_records"] = deepcopy(required)
     canonical["not_applicable_scanner_records"] = deepcopy(not_applicable)
-    assessment = deepcopy(dict(canonical.get("assessment") or {}))
+    # Reuse only a private, unaliased JSON subtree; opaque/aliased inputs retain
+    # the historical independent copy and its isolation semantics.
+    assessment = (
+        canonical["assessment"]
+        if owned_tree and type(canonical.get("assessment")) is dict
+        else deepcopy(dict(canonical.get("assessment") or {}))
+    )
     assessment["requested_scanner_records"] = deepcopy(records)
     assessment["scanner_execution_records"] = deepcopy(required)
     assessment["completed_scanner_records"] = deepcopy([r for r in required if r.get("completed") is True])

@@ -6,6 +6,7 @@ import {reportLanguageForRequest} from "./assessment/assessmentLocale";
 const REPORT_ACTIONS_SELECTOR = '[data-assessment-report-actions="true"]';
 const COPY_MARKDOWN_LABEL = /(?:copy\s+markdown|copiar\s+markdown)/i;
 const STATUS_ATTR = "data-nico-markdown-action-status";
+const SLOW_PREPARATION_NOTICE_MS = 120_000;
 
 type CacheEntry = {
   runId: string;
@@ -13,6 +14,7 @@ type CacheEntry = {
   reportLanguage: ReportLanguage;
   markdown: string;
   promise: Promise<string> | null;
+  slowNotice?: Promise<void>;
 };
 
 type ReportLanguage = "en" | "es-MX";
@@ -60,7 +62,7 @@ function markdownHref(runId: string, reportLanguage: ReportLanguage): string {
   return `/api/nico/assessment/comprehensive-run/${encodeURIComponent(runId)}/localized-report/${encodeURIComponent(reportLanguage)}`;
 }
 
-function showStatus(container: Element | null, message: string, failure = false): void {
+function showStatus(container: Element | null, message: string, failure = false, pending = false): void {
   if (!container) return;
   let status = container.querySelector<HTMLElement>(`[${STATUS_ATTR}]`);
   if (!status) {
@@ -72,9 +74,7 @@ function showStatus(container: Element | null, message: string, failure = false)
   }
   status.setAttribute("role", failure ? "alert" : "status");
   status.textContent = message;
-  window.setTimeout(() => {
-    if (status?.isConnected && status.textContent === message) status.remove();
-  }, failure ? 8_000 : 3_500);
+  status.setAttribute("aria-busy", String(pending));
 }
 
 async function copyText(text: string): Promise<boolean> {
@@ -109,6 +109,10 @@ async function loadMarkdown(entry: CacheEntry): Promise<string> {
   if (entry.markdown) return entry.markdown;
   if (entry.promise) return entry.promise;
 
+  let noticeId: number;
+  entry.slowNotice = new Promise<void>(resolve => {
+    noticeId = window.setTimeout(resolve, SLOW_PREPARATION_NOTICE_MS);
+  });
   entry.promise = (async () => {
     const response = await fetch(markdownHref(entry.runId, entry.reportLanguage), {
       method: "GET",
@@ -143,13 +147,13 @@ async function loadMarkdown(entry: CacheEntry): Promise<string> {
     if (!markdown.trim()) throw new Error("markdown_empty");
     entry.markdown = markdown;
     return markdown;
-  })();
-
-  try {
-    return await entry.promise;
-  } finally {
+  })().finally(() => {
     entry.promise = null;
-  }
+    window.clearTimeout(noticeId);
+  });
+  // A slow notice does not abort a valid response or release the in-flight lock.
+  // The existing proxy owns the upstream deadline; browser silence is not cancellation.
+  return await entry.promise;
 }
 
 function enabledCopyButton(actions: Element): HTMLButtonElement | null {
@@ -170,7 +174,7 @@ function enabledCopyButton(actions: Element): HTMLButtonElement | null {
  * remains available instead of presenting a dead button.
  */
 export default function AssessmentMarkdownCopyBridge() {
-  const cache = useRef<CacheEntry | null>(null);
+  const cache = useRef(new Map<string, CacheEntry>());
   const guardedUntil = useRef(0);
 
   useEffect(() => {
@@ -179,15 +183,26 @@ export default function AssessmentMarkdownCopyBridge() {
       if (!runId) return null;
       const commitSha = visibleCommitSha(actions);
       const reportLanguage = activeReportLanguage();
-      if (
-        !cache.current
-        || cache.current.runId !== runId
-        || cache.current.commitSha !== commitSha
-        || cache.current.reportLanguage !== reportLanguage
-      ) {
-        cache.current = {runId, commitSha, reportLanguage, markdown: "", promise: null};
+      const key = JSON.stringify([runId, commitSha, reportLanguage]);
+      // Keep all pending identities, but do not retain completed report bodies
+      // after switching away. A->B->A must reuse A even while it is slow.
+      for (const [otherKey, other] of cache.current) {
+        if (otherKey !== key && !other.promise) cache.current.delete(otherKey);
       }
-      return cache.current;
+      let entry = cache.current.get(key);
+      if (!entry) {
+        entry = {runId, commitSha, reportLanguage, markdown: "", promise: null};
+        cache.current.set(key, entry);
+      }
+      return entry;
+    }
+
+    function isVisibleEntry(actions: Element, entry: CacheEntry): boolean {
+      return actions.isConnected
+        && actions.getAttribute("data-assessment-report-ready") === "true"
+        && visibleRunId(actions) === entry.runId
+        && visibleCommitSha(actions) === entry.commitSha
+        && activeReportLanguage() === entry.reportLanguage;
     }
 
     async function handleCopyMarkdownClick(event: MouseEvent): Promise<void> {
@@ -223,9 +238,12 @@ export default function AssessmentMarkdownCopyBridge() {
           spanish()
             ? "Preparando Markdown. Cuando indique que está listo, pulsa Copiar Markdown otra vez."
             : "Preparing Markdown. When it is ready, click Copy Markdown again.",
+          false, true,
         );
+        // Subscribe this container to the same bounded result after a rerender.
         void loadMarkdown(entry)
           .then(() => {
+            if (!isVisibleEntry(actions, entry)) return;
             guardedUntil.current = 0;
             showStatus(
               actions,
@@ -233,6 +251,7 @@ export default function AssessmentMarkdownCopyBridge() {
             );
           })
           .catch((failure: unknown) => {
+            if (!isVisibleEntry(actions, entry)) return;
             guardedUntil.current = 0;
             const message = failure instanceof Error ? failure.message : "";
             const code = /^HTTP [0-9]{3}(?: · [a-z][a-z0-9_]{0,119})?$/.test(message) ? ` (${message})` : "";
@@ -240,17 +259,26 @@ export default function AssessmentMarkdownCopyBridge() {
               actions,
               (spanish()
                 ? "No se pudo preparar Markdown"
-                : "Markdown could not be prepared") + code + ".",
+                : "Markdown could not be prepared") + code + (spanish()
+                  ? ". El servidor podría seguir trabajando. Pulsa Copiar Markdown para volver a intentarlo."
+                  : ". Server work may still continue. Click Copy Markdown to retry."),
               true,
             );
           });
+        void entry.slowNotice?.then(() => {
+          if (!entry.promise || !isVisibleEntry(actions, entry)) return;
+          showStatus(actions, spanish()
+            ? "La preparación está tardando más de lo esperado. La misma solicitud sigue pendiente; el servidor podría seguir trabajando. No es necesario volver a pulsar."
+            : "Preparation is taking longer than expected. The same request is still pending; the server may still be working. No additional click is needed.", false, true);
+        });
         return;
       }
 
       try {
         if (!await copyText(entry.markdown)) throw new Error("clipboard_write_failed");
-        showStatus(actions, spanish() ? "Markdown copiado." : "Markdown copied.");
+        if (isVisibleEntry(actions, entry)) showStatus(actions, spanish() ? "Markdown copiado." : "Markdown copied.");
       } catch {
+        if (!isVisibleEntry(actions, entry)) return;
         showStatus(
           actions,
           spanish()

@@ -1,0 +1,104 @@
+✔ terminal result on the last continuation is not replaced by polling timeout (400.575068ms)
+✔ poll budget performs an exact-run read to reconcile publication after the last continuation (206.416457ms)
+✔ active run has an actionable same-run recovery after poll exhaustion (en) (178.453202ms)
+✔ active run has an actionable same-run recovery after poll exhaustion (es-MX) (150.226353ms)
+✔ failed final status read preserves the last observation and permits recovery without more mutations (159.783668ms)
+✔ a superseded polling loop cannot restore a cleared run after its final read (166.780128ms)
+✖ en restore: approved message agrees with terminal phase (95.693219ms)
+✔ en restore: review_required message agrees with terminal phase (72.973936ms)
+✔ en restore: complete message agrees with terminal phase (99.449071ms)
+✔ en restore: failed message agrees with terminal phase (76.298263ms)
+✔ en restore: blocked message agrees with terminal phase (104.113678ms)
+✖ en continuation: approved message agrees with terminal phase (74.324168ms)
+✔ en continuation: review_required message agrees with terminal phase (82.613304ms)
+✔ en continuation: complete message agrees with terminal phase (96.005572ms)
+✔ en continuation: failed message agrees with terminal phase (93.830263ms)
+✔ en continuation: blocked message agrees with terminal phase (84.160937ms)
+✖ es-MX restore: approved message agrees with terminal phase (90.582414ms)
+✔ es-MX restore: review_required message agrees with terminal phase (64.062609ms)
+✔ es-MX restore: complete message agrees with terminal phase (79.513018ms)
+✔ es-MX restore: failed message agrees with terminal phase (76.027482ms)
+✔ es-MX restore: blocked message agrees with terminal phase (87.687453ms)
+✖ es-MX continuation: approved message agrees with terminal phase (84.168768ms)
+✔ es-MX continuation: review_required message agrees with terminal phase (73.267ms)
+✔ es-MX continuation: complete message agrees with terminal phase (90.522325ms)
+✔ es-MX continuation: failed message agrees with terminal phase (96.396401ms)
+✔ es-MX continuation: blocked message agrees with terminal phase (94.804852ms)
+ℹ tests 26
+ℹ suites 0
+ℹ pass 22
+ℹ fail 4
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3223.954
+
+✖ failing tests:
+
+test at tests/js/assessment-poll-exhaustion.test.cjs:134:7
+✖ en restore: approved message agrees with terminal phase (95.693219ms)
+  AssertionError [ERR_ASSERTION]: The input was expected to not match the regular expression /stopped|failed|blocked|se detuvo|falló|bloqueada/i. Input:
+  
+  'The assessment stopped because a required stage failed or was blocked.'
+  
+      at TestContext.<anonymous> (/workspace/NICO/tests/js/assessment-poll-exhaustion.test.cjs:146:18)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'The assessment stopped because a required stage failed or was blocked.',
+    expected: /stopped|failed|blocked|se detuvo|falló|bloqueada/i,
+    operator: 'doesNotMatch',
+    diff: 'simple'
+  }
+
+test at tests/js/assessment-poll-exhaustion.test.cjs:134:7
+✖ en continuation: approved message agrees with terminal phase (74.324168ms)
+  AssertionError [ERR_ASSERTION]: The input was expected to not match the regular expression /stopped|failed|blocked|se detuvo|falló|bloqueada/i. Input:
+  
+  'The assessment stopped because a required stage failed or was blocked.'
+  
+      at TestContext.<anonymous> (/workspace/NICO/tests/js/assessment-poll-exhaustion.test.cjs:146:18)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'The assessment stopped because a required stage failed or was blocked.',
+    expected: /stopped|failed|blocked|se detuvo|falló|bloqueada/i,
+    operator: 'doesNotMatch',
+    diff: 'simple'
+  }
+
+test at tests/js/assessment-poll-exhaustion.test.cjs:134:7
+✖ es-MX restore: approved message agrees with terminal phase (90.582414ms)
+  AssertionError [ERR_ASSERTION]: The input was expected to not match the regular expression /stopped|failed|blocked|se detuvo|falló|bloqueada/i. Input:
+  
+  'La evaluación se detuvo porque una etapa obligatoria falló o quedó bloqueada.'
+  
+      at TestContext.<anonymous> (/workspace/NICO/tests/js/assessment-poll-exhaustion.test.cjs:146:18)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'La evaluación se detuvo porque una etapa obligatoria falló o quedó bloqueada.',
+    expected: /stopped|failed|blocked|se detuvo|falló|bloqueada/i,
+    operator: 'doesNotMatch',
+    diff: 'simple'
+  }
+
+test at tests/js/assessment-poll-exhaustion.test.cjs:134:7
+✖ es-MX continuation: approved message agrees with terminal phase (84.168768ms)
+  AssertionError [ERR_ASSERTION]: The input was expected to not match the regular expression /stopped|failed|blocked|se detuvo|falló|bloqueada/i. Input:
+  
+  'La evaluación se detuvo porque una etapa obligatoria falló o quedó bloqueada.'
+  
+      at TestContext.<anonymous> (/workspace/NICO/tests/js/assessment-poll-exhaustion.test.cjs:146:18)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'La evaluación se detuvo porque una etapa obligatoria falló o quedó bloqueada.',
+    expected: /stopped|failed|blocked|se detuvo|falló|bloqueada/i,
+    operator: 'doesNotMatch',
+    diff: 'simple'
+  }

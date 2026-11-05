@@ -12,7 +12,7 @@ def test_runtime_patch_orders_identity_context_lineage_triage_and_workload() -> 
     identity = source.index("subject, normalization = scan_assessment_subject(scan)")
     context = source.index("register = enrich_canonical_candidate_evidence(register, scan)")
     lineage = source.index("register = apply_candidate_lineage(register)")
-    technical = source.index("register = apply_candidate_technical_triage(register)")
+    technical = source.index("register = apply_candidate_technical_triage(")
     workload = source.index("return refine_candidate_review_workload(register)")
     assert canonical < identity < context < lineage < technical < workload
     assert "install_osv_scanner_context_patch()" in source

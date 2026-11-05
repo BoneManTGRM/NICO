@@ -37,7 +37,7 @@ const ENGLISH_COPY: WorkflowCopy = {
   ],
   runLabel: "Create an engagement",
   reviewLabel: "Open Final Review",
-  boundary: "Human review and separate delivery authorization required · Client delivery remains blocked until exact-artifact approval and delivery authorization are both recorded.",
+  boundary: "Approve and download final PDF records operator approval and client-delivery permission together. Delivery remains blocked until both are recorded. Outstanding specialist review and independent QC remain disclosed; no report is sent automatically.",
 };
 
 const SPANISH_COPY: WorkflowCopy = {
@@ -63,7 +63,7 @@ const SPANISH_COPY: WorkflowCopy = {
   ],
   runLabel: "Crear un encargo",
   reviewLabel: "Abrir Revisión final",
-  boundary: "Se requieren revisión humana y una autorización de entrega independiente · La entrega permanece bloqueada hasta registrar tanto la aprobación del artefacto exacto como la autorización de entrega.",
+  boundary: "Aprobar y descargar PDF final registra la aprobación del operador y el permiso de entrega al cliente en una misma acción. La entrega permanece bloqueada hasta registrar ambos. La revisión especializada y el control de calidad independiente pendientes siguen declarados; no se envía ningún informe automáticamente.",
 };
 
 export default function WorkflowCallout() {

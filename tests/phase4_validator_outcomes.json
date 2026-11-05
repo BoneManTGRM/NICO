@@ -1,0 +1,800 @@
+{
+  "certificate:approval_certificate_page_appended": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_certificate_approved_pdf_was_mutated",
+        "phase4_delivery_certificate_hash_mismatch"
+      ]
+    }
+  },
+  "certificate:approval_certificate_separate_json": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_certificate_separate_approval_missing",
+        "phase4_delivery_certificate_hash_mismatch"
+      ]
+    }
+  },
+  "certificate:approved_report_pdf_preserved_exactly": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_certificate_authorized_pdf_truth_invalid",
+        "phase4_delivery_certificate_hash_mismatch"
+      ]
+    }
+  },
+  "certificate:authorized_edition_created": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_certificate_authorized_edition_missing",
+        "phase4_delivery_certificate_hash_mismatch"
+      ]
+    }
+  },
+  "certificate:client_delivery_allowed": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_certificate_delivery_authorization_missing",
+        "phase4_delivery_certificate_hash_mismatch"
+      ]
+    }
+  },
+  "certificate:delivery_authorization_certificate_page_prepended": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_certificate_authorization_page_missing",
+        "phase4_delivery_certificate_hash_mismatch"
+      ]
+    }
+  },
+  "certificate:delivery_package_sha256": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_certificate_archive_binding_mismatch",
+        "phase4_delivery_certificate_hash_mismatch",
+        "phase4_delivery_package_sha256_mismatch"
+      ]
+    }
+  },
+  "certificate:human_review_required": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_certificate_human_review_boundary_missing",
+        "phase4_delivery_certificate_hash_mismatch"
+      ]
+    }
+  },
+  "certificate:one_client_report": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_certificate_one_report_rule_violated",
+        "phase4_delivery_certificate_hash_mismatch"
+      ]
+    }
+  },
+  "certificate:report_analysis_regenerated_during_delivery_packaging": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_certificate_report_regeneration_invalid",
+        "phase4_delivery_certificate_hash_mismatch"
+      ]
+    }
+  },
+  "certificate:reviewer_identity": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_delivery_certificate_hash_mismatch",
+        "phase4_reviewer_identity_mismatch"
+      ]
+    }
+  },
+  "duplicate_path": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_delivery_archive_duplicate_path",
+        "phase4_delivery_archive_hash_mismatch",
+        "phase4_delivery_archive_size_mismatch",
+        "phase4_delivery_package_sha256_mismatch",
+        "phase4_evidence_manifest_artifact_set_mismatch"
+      ]
+    }
+  },
+  "invalid_base64": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_delivery_archive_invalid",
+        "phase4_delivery_package_sha256_mismatch",
+        "phase4_evidence_manifest_sha256_mismatch"
+      ]
+    }
+  },
+  "invalid_manifest_json": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_delivery_archive_hash_mismatch",
+        "phase4_delivery_archive_size_mismatch",
+        "phase4_delivery_package_sha256_mismatch",
+        "phase4_evidence_manifest_archive_mismatch",
+        "phase4_evidence_manifest_hash_mismatch",
+        "phase4_evidence_manifest_invalid",
+        "phase4_evidence_manifest_sha256_mismatch"
+      ]
+    }
+  },
+  "invalid_manifest_utf8": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_delivery_archive_hash_mismatch",
+        "phase4_delivery_archive_size_mismatch",
+        "phase4_delivery_package_sha256_mismatch",
+        "phase4_evidence_manifest_archive_mismatch",
+        "phase4_evidence_manifest_hash_mismatch",
+        "phase4_evidence_manifest_invalid",
+        "phase4_evidence_manifest_sha256_mismatch"
+      ]
+    }
+  },
+  "invalid_zip": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_delivery_archive_hash_mismatch",
+        "phase4_delivery_archive_invalid",
+        "phase4_delivery_archive_size_mismatch",
+        "phase4_delivery_package_sha256_mismatch",
+        "phase4_evidence_manifest_sha256_mismatch"
+      ]
+    }
+  },
+  "malformed_archive_count": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_delivery_archive_invalid"
+      ]
+    }
+  },
+  "malformed_certificate_count": {
+    "exception": "ValueError",
+    "message": "invalid literal for int() with base 10: 'bad-count'"
+  },
+  "malformed_package_count": {
+    "exception": "ValueError",
+    "message": "invalid literal for int() with base 10: 'bad-count'"
+  },
+  "manifest:artifact_count": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_evidence_manifest_artifact_count_mismatch"
+      ]
+    }
+  },
+  "manifest:artifacts": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_evidence_manifest_artifact_count_mismatch",
+        "phase4_evidence_manifest_artifact_set_mismatch"
+      ]
+    }
+  },
+  "manifest:client_delivery_allowed": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_evidence_manifest_delivery_authorization_missing"
+      ]
+    }
+  },
+  "manifest:client_facing_status": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_evidence_manifest_client_status_invalid"
+      ]
+    }
+  },
+  "manifest:delivery_authorization_path": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_evidence_manifest_delivery_authorization_path_mismatch"
+      ]
+    }
+  },
+  "manifest:delivery_authorization_sha256": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_evidence_manifest_delivery_authorization_hash_mismatch"
+      ]
+    }
+  },
+  "manifest:delivery_status": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_evidence_manifest_delivery_status_invalid"
+      ]
+    }
+  },
+  "manifest:human_review_required": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_evidence_manifest_human_review_boundary_missing"
+      ]
+    }
+  },
+  "manifest:one_client_report": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_evidence_manifest_one_report_rule_violated"
+      ]
+    }
+  },
+  "manifest:phase4_approval_receipt_path": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_evidence_manifest_receipt_path_mismatch"
+      ]
+    }
+  },
+  "manifest:phase4_approval_receipt_sha256": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_evidence_manifest_receipt_hash_mismatch"
+      ]
+    }
+  },
+  "manifest:report_language": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_evidence_manifest_report_language_mismatch"
+      ]
+    }
+  },
+  "manifest:repository": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_evidence_manifest_repository_mismatch"
+      ]
+    }
+  },
+  "manifest:run_id": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_evidence_manifest_run_id_mismatch"
+      ]
+    }
+  },
+  "missing_approval_record": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_approval_record_missing",
+        "phase4_delivery_archive_hash_mismatch",
+        "phase4_delivery_archive_size_mismatch",
+        "phase4_delivery_package_sha256_mismatch",
+        "phase4_evidence_manifest_artifact_set_mismatch"
+      ]
+    }
+  },
+  "missing_archive_authorization": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_delivery_archive_hash_mismatch",
+        "phase4_delivery_archive_size_mismatch",
+        "phase4_delivery_authorization_receipt_missing",
+        "phase4_delivery_package_sha256_mismatch",
+        "phase4_evidence_manifest_artifact_set_mismatch"
+      ]
+    }
+  },
+  "missing_archive_manifest": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_delivery_archive_hash_mismatch",
+        "phase4_delivery_archive_size_mismatch",
+        "phase4_delivery_package_sha256_mismatch",
+        "phase4_evidence_manifest_missing",
+        "phase4_evidence_manifest_sha256_mismatch"
+      ]
+    }
+  },
+  "missing_archive_receipt": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_delivery_archive_hash_mismatch",
+        "phase4_delivery_archive_size_mismatch",
+        "phase4_delivery_package_sha256_mismatch",
+        "phase4_evidence_manifest_artifact_set_mismatch",
+        "phase4_evidence_manifest_receipt_hash_mismatch",
+        "phase4_receipt_not_in_immutable_package"
+      ]
+    }
+  },
+  "missing_authorization": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "delivery_authorization_required",
+        "phase4_delivery_authorization_id_mismatch",
+        "phase4_delivery_authorization_reason_mismatch",
+        "phase4_delivery_authorization_sha256_mismatch",
+        "phase4_delivery_authorized_at_mismatch",
+        "phase4_delivery_authorizer_identity_mismatch",
+        "phase4_delivery_authorizer_role_mismatch",
+        "phase4_evidence_manifest_delivery_authorization_hash_mismatch"
+      ]
+    }
+  },
+  "missing_certificate": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_delivery_certificate_missing",
+        "phase4_evidence_manifest_hash_mismatch"
+      ]
+    }
+  },
+  "missing_manifest": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_accepted_edition_missing",
+        "phase4_approval_certificate_sha256_mismatch"
+      ]
+    }
+  },
+  "missing_receipt": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_approval_receipt_missing",
+        "phase4_evidence_manifest_accepted_edition_manifest_sha256_mismatch",
+        "phase4_evidence_manifest_assessed_repository_commit_mismatch",
+        "phase4_evidence_manifest_client_id_mismatch",
+        "phase4_evidence_manifest_client_identity_mismatch",
+        "phase4_evidence_manifest_customer_id_mismatch",
+        "phase4_evidence_manifest_evidence_ledger_id_mismatch",
+        "phase4_evidence_manifest_project_id_mismatch",
+        "phase4_evidence_manifest_project_identity_mismatch",
+        "phase4_evidence_manifest_repository_mismatch",
+        "phase4_evidence_manifest_run_id_mismatch"
+      ]
+    }
+  },
+  "multiple_errors": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_delivery_archive_invalid",
+        "phase4_delivery_authorization_missing",
+        "phase4_delivery_package_sha256_mismatch",
+        "phase4_evidence_manifest_sha256_mismatch",
+        "phase4_human_review_boundary_missing",
+        "phase4_wrong_product"
+      ]
+    }
+  },
+  "multiple_pdf": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_delivery_archive_hash_mismatch",
+        "phase4_delivery_archive_size_mismatch",
+        "phase4_delivery_package_sha256_mismatch",
+        "phase4_evidence_manifest_artifact_set_mismatch",
+        "phase4_one_report_rule_violated"
+      ]
+    }
+  },
+  "no_pdf": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_delivery_archive_hash_mismatch",
+        "phase4_delivery_archive_size_mismatch",
+        "phase4_delivery_package_sha256_mismatch",
+        "phase4_evidence_manifest_artifact_set_mismatch",
+        "phase4_one_report_rule_violated"
+      ]
+    }
+  },
+  "non_mapping": {
+    "result": {
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_delivery_package_must_be_mapping"
+      ]
+    }
+  },
+  "non_mapping_manifest": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_delivery_archive_hash_mismatch",
+        "phase4_delivery_archive_size_mismatch",
+        "phase4_delivery_package_sha256_mismatch",
+        "phase4_evidence_manifest_archive_mismatch",
+        "phase4_evidence_manifest_hash_mismatch",
+        "phase4_evidence_manifest_invalid",
+        "phase4_evidence_manifest_sha256_mismatch"
+      ]
+    }
+  },
+  "package:approval_certificate_separate_json": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_separate_approval_certificate_missing"
+      ]
+    }
+  },
+  "package:approved_source_pdf_sha256": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_approved_source_pdf_hash_missing",
+        "phase4_approved_source_pdf_receipt_mismatch",
+        "phase4_approved_source_pdf_sha256_mismatch",
+        "phase4_certificate_approved_source_hash_mismatch",
+        "phase4_evidence_manifest_source_pdf_hash_mismatch"
+      ]
+    }
+  },
+  "package:authorized_edition_created": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_authorized_edition_missing"
+      ]
+    }
+  },
+  "package:client_delivery_allowed": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_delivery_authorization_missing"
+      ]
+    }
+  },
+  "package:client_delivery_authorization_status": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_delivery_status_invalid"
+      ]
+    }
+  },
+  "package:client_facing_status": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_client_facing_status_invalid"
+      ]
+    }
+  },
+  "package:delivery_authorization_certificate_page_prepended": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_delivery_authorization_certificate_missing"
+      ]
+    }
+  },
+  "package:final_human_approval_status": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_final_approval_status_invalid"
+      ]
+    }
+  },
+  "package:human_review_required": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_human_review_boundary_missing"
+      ]
+    }
+  },
+  "package:one_client_report": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_one_report_rule_violated"
+      ]
+    }
+  },
+  "package:package_classification": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_internal_or_test_package_blocked"
+      ]
+    }
+  },
+  "package:product_name": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_wrong_product"
+      ]
+    }
+  },
+  "valid": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": true,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "valid",
+      "validation_errors": []
+    }
+  },
+  "wrong_pdf_path": {
+    "result": {
+      "artifact_schema": "nico.comprehensive_approved_delivery.v4",
+      "client_delivery_allowed": false,
+      "inherited": "preserved",
+      "one_client_report": true,
+      "status": "invalid",
+      "validation_errors": [
+        "phase4_client_report_path_mismatch",
+        "phase4_delivery_archive_hash_mismatch",
+        "phase4_delivery_archive_size_mismatch",
+        "phase4_delivery_package_sha256_mismatch",
+        "phase4_evidence_manifest_artifact_set_mismatch"
+      ]
+    }
+  }
+}

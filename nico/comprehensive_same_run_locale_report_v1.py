@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from nico.report_delivery_timing_v1 import report_delivery_phase, report_delivery_timing
+from nico.ordinary_report_language_release_v1 import require_new_report_language, require_available_projection
 
 import base64
 import hashlib
@@ -574,6 +575,7 @@ def _truth_records(canonical: Mapping[str, Any], identity_field: str) -> tuple[A
     return tuple(sorted(output))
 
 
+@report_delivery_phase("truth_parity_projection")
 def _assessment_truth_projection(canonical: Mapping[str, Any]) -> dict[str, Any]:
     identity = (
         canonical.get("identity")
@@ -782,6 +784,7 @@ def build_same_run_locale_markdown_projection(
     """
 
     target_language = _normalize_report_language(report_language)
+    require_available_projection(status, target_language)
     if status.get("terminal") is not True:
         raise ValueError("terminal_report_required")
 
@@ -834,6 +837,7 @@ def build_same_run_locale_markdown_projection(
         and source_lifecycle["approval_status"] != "approved_final"
     )
     if regenerated:
+        require_new_report_language(target_language)
         # PDF presentation applies this same projection before preparation. Using
         # the unprojected source here publishes a different Markdown byte set
         # from the one identified by the PDF's manifest.
@@ -1245,8 +1249,12 @@ def build_same_run_locale_report(
     changes review, approval, acceptance, or delivery state. Both language outputs are
     derived from the exact canonical JSON already attached to the terminal report.
     """
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(status)
+
 
     target_language = _normalize_report_language(report_language)
+    require_available_projection(status, target_language)
     if status.get("terminal") is not True:
         raise ValueError("terminal_report_required")
 
@@ -1334,8 +1342,10 @@ def build_same_run_locale_report(
             }
             source_artifacts_reused = True
         else:
+            require_new_report_language(target_language)
             artifacts = _render_target(canonical_copy, target_language)
     else:
+        require_new_report_language(target_language)
         artifacts = _render_target(canonical_copy, target_language)
 
     run_id = identity_binding["run_id"]
@@ -1453,10 +1463,14 @@ def build_same_run_locale_report(
 def build_same_run_locale_pdf_response(
     status: Mapping[str, Any], report_language: str
 ) -> Response:
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(status)
+
     frozen_source = _frozen_source_pdf_response(status, report_language)
     if frozen_source is not None:
         return frozen_source
 
+    require_new_report_language(report_language)
     projection = build_same_run_locale_report(status, report_language)
     report = projection["report"]
     try:
@@ -1547,11 +1561,12 @@ def install_same_run_locale_report(target: FastAPI) -> dict[str, Any]:
 
         def localized_report(run_id: str, report_language: str) -> dict[str, Any]:
             try:
-                status = _controller_status(target, run_id)
-                return build_same_run_locale_markdown_projection(
-                    status,
-                    report_language,
-                )
+                with report_delivery_timing(run_id, report_language):
+                    status = _controller_status(target, run_id)
+                    return build_same_run_locale_markdown_projection(
+                        status,
+                        report_language,
+                    )
             except ValueError as exc:
                 raise _projection_http_error(exc) from exc
 
@@ -1566,6 +1581,7 @@ def install_same_run_locale_report(target: FastAPI) -> dict[str, Any]:
     if _route_count(target, "GET", PDF_ROUTE) == 0:
 
         def localized_report_pdf(run_id: str, report_language: str) -> Response:
+            from nico.retained_pdf_exact_input_cache_v1 import RetainedPdfBusy
             try:
                 with report_delivery_timing(run_id, report_language):
                     controller = getattr(target.state, "comprehensive_api_controller", None)
@@ -1579,6 +1595,9 @@ def install_same_run_locale_report(target: FastAPI) -> dict[str, Any]:
                             }) from exc
                     status = _controller_status(target, run_id)
                     return build_same_run_locale_pdf_response(status, report_language)
+            except RetainedPdfBusy as exc:
+                raise HTTPException(status_code=503, detail={'reason': 'retained_pdf_preparing'},
+                    headers={'Retry-After': '5', 'Cache-Control': 'no-store'}) from exc
             except ValueError as exc:
                 raise _projection_http_error(exc) from exc
 
@@ -1595,7 +1614,8 @@ def install_same_run_locale_report(target: FastAPI) -> dict[str, Any]:
         def localized_evidence_package(run_id: str, report_language: str) -> Response:
             from nico.comprehensive_localized_export_v1 import localized_evidence_package as download
             try:
-                return download(_controller_status(target, run_id), report_language)
+                with report_delivery_timing(run_id, report_language):
+                    return download(_controller_status(target, run_id), report_language)
             except ValueError as exc:
                 raise _projection_http_error(exc) from exc
 

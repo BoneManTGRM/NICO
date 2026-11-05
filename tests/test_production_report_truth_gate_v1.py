@@ -125,6 +125,10 @@ def test_reconciles_scanners_scores_findings_roadmap_and_filename():
     assert assessment["maturity_signal"]["presented_score"] == 78
     assert len(canonical["scanner_execution_records"]) == 3
     assert all(item["verified_complete"] for item in canonical["scanner_execution_records"])
+    # Unrelated ordinary records must not acquire retained-CI metadata: even
+    # false/null additions change canonical manifests and frozen PDF bytes.
+    assert all("retained_ci_evidence_verified" not in item and "coverage_basis" not in item
+               for item in canonical["scanner_execution_records"])
     assert len(canonical["canonical_findings"]) == 1
     assert canonical["canonical_findings"][0]["finding_id"] == "RISK-P1-NEW"
     assert canonical["canonical_findings"][0]["acceptance_criteria"] == [

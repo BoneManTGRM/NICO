@@ -60,10 +60,11 @@ _TECHNICAL_SCORECARD_PAGE_MARKERS = (
 )
 _SCORECARD_PLAIN_STATUS = re.compile(
     r"^(?:"
-    r"strong|moderate|weak|exceptional|pending|not\s+scored|"
+    r"strong|moderate|weak|exceptional|pending|unknown|not\s+scored|"
+    r"green|yellow|red|gray|verde|amarillo|rojo|gris|sin\s+puntuaci[oó]n|"
     r"provisional\s+(?:strong|moderate)|"
-    r"sólido|solido|moderado|débil|debil|excepcional|pendiente|"
-    r"no\s+calificado|provisional\s+(?:sólido|solido|moderado)"
+    r"sólido|solido|fuerte|moderado|débil|debil|excepcional|pendiente|"
+    r"desconocido|(?:fuerte|moderado)\s+provisional|no\s+calificado|provisional\s+(?:sólido|solido|moderado)"
     r")(?:\s+[—-])?(?:\s+\d{1,3}(?:\.\d+)?(?:/100)?)?$",
     re.I,
 )
@@ -188,7 +189,8 @@ def _scorecard_table_followup(next_nonempty: str) -> bool:
 
     Real semantic control sections in NICO use richer status lines such as
     ``STRONG · 96/100`` or ``PROVISIONAL STRONG · HUMAN REVIEW REQUIRED``. Scorecard
-    table rows use plain status/score cells, and the final row may have no following
+    table rows use plain status/score cells (including color bands and Spanish
+    unscored labels), and the final row may have no following
     extracted line at all. Treat only those bounded forms as table context so a real
     compacted section on the same physical page remains eligible for navigation.
     """
@@ -546,9 +548,31 @@ def _remove_existing_toc(reader: Any) -> list[Any]:
     return pages
 
 
+def _remove_owned_toc(reader: Any) -> list[Any]:
+    """Remove only explicitly marked generated pages for manifest rebinding."""
+    pages = list(reader.pages)
+    owned = [i for i, page in enumerate(pages)
+             if page.get("/NICOGeneratedTOC") == "nico.semantic-toc.v1"]
+    if not owned or owned != list(range(1, len(owned) + 1)):
+        raise ValueError("Generated contents ownership cannot be established; regenerate this draft first.")
+    for ordinal, index in enumerate(owned, 1):
+        page = pages[index]
+        lines = [line.strip() for line in (page.extract_text() or "").splitlines()]
+        if page.get("/NICOGeneratedTOCOrdinal") != ordinal or not any(
+            title in lines for title in ("Table of Contents", "Tabla de contenido")
+        ):
+            raise ValueError("Generated contents ownership is invalid; regenerate this draft first.")
+    return [pages[0], *pages[len(owned) + 1:]]
+
+
 @report_delivery_phase("semantic_navigation")
-def semantic_renumber_and_outline(pdf_bytes: bytes) -> bytes:
-    """Rebuild final TOC, bookmarks and physical page labels from semantic sections."""
+def semantic_renumber_and_outline(pdf_bytes: bytes, *, owned_toc_only: bool = False) -> bytes:
+    """Rebuild TOC, bookmarks and physical labels from semantic sections.
+
+    Manifest rebinding uses ``owned_toc_only`` to reject unmarked contents and
+    preserve body pages regardless of their text. Other callers retain their
+    existing removal behavior.
+    """
 
     from pypdf import PdfReader, PdfWriter
     from nico import comprehensive_manifest_navigation_v1 as navigation
@@ -558,7 +582,8 @@ def semantic_renumber_and_outline(pdf_bytes: bytes) -> bytes:
         raise ValueError("final Comprehensive PDF contains no pages")
 
     source_pdf = pdf_bytes
-    source_pages = _remove_existing_toc(initial_reader)
+    source_pages = (_remove_owned_toc(initial_reader) if owned_toc_only
+                    else _remove_existing_toc(initial_reader))
     if len(source_pages) != len(initial_reader.pages):
         source_buffer = io.BytesIO()
         source_writer = PdfWriter()
@@ -603,6 +628,10 @@ def semantic_renumber_and_outline(pdf_bytes: bytes) -> bytes:
         page = writer.pages[-1]
         if rewrite_labels:
             navigation._rewrite_local_page_labels(page, writer)
+        else:
+            from pypdf.generic import NameObject, NumberObject, TextStringObject
+            page[NameObject("/NICOGeneratedTOC")] = TextStringObject("nico.semantic-toc.v1")
+            page[NameObject("/NICOGeneratedTOCOrdinal")] = NumberObject(index - 1)
         overlay = PdfReader(
             io.BytesIO(
                 _page_overlay(

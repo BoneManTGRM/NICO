@@ -1,0 +1,102 @@
+✔ data-phase2-review-work HTTP408 json reconciles only by GET and preserves uncertainty (309.897568ms)
+✖ data-phase2-review-work HTTP408 empty reconciles only by GET and preserves uncertainty (152.854832ms)
+✖ data-phase2-review-work HTTP408 html reconciles only by GET and preserves uncertainty (111.455127ms)
+✖ data-phase2-review-work HTTP408 truncated reconciles only by GET and preserves uncertainty (117.309947ms)
+✔ data-review-browser HTTP408 json reconciles only by GET and preserves uncertainty (99.39639ms)
+✖ data-review-browser HTTP408 empty reconciles only by GET and preserves uncertainty (86.404143ms)
+✖ data-review-browser HTTP408 html reconciles only by GET and preserves uncertainty (110.603123ms)
+✖ data-review-browser HTTP408 truncated reconciles only by GET and preserves uncertainty (110.368355ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 2
+ℹ fail 6
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1333.540897
+
+✖ failing tests:
+
+test at tests/js/reviewer-workspace.test.cjs:112:89
+✖ data-phase2-review-work HTTP408 empty reconciles only by GET and preserves uncertainty (152.854832ms)
+  AssertionError [ERR_ASSERTION]: timeout must reconcile the saved exact-run state
+      at TestContext.<anonymous> (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:124:9)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at tests/js/reviewer-workspace.test.cjs:112:89
+✖ data-phase2-review-work HTTP408 html reconciles only by GET and preserves uncertainty (111.455127ms)
+  AssertionError [ERR_ASSERTION]: timeout must reconcile the saved exact-run state
+      at TestContext.<anonymous> (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:124:9)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at tests/js/reviewer-workspace.test.cjs:112:89
+✖ data-phase2-review-work HTTP408 truncated reconciles only by GET and preserves uncertainty (117.309947ms)
+  AssertionError [ERR_ASSERTION]: timeout must reconcile the saved exact-run state
+      at TestContext.<anonymous> (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:124:9)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at tests/js/reviewer-workspace.test.cjs:112:89
+✖ data-review-browser HTTP408 empty reconciles only by GET and preserves uncertainty (86.404143ms)
+  AssertionError [ERR_ASSERTION]: timeout must reconcile the saved exact-run state
+      at TestContext.<anonymous> (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:124:9)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at tests/js/reviewer-workspace.test.cjs:112:89
+✖ data-review-browser HTTP408 html reconciles only by GET and preserves uncertainty (110.603123ms)
+  AssertionError [ERR_ASSERTION]: timeout must reconcile the saved exact-run state
+      at TestContext.<anonymous> (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:124:9)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at tests/js/reviewer-workspace.test.cjs:112:89
+✖ data-review-browser HTTP408 truncated reconciles only by GET and preserves uncertainty (110.368355ms)
+  AssertionError [ERR_ASSERTION]: timeout must reconcile the saved exact-run state
+      at TestContext.<anonymous> (/workspace/nico-reviewer-workspace/tests/js/reviewer-workspace.test.cjs:124:9)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

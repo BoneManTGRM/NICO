@@ -140,7 +140,12 @@ def test_localized_pdf_transport_behavior_isolated_in_subprocess(tmp_path: Path)
             "https://app.nicoaudit.com/api/nico/assessment/comprehensive-run/"
             f"{{run_id}}/localized-report/en/pdf"
         )
-        assert request_options == {{
+        assert set(request_options) == {{"headers", "timeout"}}
+        assert 0 < request_options["timeout"].connect <= 300
+        assert 0 < request_options["timeout"].read <= 300
+        assert request_options["timeout"].write == 30
+        assert request_options["timeout"].pool == 30
+        assert {{"headers": request_options["headers"]}} == {{
             "headers": {{
                 "Accept": "application/pdf",
                 "Accept-Encoding": "identity",

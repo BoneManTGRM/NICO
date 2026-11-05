@@ -39,9 +39,9 @@ def test_plain_scanner_statuses_still_receive_spanish_labels(state, label):
 
 
 @pytest.mark.parametrize('state', ['completed_with_findings', 'completed_clean', 'timed_out', 'completed', 'failed'])
-def test_english_stage_copy_is_unchanged(state):
+def test_english_stage_preserves_status_with_explicit_record_retention(state):
     assert scanner_stage(state, 'en') == (
-        'bandit: ' + state + '; exact commit=yes; artifact=retained; '
+        'bandit: ' + state + '; exact commit=yes; status record=retained; '
         'confirmed material finding count=0; raw finding payload embedded=no.'
     )
 

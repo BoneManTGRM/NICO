@@ -199,7 +199,10 @@ def install_candidate_volume_assurance_v2() -> dict[str, Any]:
 
         @wraps(current_provider)
         def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
-            return _augment_contract(current_provider(context))
+            result = current_provider(context)
+            if result.get("status") != "complete":
+                return result
+            return _augment_contract(result)
 
         setattr(canonical_scoring_provider, _PROVIDER_MARKER, True)
         setattr(canonical_scoring_provider, "_nico_previous", current_provider)

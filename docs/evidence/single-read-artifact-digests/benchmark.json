@@ -1,0 +1,74 @@
+{
+  "source": "fa9d0fa64da44cbe73cf0f2c3de73071162666d5",
+  "scope": "Two complete package-integrity validations with active timing/logging, proof construction, identity guards and all validation checks; fixture setup excluded",
+  "canonical_bytes": 46568423,
+  "canonical_digest": "7f606608e4dfd6ed74a479b59663d0977c0ff8f4acf5624dcd6a42256052bfc4",
+  "affinity": [
+    0
+  ],
+  "gc_enabled": true,
+  "results": {
+    "baseline": {
+      "samples": [
+        {
+          "wall_ms": 581.370759,
+          "cpu_ms": 580.994607
+        },
+        {
+          "wall_ms": 589.25219,
+          "cpu_ms": 588.908488
+        },
+        {
+          "wall_ms": 584.278168,
+          "cpu_ms": 583.792776
+        },
+        {
+          "wall_ms": 585.790422,
+          "cpu_ms": 585.498608
+        },
+        {
+          "wall_ms": 584.345763,
+          "cpu_ms": 583.797143
+        },
+        {
+          "wall_ms": 585.298171,
+          "cpu_ms": 584.841913
+        }
+      ],
+      "median_wall_ms": 584.8219670000001,
+      "median_cpu_ms": 584.319528,
+      "peak_bytes": 195813961
+    },
+    "candidate": {
+      "samples": [
+        {
+          "wall_ms": 503.762874,
+          "cpu_ms": 503.368733
+        },
+        {
+          "wall_ms": 502.794164,
+          "cpu_ms": 502.184359
+        },
+        {
+          "wall_ms": 502.826753,
+          "cpu_ms": 502.508531
+        },
+        {
+          "wall_ms": 504.788649,
+          "cpu_ms": 504.410658
+        },
+        {
+          "wall_ms": 501.060977,
+          "cpu_ms": 500.753873
+        },
+        {
+          "wall_ms": 505.381673,
+          "cpu_ms": 505.106816
+        }
+      ],
+      "median_wall_ms": 503.29481350000003,
+      "median_cpu_ms": 502.938632,
+      "peak_bytes": 149247829
+    }
+  }
+}

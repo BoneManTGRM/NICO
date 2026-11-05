@@ -1,0 +1,137 @@
+{
+  "base": "644b5516bf6dcace88de5178b88bffa1fb11e76e",
+  "candidate": "823156280b48b377b3c3932b4c0f50bdc1b52225",
+  "fixture": "Existing rich fixture and installed renderer sequence from test_same_canonical_package_has_exact_spanish_publication_parity; no production report.",
+  "timing_control": "A second pair of isolated processes fixed only comprehensive_pre_render_scanner_truth_v65.time.perf_counter to zero. All presentation fingerprints matched the uncontrolled run. Canonical payload equality excludes artifact self-reference fields only; diagnostic elapsed time is equal under this control.",
+  "comparison": {
+    "en": {
+      "unchanged_fields": [
+        "markdown",
+        "html",
+        "all 47 page texts",
+        "media boxes",
+        "rotations",
+        "assessment truth",
+        "gates"
+      ],
+      "pages": 47,
+      "outline_entries": 38,
+      "only_outline_change": [
+        [
+          [
+            "Broader Professional Assessment",
+            5
+          ],
+          [
+            "Broader Professional Assessment",
+            26
+          ]
+        ]
+      ],
+      "canonical_truth_payload_equal_with_only_observational_clock_fixed": true,
+      "canonical_truth_payload_sha256": "9b7ad717cee3dd94b2bc2aa139343c6df5e7fc9cde3be93ba54ec625aa6b5c03",
+      "before": {
+        "html": [
+          "759661b3a63b0bc607ddc89bc039145d5acdbec8fc8abad72dc3842e7de557ac",
+          25762
+        ],
+        "markdown": [
+          "8c86eb0b33cec623ea5633369231a710f95c17633336d247ec87a0b347aeccf8",
+          21087
+        ],
+        "page_count": 47,
+        "pdf_base64": [
+          "6b2f7dc5d71e7c4ea4bcf972e8e599ae311af1db079abff00165feb90b29a839",
+          285904
+        ],
+        "pdf_sha256": "be4ca4a82ab1f825ad9e0931be514c745a50e8e4dc98574aa1f19af2e31ca696"
+      },
+      "after": {
+        "html": [
+          "759661b3a63b0bc607ddc89bc039145d5acdbec8fc8abad72dc3842e7de557ac",
+          25762
+        ],
+        "markdown": [
+          "8c86eb0b33cec623ea5633369231a710f95c17633336d247ec87a0b347aeccf8",
+          21087
+        ],
+        "page_count": 47,
+        "pdf_base64": [
+          "b30f02a3bace41f11a9f82245d4a4deb4b6d2487871bff00c03135637ab3457f",
+          285904
+        ],
+        "pdf_sha256": "3920b665e5adf450c4f255ae72da1c7bc372fd83dac5f5a089a33e3aaaf15f50"
+      }
+    },
+    "es-MX": {
+      "unchanged_fields": [
+        "markdown",
+        "html",
+        "all 47 page texts",
+        "media boxes",
+        "rotations",
+        "assessment truth",
+        "gates"
+      ],
+      "pages": 47,
+      "outline_entries": 38,
+      "only_outline_change": [
+        [
+          [
+            "Evaluación profesional ampliada",
+            5
+          ],
+          [
+            "Evaluación profesional ampliada",
+            26
+          ]
+        ]
+      ],
+      "canonical_truth_payload_equal_with_only_observational_clock_fixed": true,
+      "canonical_truth_payload_sha256": "ef88625c8422608e83160c356e16127f16b16985181f212d1ba7502c456a9af1",
+      "before": {
+        "html": [
+          "c59d8c458f371bd81e3828507e6efc7d7102de7e49afc2855d1501bb969bdaa6",
+          28796
+        ],
+        "markdown": [
+          "ed0352019b0d38b7105823bbe0499f03034251d24fdc70cda76d648e9b106aeb",
+          24160
+        ],
+        "page_count": 47,
+        "pdf_base64": [
+          "ef52a06ea5306f3b8741319c85386cd3f3aca7d502b758f752bd1ba6c545912f",
+          297508
+        ],
+        "pdf_sha256": "ac17beb5fe8b774d82baf97d39245897c15ecb982a0df6c197836225133b75cc"
+      },
+      "after": {
+        "html": [
+          "c59d8c458f371bd81e3828507e6efc7d7102de7e49afc2855d1501bb969bdaa6",
+          28796
+        ],
+        "markdown": [
+          "ed0352019b0d38b7105823bbe0499f03034251d24fdc70cda76d648e9b106aeb",
+          24160
+        ],
+        "page_count": 47,
+        "pdf_base64": [
+          "f91843f38b674b4a17aae595552669bdd38841dd845e1a9cdba98cf04e48816d",
+          297512
+        ],
+        "pdf_sha256": "e4319fa8ca9a21030e6d3255441955b299c8f36150786f108da234ada56fb9f2"
+      }
+    }
+  },
+  "drawing_streams": {
+    "en": {
+      "all_47_streams_identical": true,
+      "ordered_stream_hashes_sha256": "a5da93e5edd46ef536047d5b38cddeda979ebb60a36218df1321be71aa11dab4"
+    },
+    "es-MX": {
+      "all_47_streams_identical": true,
+      "ordered_stream_hashes_sha256": "b3c0a27d197927758c41ba4db07786e0b1b18c063f17a6e669e3acdd1166f054"
+    }
+  },
+  "unchanged_assertions": "Small and phase-nine goldens, bilingual structural parity, 47-page rich count, 38 outline entries, heading counts, manifest digests, repeat-render equality, media-box checks and authority gates remain intact."
+}

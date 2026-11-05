@@ -350,8 +350,10 @@ def test_same_run_route_binds_final_layout_before_actual_render_target() -> None
     layout = _bind_final_pdf_layout()
     from nico.comprehensive_pdf_layout_polish_v1 import _TOC_ROWS_PER_PAGE
     assert layout["toc_rows_per_page"] == _TOC_ROWS_PER_PAGE
-    assert layout["review_companion_pages"] == 4
-    assert layout["review_small_font_size"] >= 6.75
+    assert layout["review_companion_pages"] == "content_dependent"
+    assert layout["review_section_count"] == 8
+    assert layout["review_continuation_pages"] is True
+    assert layout["review_small_font_size"] >= 9
 
 
 def test_final_navigation_replaces_spanish_indice_and_preserves_appendix_continuation() -> None:
@@ -900,7 +902,14 @@ def test_review_pdf_and_markdown_bridges_never_silently_noop() -> None:
     assert "AUTOMATED-DRAFT-PENDING-APPROVAL.pdf" in pdf_source
     assert "Downloading and verifying the PDF… You can keep using this page." in pdf_source
     assert "PDF verified and sent to your downloads." in pdf_source
-    assert "Retry this download; do not start another assessment." in pdf_source
+    assert (
+        "Retry this download using the same button, assessment and language; "
+        "do not start another assessment. No automatic retry will run."
+    ) in pdf_source
+    assert (
+        "Vuelve a intentarlo con este mismo botón, evaluación e idioma; "
+        "no inicies otra evaluación. No se reintentará automáticamente."
+    ) in pdf_source
     assert 'credentials: "same-origin"' in pdf_source
     assert "if (existing?.isCurrent()) return existing.operation;" in pdf_source
     assert "existing?.controller.abort();" in pdf_source

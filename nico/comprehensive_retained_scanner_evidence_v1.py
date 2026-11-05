@@ -253,6 +253,9 @@ def compact_scanner_records(
                         "applicability_state", "execution_state", "execution_reason", "execution_limit",
                         "applicability_evidence", "native_json_output",
                         "no_vulnerabilities_claimed",
+                        "effective_configuration", "configuration_limitations", "checked_project_scope",
+                        "execution_source", "metadata_authenticated", "run_id",
+                        "ci_run_id", "ci_run_attempt", "ci_artifact_id", "ci_artifact_digest", "ci_workflow_id", "ci_source_sha",
                         "worker_provenance", "cppcheck_source_coverage", "cpp_build_evidence", "scanner_tool_version",
                     )
                     if key in raw
@@ -261,7 +264,7 @@ def compact_scanner_records(
                     f"scanner_runs/{origin_scan_id}" if origin_scan_id else ""
                 ),
                 "scan_id": origin_scan_id,
-                "finding_count": len(findings),
+                "finding_count": (tool_summary["raw"] if type(tool_summary.get("raw")) is int and tool_summary["raw"] >= 0 else len(findings)),
                 "finding_summary": tool_summary,
                 "duration_seconds": raw.get("duration_seconds"),
                 "failure_reason": _text(

@@ -292,6 +292,8 @@ def test_snapshot_repository_evidence_is_idempotent_without_refetching():
     assert first_repository["evidence_id"] == second_repository["evidence_id"]
     assert first_complexity["evidence_id"] == second_complexity["evidence_id"]
     assert second_repository["idempotent_reuse"] is True
+    assert "candidate_source_observations" not in first_repository
+    assert "candidate_source_observations" not in second_repository
     assert second_complexity["idempotent_reuse"] is True
     assert len(client.calls) == call_count
 
@@ -656,3 +658,33 @@ def test_future_activity_cannot_change_snapshot_code_signals():
     assert repository["activity_evidence"]["pull_requests_returned"] == 1
     assert complexity["profiled_file_count"] == 6
     assert repository["snapshot_commit_sha"] == "a" * 40
+
+
+def test_installed_collector_retains_source_observations_through_stage_context(tmp_path):
+    # Bootstrap installs process-global renderer bindings. Keep this installed
+    # integration check isolated from legacy publication tests in the same shard.
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+    from tests.owned_worker_environment import owned_worker_environment
+    if os.environ.get('NICO_CAPTURE_TEST_CHILD') != '1':
+        environment = owned_worker_environment(Path(__file__).resolve().parents[1], tmp_path, os.environ)
+        environment['NICO_CAPTURE_TEST_CHILD'] = '1'
+        completed = subprocess.run([sys.executable, '-m', 'pytest', '-q',
+            __file__ + '::test_installed_collector_retains_source_observations_through_stage_context'],
+            env=environment, capture_output=True, text=True, timeout=60)
+        assert completed.returncode == 0, completed.stdout + completed.stderr
+        return
+    from nico.api import final_report_worker_bootstrap
+    from nico import comprehensive_native_providers as providers
+    from nico.comprehensive_run_service import _prior_stage_results_for_stage
+    from nico.candidate_investigation_pipeline_v1 import investigate_register
+    context = _context()
+    snapshot = _snapshot(context)
+    context['commit_sha'] = snapshot['commit_sha']
+    bundle, _ = providers.collect_snapshot_repository_evidence(context, snapshot, client=FakeSnapshotClient())
+    # Capture no longer runs before candidates exist. Installed wrappers must not
+    # silently reintroduce the first pass and double the aggregate source budget.
+    assert 'candidate_source_observations' not in bundle
+    assert bundle['architecture_evidence']['source_observation']

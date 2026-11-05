@@ -77,6 +77,7 @@ _ES_PHRASES = {
     "Conformance cannot be assessed without an authoritative source.": "La conformidad no puede evaluarse sin una fuente autoritativa.",
     "Technical evidence cannot establish stakeholder intent or business authority.": "La evidencia técnica no puede establecer la intención de las partes interesadas ni la autoridad comercial.",
     "Workflow counts cannot distinguish incidents from cancellation/supersession/infrastructure noise.": "Los conteos de flujos de trabajo no pueden distinguir incidentes de cancelaciones, reemplazos o ruido de infraestructura.",
+    "decision: Proceed to professional human review; automated synthesis is not stakeholder approval, residual-risk acceptance, final approval, or client-delivery authorization.": "Decisión: Proceder a revisión humana profesional; la síntesis automatizada no constituye aprobación de las partes interesadas, aceptación del riesgo residual, aprobación final ni autorización de entrega al cliente.",
     "Proceed to professional human review; automated synthesis is not stakeholder approval, residual-risk acceptance, final approval, or client-delivery authorization.": "Proceder a revisión humana profesional; la síntesis automatizada no constituye aprobación de las partes interesadas, aceptación del riesgo residual, aprobación final ni autorización de entrega al cliente.",
     "Evidence-Adjusted": "Ajuste por evidencia",
     "Evidence Adjusted": "Ajuste por evidencia",
@@ -170,7 +171,9 @@ def _safe_replace_pattern(source: str) -> re.Pattern[str] | None:
 
 
 def _safe_replace(text: str, source: str, target: str) -> str:
-    if not source:
+    # Patterns are case-sensitive escaped literals with optional boundaries.
+    # An absent literal cannot match; keep ordered replacements unchanged.
+    if not source or source not in text:
         return text
     pattern = _safe_replace_pattern(source)
     if pattern is not None:

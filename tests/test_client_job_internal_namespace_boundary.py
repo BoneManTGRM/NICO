@@ -47,7 +47,7 @@ OPERATIONS = {
 }
 
 
-@pytest.mark.parametrize("job_id", ["workerjob_isolated_boundary", "comprehensive_stage_isolated_boundary"])
+@pytest.mark.parametrize("job_id", ["workerjob_isolated_boundary", "comprehensive_stage_isolated_boundary", "reviewpdfprep_isolated_boundary"])
 @pytest.mark.parametrize("operation", OPERATIONS)
 def test_reserved_internal_namespace_rejects_before_storage(monkeypatch, job_id, operation):
     store = IsolatedJobStore(job_id)
@@ -61,7 +61,7 @@ def test_reserved_internal_namespace_rejects_before_storage(monkeypatch, job_id,
     assert not (store.reads or store.writes or store.lists or store.audits)
 
 
-@pytest.mark.parametrize("workflow", ["assessment_worker_job.v1", "comprehensive_background_stage"])
+@pytest.mark.parametrize("workflow", ["assessment_worker_job.v1", "comprehensive_background_stage", "review_pdf_preparation.v1"])
 @pytest.mark.parametrize("operation", ["create", "get", "export", "list"])
 def test_legacy_internal_workflow_rejects_without_disclosure_or_overwrite(monkeypatch, workflow, operation):
     job_id = "legacy_isolated_job"
@@ -76,7 +76,7 @@ def test_legacy_internal_workflow_rejects_without_disclosure_or_overwrite(monkey
     assert not (store.writes or store.lists or store.audits)
 
 
-@pytest.mark.parametrize("workflow", ["assessment_worker_job.v1", "comprehensive_background_stage"])
+@pytest.mark.parametrize("workflow", ["assessment_worker_job.v1", "comprehensive_background_stage", "review_pdf_preparation.v1"])
 @pytest.mark.parametrize("export_format", ["json", "markdown", "html", "pdf", "invalid"])
 def test_internal_workflow_cannot_enter_any_export_renderer(monkeypatch, workflow, export_format):
     store = IsolatedJobStore("legacy_isolated_job", workflow)
@@ -111,6 +111,8 @@ def test_public_draft_create_retrieve_and_export_preserve_human_review(monkeypat
     ("comprehensive_background_stage", "legacy_isolated_job"),
     ("assessment_worker_job.v1", "workerjob_isolated_boundary"),
     ("assessment_worker_job.v1", "legacy_isolated_job"),
+    ("review_pdf_preparation.v1", "reviewpdfprep_isolated_boundary"),
+    ("review_pdf_preparation.v1", "legacy_isolated_job"),
 ])
 def test_mounted_public_package_routes_never_disclose_or_write_internal_jobs(monkeypatch, workflow, job_id):
     from nico.api.specialist_ship_ready_bootstrap import app

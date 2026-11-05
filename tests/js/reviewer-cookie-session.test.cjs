@@ -32,9 +32,12 @@ function page(name, fetchImpl, locale = 'en') {
         if (name === 'react') return {...React,
           useState(initial) { const index = cursor++; if (!(index in state)) state[index] = initial; return [state[index], value => {state[index] = value;}]; },
           useEffect(effect) { if (!mounted) effects.push(effect); },
+          useRef(initial) {const index = cursor++; if (!(index in state)) state[index] = {current: initial}; return state[index];},
           useMemo(compute) { return compute(); },
         };
-        return name.startsWith('.') ? load(path.resolve(path.dirname(filename), name + '.tsx')) : fromWeb(name);
+        if (!name.startsWith('.')) return fromWeb(name);
+        const base = path.resolve(path.dirname(filename), name);
+        return load(['.tsx', '.ts'].map(ext => base + ext).find(fs.existsSync));
       },
     }, {filename});
     return module.exports;
@@ -44,6 +47,10 @@ function page(name, fetchImpl, locale = 'en') {
   const render = () => {cursor = 0; return Page();};
   return {render, find(predicate) {return findAll(render(), predicate);}};
 }
+const validReview = {run_id: 'comprun_saved', repository: 'owner/repo', commit_sha: 'a'.repeat(40), evidence_ledger_id: 'ledger',
+  candidate_count: 0, dispositioned_candidate_count: 0, remaining_candidate_count: 0, quality_control_required_count: 0,
+  quality_control_completed_count: 0, open_evidence_request_count: 0, candidates: [], clusters: [], queue_counts: {}, workload_metrics: {},
+  quality_control_sampling: {}, ledger: {}, empirical_measurement: {}, ready_for_final_approval: false, human_review_required: true, client_delivery_allowed: false};
 for (const name of ['ReviewerQueue', 'ReviewQueueBrowser', 'ReviewWorkPanel']) {
   for (const status of [401, 403]) {
     test(`${name} saved run can request with cookie transport; ${status} remains an error`, async () => {
@@ -108,7 +115,7 @@ for (const name of ['ReviewQueueBrowser', 'ReviewWorkPanel']) {
     let denied = false;
     const p = page(name, async () => denied
       ? Response.json({detail: 'session expired'}, {status: 401})
-      : Response.json({run_id: 'comprun_saved', candidate_count: 7, dispositioned_candidate_count: 2, candidates: []}));
+      : Response.json(validReview));
     await p.find(n => n.type === 'button' && /^Load review/.test(String(n.props.children)))[0].props.onClick();
     const refresh = p.find(n => n.type === 'button' && /^Refresh/.test(String(n.props.children)))[0];
     assert.ok(refresh, 'authenticated projection was rendered');
@@ -120,11 +127,14 @@ for (const name of ['ReviewQueueBrowser', 'ReviewWorkPanel']) {
 }
 test('explicit human work submission retains reviewer and decision payload with cookie transport', async () => {
   const calls = [];
-  const p = page('ReviewWorkPanel', async (url, init) => {calls.push({url, init}); return Response.json({run_id: 'comprun_saved'});});
+  const p = page('ReviewWorkPanel', async (url, init) => {calls.push({url, init}); return Response.json(validReview);});
   const inputFor = label => p.find(n => n.type === 'label' && React.Children.toArray(n.props.children).some(child => child === label))[0].props.children.find(child => child?.type === 'input');
   inputFor('Authorized reviewer').props.onChange({target: {value: 'Real test reviewer'}});
   inputFor('Reviewer / specialist role').props.onChange({target: {value: 'Security specialist'}});
   assert.equal(calls.length, 0, 'entering identity is not submission');
+  await p.find(n => n.type === 'button' && /^Load review/.test(String(n.props.children)))[0].props.onClick();
+  assert.equal(calls[0].init.method, 'GET');
+  calls.length = 0;
   await p.find(n => n.type === 'form')[0].props.onSubmit({preventDefault() {}});
   assert.equal(calls.length, 1);
   assert.equal(calls[0].init.method, 'POST');

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -8,6 +9,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
+
+
+def test_documented_node_and_npm_prerequisites_match_frontend_manifest() -> None:
+    package = json.loads(_read("apps/web/package.json"))
+    prerequisites = _read("docs/LOCAL_DEVELOPMENT.md").split("## Prerequisites", 1)[1].split("## Direct setup", 1)[0]
+    node_major = package["engines"]["node"].removesuffix(".x")
+    manager, version = package["packageManager"].split("@", 1)
+    assert manager == "npm"
+    assert [line for line in prerequisites.splitlines() if line.startswith("- Node.js ")] == [f"- Node.js {node_major}"]
+    assert [line for line in prerequisites.splitlines() if line.startswith("- npm ")] == [f"- npm {version}"]
 
 
 def test_run_local_uses_packaged_complete_api_runner() -> None:
@@ -72,12 +83,15 @@ def test_runtime_image_installs_package_and_owns_persistent_data_path() -> None:
 
 def test_ci_executes_installed_entry_points_and_runtime_storage_probe() -> None:
     workflow = _read(".github/workflows/nico-ci.yml")
+    qualification = _read("scripts/qualify_docker_node_runtime.sh")
 
     assert "pip install --no-deps -e ." in workflow
     assert "Verify package entry points" in workflow
     assert "nico --help" in workflow
     assert 'scripts.get("nico") == "nico.__main__:main"' in workflow
     assert 'scripts.get("nico-api") == "nico.api_runner:main"' in workflow
-    assert "test -w /data" in workflow
-    assert "command -v nico" in workflow
-    assert "command -v nico-api" in workflow
+    assert "bash scripts/qualify_docker_node_runtime.sh" in workflow
+    assert "test -w /data" in qualification
+    assert "command -v nico" in qualification
+    assert "command -v nico-api" in qualification
+    assert "python -c 'from nico.api.production import app; assert app'" in qualification

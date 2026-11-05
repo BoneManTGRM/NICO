@@ -89,6 +89,9 @@ export async function parseJson(
     });
   }
   if (!response.ok) {
+    // A JSON null error body carries no detail, but HTTP status and request ID
+    // still govern recovery. Do not turn it into a retryable network TypeError.
+    data = data ?? {};
     const detail =
       data.detail && typeof data.detail === "object" ? data.detail : {};
     const stringCode = stringDetailCode(data.detail);

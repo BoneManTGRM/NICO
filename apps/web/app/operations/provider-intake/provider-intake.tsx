@@ -18,7 +18,7 @@ export function ProviderIntake() {
   useEffect(() => {
     const spanish = new URLSearchParams(window.location.search).get('lang') === 'es-MX';
     setEs(spanish);
-    setInput(value => ({...value, report_language: spanish ? 'es-MX' : 'en'}));
+    setInput(value => ({...value, report_language: 'en'}));
     try { setAttempt(readAttempt(sessionStorage)); setReady(true); }
     catch { setError('storage'); }
   }, []);
@@ -69,7 +69,7 @@ export function ProviderIntake() {
           <option value="production_engagement">{t('Production engagement', 'Evaluación en producción')}</option>
         </select></label>
         <label>{t('Report language', 'Idioma del informe')}<select value={input.report_language} onChange={e => setInput({...input, report_language: e.target.value as IntakeInput['report_language']})}>
-          <option value="en">English</option><option value="es-MX">Español de México</option>
+          <option value="en">English</option><option value="es-MX" disabled>Español — no disponible / unavailable</option>
         </select></label>
         <label className={styles.check}><input type="checkbox" required checked={input.authorization_confirmed} onChange={e => setInput({...input, authorization_confirmed: e.target.checked})}/>
           {t('I have explicit authorization to assess this repository and commit within the stated scope.', 'Tengo autorización expresa para evaluar este repositorio y commit dentro del alcance indicado.')}</label>

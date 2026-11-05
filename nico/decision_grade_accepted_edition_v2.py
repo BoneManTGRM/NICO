@@ -57,6 +57,9 @@ def build_accepted_report_edition(
     function. Review metadata is added as a certificate; report contents are
     never rewritten or regenerated during approval.
     """
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(artifacts)
+
 
     errors: list[str] = []
     normalized_decision = str(decision or "").strip().casefold()

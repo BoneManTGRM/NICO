@@ -5,7 +5,7 @@ import hashlib
 import html
 import io
 import re
-from nico.report_json_copy import deepcopy
+from nico.report_json_copy import deepcopy, copy_with_tree_ownership
 from typing import Any, Mapping
 
 VERSION = "nico.v2.report-quality-repairs.v2"
@@ -103,9 +103,12 @@ def _positive_limitation(value: Any) -> bool:
 
 def repair_canonical_truth(package: Mapping[str, Any]) -> dict[str, Any]:
     """Remove stale presentation contradictions without inventing evidence or scores."""
-    result = deepcopy(dict(package))
-    canonical = deepcopy(dict(result.get("json") or {}))
-    assessment = deepcopy(dict(canonical.get("assessment") or {}))
+    result, owned_tree = copy_with_tree_ownership(dict(package))
+    owned_canonical = owned_tree and type(result.get("json")) is dict and bool(result["json"])
+    canonical = (result["json"] if owned_canonical else deepcopy(dict(result.get("json") or {})))
+    assessment = (canonical["assessment"] if owned_canonical
+                  and type(canonical.get("assessment")) is dict
+                  else deepcopy(dict(canonical.get("assessment") or {})))
     records = [
         deepcopy(dict(item))
         for item in canonical.get("scanner_execution_records")
@@ -239,6 +242,7 @@ def _scorecard_page(canonical: Mapping[str, Any]) -> bytes:
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import inch
     from reportlab.platypus import (
+        KeepTogether,
         LongTable,
         Paragraph,
         SimpleDocTemplate,
@@ -285,6 +289,14 @@ def _scorecard_page(canonical: Mapping[str, Any]) -> bytes:
         fontName="Helvetica-Bold",
         textColor=colors.white,
     )
+    score_cell = ParagraphStyle(
+        "QualityScorecardScore",
+        parent=cell,
+        # Preserve score words for both readers and publication token parity.
+        # Character wrapping splits NOT SCORED into NOT SCORE / D here.
+        wordWrap="LTR",
+        splitLongWords=False,
+    )
 
     def paragraph(value: Any, style: ParagraphStyle = cell) -> Paragraph:
         return Paragraph(html.escape(_text(value)), style)
@@ -316,7 +328,7 @@ def _scorecard_page(canonical: Mapping[str, Any]) -> bytes:
                     .replace("_", " ")
                     .title()
                 ),
-                paragraph(score_label),
+                paragraph(score_label, score_cell),
                 paragraph(item.get("summary")),
             ]
         )
@@ -354,14 +366,89 @@ def _scorecard_page(canonical: Mapping[str, Any]) -> bytes:
         bottomMargin=0.62 * inch,
         invariant=1,
     )
+    from nico.report_score_explanation import LABELS_ES, score_explanation
+    from nico.comprehensive_engagement_metadata_v1 import reportlab_literal_markup
+
+    localize = (lambda value: LABELS_ES.get(value, value)) if _is_spanish(canonical) else (lambda value: value)
+    explanation_style = ParagraphStyle(
+        "QualityScoreExplanation", parent=styles["BodyText"],
+        fontName="Helvetica", fontSize=9.2, leading=13.5, spaceAfter=6,
+    )
+    explanation = [localize("Technical-to-adjusted score explanation"),
+                   *score_explanation(assessment, localize)]
     doc.build(
         [
             Spacer(1, 0.05 * inch),
             Paragraph("Canonical Technical Scorecard", title),
             table,
+            Spacer(1, 0.1 * inch),
+            KeepTogether([Paragraph(reportlab_literal_markup(line, len(line)), explanation_style)
+                          for line in explanation]),
         ]
     )
-    return buffer.getvalue()
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import NameObject, NumberObject
+    reader = PdfReader(io.BytesIO(buffer.getvalue()))
+    writer = PdfWriter(clone_from=reader)
+    for index, page in enumerate(writer.pages):
+        page[NameObject("/NICOScorecardPage")] = NumberObject(index)
+        page[NameObject("/NICOScorecardPages")] = NumberObject(len(writer.pages))
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
+def _owned_scorecard_page_count(reader: Any, index: int) -> int | None:
+    """Use a proven range, or preserve the legacy single-page replacement scope."""
+    from pypdf.generic import NumberObject
+    page = reader.pages[index]
+    count = page.get("/NICOScorecardPages")
+    if count is None and "/NICOScorecardPage" not in page:
+        # Only a terminal page proves there is no unknown continuation.
+        return 1 if index == len(reader.pages) - 1 else None
+    if (not isinstance(count, NumberObject) or count < 1
+            or index + count > len(reader.pages)):
+        raise ValueError("scorecard block ownership is inconsistent")
+    for offset in range(count):
+        owned = reader.pages[index + offset]
+        ordinal = owned.get("/NICOScorecardPage")
+        total = owned.get("/NICOScorecardPages")
+        if (not isinstance(ordinal, NumberObject) or ordinal != offset
+                or not isinstance(total, NumberObject) or total != count):
+            raise ValueError("scorecard block ownership is inconsistent")
+    if index + count < len(reader.pages) and any(
+        key in reader.pages[index + count]
+        for key in ("/NICOScorecardPage", "/NICOScorecardPages")
+    ):
+        raise ValueError("scorecard block ownership is inconsistent")
+    return int(count)
+
+
+def _repair_unavailable(package: Mapping[str, Any]) -> dict[str, Any]:
+    """Preserve artifact bytes; never certify an unknown legacy page range."""
+    result = deepcopy(dict(package))
+    result.update({
+        "report_quality_repair_status": "unavailable",
+        "report_quality_repair_reason": "unmarked_nonterminal_scorecard_ownership_unknown",
+        "status": "review_required",
+        "approval_status": "pending_human_approval",
+        "delivery_status": "blocked_pending_human_approval",
+        "human_review_required": True,
+        "human_review_completed": False,
+        "client_delivery_allowed": False,
+    })
+    # Do not retain stale success claims from an earlier attempted repair.
+    result["premium_report_renderer"] = {
+        "report_quality_repairs_version": VERSION,
+        "report_quality_repair_status": "unavailable",
+        "scorecard_rows_verified": False,
+        "scorecard_word_jumble_removed": False,
+        "scorecard_cells_wrapped": False,
+        "original_pdf_bytes_preserved": True,
+        "human_review_required": True,
+        "client_delivery_allowed": False,
+    }
+    return result
 
 
 def _is_spanish(canonical: Mapping[str, Any]) -> bool:
@@ -581,14 +668,21 @@ def repair_rendered_report(package: Mapping[str, Any]) -> dict[str, Any]:
     replacement_pages = (
         PdfReader(io.BytesIO(_scorecard_page(canonical))).pages if sections else []
     )
-    for page in reader.pages:
+    index = 0
+    while index < len(reader.pages):
+        page = reader.pages[index]
         text = page.extract_text() or ""
         if sections and not replaced and "Canonical Technical Scorecard" in text:
+            count = _owned_scorecard_page_count(reader, index)
+            if count is None:
+                return _repair_unavailable(package)
             for replacement_page in replacement_pages:
                 writer.add_page(replacement_page)
             replaced = True
+            index += count
         else:
             writer.add_page(page)
+            index += 1
     if sections and not replaced:
         raise ValueError("canonical scorecard page was not found for safe replacement")
 

@@ -160,6 +160,6 @@ def test_same_frozen_input_keeps_cross_locale_pdf_bytes(source_language, target_
         time.sleep(1.05)
         second = _fresh_process_observation(status, target_language, seeds[1])
     assert status == before
-    assert first["pdf_sha256"] == second["pdf_sha256"], json.dumps(
+    assert first == second, json.dumps(
         {"first": first, "second": second, "mode": mode, "seeds": seeds}, sort_keys=True
     )

@@ -6,6 +6,7 @@ import base64
 import html
 import io
 import re
+import textwrap
 from nico.report_json_copy import deepcopy
 from typing import Any, Iterable, Mapping
 
@@ -19,6 +20,7 @@ APPROVAL_SUFFIX = "AUTOMATED-DRAFT-PENDING-APPROVAL"
 EN_BOUNDARY = "AUTOMATED DRAFT · PENDING HUMAN APPROVAL · CLIENT DELIVERY BLOCKED"
 ES_BOUNDARY = "BORRADOR AUTOMATIZADO · APROBACIÓN HUMANA PENDIENTE · ENTREGA AL CLIENTE BLOQUEADA"
 MAX_EXECUTIVE_FINDINGS = 7
+# Historical explicit limit; ordinary callers default to evidence-sized reports.
 MAX_CLIENT_PDF_PAGES = 60
 
 _REGISTER_HEADINGS = (
@@ -154,6 +156,28 @@ def _priority(item: Mapping[str, Any]) -> str:
     return value if value in {"P0", "P1", "P2", "P3"} else "P2"
 
 
+def _complete_criterion_groups(item: Mapping[str, Any], *, spanish: bool) -> list[tuple[str, list[str]]]:
+    """Preserve complete retained conditions; distinct contracts stay distinct."""
+    def values(key: str) -> list[str]:
+        raw = item.get(key) or []
+        if isinstance(raw, str):
+            raw = [raw]
+        return list(dict.fromkeys(" ".join(str(value).split()) for value in raw if str(value).strip()))
+
+    verification, acceptance = values("verification"), values("acceptance_criteria")
+    groups = []
+    if verification:
+        label = ("Verificación prevista" if spanish else "Planned verification") if acceptance and acceptance != verification else ("Criterios de aceptación" if spanish else "Acceptance criteria")
+        groups.append((label, "verification", verification))
+    if acceptance and acceptance != verification:
+        groups.append(("Criterios de aceptación" if spanish else "Acceptance criteria", "acceptance_criteria", acceptance))
+    exit_criteria = values("exit_criteria")
+    if exit_criteria and exit_criteria not in (verification, acceptance):
+        groups.append(("Criterios de salida" if spanish else "Exit criteria", "exit_criteria", exit_criteria))
+    return [(label, [_authored_display(value, key, spanish=spanish, limit=len(value) + 1)
+                     for value in values]) for label, key, values in groups]
+
+
 def compact_finding_register_markdown(register: Mapping[str, Any], *, spanish: bool) -> str:
     records = _records(register)
     summary = register.get("summary") if isinstance(register.get("summary"), Mapping) else {}
@@ -181,9 +205,6 @@ def compact_finding_register_markdown(register: Mapping[str, Any], *, spanish: b
         "",
     ]
     for item in records[:MAX_EXECUTIVE_FINDINGS]:
-        verification = item.get("verification") or item.get("acceptance_criteria") or []
-        if isinstance(verification, str):
-            verification = [verification]
         title = _authored_display(
             clean_finding_title(item.get("title")),
             "title",
@@ -214,15 +235,7 @@ def compact_finding_register_markdown(register: Mapping[str, Any], *, spanish: b
             spanish=spanish,
             limit=1000,
         )
-        localized_verification = [
-            _authored_display(
-                criterion,
-                "verification",
-                spanish=spanish,
-                limit=900,
-            )
-            for criterion in _dedupe(verification, 2)
-        ]
+        criterion_groups = _complete_criterion_groups(item, spanish=spanish)
         lines.extend(
             [
                 f"#### {_priority(item)} · {title} · {_identifier(item)}",
@@ -232,8 +245,9 @@ def compact_finding_register_markdown(register: Mapping[str, Any], *, spanish: b
                 f"- {('Corrección específica' if spanish else 'Specific correction')}: {correction}",
             ]
         )
-        for criterion in localized_verification:
-            lines.append(f"- {('Criterios de aceptación (resultado no verificado)' if spanish else 'Acceptance criteria (outcome not verified)')}: {criterion}")
+        for label, criteria in criterion_groups:
+            lines.append(f"- {label} ({'resultado no verificado' if spanish else 'outcome not verified'}):")
+            lines.extend(f"  - {criterion}" for criterion in criteria)
         lines.append("")
 
     lines.extend([index_heading, ""])
@@ -257,7 +271,7 @@ def render_compact_finding_register_pdf(register: Mapping[str, Any], *, spanish:
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import inch
-    from reportlab.platypus import LongTable, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import KeepTogether, LongTable, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     records = _records(register)
     summary = register.get("summary") if isinstance(register.get("summary"), Mapping) else {}
@@ -265,8 +279,8 @@ def render_compact_finding_register_pdf(register: Mapping[str, Any], *, spanish:
     styles = getSampleStyleSheet()
     h1 = ParagraphStyle("CR-H1", parent=styles["Heading1"], fontName="Helvetica-Bold", fontSize=19, leading=23, textColor=colors.HexColor("#0f172a"), spaceAfter=9)
     h2 = ParagraphStyle("CR-H2", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=12.5, leading=15.5, textColor=colors.HexColor("#075985"), spaceBefore=6, spaceAfter=5)
-    body = ParagraphStyle("CR-Body", parent=styles["BodyText"], fontName="Helvetica", fontSize=8, leading=10.6, textColor=colors.HexColor("#334155"), spaceAfter=4)
-    small = ParagraphStyle("CR-Small", parent=body, fontSize=6.5, leading=8.1, textColor=colors.HexColor("#475569"), spaceAfter=2)
+    body = ParagraphStyle("CR-Body", parent=styles["BodyText"], fontName="Helvetica", fontSize=9.2, leading=12.2, textColor=colors.HexColor("#334155"), spaceAfter=4)
+    small = ParagraphStyle("CR-Small", parent=body, fontSize=8, leading=10, textColor=colors.HexColor("#475569"), spaceAfter=2)
     warning = ParagraphStyle("CR-Warning", parent=body, fontName="Helvetica-Bold", textColor=colors.HexColor("#92400e"), backColor=colors.HexColor("#fef3c7"), borderColor=colors.HexColor("#f59e0b"), borderWidth=.7, borderPadding=7, spaceAfter=8)
 
     def p(
@@ -338,9 +352,6 @@ def render_compact_finding_register_pdf(register: Mapping[str, Any], *, spanish:
     story.extend([summary_table, Spacer(1, .12 * inch), p("Detalle ejecutivo priorizado" if spanish else "Prioritized executive detail", h2)])
 
     for item in records[:MAX_EXECUTIVE_FINDINGS]:
-        verification = item.get("verification") or item.get("acceptance_criteria") or []
-        if isinstance(verification, str):
-            verification = [verification]
         title = _authored_display(
             clean_finding_title(item.get("title")),
             "title",
@@ -371,15 +382,7 @@ def render_compact_finding_register_pdf(register: Mapping[str, Any], *, spanish:
             spanish=spanish,
             limit=1000,
         )
-        localized_verification = [
-            _authored_display(
-                criterion,
-                "verification",
-                spanish=spanish,
-                limit=900,
-            )
-            for criterion in _dedupe(verification, 2)
-        ]
+        criterion_groups = _complete_criterion_groups(item, spanish=spanish)
         rows = [
             ["Prioridad / ID" if spanish else "Priority / ID", f"{_priority(item)} · {_identifier(item)}"],
             ["Hallazgo" if spanish else "Finding", title],
@@ -387,17 +390,8 @@ def render_compact_finding_register_pdf(register: Mapping[str, Any], *, spanish:
             ["Evidencia" if spanish else "Evidence", observed_evidence],
             ["Impacto" if spanish else "Impact", business_impact],
             ["Corrección" if spanish else "Correction", correction],
-            [
-                "Criterios de aceptación" if spanish else "Acceptance criteria",
-                ("Resultado: no verificado. Criterios previstos: " if spanish else "Outcome: not verified. Planned criteria: ") + "; ".join(localized_verification)
-                or (
-                    "Se requiere disposición humana"
-                    if spanish
-                    else "Human disposition required"
-                ),
-            ],
         ]
-        table = Table([[p(left, small) if index else p(left, small) for index, left in enumerate(row)] for row in rows], colWidths=[1.15 * inch, 6.25 * inch])
+        table = Table([[p(cell, body) for cell in row] for row in rows], colWidths=[1.15 * inch, 6.25 * inch])
         table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#e0f2fe")),
             ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
@@ -408,7 +402,25 @@ def render_compact_finding_register_pdf(register: Mapping[str, Any], *, spanish:
             ("TOPPADDING", (0, 0), (-1, -1), 3),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
         ]))
-        story.extend([table, Spacer(1, .1 * inch)])
+        table.setStyle(TableStyle([("NOSPLIT", (0, 0), (-1, 2))]))
+        story.append(table)
+        for label, criteria in criterion_groups:
+            criterion_heading = ParagraphStyle("CR-Criteria", parent=body, fontName="Helvetica-Bold", keepWithNext=True, spaceBefore=8)
+            criterion_paragraphs = [p(f"{label} · {_identifier(item)} · " + ("Resultado: no verificado" if spanish else "Outcome: not verified"), criterion_heading)]
+            for index, criterion in enumerate(criteria, 1):
+                # Standalone Paragraphs can split across pages without clipping a
+                # long retained condition or forcing it into an indivisible row.
+                chunks = textwrap.wrap(criterion, width=1200, break_long_words=False, break_on_hyphens=False)
+                for part, chunk in enumerate(chunks):
+                    prefix = f"{index}. " if part == 0 else f"{index}. ({'continuación' if spanish else 'continued'}) · {_identifier(item)}: "
+                    criterion_paragraphs.append(p(prefix + chunk, body, limit=len(prefix + chunk) + 1))
+            # Keep ordinary criterion sets with their ID; over-page paragraphs
+            # still split using ReportLab's normal KeepTogether fallback.
+            if sum(len(criterion) for criterion in criteria) <= 3000:
+                story.append(KeepTogether(criterion_paragraphs))
+            else:
+                story.extend(criterion_paragraphs)
+        story.append(Spacer(1, .1 * inch))
 
     story.extend([PageBreak(), p("Índice completo de fuentes exactas" if spanish else "Complete Exact-Source Index", h1)])
     header = (
@@ -531,7 +543,12 @@ def render_evidence_review_gate_pdf(canonical: Mapping[str, Any], register: Mapp
     maturity = assessment.get("maturity_signal") if isinstance(assessment.get("maturity_signal"), Mapping) else {}
     technical = assessment.get("technical_score", maturity.get("technical_score", maturity.get("score")))
     adjusted = assessment.get("canonical_evidence_adjusted_score", assessment.get("evidence_adjusted_score"))
-    scanners = [item for item in canonical.get("scanner_execution_records") or [] if isinstance(item, Mapping)]
+    from nico.client_report_completion_v1 import _scanner_records
+
+    # Summary counts use the complete retained population, including exclusions.
+    # scanner_execution_summary still denies exclusions execution credit.
+    required_scanners, excluded_scanners = _scanner_records(canonical)
+    scanners = required_scanners + excluded_scanners
     completed = [item for item in scanners if item.get("completed") is True]
     review, material, categories = _candidate_summary(canonical)
     summary = register.get("summary") if isinstance(register.get("summary"), Mapping) else {}
@@ -651,6 +668,8 @@ def render_evidence_review_gate_pdf(canonical: Mapping[str, Any], register: Mapp
             ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
         ]))
         story.append(table)
+    from nico.report_preview_labels_v1 import retained_coverage_disclosures
+    story.extend(p(line, small) for line in retained_coverage_disclosures(canonical, spanish=spanish))
     story.extend([
         p("Límite del paquete del cliente" if spanish else "Client package boundary", h2),
         p(
@@ -709,7 +728,11 @@ def _finding_detail_page(text: str) -> bool:
     return False
 
 
-def compose_compact_client_pdf(base_pdf: bytes, register_pdf: bytes, gate_pdf: bytes) -> bytes:
+def compose_compact_client_pdf(
+    base_pdf: bytes, register_pdf: bytes, gate_pdf: bytes, *, page_limit: int | None = None,
+) -> bytes:
+    if page_limit is not None and (type(page_limit) is not int or page_limit < 1):
+        raise ValueError("explicit PDF page limit must be a positive integer or None")
     if not base_pdf.startswith(b"%PDF"):
         raise ValueError("compact client composition requires a valid base PDF")
     base = PdfReader(io.BytesIO(base_pdf))
@@ -741,8 +764,8 @@ def compose_compact_client_pdf(base_pdf: bytes, register_pdf: bytes, gate_pdf: b
     writer.write(output)
     pdf = output.getvalue()
     page_count = len(PdfReader(io.BytesIO(pdf)).pages)
-    if page_count > MAX_CLIENT_PDF_PAGES:
-        raise ValueError(f"client-ready PDF exceeds the {MAX_CLIENT_PDF_PAGES}-page boundary: {page_count}")
+    if page_limit is not None and page_count > page_limit:
+        raise ValueError(f"client-ready PDF exceeds the {page_limit}-page boundary: {page_count}")
     return pdf
 
 

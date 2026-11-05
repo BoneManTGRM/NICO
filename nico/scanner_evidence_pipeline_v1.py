@@ -779,6 +779,9 @@ def _typescript_findings(text: str) -> list[dict[str, Any]]:
 
 
 def _run_typescript(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable[..., WorkerCommandResult], preparation: ProjectCommandPreparation | None) -> dict[str, Any]:
+    if _owned_nico_ci(workspace):
+        from nico.nico_ci_typescript_consumer_v1 import run
+        return run(spec, workspace)
     if not project_commands_allowed():
         return _unavailable(
             spec,
@@ -1016,6 +1019,10 @@ def verify_source_checkout(payload: dict[str, Any], workspace: WorkerWorkspace, 
     return payload
 
 
+def _owned_nico_ci(workspace: WorkerWorkspace) -> bool:
+    return _target_repository(workspace) == "BoneManTGRM/NICO"
+
+
 def _target_repository(workspace: WorkerWorkspace) -> str:
     remote = _git_text(workspace, "config", "--get", "remote.origin.url")
     value = remote.replace("https://github.com/", "").replace("git@github.com:", "").removesuffix(".git").strip("/")
@@ -1098,7 +1105,7 @@ def run_canonical_scanner_tools(
     node_inventory = inspect_node_inputs(workspace.repo_dir, target_commit) if any(
         spec.name in SOURCE_REASONS for spec in selected
     ) else {}
-    needs_node = any(spec.name in {"eslint", "typescript"} for spec in selected)
+    needs_node = any(spec.name == "eslint" or (spec.name == "typescript" and not _owned_nico_ci(workspace)) for spec in selected)
     preparation = None
     if needs_node:
         if project_commands_allowed():

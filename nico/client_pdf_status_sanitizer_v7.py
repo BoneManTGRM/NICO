@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unicodedata
+import re
 from typing import Any
 
 VERSION = "nico.client-pdf-status-sanitizer.v7.3"
@@ -32,6 +33,43 @@ def _normalized(value: Any) -> str:
     return " ".join(without_marks.casefold().split())
 
 
+def _flowing_review_page(text: str) -> bool:
+    """Recognize worksheet structure, without exempting text sanitization.
+
+    This is presentation classification, not provenance or approval authority.
+    A PDF dictionary bit alone cannot identify a worksheet.
+    """
+    normalized = _normalized(text)
+    lines = [_normalized(line) for line in text.splitlines() if line.strip()]
+    footers = (
+        ('human decision pending | client delivery blocked', 'nico | automated draft',
+         r'review page ([1-9][0-9]{0,3}) of ([1-9][0-9]{0,3})'),
+        ('decision humana pendiente | entrega bloqueada', 'nico | borrador automatizado',
+         r'pagina de revision ([1-9][0-9]{0,3}) de ([1-9][0-9]{0,3})'),
+    )
+    valid_footer = False
+    for index in range(2, len(lines)):
+        for boundary, draft, pattern in footers:
+            if lines[index - 2:index] != [boundary, draft]:
+                continue
+            # Only the bounded whole counter line in the footer block counts.
+            # Earlier literal evidence must neither mask nor supply this value.
+            counter = re.fullmatch(pattern, lines[index])
+            if counter and int(counter[1]) <= int(counter[2]):
+                valid_footer = True
+    if not valid_footer:
+        return False
+    section_ids = ('functional_qa', 'platform_parity', 'historical_trends_and_change_failure',
+                   'requirements_traceability', 'stakeholder_and_business_alignment',
+                   'risk_reduction_and_executive_briefing', 'six_month_roadmap', 'staffing_sequencing_and_cost')
+    for section_id in section_ids:
+        if re.search(r'\bid: ' + section_id + r' \| (?:section|seccion) [1-8] (?:of|de) 8\b', normalized):
+            return True
+        if re.search(r'\[' + section_id + r'\] — (?:continued|continuacion)\b', normalized):
+            return True
+    return False
+
+
 def install_client_pdf_status_sanitizer_v7() -> dict[str, Any]:
     from nico import client_pdf_status_sanitizer_v1 as sanitizer
     from nico.comprehensive_scanner_stage_wording_v1 import (
@@ -56,6 +94,8 @@ def install_client_pdf_status_sanitizer_v7() -> dict[str, Any]:
 
     def _drop_internal_page(text: str) -> bool:
         normalized = _normalized(text)
+        if _flowing_review_page(text):
+            return False
         if any(marker in normalized for marker in _PRESERVED_REVIEW_MARKERS):
             return False
         return current(text)

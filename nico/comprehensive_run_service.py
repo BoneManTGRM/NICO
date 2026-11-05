@@ -133,6 +133,9 @@ def _background_poll_reference(value: Mapping[str, Any]) -> dict[str, Any]:
 
 def _require_exact_final_report_integrity(record: Mapping[str, Any]) -> None:
     """Block every human-authority transition until final artifacts validate."""
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(record)
+
 
     # Imported at the operation boundary to avoid the controller/service import cycle.
     from nico.comprehensive_api_controller import _canonical_final_report_outputs
@@ -401,6 +404,10 @@ class ComprehensiveRunService:
         if _final_report_status_maintenance_required(record):
             return self.resume(run_id, max_stages=1)
         return record
+
+    def load_capture_diagnostics_record(self, run_id: str) -> dict[str, Any]:
+        """No continuation, cache refresh, or legacy commitment initialization."""
+        return self._store.load_without_maintenance(run_id)
 
     def load_read_only(self, run_id: str) -> dict[str, Any]:
         """Load and integrity-validate a run without continuation or maintenance."""

@@ -93,7 +93,7 @@ def comprehensive_release_provenance() -> dict[str, Any]:
     }
 
 
-def _provenance_lines(provenance: dict[str, Any]) -> list[tuple[str, str]]:
+def _provenance_lines(provenance: dict[str, Any], *, spanish: bool = False) -> list[tuple[str, str]]:
     scanner = provenance.get("scanner_versions") if isinstance(provenance.get("scanner_versions"), dict) else {}
     lines = [
         ("Backend source commit", str(provenance.get("backend_build_commit") or "unavailable")),
@@ -116,11 +116,14 @@ def _provenance_lines(provenance: dict[str, Any]) -> list[tuple[str, str]]:
             ("Frontend observed at", str(observation.get("observed_at") or "unavailable")),
         ])
     if "frontend_backend_source_alignment" in provenance:
+        runtime_scope = provenance.get("release_identity_scope") == "report_generation_runtime; assessed repository identity is separate"
         lines.extend([
             ("Frontend/backend observed source alignment", str(provenance["frontend_backend_source_alignment"])),
             ("Observed frontend source identity", str(provenance.get("frontend_observed_source_revision") or "unavailable")),
             ("Observed frontend deployment identity", str((observation or {}).get("deployment_id") or "unavailable")),
-            ("Exact release readiness", str(provenance.get("exact_release_readiness") or "unverified")),
+            ("Report-generation runtime identity readiness" if runtime_scope else "Recorded readiness status (scope unknown)", str(provenance.get("exact_release_readiness") or "unverified")),
+            ("Readiness scope", "Report-generation runtime only" if runtime_scope else "unknown"),
+            ("Readiness interpretation", "This provenance alone describes the report-generation runtime identity; assessed-repository release readiness requires separate evidence." if runtime_scope else "This provenance alone does not identify the readiness scope; consult separate evidence before interpreting the recorded status."),
         ])
     execution = provenance.get("scanner_execution_evidence")
     if not isinstance(execution, dict):
@@ -138,18 +141,47 @@ def _provenance_lines(provenance: dict[str, Any]) -> list[tuple[str, str]]:
         raw = row.get("raw_artifact") or {}
         receipt = (row.get("execution_provenance") or {}).get("execution_receipt") or {}
         config = row.get("configuration") or {}
+        def atom(value: Any, fallback: str = "unavailable") -> str:
+            value = str(value or fallback)
+            return ({"completed": "completado", "not_applicable": "no aplicable",
+                     "unavailable": "no disponible", "unknown": "desconocido",
+                     "available": "disponible", "verified": "verificado",
+                     "not_recorded": "no registrado",
+                     "retained_receipt_integrity_verified": "integridad del comprobante conservado verificada"}
+                    .get(value, value) if spanish else value)
+
+        def retained(value: Any) -> str:
+            # Identifiers, versions and digests are never passed through translation.
+            return str(value) if value else atom(None)
+
+        def flag(value: Any) -> str:
+            return ("Sí" if value is True else "No") if spanish else str(value is True)
+
+        availability_key = "disponibilidad" if spanish else "availability"
+        status_key = "estado" if spanish else "status"
+        receipt_status = atom(receipt.get("status"), "not_recorded")
+        if not spanish:
+            receipt_status = receipt_status.replace("_", " ")
         lines.extend([
-            ("Actual scanner version", f"{name}: {row.get('scanner_version') or 'unavailable'}"),
-            ("Scanner execution status", f"{name}: {row.get('execution_status') or 'unknown'}; execution evidence verified={row.get('execution_evidence_verified') is True}; inapplicability evidence verified={row.get('inapplicability_evidence_verified') is True}"),
-            ("Raw artifact SHA-256", f"{name}: {raw.get('sha256') or 'unavailable'}; availability={raw.get('availability') or 'unavailable'}"),
-            ("Execution receipt SHA-256", f"{name}: {receipt.get('receipt_sha256') or 'unavailable'}; status={str(receipt.get('status') or 'not_recorded').replace('_', ' ')}"),
-            ("Configuration SHA-256", f"{name}: {config.get('generated_config_sha256') or 'unavailable'}; full configuration verified=False"),
-            ("Command identity SHA-256", f"{name}: {config.get('retained_command_intent_sha256') or 'unavailable'}"),
+            ("Actual scanner version", f"{name}: {retained(row.get('scanner_version'))}"),
+            ("Scanner execution status", f"{name}: {atom(row.get('execution_status'), 'unknown')}; execution evidence verified={flag(row.get('execution_evidence_verified'))}; retained CI evidence verified={flag(row.get('retained_ci_evidence_verified'))}; execution observed for this report={flag(row.get('execution_observed'))}; inapplicability evidence verified={flag(row.get('inapplicability_evidence_verified'))}"),
+            ("Raw artifact SHA-256", f"{name}: {retained(raw.get('sha256'))}; {availability_key}={atom(raw.get('availability'))}"),
+            ("Execution receipt SHA-256", f"{name}: {retained(receipt.get('receipt_sha256'))}; {status_key}={receipt_status}"),
+            ("Configuration SHA-256", f"{name}: {retained(config.get('generated_config_sha256'))}; full configuration verified={flag(False)}"),
+            ("Command identity SHA-256", f"{name}: {retained(config.get('retained_command_intent_sha256'))}"),
         ])
     return lines
 
 
 _ES_LABELS = {
+    "Report-generation runtime identity readiness": "Preparación de la identidad del entorno de generación del informe",
+    "Recorded readiness status (scope unknown)": "Estado de preparación registrado (alcance desconocido)",
+    "Readiness scope": "Alcance del estado de preparación",
+    "Report-generation runtime only": "Solo el entorno de generación del informe",
+    "Readiness interpretation": "Interpretación del estado de preparación",
+    "unknown": "desconocido",
+    "This provenance alone describes the report-generation runtime identity; assessed-repository release readiness requires separate evidence.": "Esta procedencia por sí sola describe la identidad del entorno de generación del informe; la preparación de una versión del repositorio evaluado requiere evidencia separada.",
+    "This provenance alone does not identify the readiness scope; consult separate evidence before interpreting the recorded status.": "Esta procedencia por sí sola no identifica el alcance del estado de preparación; consulte evidencia separada antes de interpretar el estado registrado.",
     "Frontend configured-identity match": "Coincidencia con la identidad configurada del frontend",
     "Frontend/backend observed source alignment": "Coincidencia del código observado del frontend y backend",
     "Observed frontend source identity": "Identidad del código observado del frontend",
@@ -199,6 +231,8 @@ def _presentation_localizer(localize: Callable[[str], str] | None) -> Callable[[
             return _ES_LABELS[value]
         # Only constructed provenance values pass this formatter; retained records stay literal.
         for original, translated in (
+            ("retained CI evidence verified", "evidencia de CI conservada verificada"),
+            ("execution observed for this report", "ejecución observada para este informe"),
             ("inapplicability evidence verified", "evidencia de no aplicabilidad verificada"),
             ("execution evidence verified", "evidencia de ejecución verificada"),
             ("full configuration verified", "configuración completa verificada"),
@@ -230,7 +264,7 @@ def _append_provenance_pdf(
     page.setTitle(title)
     page.setFont("Helvetica-Bold", 16)
     page.drawString(54, 738, title)
-    page.setFont("Helvetica", 8.5)
+    page.setFont("Helvetica", 9)
     y = 704
     def continuation() -> float:
         page.showPage()
@@ -238,17 +272,17 @@ def _append_provenance_pdf(
         page.drawString(54, 738, localize("Scanner evidence (continued)"))
         return 710
 
-    for label, value in _provenance_lines(provenance):
+    for label, value in _provenance_lines(provenance, spanish=localize("NICO Release Provenance") != "NICO Release Provenance"):
         value = localize(value)
         if y < 96:
             y = continuation()
-        page.setFont("Helvetica-Bold", 8.5)
+        page.setFont("Helvetica-Bold", 9)
         page.drawString(54, y, f"{localize(label)}:")
-        page.setFont("Helvetica", 8.5)
-        for line in simpleSplit(value, "Helvetica", 8.5, 504):
+        page.setFont("Helvetica", 9)
+        for line in simpleSplit(value, "Helvetica", 9, 504):
             if y < 72:
                 y = continuation()
-                page.setFont("Helvetica", 8.5)
+                page.setFont("Helvetica", 9)
             y -= 12
             page.drawString(54, y, line)
         y -= 24
@@ -305,7 +339,7 @@ def _bind_release_provenance(package: Any) -> None:
             provenance = comprehensive_release_provenance()
         localize = _presentation_localizer(localize_presentation)
         lines = ["", f"## {localize('NICO Release Provenance')}", ""]
-        lines.extend(f"- **{localize(label)}:** `{localize(value)}`" for label, value in _provenance_lines(provenance))
+        lines.extend(f"- **{localize(label)}:** `{localize(value)}`" for label, value in _provenance_lines(provenance, spanish=localize("NICO Release Provenance") != "NICO Release Provenance"))
         lines.extend(["", localize(_SCANNER_VERSION_BOUNDARY), "", localize(str(provenance.get("truth_boundary") or "")), ""])
         return markdown.rstrip() + "\n" + "\n".join(lines)
 

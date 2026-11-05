@@ -50,8 +50,11 @@ def test_new_assessment_clears_stale_identity() -> None:
     run = HOOK.split("async function run(): Promise<void>", 1)[1].split(
         "function startNew(): void", 1
     )[0]
-    assert "exactRunId(latestResult.current) || readPersistedRun()?.runId" in run
-    assert run.index("readPersistedRun()?.runId") < run.index("clearPersistedRun(false);")
+    assert "exactRunId(latestResult.current) || selectedRunId()" in run
+    assert run.index("selectedRunId()") < run.index("clearPersistedRun(false);")
+    selected = HOOK.split("function selectedRunId()", 1)[1].split("function offerSelectedRunRecovery", 1)[0]
+    assert 'searchParams.get("run_id")?.trim()' in selected
+    assert '|| readPersistedRun()?.runId || ""' in selected
     assert "clearPersistedRun(false);" in HOOK.split("function startNew(): void", 1)[1]
     start_new = HOOK.split("function startNew(): void", 1)[1].split(
         "async function retry()", 1

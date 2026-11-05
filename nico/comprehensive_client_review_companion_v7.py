@@ -389,9 +389,9 @@ def install_comprehensive_review_companion_v7() -> dict[str, Any]:
         return {
             "status": "already_installed",
             "version": VERSION,
-            "page_count": COMPANION_PAGE_COUNT,
+            "page_count": None if getattr(render_paired_substantive_review_pdf, "_nico_review_flowing", False) else COMPANION_PAGE_COUNT,
             "section_count": SECTION_COUNT,
-            "sections_per_page": SECTIONS_PER_PAGE,
+            "sections_per_page": None if getattr(render_paired_substantive_review_pdf, "_nico_review_flowing", False) else SECTIONS_PER_PAGE,
         }
 
     setattr(render_paired_substantive_review_pdf, _MARKER, True)
@@ -408,9 +408,9 @@ def install_comprehensive_review_companion_v7() -> dict[str, Any]:
     return {
         "status": "installed",
         "version": VERSION,
-        "page_count": COMPANION_PAGE_COUNT,
+        "page_count": None if getattr(render_paired_substantive_review_pdf, "_nico_review_flowing", False) else COMPANION_PAGE_COUNT,
         "section_count": SECTION_COUNT,
-        "sections_per_page": SECTIONS_PER_PAGE,
+        "sections_per_page": None if getattr(render_paired_substantive_review_pdf, "_nico_review_flowing", False) else SECTIONS_PER_PAGE,
         "all_review_sections_retained": True,
         "all_section_decision_records_retained": True,
         "complete_evidence_retained_in_structured_artifacts": True,

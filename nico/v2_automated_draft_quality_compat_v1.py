@@ -302,6 +302,8 @@ def install_automated_draft_quality_compat() -> dict[str, Any]:
 
 def _project_result(value: Mapping[str, Any]) -> dict[str, Any]:
     result = deepcopy(dict(value))
+    if result.get("report_quality_repair_status") == "unavailable":
+        return result
     canonical = apply_automated_draft_truth(
         result.get("json") if isinstance(result.get("json"), Mapping) else {}
     )
