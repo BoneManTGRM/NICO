@@ -14,6 +14,50 @@ def digest(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
+@pytest.mark.parametrize('verification_finished', [599.0, 600.0, 601.0])
+def test_source_verification_cannot_dispatch_compiler_after_shared_deadline(monkeypatch, verification_finished):
+    import resource
+    from types import SimpleNamespace
+    from nico import assessment_cpp_project_compiler as compiler
+
+    class OwnedPath:
+        def __init__(self, *args): pass
+        def lstat(self): return SimpleNamespace(st_uid=1001, st_mode=0o700)
+        def resolve(self, **kwargs): return self
+        def __truediv__(self, child): return self
+        def mkdir(self, **kwargs): pass
+        def __str__(self): return '/owned-synthetic-no-files'
+
+    clock, calls = [0.0], []
+    context = {'index': 0, 'context_id': 'owned', 'invocation': ['owned-compiler'],
+               'analysis_file': 'owned.cpp', 'origin': 'original', 'path': 'owned.cpp'}
+    request = {'schema': 'nico.cpp-project-compiler-request.v2',
+               'limits': dict(compiler.EXTENDED_LIMITS), 'contexts': [context],
+               'generated_files': {}, 'targets': {'owned.cpp': 'a' * 64}}
+    monkeypatch.setattr(compiler, 'Path', OwnedPath)
+    monkeypatch.setattr(compiler.os, 'getuid', lambda: 1001)
+    monkeypatch.setattr(compiler.os, 'getgid', lambda: 1001)
+    monkeypatch.setattr(resource, 'setrlimit', lambda *args: None)
+    monkeypatch.setattr(compiler.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(compiler, '_syntax_argv', lambda *args: (context['invocation'], context['analysis_file']))
+    monkeypatch.setattr(compiler, '_verify_input', lambda *args: clock.__setitem__(0, verification_finished))
+
+    def run(argv, stem, deadline, environment):
+        calls.append((clock[0], deadline))
+        return {'exit_code': 124, 'timed_out': True, 'output_truncated': False}
+
+    monkeypatch.setattr(compiler, '_run', run)
+    result = compiler.collect_project_compiler(request)
+    record = result['records'][0]
+    if verification_finished >= 600:
+        assert calls == []
+        assert record['execution'] is None
+        assert record['error'] == 'worker_project_compiler_deadline'
+    else:
+        assert calls == [(599.0, 600.0)]
+        assert record['execution']['timed_out'] is True
+
+
 def capability(name):
     import importlib.util
     spec = importlib.util.find_spec('nico.assessment_cpp_project_compiler')
