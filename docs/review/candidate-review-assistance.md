@@ -143,3 +143,50 @@ SQLite connections blocked by instrumentation. `python -m bandit -q
 scripts/prepare_retained_triage_evidence_requests.py`, `python -m py_compile` for
 the helper and its tests, and `git diff --check` passed. Hosted CI and Python 3.11
 remain unverified. No production qualification or deployment is included.
+
+## Optional exception-handler evidence
+
+The ordinary verified-workspace capture can retain optional text-free B110/B112
+handler facts for at most one eligible file. It reuses the existing AST parse,
+finishes baseline capture first, then inspects that AST only within the remaining
+shared deadline. Existing supported-rule priorities, source reads, baseline
+observations and input/output limits remain unchanged. The optional sidecar is
+capped at 4 KiB within the existing envelope reservation; unavailable space, time,
+source binding or supported structure means no handler evidence. It never reads
+or parses source again. The AST is invocation-local and source text is not stored.
+
+Only ordinary handlers whose whole body is one `pass` or one loop-context-valid
+`continue` qualify. Mixed bodies, `except*`, ambiguous lines, warnings, legacy
+captures and mismatched scope/source remain unavailable. Syntax alone does not
+establish safety, vulnerability, reachability or swallowed-error consequences.
+
+Persistence retains at most 64 versioned receipts and 64 KiB. Each receipt binds
+candidate fingerprint, exact scope, source SHA-256, Git blob, path, line and body
+kind. Display requalifies against the retained trusted capture and requires exact
+receipt equality. Candidate-authored receipt fields cannot issue evidence. B110
+and B112 remain unresolved and never receive bounded-analysis completion credit,
+dispositions, score changes, report approval or delivery authorization.
+
+The reviewer UI shows qualified facts, provenance and explicit remaining human
+questions in English and es-MX. The installed PDF currently lacks trusted capture
+at this display seam, so it explicitly discloses handler evidence unavailable and
+human contextual review required. It does not authenticate packet-embedded facts
+or export a handler evidence count. Historical reports are not upgraded.
+
+The source characterization at `9c876ba4` used a synthetic candidate probe, not a
+join to the historical 662 candidates. Those compact records do not contain the
+path/rule detail required for a safe join. No historical candidate is claimed
+resolved or newly covered, and no reviewer-time saving has been measured.
+
+Local qualification against merged main `bc3c60fe1c065d201a6a42e3ae28b2517f2ac71b`:
+609 Python tests passed across 29 isolated files, with zero failures/errors/skips;
+98 reviewer JavaScript tests passed; TypeScript and the standard Next.js production
+build passed. Tests cover the real Git collector, baseline ordered reads and
+observation/output parity, optional deadline exhaustion, one-file/32-line bounds,
+receipt count/byte limits, JSON persistence, finalization, trusted review display,
+tampering/privacy and installed EN/es-MX PDF abstention with exact artifact hashes,
+input nonmutation and approval/delivery gates. Independent review found and
+verified a correction for rule-alias PDF disclosure; final review found no
+remaining material issue. Bandit reports the same three existing low-severity
+Git subprocess findings as the baseline; the new handler module adds none.
+Hosted CI and production qualification for this follow-on remain separate.
