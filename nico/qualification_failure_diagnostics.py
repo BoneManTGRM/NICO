@@ -134,6 +134,9 @@ def v2_publication_failure_diagnostic(value):
             'failure_reason', 'page_limit', 'base_pages', 'retained_body_pages_before_reflow',
             'retained_body_pages_after_reflow', 'register_pages', 'gate_pages', 'review_pages',
             'ci_boundary_pages', 'human_evidence_pages', 'required_pages', 'total_pages', 'reflow_attempted')}
+    if category == 'spanish_translation_missing':
+        from nico.spanish_translation_failure_diagnostic import spanish_translation_failure_diagnostic
+        result['translation'] = spanish_translation_failure_diagnostic(error)
     return result
 
 

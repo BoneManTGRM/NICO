@@ -144,3 +144,16 @@ def test_v2_private_error_is_never_echoed(error, expected):
     result = renderer_failure_diagnostic(stage, 'es-MX')['v2_publication']
     assert result['error_category'] == expected and result['error_type'] == 'other'
     assert 'PRIVATE' not in json.dumps(result)
+
+
+
+def test_v2_missing_translation_emits_field_without_private_literal(capsys):
+    stage = {'status': 'blocked', 'v2_production_authority': {
+        'error_type': 'ValueError', 'canonical_only_source_used': True,
+        'error': 'missing Spanish presentation translation for fact: PRIVATE_CUSTOMER_CONTENT'}}
+    emit_renderer_failure_diagnostic({'stage_results': {FINAL_STAGE: stage}}, 'es-MX')
+    output = capsys.readouterr().out
+    summary = json.loads(output)['v2_publication']
+    assert summary['error_category'] == 'spanish_translation_missing'
+    assert summary['translation'] == {'field': 'fact', 'source_match': 'none'}
+    assert 'PRIVATE' not in output
