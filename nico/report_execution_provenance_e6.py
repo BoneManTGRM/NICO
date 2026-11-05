@@ -237,13 +237,15 @@ def verify_frontend_release(value: Any, expected_sha: str, expected_deployment_i
         return False
 
 
-def scanner_execution_evidence(identity: Mapping[str, Any], stages: Mapping[str, Any]) -> dict[str, Any]:
+def scanner_execution_evidence(
+    identity: Mapping[str, Any], stages: Mapping[str, Any], *, scanner_name: str | None = None,
+) -> dict[str, Any]:
     from nico.comprehensive_scanner_inventory_v1 import inventory_for_record
 
     # Called only by the trusted report builder on the stored run context. The
     # existing inventory authority independently verifies the scan identity and bytes.
     record = {"identity": dict(identity), "stage_results": dict(stages)}
-    inspected = inventory_for_record(record, run_id=str(identity.get("run_id") or ""))
+    inspected = inventory_for_record(record, run_id=str(identity.get("run_id") or ""), scanner_name=scanner_name)
     inventory = json.loads(inspected.body)
     result: dict[str, Any] = {"artifact_schema": VERSION,
         "run_id": identity.get("run_id"), "repository": identity.get("repository"),
@@ -251,6 +253,8 @@ def scanner_execution_evidence(identity: Mapping[str, Any], stages: Mapping[str,
         "verification_status": "unverified", "scanner_records": [],
         "coverage_status": "not_evaluated_by_inventory", "assessment_mutated": False,
         "approval_or_delivery_action_performed": False}
+    if scanner_name is not None:
+        result["selected_scanner"] = scanner_name
     if inspected.status_code != 200:
         return {**result, "reason": _mapping(inventory.get("detail")).get("code") or "scanner_evidence_unavailable"}
     result.update(scan_id=inventory.get("scan_id"), inventory_status=inventory.get("status"),
@@ -285,14 +289,26 @@ def scanner_execution_evidence(identity: Mapping[str, Any], stages: Mapping[str,
             and invocations_verified
             and row.get("execution_observed") is True
             and receipt.get("status") == "retained_receipt_integrity_verified")
+        # Inventory derives this basis only after validating the authenticated
+        # import against immutable, identity-bound bytes. It is not a native receipt.
+        row["retained_ci_evidence_verified"] = bool(bytes_verified
+            and invocations_verified
+            and row.get("scanner_name") == "typescript"
+            and row.get("coverage_basis") == "authenticated_retained_typescript_ci"
+            and row.get("execution_observed") is False
+            and row.get("execution_status") in {"complete", "completed", "completed_clean", "completed_with_findings"}
+            and row.get("output_capture_complete") is True
+            and row.get("output_truncated") is not True and row.get("timed_out") is not True
+            and row.get("returncode_valid") is True and row.get("applicable") is not False)
         row["inapplicability_evidence_verified"] = bool(bytes_verified
             and row.get("execution_status") == "not_applicable" and row.get("applicable") is False
             and row.get("applicability_observation_verified") is True)
         result["scanner_records"].append(row)
     rows = result["scanner_records"]
     if rows and all(row["declared_invocation_status"] != "unverified"
-            and (row["execution_evidence_verified"] or row["inapplicability_evidence_verified"]) for row in rows):
-        result["verification_status"] = "verified"
+            and (row["execution_evidence_verified"] or row["retained_ci_evidence_verified"]
+                 or row["inapplicability_evidence_verified"]) for row in rows):
+        result["verification_status"] = "verified" if scanner_name is None else "selected_scanner_verified"
     return result
 
 

@@ -128,6 +128,8 @@ def collect(kind, monkeypatch, tmp_path, files=None, *, truncated=False, missing
         "immutable_repository_snapshot": {"snapshot": snapshot},
         "repository_and_delivery_evidence": {
             "repository_evidence": repository, "complexity_evidence": complexity}}
+    from source_function_witness_fixture import bind_fixture_witness
+    bind_fixture_witness(monkeypatch, tmp_path, context, repository, complexity)
     return context, repository, complexity, store
 
 
@@ -159,6 +161,59 @@ def test_actual_collectors_and_providers_use_source_bound_observations(kind, mon
     assert complexity["profile_coverage"]["analyzed_source_files"] <= complexity["profile_coverage"]["sampled_eligible_source_files"]
 
 
+@pytest.mark.parametrize("kind", ["snapshot", "hosted"])
+def test_nested_source_keeps_exact_observation_identity(kind, monkeypatch, tmp_path):
+    monkeypatch.setenv("NICO_ALLOW_PROJECT_COMMANDS", "false")
+    path = "services/custom/handler.py"
+    source = "import sqlite3\nsqlite3.connect('local.db')\n"
+    context, repository, complexity, store = collect(
+        kind, monkeypatch, tmp_path, files={path: source, "README.md": "# fixture"})
+    observation = repository["architecture_evidence"]["source_observation"]
+    assert observation["run_id"] == context["run_id"]
+    assert observation["snapshot_id"] == "snapshot_test"
+    assert observation["commit_sha"] == SHA
+    assert observation["repository"] == context["repository"]
+    assert any(row["observed_text_sha256"] == hashlib.sha256(source.encode()).hexdigest()
+               for row in observation["input_inventory"])
+    assert observation["runtime_topology_verified"] is False
+    coverage = complexity["profile_coverage"]
+    assert coverage["eligible_source_files"] == 1
+    assert coverage["sampled_eligible_source_files"] == 1
+    assert coverage["analyzed_source_files"] == 1
+    assert coverage["unsampled_eligible_source_files"] == 0
+    assert coverage["absence_of_findings_proven"] is False
+    assert store.get("evidence_items", repository["evidence_id"])["evidence"]["architecture_evidence"] == repository["architecture_evidence"]
+    assert architecture_data_flow_provider(context)["evidence"]["source_observation"] == observation
+
+
+def assert_rejected_observation_tables(result, provider):
+    """Rejected source cannot populate observations or measured policy results."""
+    evidence = result["evidence"]
+    assert not evidence.get("source_observation")
+    if provider is deployment_review_provider:
+        assert not evidence.get("structured_tables")
+        return
+    profile = evidence["architecture_policy_conformance_v1"]
+    assert profile["status"] == "incomplete"
+    assert profile["counts"] == {"pass": 0, "fail": 0, "unknown": 2, "not_applicable": 0}
+    assert profile["normative_denominator"] == 2
+    assert profile["conformance_percentage"] is None
+    assert profile["critical_status"] == "unknown"
+    for rule in profile["rules"]:
+        assert rule["status"] == "unknown"
+        assert rule["reason"] == "qualified_source_evidence_required"
+        for field in ("violations", "observed_violations", "measured_functions", "total_functions"):
+            assert rule[field] is None
+    tables = evidence["structured_tables"]
+    assert [table["title"] for table in tables] == [
+        "Architecture policy conformance — function maintainability", "Architecture policy rules"]
+    summary = dict(tables[0]["rows"])
+    assert summary["Policy status"] == "Policy incomplete"
+    assert summary["Policy conformance percentage"] == "No qualified percentage"
+    assert all(row[1] == "Policy unknown" and row[3:5] == [None, None]
+               for row in tables[1]["rows"])
+
+
 @pytest.mark.parametrize("damage", ["run_id", "repository", "commit_sha", "snapshot_id", "observation_sha256", "input_hash"])
 def test_real_provider_rejects_wrong_identity_and_corrupt_observations(damage, monkeypatch, tmp_path):
     context, repository, _, _ = collect("snapshot", monkeypatch, tmp_path)
@@ -171,7 +226,7 @@ def test_real_provider_rejects_wrong_identity_and_corrupt_observations(damage, m
         result = provider(context)
         assert result["evidence"]["source_observation_status"] == "unavailable"
         assert not result["evidence"].get("source_observation")
-        assert not result["evidence"].get("structured_tables")
+        assert_rejected_observation_tables(result, provider)
         assert result["unavailable_data_notes"]
 
 
@@ -304,7 +359,7 @@ def test_self_consistent_corrupt_row_metadata_is_rejected(damage, monkeypatch, t
     for provider in (architecture_data_flow_provider, deployment_review_provider):
         result = provider(context)
         assert result["evidence"]["source_observation_status"] == "unavailable"
-        assert not result["evidence"].get("structured_tables")
+        assert_rejected_observation_tables(result, provider)
 
 
 def test_hosted_inventory_keeps_safe_unavailable_directory_name(monkeypatch, tmp_path):

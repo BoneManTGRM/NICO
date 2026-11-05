@@ -77,6 +77,8 @@ def install_automated_draft_quality_compat() -> dict[str, Any]:
 
 def _project(delegate_result: Mapping[str, Any]) -> dict[str, Any]:
     result = projection._project_result(delegate_result)
+    if result.get("report_quality_repair_status") == "unavailable":
+        return result
     contract = dict(result.get("premium_report_renderer") or {})
     contract.update(
         {

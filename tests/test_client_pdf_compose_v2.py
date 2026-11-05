@@ -122,10 +122,10 @@ def test_existing_sparse_reflow_precedes_intermediate_page_budget():
     assert text.count("independent verification remains incomplete.") == 2
 
 
-def test_unreflowable_content_still_fails_the_page_budget():
+def test_unreflowable_content_still_fails_an_explicit_legacy_budget():
     with pytest.raises(ValueError, match="cannot preserve every"):
         compose_compact_client_pdf(_pdf(*[[f"Primary evidence {i}"] for i in range(59)]),
-                                  _pdf(["Register"]), _pdf(["Gate"]))
+                                  _pdf(["Register"]), _pdf(["Gate"]), page_limit=60)
 
 
 @pytest.mark.parametrize(

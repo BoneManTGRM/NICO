@@ -1,0 +1,24 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_indented_and_list_lifecycle_labels_remain_repaired_and_rejected _____
+
+    def test_indented_and_list_lifecycle_labels_remain_repaired_and_rejected():
+        import pytest
+        from nico import comprehensive_approved_report_v1 as approved
+        from nico.comprehensive_approved_lifecycle_consistency_v1 import assert_approved_lifecycle_consistency
+    
+        install_approved_lifecycle_consistency()
+        for prefix in ('  ', '\t', '  - ', '* ', '+ ', '1. ', '2) ', '<p> ', '&gt; '):
+            for label in ('Review state: pending', 'Human approval: Pending'):
+                stale = prefix + label
+>               assert 'pending' not in approved._replace_finality_text(stale).casefold()
+E               AssertionError: assert 'pending' not in '  review state: pending'
+E                 
+E                 'pending' is contained here:
+E                     review state: pending
+E                 ?                 +++++++
+
+tests/test_comprehensive_approved_lifecycle_consistency_v1.py:184: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_comprehensive_approved_lifecycle_consistency_v1.py::test_indented_and_list_lifecycle_labels_remain_repaired_and_rejected
+1 failed, 2 deselected in 0.17s

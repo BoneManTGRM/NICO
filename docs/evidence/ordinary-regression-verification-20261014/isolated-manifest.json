@@ -1,0 +1,97 @@
+{
+  "base_commit": "506880a4cf9ffba28c9926b48b886ae35d15fa9c",
+  "source_diff": " ...prehensive_approved_lifecycle_consistency_v1.py | 45 +++++++++++++++++++-\n nico/comprehensive_approved_report_v1.py           |  2 +-\n ...prehensive_approved_lifecycle_consistency_v1.py | 49 ++++++++++++++++++++++\n 3 files changed, 93 insertions(+), 3 deletions(-)\n",
+  "model": "one isolated pytest process per file, matching NICO CI",
+  "jobs": [
+    {
+      "module": "tests/test_comprehensive_approved_review_truth_v1.py",
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 1.92
+    },
+    {
+      "module": "tests/test_comprehensive_approved_lifecycle_consistency_v1.py",
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 1.669
+    },
+    {
+      "module": "tests/test_comprehensive_operator_presentation_v1.py",
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 7.939
+    },
+    {
+      "module": "tests/test_comprehensive_spanish_final_report_runtime_cache_v94.py",
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 1.669
+    },
+    {
+      "module": "tests/test_comprehensive_scanner_inventory_v1.py",
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 2.32
+    },
+    {
+      "module": "tests/test_comprehensive_same_run_locale_report_v1.py",
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 20.176
+    },
+    {
+      "module": "tests/test_frozen_source_pdf_readonly_work_v1.py",
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 1.519
+    },
+    {
+      "module": "tests/test_spanish_absent_literal_fast_path.py",
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 13.011
+    },
+    {
+      "module": "tests/test_spanish_presentation_parity_v1.py",
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 1.518
+    },
+    {
+      "module": "tests/test_spanish_canonical_report_parity_v87.py",
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 23.533
+    },
+    {
+      "module": "tests/test_spanish_canonical_evidence_literals_v95.py",
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 1.619
+    },
+    {
+      "module": "tests/test_scanner_status_record_retention.py",
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 5.683
+    },
+    {
+      "module": "tests/test_review_pdf_download_incident.py",
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 2.526
+    },
+    {
+      "module": "tests/test_retained_pdf_exact_input_cache_v1.py",
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 10.046
+    },
+    {
+      "module": "tests/test_cross_locale_pdf_repeatability_v1.py",
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_seconds": 25.752
+    }
+  ]
+}

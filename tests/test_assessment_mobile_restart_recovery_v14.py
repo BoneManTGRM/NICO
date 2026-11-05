@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,9 +35,12 @@ def test_mobile_page_resume_recovers_and_continues_the_same_run() -> None:
     source = HOOK.read_text(encoding="utf-8")
 
     assert "resumePersistedRun(persisted)" in source
-    assert 'window.addEventListener("pageshow", restoreAfterPageResume)' in source
-    assert 'window.addEventListener("online", restoreAfterPageResume)' in source
-    assert "const persisted = readPersistedRun();" in source
+    assert 'window.addEventListener("pageshow", restorePage)' in source
+    assert 'window.addEventListener("online", restorePage)' in source
+    assert "const restorePage = () => restoreAfterPageResume();" in source
+    assert "const restoreHistory = () => restoreAfterPageResume(true);" in source
+    assert 'window.addEventListener("popstate", restoreHistory)' in source
+    assert "const persisted = readPersistedRun(restoreTerminalUrl);" in source
     assert "activeContinuationRunId.current === persisted.runId" in source
     assert "visibleRunId && visibleRunId !== persisted.runId" in source
     assert '`/assessment/comprehensive-run/${encodeURIComponent(persisted.runId)}`' in source
@@ -64,8 +70,34 @@ def test_terminal_report_actions_stream_artifacts_instead_of_requiring_embedded_
     assert '`/assessment/comprehensive-run/${encodeURIComponent(runId)}/report/pdf`' in source
     assert "await response.arrayBuffer()" in source
     assert 'new Blob([bytes], {type: "application/pdf"})' in source
-    assert "disabled={!pdfAvailable || artifactAction !== null}" in source
+    assert "const pdfActionDisabled = !pdfAvailable || artifactAction !== null;" in source
+    assert "const draftPdfActionDisabled = pdfActionDisabled;" in source
+    # Bind checks to each actual PDF button, not an unrelated matching expression.
+    buttons = re.findall(r"<button\b.*?</button>", source, re.DOTALL)
+    for kind, predicate in (("accepted-edition", "pdfActionDisabled"),
+                            ("localized-draft-pending-approval", "draftPdfActionDisabled")):
+        matching = [button for button in buttons if f'data-assessment-pdf-kind="{kind}"' in button]
+        assert len(matching) == 1
+        assert f"disabled={{{predicate}}}" in matching[0]
+        assert f'data-assessment-action-disabled={{{predicate} ? "true" : "false"}}' in matching[0]
     assert "disabled={!markdownAvailable || artifactAction !== null}" in source
+    assert "Boolean(report?.pdf_base64 || report?.pdf_available)" in source
+    assert "Boolean(report?.markdown || report?.markdown_available)" in source
+    assert "if (!pdfAvailable || artifactAction) return;" in source
+    assert "if (!exactApprovedPdfAvailable || artifactAction) return;" in source
+    assert "{exactApprovedPdfAvailable ? <button" in source
+    assert "{!exactApprovedPdfAvailable || approvedLocaleMismatch ? <button" in source
+    for binding in (
+        'data-run-id={String(result?.run_id || "")}',
+        'data-canonical-truth-sha256={String(report?.canonical_truth_sha256 || "")}',
+        'data-requested-report-language={requestedReportLanguage}',
+        "responseRunId !== runId",
+        "responseLanguage !== acceptedPdfIdentity?.reportLanguage",
+        "observedSha256 !== acceptedPdfSha256",
+        "artifactHeader !== acceptedPdfSha256",
+        "acceptedHeader !== acceptedPdfSha256",
+    ):
+        assert binding in source
 
 
 def test_same_origin_proxy_allows_artifacts_and_forwards_bounded_projection() -> None:
@@ -95,3 +127,30 @@ def test_backend_streams_exact_run_artifacts_and_keeps_browser_terminal_response
     assert 'not re.fullmatch(r"[0-9a-f]{64}", expected_hash)' in source
     assert "or expected_hash != observed_hash" in source
     assert "install_comprehensive_mobile_recovery_v1()" in package_init
+
+
+@pytest.mark.parametrize("old,new", [
+    ("const pdfActionDisabled = !pdfAvailable || artifactAction !== null;",
+     "const pdfActionDisabled = !pdfAvailable || Boolean(artifactAction);"),
+    ("const draftPdfActionDisabled = pdfActionDisabled;",
+     "const draftPdfActionDisabled = false;"),
+    ("const draftPdfActionDisabled = pdfActionDisabled;",
+     "const draftPdfActionDisabled = requestedReportLanguage === 'es-MX' || pdfActionDisabled;"),
+    ("Boolean(report?.pdf_base64 || report?.pdf_available)", "Boolean(report?.pdf_base64)"),
+    ("disabled={!markdownAvailable || artifactAction !== null}", "disabled={false}"),
+    ("{!exactApprovedPdfAvailable || approvedLocaleMismatch ? <button",
+     "{!exactApprovedPdfAvailable ? <button"),
+    ("observedSha256 !== acceptedPdfSha256", "observedSha256 !== artifactHeader"),
+    ("disabled={pdfActionDisabled}", "disabled={draftPdfActionDisabled}"),
+    ("disabled={draftPdfActionDisabled}", "disabled={pdfActionDisabled}"),
+    ('data-assessment-action-disabled={pdfActionDisabled ? "true" : "false"}',
+     'data-assessment-action-disabled={pdfActionDisabled ? "false" : "true"}'),
+])
+def test_terminal_action_contract_rejects_wrong_predicate_or_binding(tmp_path, monkeypatch, old, new):
+    source = WORKSPACE.read_text(encoding="utf-8")
+    assert source.count(old) == 1
+    mutated = tmp_path / "AssessmentWorkspace.tsx"
+    mutated.write_text(source.replace(old, new), encoding="utf-8")
+    monkeypatch.setitem(globals(), "WORKSPACE", mutated)
+    with pytest.raises(AssertionError):
+        test_terminal_report_actions_stream_artifacts_instead_of_requiring_embedded_pdf()

@@ -50,6 +50,9 @@ def build_automated_delivery_package(
     expected_artifact_identity: Mapping[str, Any],
     authorized_at: str | None = None,
 ) -> dict[str, Any]:
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(record)
+
     if record.get("terminal") is not True or str(record.get("status") or "") != "review_required":
         raise ValueError("automated_delivery_requires_terminal_review_boundary")
     if record.get("human_review_completed") is True or record.get("client_delivery_allowed") is True:

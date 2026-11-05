@@ -128,6 +128,19 @@ def _browser_projection_can_dispatch_continuation(current: Mapping[str, Any]) ->
 
 
 def _translate_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, ValueError) and str(exc) in {"spanish_report_generation_unavailable", "unsupported_report_language"}:
+        return HTTPException(
+            status_code=422,
+            detail={
+                "code": str(exc),
+                "message": ("Unsupported report language; the requested language was not changed."
+                            if str(exc) == "unsupported_report_language" else
+                            "Spanish generation is unavailable; the requested language was not changed."),
+                "retryable": False,
+                "human_review_required": True,
+                "client_delivery_allowed": False,
+            },
+        )
     if isinstance(exc, ComprehensiveRunNotFound):
         return HTTPException(
             status_code=404,
@@ -362,6 +375,8 @@ def _prepare_public_intake_reservation_payload(payload: Mapping[str, Any]) -> di
     from nico.strategic_human_evidence_v1 import normalize_strategic_human_evidence
 
     assert_no_raw_provider_credentials(payload)
+    from nico.ordinary_report_language_release_v1 import normalize_new_report_language
+    report_language = normalize_new_report_language(payload.get("report_language"))
     provider, provider_repository, organization, provider_project = (
         normalize_submitted_provider_repository(
             payload.get("repository"),
@@ -421,9 +436,7 @@ def _prepare_public_intake_reservation_payload(payload: Mapping[str, Any]) -> di
         "assessment_depth": _bounded_required(
             payload.get("assessment_depth") or "strategic", "assessment_depth", 80
         ),
-        "report_language": _bounded_required(
-            payload.get("report_language") or "en", "report_language", 20
-        ),
+        "report_language": report_language,
         "human_evidence": human_evidence,
         "engagement_field_states": engagement_metadata["field_states"],
         "engagement_metadata": engagement_metadata,
@@ -1287,6 +1300,8 @@ def _reconcile_public_intake_after_run_recovery(
 
 def _intake(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
     prepared = _prepare_public_intake_reservation_payload(payload)
+    from nico.ordinary_report_language_release_v1 import require_new_report_language
+    require_new_report_language(prepared.get("report_language"))
     reservation = _reserve_prepared_public_intake(request, prepared)
     if reservation.get("lease_owner") is not True:
         if reservation.get("status") == "accepted":
@@ -1363,6 +1378,24 @@ def register_comprehensive_api_routes(
                 # A failed explicit login must not silently fall back to public status.
                 _authorize_review(operator_token)
             controller_value = _controller(request)
+            if request.query_params.get("projection") == "candidate-source-capture-v1":
+                # Explicit count-only read precedes cache, report assembly, intake
+                # reconciliation and scanner verification. Existing auth applies.
+                try:
+                    return await run_in_threadpool(
+                        controller_value.candidate_capture_diagnostics_read_only,
+                        run_id,
+                    )
+                except ComprehensiveRunNotFound:
+                    raise HTTPException(status_code=404, detail={"code": "capture_diagnostic_run_not_found"}) from None
+                except Exception as exc:
+                    known = {
+                        "capture_diagnostic_run_identity_mismatch",
+                        "capture_diagnostic_requires_terminal_run",
+                        "capture_diagnostic_review_commitment_unavailable",
+                    }
+                    code = str(exc) if isinstance(exc, ValueError) and str(exc) in known else "capture_diagnostic_unavailable"
+                    raise HTTPException(status_code=422 if code in known else 503, detail={"code": code}) from None
             browser_projection = _browser_projection_requested(request)
             response = None
             if browser_projection:

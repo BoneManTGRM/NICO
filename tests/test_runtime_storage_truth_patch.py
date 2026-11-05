@@ -1,11 +1,48 @@
 from __future__ import annotations
 
 from pathlib import Path
+import pytest
 
 import nico.express_async_api as express
 import nico.runtime_storage_truth_patch as truth
 import nico.storage as storage
 from nico.durable_runtime_storage import SQLiteRuntimeAdapter
+
+
+@pytest.mark.parametrize('filesystem,expected', [('tmpfs', False), ('ramfs', False),
+    ('overlay', False), ('ext4', True), ('xfs', True)])
+def test_mount_filesystem_classification(monkeypatch, filesystem, expected):
+    monkeypatch.delenv('NICO_SQLITE_DURABLE_MOUNT_VERIFIED', raising=False)
+    monkeypatch.setattr(Path, 'read_text', lambda *args, **kwargs:
+        '1 0 0:1 / / rw - overlay overlay rw\n'
+        f'2 1 0:2 / /data rw - {filesystem} device rw\n')
+    assert truth.sqlite_mount_verified(Path('/data/records')) is expected
+
+
+def test_nested_ephemeral_mount_overrides_durable_parent(monkeypatch):
+    monkeypatch.delenv('NICO_SQLITE_DURABLE_MOUNT_VERIFIED', raising=False)
+    monkeypatch.setattr(Path, 'read_text', lambda *args, **kwargs:
+        '1 0 0:1 / / rw - overlay overlay rw\n'
+        '2 1 0:2 / /data rw - ext4 device rw\n'
+        '3 2 0:3 / /data/cache rw - tmpfs tmpfs rw\n')
+    assert truth.sqlite_mount_verified(Path('/data/cache/reports')) is False
+
+
+def test_missing_mount_evidence_fails_closed(monkeypatch):
+    monkeypatch.delenv('NICO_SQLITE_DURABLE_MOUNT_VERIFIED', raising=False)
+    def unavailable(*args, **kwargs):
+        raise OSError('unavailable')
+    monkeypatch.setattr(Path, 'read_text', unavailable)
+    assert truth.sqlite_mount_verified(Path('/tmp')) is False
+
+
+@pytest.mark.parametrize('filesystems', [('ext4', 'tmpfs'), ('tmpfs', 'ext4')])
+def test_ambiguous_stacked_mounts_fail_closed(monkeypatch, filesystems):
+    monkeypatch.delenv('NICO_SQLITE_DURABLE_MOUNT_VERIFIED', raising=False)
+    monkeypatch.setattr(Path, 'read_text', lambda *args, **kwargs:
+        f'2 1 0:2 / /data rw - {filesystems[0]} device rw\n'
+        f'3 1 0:3 / /data rw - {filesystems[1]} device rw\n')
+    assert truth.sqlite_mount_verified(Path('/data/reports')) is False
 
 
 def test_writable_sqlite_is_not_called_deployment_durable_without_verified_mount(monkeypatch, tmp_path: Path) -> None:

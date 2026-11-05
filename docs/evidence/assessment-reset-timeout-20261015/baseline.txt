@@ -1,0 +1,78 @@
+✖ late old-run timeout after Start new cannot restore its URL or resume it (376.298815ms)
+✔ legitimate same-run timeout retains exact recovery and completed report (183.421929ms)
+✖ late old-run timeout cannot replace a newer explicitly selected run (175.836041ms)
+✖ history replacement failure falls back to clean same-origin navigation (133.704624ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 1
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1150.414741
+
+✖ failing tests:
+
+test at tests/js/assessment-reset-timeout.test.cjs:63:1
+✖ late old-run timeout after Start new cannot restore its URL or resume it (376.298815ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'comprun_owned_reset'
+  - null
+
+      at TestContext.<anonymous> (/workspace/nico-ci-typescript/tests/js/assessment-reset-timeout.test.cjs:68:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'comprun_owned_reset',
+    expected: null,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/js/assessment-reset-timeout.test.cjs:82:1
+✖ late old-run timeout cannot replace a newer explicitly selected run (175.836041ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'comprun_owned_reset'
+  - 'comprun_owned_new'
+                   ^
+
+      at TestContext.<anonymous> (/workspace/nico-ci-typescript/tests/js/assessment-reset-timeout.test.cjs:85:31)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'comprun_owned_reset',
+    expected: 'comprun_owned_new',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/js/assessment-reset-timeout.test.cjs:88:1
+✖ history replacement failure falls back to clean same-origin navigation (133.704624ms)
+  AssertionError [ERR_ASSERTION]: Got unwanted exception.
+  Actual message: "owned history failure"
+      at TestContext.<anonymous> (/workspace/nico-ci-typescript/tests/js/assessment-reset-timeout.test.cjs:92:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: SecurityError: owned history failure
+        at new DOMException (node:internal/per_context/domexception:76:18)
+        at h.window.history.replaceState (/workspace/nico-ci-typescript/tests/js/assessment-reset-timeout.test.cjs:91:44)
+        at clearPersistedRun (/workspace/nico-ci-typescript/apps/web/app/assessment/assessmentRunPersistence.ts:140:20)
+        at Object.startNew (/workspace/nico-ci-typescript/apps/web/app/assessment/useAssessmentRun.ts:677:58)
+        at /workspace/nico-ci-typescript/tests/js/assessment-reset-timeout.test.cjs:92:42
+        at getActual (node:assert:611:5)
+        at strict.doesNotThrow (node:assert:779:32)
+        at TestContext.<anonymous> (/workspace/nico-ci-typescript/tests/js/assessment-reset-timeout.test.cjs:92:10)
+        at async Test.run (node:internal/test_runner/test:1389:7)
+        at async Test.processPendingSubtests (node:internal/test_runner/test:960:7),
+    expected: undefined,
+    operator: 'doesNotThrow',
+    diff: 'simple'
+  }

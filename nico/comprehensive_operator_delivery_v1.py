@@ -75,6 +75,8 @@ def authorize_operator_delivery(service: Any, run_id: str, payload: Mapping[str,
     )):
         raise ValueError("explicit_delivery_authorization_required")
     record = service.load_read_only(run_id)
+    from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
+    require_legacy_single_pdf(record)
     approved = validated_operator_edition(record)
     if not approved:
         raise ValueError("delivery_authorization_requires_current_operator_approval")

@@ -183,6 +183,8 @@ def configure_comprehensive_runtime(
 
     store = ComprehensiveRunStore(connection_factory, dialect=resolved_dialect)
     store.ensure_schema()
+    from nico.source_function_witness_v1 import STORE_STATE_KEY
+    setattr(app.state, STORE_STATE_KEY, store)
     detached_stage_execution = (
         resolved_dialect == "postgres" and not explicit_connection_factory
     )

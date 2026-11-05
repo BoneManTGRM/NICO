@@ -1,5 +1,9 @@
 .git
-.github
+# Retain only the workflow bytes used by the TypeScript provenance verifier.
+.github/*
+!.github/workflows
+.github/workflows/*
+!.github/workflows/node.js.yml
 .nico
 .pytest_cache
 .mypy_cache

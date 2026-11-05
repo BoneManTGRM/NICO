@@ -1,6 +1,4 @@
-import ReviewerQueue from "./ReviewerQueue";
-import ReviewQueueBrowser from "./ReviewQueueBrowser";
-import ReviewWorkPanel from "./ReviewWorkPanel";
+import ReviewerWorkspace from "./ReviewerWorkspace";
 
 export const metadata = {
   title: "Human review workspace | NICO",
@@ -8,9 +6,5 @@ export const metadata = {
 };
 
 export default function ReviewerQueuePage() {
-  return <>
-    <ReviewerQueue />
-    <ReviewQueueBrowser />
-    <ReviewWorkPanel />
-  </>;
+  return <ReviewerWorkspace />;
 }

@@ -72,9 +72,19 @@ def test_client_delivery_keeps_exact_identity_protection_without_an_extra_user_s
     assert "delivery_authorized: true" in approval
     assert "authorization_confirmed: true" in approval
     assert "expected_artifact_identity: approvedArtifactIdentity" in approval
-    assert "receipt.authorized_artifact_identity" in approval
-    assert "reviewCertificateFrom(authorized).approval_certificate_sha256" in approval
-    assert "authorized.client_delivery_allowed !== true" in approval
+    validation = WORKSPACE.split("function assertDeliveryResponseBinding(", 1)[1].split(
+        "export default function ComprehensiveFinalReviewWorkspace", 1
+    )[0].split("): void {", 1)[1]
+    assert "stableIdentity(receipt.authorized_artifact_identity) !== stableIdentity(approvedArtifactIdentity)" in validation
+    assert "reviewCertificateFrom(authorized).approval_certificate_sha256 !== reviewCertificateFrom(reviewed).approval_certificate_sha256" in validation
+    assert "authorized.client_delivery_allowed !== true" in validation
+    exact_call = (
+        "assertDeliveryResponseBinding( authorized, receipt, reviewed, "
+        "approvedArtifactIdentity, operatorEdition, operatorDecision, copy, );"
+    )
+    normalized = " ".join(approval.split())
+    assert normalized.count(exact_call) == 1
+    assert normalized.index(exact_call) < normalized.index("setResult(authorized);")
     assert "deliveryConfirmed" not in WORKSPACE
     assert "async function authorizeClientDelivery" not in WORKSPACE
     assert "approve it, and authorize client delivery" in WORKSPACE
@@ -114,7 +124,23 @@ def test_final_action_is_visible_until_delivery_finishes_without_reviewer_metada
     assert '!deliveryAllowed ? <button className={styles.approve}' in WORKSPACE
     assert 'aria-describedby="approval-next-step"' in WORKSPACE
     assert 'id="approval-next-step"' in WORKSPACE
-    assert "const approvalNextStep = !approvalAuthorityReady" in WORKSPACE
+    guidance = WORKSPACE.split("function approvalGuidanceText(", 1)[1].split(
+        "function artifactDisplayDigests(", 1
+    )[0]
+    assert (
+        "return !approvalAuthorityReady ? copy.enterReviewer "
+        ": result && !finalPdfAvailable ? copy.finalPdfUnavailable "
+        ": !finalActionAuthorityReady ? copy.legacyDeliveryRequired "
+        ": approvalCompleted ? copy.approvalReady "
+        ": !exactEditionDownloaded ? copy.reviewDownloadRequired "
+        ": !confirmed ? copy.confirmFirst : copy.approvalReady;"
+    ) in " ".join(guidance.split())
+    parent = WORKSPACE.split("export default function ComprehensiveFinalReviewWorkspace", 1)[1]
+    assert (
+        "const approvalNextStep = approvalGuidanceText(copy, { "
+        "approvalAuthorityReady, result, finalPdfAvailable, finalActionAuthorityReady, "
+        "approvalCompleted, exactEditionDownloaded, confirmed, });"
+    ) in " ".join(parent.split())
     assert "copy.reviewDownloadRequired" in WORKSPACE
     assert "copy.approvalReady" in WORKSPACE
     assert 'optionalReviewerMetadata: "Reviewer name and role are optional for approval.' in WORKSPACE
@@ -139,7 +165,20 @@ def test_final_action_reuses_approval_and_opens_only_the_authorized_pdf() -> Non
     assert "copy.approvalDeliveryFailed" in approval
     assert "copy.pdfRetry" in approval
     assert approval.index("await downloadExactPdf(reviewed, false);") < approval.index("requestJson(deliveryAuthorizationUrl()")
-    assert approval.index("authorized.client_delivery_allowed !== true") < approval.index("setResult(authorized)")
+    # The current response is checked unconditionally with the original approved
+    # state, after the selection guard and immediately before state acceptance.
+    # A conditional/skipped call, swallowed validation error, or substituted
+    # identity must not satisfy this source contract.
+    normalized = " ".join(approval.split())
+    assert (
+        "const receipt = asRecord(authorized.delivery_authorization); "
+        "assertSelection(); "
+        "assertDeliveryResponseBinding( authorized, receipt, reviewed, "
+        "approvedArtifactIdentity, operatorEdition, operatorDecision, copy, ); "
+        "setResult(authorized);"
+    ) in normalized
+    assert approval.count("setResult(authorized)") == 1
+    assert approval.count("await downloadExactPdf(authorized)") == 1
     assert approval.index("setResult(authorized)") < approval.index("await downloadExactPdf(authorized)")
     assert "downloadExactPdf(reviewed);" not in approval
 

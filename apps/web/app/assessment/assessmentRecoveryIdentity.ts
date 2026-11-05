@@ -32,3 +32,12 @@ export function isIntakeReservationPending(value: unknown): boolean {
     || record.intake_pending === true
     || (record.intake_reserved === true && ["", "pending", "reserved", "starting"].includes(status));
 }
+
+/** Reservation projections, including failures, do not establish a canonical run. */
+export function isIntakeReservationProjection(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return record.intake_reserved === true
+    || isIntakeReservationPending(value)
+    || String(record.operation || "").trim().toLowerCase() === "intake_failed";
+}

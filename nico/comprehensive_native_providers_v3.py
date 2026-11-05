@@ -223,16 +223,16 @@ def _immutable_ci_score(
 
 
 def _immutable_delivery_score(
-    architecture_score: int,
+    architecture_score: int | None,
     ci_score: int | None,
     activity: dict[str, Any],
     workflow: dict[str, Any],
 ) -> tuple[int | None, list[str], list[str], dict[str, Any]]:
     """Measure sustainable delivery capacity without scoring mutable activity volume."""
 
-    score = _bounded(architecture_score * 0.60 + ci_score * 0.40) if ci_score is not None else None
+    score = _bounded(architecture_score * 0.60 + ci_score * 0.40) if architecture_score is not None and ci_score is not None else None
     evidence = [
-        f"Architecture and technical-debt score: {architecture_score}/100.",
+        f"Architecture and technical-debt score: {str(architecture_score) + '/100' if architecture_score is not None else 'not scored'}.",
         f"Immutable CI configuration score: {str(ci_score) + '/100' if ci_score is not None else 'not scored'}.",
         (
             "The delivery-capacity score is 60% architecture maintainability "
@@ -246,7 +246,9 @@ def _immutable_delivery_score(
     findings: list[str] = []
     if ci_score is None:
         findings.append("Delivery capacity is not scored because immutable CI configuration was not assessed.")
-    if architecture_score < 75:
+    if architecture_score is None:
+        findings.append("Delivery capacity is not scored because architecture has no valid exact-source score input.")
+    elif architecture_score < 75:
         findings.append(
             "Concentrated architecture or complexity risk constrains sustainable delivery capacity."
         )
@@ -286,9 +288,7 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
     )
 
     architecture = sections.get("architecture_debt") or {}
-    architecture_score = int(
-        architecture.get("presented_score") or architecture.get("score") or 0
-    )
+    architecture_score = architecture.get("presented_score")
     ci_score, ci_evidence, ci_findings, ci_contract = _immutable_ci_score(
         workflow,
         str(context.get("commit_sha") or ""),
@@ -331,6 +331,8 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
         velocity_findings,
     )
     velocity_section["score_contract"] = velocity_contract
+    if velocity_score is None:
+        velocity_section.update(source_score=None, score_value=None, score_status="NOT_SCORED")
 
     updated_sections: list[dict[str, Any]] = []
     for section in assessment.get("sections") or []:
@@ -396,6 +398,7 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
             "evidence_adjusted_score": evidence_adjusted,
         }
     )
+    score_contract["scored_population"] = v2._score_population(updated_sections)
     assessment["score_contract"] = score_contract
     assessment["executive_summary"] = (
         f"Exact-SHA technical evidence for {context['repository']} produced an "

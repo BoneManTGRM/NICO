@@ -13,8 +13,21 @@ VERSION = "nico.comprehensive-review-companion.v7-mobile-contract"
 _MARKER = "__nico_comprehensive_review_companion_v7_mobile_contract__"
 
 
+def _active_review_layout() -> dict[str, Any]:
+    from nico import comprehensive_client_review_companion_v7 as v7
+
+    flowing = bool(getattr(v7.render_paired_substantive_review_pdf, "_nico_review_flowing", False))
+    return {
+        "decision_useful_review_companion_pages": None if flowing else COMPANION_PAGE_COUNT,
+        "review_companion_section_count": SECTION_COUNT,
+        "review_companion_sections_per_page": None if flowing else SECTIONS_PER_PAGE,
+        "paired_review_pages_active": not flowing,
+        "flowing_review_pages_active": flowing,
+    }
+
+
 def install_comprehensive_review_companion_v7_mobile_contract() -> dict[str, Any]:
-    """Expose the active paired worksheet contract through mobile runtime status."""
+    """Expose active layout policy; only a rendered artifact has an actual count."""
 
     from nico import comprehensive_mobile_score_projection_v2 as mobile
 
@@ -23,9 +36,7 @@ def install_comprehensive_review_companion_v7_mobile_contract() -> dict[str, Any
         return {
             "status": "already_installed",
             "version": VERSION,
-            "decision_useful_review_companion_pages": COMPANION_PAGE_COUNT,
-            "review_companion_section_count": SECTION_COUNT,
-            "review_companion_sections_per_page": SECTIONS_PER_PAGE,
+            **_active_review_layout(),
         }
 
     @wraps(current)
@@ -33,11 +44,8 @@ def install_comprehensive_review_companion_v7_mobile_contract() -> dict[str, Any
         result = dict(current())
         result.update(
             {
-                "decision_useful_review_companion_pages": COMPANION_PAGE_COUNT,
-                "review_companion_section_count": SECTION_COUNT,
-                "review_companion_sections_per_page": SECTIONS_PER_PAGE,
+                **_active_review_layout(),
                 "all_review_sections_retained": True,
-                "paired_review_pages_active": True,
             }
         )
         return result
@@ -48,9 +56,7 @@ def install_comprehensive_review_companion_v7_mobile_contract() -> dict[str, Any
     return {
         "status": "installed",
         "version": VERSION,
-        "decision_useful_review_companion_pages": COMPANION_PAGE_COUNT,
-        "review_companion_section_count": SECTION_COUNT,
-        "review_companion_sections_per_page": SECTIONS_PER_PAGE,
+        **_active_review_layout(),
         "mobile_runtime_status_bound": True,
         "human_review_required": True,
         "client_delivery_allowed": False,

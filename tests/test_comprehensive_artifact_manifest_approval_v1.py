@@ -735,3 +735,53 @@ def test_runtime_binds_manifest_after_priority_and_review_layers() -> None:
     assert '"review_package_ready": True' in source
     assert '"human_review_status": "pending"' in source
     assert '"client_delivery_status": "blocked"' in source
+
+
+@pytest.mark.parametrize("language", ["en", "es-MX"])
+def test_final_page_counts_follow_manifest_and_navigation_bytes(language: str) -> None:
+    from nico.comprehensive_semantic_navigation_v1 import semantic_renumber_and_outline
+
+    package = _package()
+    package["json"]["report_language"] = language
+    package["json"]["identity"]["report_language"] = language
+    buffer = io.BytesIO()
+    document = canvas.Canvas(buffer, invariant=1)
+    for index in range(54):
+        document.drawString(48, 744, "Auditoría de código" if language == "es-MX" else "Code Audit")
+        document.drawString(48, 700, f"Synthetic retained evidence {index + 1}")
+        document.showPage()
+    document.save()
+    package["pdf_base64"] = base64.b64encode(buffer.getvalue()).decode("ascii")
+    package["pdf_page_count"] = 54
+    package["client_report_completion"] = {"client_pdf_page_count": 54, "page_count": 54}
+    original = deepcopy(package)
+
+    attached = attach_artifact_manifest(package)
+    attached_count = len(PdfReader(io.BytesIO(base64.b64decode(attached["pdf_base64"]))).pages)
+    assert attached["client_report_completion"]["client_pdf_page_count"] == attached_count
+    navigated = semantic_renumber_and_outline(base64.b64decode(attached["pdf_base64"]))
+    attached["pdf_base64"] = base64.b64encode(navigated).decode("ascii")
+    core_count = attached["core_report_page_count"]
+    # Rebinding must also repair packages emitted before the metadata fix.
+    attached["client_report_completion"]["client_pdf_page_count"] = 54
+    rebound = rebind_artifact_manifest(attached)
+    repeated = rebind_artifact_manifest(rebound)
+
+    for result in (rebound, repeated):
+        pdf = base64.b64decode(result["pdf_base64"])
+        reader = PdfReader(io.BytesIO(pdf))
+        assert len(reader.pages) == 57
+        assert result["pdf_page_count"] == result["final_package_page_count"] == 57
+        assert result["client_report_completion"]["page_count"] == 57
+        assert result["client_report_completion"]["client_pdf_page_count"] == 57
+        assert result["core_report_page_count"] == core_count
+        assert result["pdf_sha256"] == hashlib.sha256(pdf).hexdigest()
+        assert len(reader.page_labels) == 57
+        assert reader.outline
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        assert all(f"Synthetic retained evidence {i}" in text for i in range(1, 55))
+        assert result["client_delivery_allowed"] is False
+        assert result["human_review_required"] is True
+        _validate_exact_artifact_hashes(result)
+    assert package == original
+    assert repeated["pdf_sha256"] == rebound["pdf_sha256"]

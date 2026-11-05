@@ -849,6 +849,7 @@ def _profile_checkout(repo_path: Path) -> dict[str, Any]:
     # Enumerate before any dependency preparation. Preserve the existing read
     # limits and make incomplete traversal/stat/read observations explicit.
     import os
+    from nico.full_source_archive_profile_v1 import _eligible
 
     tree_paths: list[str] = []
     sizes: dict[str, int] = {}
@@ -894,7 +895,13 @@ def _profile_checkout(repo_path: Path) -> dict[str, Any]:
                 unavailable_paths.append(relative)
                 unavailable.append(f"Exact provider snapshot file {relative} size was unavailable.")
     candidates = [path for path in KNOWN_FILE_PATHS if path in sizes]
-    candidates.extend(path for path in sorted(sizes) if path not in candidates and should_fetch_path(path, sizes[path]))
+    candidates.extend(
+        path for path in sorted(sizes)
+        if path not in candidates and (
+            should_fetch_path(path, sizes[path])
+            or (_eligible(path) and sizes[path] <= MAX_FILE_BYTES)
+        )
+    )
     files: dict[str, str] = {}
     for path in candidates[:MAX_TEXT_FILES]:
         if sizes.get(path, 0) > MAX_FILE_BYTES:
@@ -1497,11 +1504,14 @@ def _operator_intake(request: Request, payload: Mapping[str, Any], token: str) -
     customer_id = _required(payload.get("customer_id") or "default_customer", "customer_id")
     project_id = _required(payload.get("project_id") or "default_project", "project_id")
     assessment_depth = _required(payload.get("assessment_depth") or "strategic", "assessment_depth")
-    report_language = _required(payload.get("report_language") or "en", "report_language")
+    from nico.ordinary_report_language_release_v1 import normalize_new_report_language
+    report_language = normalize_new_report_language(payload.get("report_language"))
     organization = _text(payload.get("provider_organization"))
     provider_project = _text(payload.get("provider_project"))
     repository = canonical_repository_label(provider, provider_repository, organization=organization, project=provider_project)
     requested_sha = expected_commit_sha(dict(payload))
+    from nico.ordinary_report_language_release_v1 import require_new_report_language
+    require_new_report_language(report_language)
     run_id = f"comprun_{uuid4().hex}"
     ledger_id = f"ledger_comprehensive_{uuid4().hex}"
 

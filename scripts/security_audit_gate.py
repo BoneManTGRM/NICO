@@ -156,6 +156,8 @@ def _semgrep(root: Path) -> dict[str, Any]:
         status,
         len(results),
         scanner_error_count=len(fatal_errors),
+        diagnostic_count=len(errors),
+        capture_complete=not errors,
         blocking=len(blocking_items),
         needs_review=len(review_items),
         blocking_items=blocking_items[:50],
@@ -262,6 +264,74 @@ def _known_public_cppcheck_source_blob(finding: dict[str, Any]) -> bool:
             and finding.get('Verified', False) is False)
 
 
+def _known_public_cppcheck_source_digest(finding: dict[str, Any]) -> bool:
+    """Retain six reviewed source digests, bound to immutable observations.
+
+    Audit run 38305087110 reported these two maps. Fresh Python-only derivation
+    from pinned upstream source reproduced all six SHA256 values and both
+    grammar receipts. See docs/evidence/security-audit-cpp-source-digests-20261012.md.
+    Redacted values are accepted only at the exact reviewed commit/path/position;
+    new commits, changed values, other rules and verified credentials still block.
+    """
+    locations = {
+        '6eff8889db11a3ab31c3b04f5af053edb542d6e8':
+            'docs/evidence/cppcheck-composed-runtime-20261012/fixed-final-source-sha256.json',
+        'fc9a0a75ac2cdd614304d7483eb8cbaf3b161b01':
+            'docs/evidence/cppcheck-pr1712-ast-integration-20261012/composed-source-sha256.json',
+    }
+    commit = finding.get('Commit')
+    if not isinstance(commit, str) or commit not in locations:
+        return False
+    path = locations[commit]
+    for name, line, end in (('token.cpp', 8, 86), ('tokenize.cpp', 9, 89), ('tokenlist.cpp', 10, 90)):
+        expected = {
+            'File': path, 'RuleID': 'generic-api-key', 'Secret': 'REDACTED',
+            'Match': name + '\": \"REDACTED\"',
+            'Fingerprint': f'{commit}:{path}:generic-api-key:{line}',
+            'StartLine': line, 'EndLine': line, 'StartColumn': 9, 'EndColumn': end,
+        }
+        if (all(type(finding.get(key)) is type(value) and finding[key] == value
+                for key, value in expected.items())
+                and finding.get('Verified', False) is False):
+            return True
+    return False
+
+
+def _known_reviewed_native_source_hash(finding: dict[str, Any]) -> bool:
+    """Retain eleven owner-reviewed immutable source hashes; see evidence note.
+
+    These observations have no Verified field. Do not infer absence from a
+    false-like value, or approve other matches sharing a fingerprint.
+    """
+    if "Verified" in finding:
+        return False
+    observations = (
+        ('e14c620a321c12b168d0ad2cd3c1fb78bc111a1c', 'scripts/native_stage_counters/specialization_groups.py', 15, 11, 88, "token.cpp': 'REDACTED'"),
+        ('63f4e03068a386eddda4dc31c41e9f5d4b24579d', 'scripts/native_stage_counters/specialization_groups.py', 15, 11, 88, "token.cpp': 'REDACTED'"),
+        ('c2b3ba6045f2b3751108a40f95677c8e9d8c50cc', 'docs/evidence/cpp-stage-counters-local/README.md', 18, 11, 92, 'tokenizer SHA256:REDACTED'),
+        ('c2b3ba6045f2b3751108a40f95677c8e9d8c50cc', 'scripts/native_stage_counters/instrument.py', 16, 11, 91, "tokenize.cpp': 'REDACTED'"),
+        ('63f4e03068a386eddda4dc31c41e9f5d4b24579d', 'scripts/native_stage_counters/owned_regressions.py', 21, 35, 115, "tokenize.cpp': 'REDACTED'"),
+        ('63f4e03068a386eddda4dc31c41e9f5d4b24579d', 'scripts/native_stage_counters/owned_regressions.py', 21, 123, 200, "token.cpp': 'REDACTED'"),
+        ('63f4e03068a386eddda4dc31c41e9f5d4b24579d', 'scripts/native_stage_counters/owned_regressions.py', 21, 208, 289, "tokenlist.cpp': 'REDACTED'"),
+        ('e14c620a321c12b168d0ad2cd3c1fb78bc111a1c', 'scripts/native_stage_counters/owned_regressions.py', 21, 35, 115, "tokenize.cpp': 'REDACTED'"),
+        ('e14c620a321c12b168d0ad2cd3c1fb78bc111a1c', 'scripts/native_stage_counters/owned_regressions.py', 21, 123, 200, "token.cpp': 'REDACTED'"),
+        ('e14c620a321c12b168d0ad2cd3c1fb78bc111a1c', 'scripts/native_stage_counters/owned_regressions.py', 21, 208, 289, "tokenlist.cpp': 'REDACTED'"),
+        ('c2b3ba6045f2b3751108a40f95677c8e9d8c50cc', 'scripts/native_stage_counters/binding.py', 12, 11, 91, "tokenize.cpp': 'REDACTED'"),
+    )
+    for commit, path, line, start, end, context in observations:
+        expected = {
+            "Commit": commit, "File": path, "RuleID": "generic-api-key",
+            "Secret": "REDACTED", "Match": context,
+            "Fingerprint": f"{commit}:{path}:generic-api-key:{line}",
+            "StartLine": line, "EndLine": line,
+            "StartColumn": start, "EndColumn": end,
+        }
+        if all(type(finding.get(key)) is type(value) and finding[key] == value
+               for key, value in expected.items()):
+            return True
+    return False
+
+
 def _gitleaks(root: Path) -> dict[str, Any]:
     data, error = _read_json(root, "gitleaks.json")
     summary, summary_error = _read_json(root, "gitleaks-summary.json")
@@ -316,7 +386,9 @@ def _gitleaks(root: Path) -> dict[str, Any]:
         elif _known_public_signing_fingerprint(finding):
             approved_public_signing_fingerprints += 1
             disposition = "approved_public_signing_fingerprint"
-        elif _known_public_cppcheck_source_blob(finding):
+        elif (_known_public_cppcheck_source_blob(finding)
+              or _known_public_cppcheck_source_digest(finding)
+              or _known_reviewed_native_source_hash(finding)):
             approved_public_source_hashes += 1
             disposition = "approved_public_source_hash"
         else:
@@ -367,61 +439,95 @@ def _trufflehog_raw_digest(finding: dict[str, Any]) -> str | None:
     return None
 
 
+def _approved_review_pdf_service_occurrence(finding: dict[str, Any]) -> bool:
+    """Owner-approved nonsecret occurrence; every provenance field is required."""
+    metadata = finding.get("SourceMetadata")
+    data = metadata.get("Data") if isinstance(metadata, dict) else None
+    git = data.get("Git") if isinstance(data, dict) else None
+    return bool(
+        isinstance(git, dict)
+        and type(git.get("commit")) is str
+        and git["commit"] in {
+            "d1c08f7c502aefe922b65948d5e7d998a56342bb",
+            "a0163677a6c1a993a9eb26707472653f656e3d53",
+        }
+        and git.get("file") == "docs/evidence/review-pdf-preparation-slice1-20261014/README.md"
+        and type(git.get("line")) is int and git["line"] == 15
+        and finding.get("DetectorName") == "RailwayApp"
+        and type(finding.get("DetectorType")) is int and finding["DetectorType"] == 999
+        and finding.get("Verified") is False
+        and _trufflehog_raw_digest(finding)
+        == "55a16aefae99e52dade482f9cecc291d6b5b5a97a92910132fcaa43f9ec8e6c5"
+    )
+
+
+def _valid_sanitized_trufflehog_finding(finding: dict[str, Any]) -> bool:
+    """Validate the retained field allowlist without changing dispositions."""
+    allowed = {"SanitizationSchema", "DetectorName", "DetectorType", "Verified", "RawSHA256", "SourceMetadata"}
+    metadata = finding.get("SourceMetadata")
+    data = metadata.get("Data") if isinstance(metadata, dict) else None
+    git = data.get("Git") if isinstance(data, dict) else None
+    return (
+        set(finding) <= allowed
+        and finding.get("SanitizationSchema") == "nico.security-audit.trufflehog.finding.v1"
+        and isinstance(finding.get("DetectorName"), str)
+        and isinstance(finding.get("Verified"), bool)
+        and ("DetectorType" not in finding or type(finding["DetectorType"]) is int)
+        and _trufflehog_raw_digest(finding) is not None
+        and isinstance(metadata, dict) and set(metadata) == {"Data"}
+        and isinstance(data, dict) and set(data) == {"Git"}
+        and isinstance(git, dict) and set(git) <= {"file", "commit", "line"}
+        and all(isinstance(git[key], str) for key in ("file", "commit") if key in git)
+        and ("line" not in git or type(git["line"]) is int)
+    )
+
+
+def _valid_sanitized_trufflehog_capture(
+    root: Path, findings: list[dict[str, Any]] | None, summary: Any,
+) -> bool:
+    """Check capture integrity; completed captures have additional requirements."""
+    sanitized = isinstance(summary, dict) and summary.get("schema") == "nico.security-audit.trufflehog.capture.v1"
+    summary_allowed = {
+        "schema", "scanner", "status", "finding_count", "artifact_present", "history_depth",
+        "exit_code", "invalid_json_lines", "live_credential_verification", "raw_capture_sha256",
+        "sanitized_artifact_sha256", "raw_candidate_bodies_retained",
+    }
+    valid = (
+        sanitized and isinstance(findings, list)
+        and set(summary) == summary_allowed and summary.get("scanner") == "trufflehog"
+        and summary.get("sanitized_artifact_sha256") == _digest(root, "trufflehog.json")
+        and type(summary.get("finding_count")) is int
+        and summary["finding_count"] == len(findings)
+        and summary.get("live_credential_verification") is False
+        and summary.get("raw_candidate_bodies_retained") is False
+        and summary.get("history_depth") == "full"
+        and type(summary.get("invalid_json_lines")) is int
+        and summary["invalid_json_lines"] >= 0
+        and type(summary.get("exit_code")) is int
+    )
+    if not valid:
+        return False
+    for finding in findings:
+        if not _valid_sanitized_trufflehog_finding(finding):
+            return False
+    if summary.get("status") == "completed":
+        raw_digest = summary.get("raw_capture_sha256")
+        return (
+            summary["invalid_json_lines"] == 0 and summary["exit_code"] in {0, 183}
+            and summary.get("artifact_present") is True
+            and isinstance(raw_digest, str) and len(raw_digest) == 64
+            and all(c in "0123456789abcdef" for c in raw_digest)
+        )
+    return True
+
+
 def _trufflehog(root: Path, *, require_sanitized: bool = False) -> dict[str, Any]:
     findings, error = _read_json_lines(root, "trufflehog.json")
     summary, summary_error = _read_json(root, "trufflehog-summary.json")
-    sanitized = isinstance(summary, dict) and summary.get("schema") == "nico.security-audit.trufflehog.capture.v1"
     sanitized_rows = isinstance(findings, list) and any("SanitizationSchema" in finding for finding in findings)
     capture_claimed = isinstance(summary, dict) and "schema" in summary
     if require_sanitized or capture_claimed or sanitized_rows:
-        allowed = {"SanitizationSchema", "DetectorName", "DetectorType", "Verified", "RawSHA256", "SourceMetadata"}
-        summary_allowed = {
-            "schema", "scanner", "status", "finding_count", "artifact_present", "history_depth",
-            "exit_code", "invalid_json_lines", "live_credential_verification", "raw_capture_sha256",
-            "sanitized_artifact_sha256", "raw_candidate_bodies_retained",
-        }
-        valid = (
-            sanitized and isinstance(findings, list)
-            and set(summary) == summary_allowed and summary.get("scanner") == "trufflehog"
-            and summary.get("sanitized_artifact_sha256") == _digest(root, "trufflehog.json")
-            and type(summary.get("finding_count")) is int
-            and summary["finding_count"] == len(findings)
-            and summary.get("live_credential_verification") is False
-            and summary.get("raw_candidate_bodies_retained") is False
-            and summary.get("history_depth") == "full"
-            and type(summary.get("invalid_json_lines")) is int
-            and summary["invalid_json_lines"] >= 0
-            and type(summary.get("exit_code")) is int
-        )
-        if valid:
-            for finding in findings:
-                metadata = finding.get("SourceMetadata")
-                data = metadata.get("Data") if isinstance(metadata, dict) else None
-                git = data.get("Git") if isinstance(data, dict) else None
-                if not (
-                    set(finding) <= allowed
-                    and finding.get("SanitizationSchema") == "nico.security-audit.trufflehog.finding.v1"
-                    and isinstance(finding.get("DetectorName"), str)
-                    and isinstance(finding.get("Verified"), bool)
-                    and ("DetectorType" not in finding or type(finding["DetectorType"]) is int)
-                    and _trufflehog_raw_digest(finding) is not None
-                    and isinstance(metadata, dict) and set(metadata) == {"Data"}
-                    and isinstance(data, dict) and set(data) == {"Git"}
-                    and isinstance(git, dict) and set(git) <= {"file", "commit", "line"}
-                    and all(isinstance(git[key], str) for key in ("file", "commit") if key in git)
-                    and ("line" not in git or type(git["line"]) is int)
-                ):
-                    valid = False
-                    break
-        if valid and summary.get("status") == "completed":
-            raw_digest = summary.get("raw_capture_sha256")
-            valid = (
-                summary["invalid_json_lines"] == 0 and summary["exit_code"] in {0, 183}
-                and summary.get("artifact_present") is True
-                and isinstance(raw_digest, str) and len(raw_digest) == 64
-                and all(c in "0123456789abcdef" for c in raw_digest)
-            )
-        if not valid:
+        if not _valid_sanitized_trufflehog_capture(root, findings, summary):
             return _record(root, "trufflehog.json", "unavailable", len(findings or []),
                            reason="invalid_sanitized_capture", capture_complete=False)
     if (
@@ -575,6 +681,10 @@ def _trufflehog(root: Path, *, require_sanitized: bool = False) -> dict[str, Any
             # identify this exact value as the NICO service ID, not a token.
             disposition = "approved_nonsecret_service_identifier"
             approved_nonsecret_identifiers += 1
+        elif _approved_review_pdf_service_occurrence(finding):
+            # Retain the observation; approval covers only these exact occurrences.
+            disposition = "approved_nonsecret_service_identifier"
+            approved_nonsecret_identifiers += 1
         elif fixture_path:
             disposition = "approved_unverified_test_placeholder"
             approved_test_placeholders += 1
@@ -669,6 +779,11 @@ def evaluate_gate(tools: dict[str, dict[str, Any]]) -> list[str]:
 
 def evaluate_review_required(tools: dict[str, dict[str, Any]]) -> list[str]:
     review: list[str] = []
+    semgrep = tools.get("semgrep") or {}
+    if semgrep.get("capture_complete") is False:
+        review.append(
+            f"semgrep retained {int(semgrep.get('diagnostic_count') or 0)} analyzer diagnostics; partial capture requires review"
+        )
     for name in ("bandit", "semgrep", "osv-scanner", "gitleaks", "trufflehog"):
         tool = tools.get(name) or {}
         count = int(tool.get("needs_review") or 0)
@@ -718,7 +833,11 @@ def build_manifest(root: Path, *, repository: str = "", run_id: str = "",
         "trufflehog_capture_contract": "sanitized_v1" if require_sanitized_trufflehog else "legacy_offline_compatible",
         "generated_at": generated_at,
         "tools": tools,
+        "partial_capture_tools": sorted(
+            name for name, record in tools.items() if record.get("capture_complete") is False
+        ),
         "security_gate": {
+            "scope": "blocking_risk_policy",
             "status": "blocked" if blockers else "passed",
             "blockers": blockers,
             "review_required": review_required,

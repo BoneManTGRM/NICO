@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_preview_labels_v1 import stage_preview_labels
+
 import base64
 import hashlib
 import html
@@ -280,7 +282,7 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
     )
     flatten = _flatten_client_literals if client_literal_stage else _flatten
     dedupe = _dedupe_client_literals if client_literal_stage else _dedupe
-    structured_fields = {"source_observation", "structured_tables", "profile_coverage", "source_indicator_paths", "source_indicator_identity", "source_indicator_state", "execution_limit"}
+    structured_fields = {"architecture_policy_conformance_v1", "source_function_conformance_v1", "source_observation", "structured_tables", "profile_coverage", "source_indicator_paths", "source_indicator_identity", "source_indicator_state", "execution_limit"}
     def without_structured(value: Any) -> Any:
         if isinstance(value, dict):
             return {key: without_structured(item) for key, item in value.items() if key not in structured_fields}
@@ -424,6 +426,13 @@ def _source_cell(value: Any, *, spanish: bool) -> str:
         return ("Sí" if value else "No") if spanish else ("Yes" if value else "No")
     text = str(value)
     if spanish:
+        from nico.architecture_policy_conformance_v1 import COPY_ES as POLICY_ES
+        if text in POLICY_ES:
+            return POLICY_ES[text]
+        from nico.comprehensive_spanish_function_measurement_copy_v1 import translate_function_measurement_copy
+        authored = translate_function_measurement_copy(text)
+        if authored is not None:
+            return authored
         from nico.comprehensive_coverage_reconciliation_v1 import COPY_ES
         if text in COPY_ES:
             return COPY_ES[text]
@@ -562,14 +571,21 @@ def _source_markdown(stage: dict[str, Any], *, spanish: bool) -> list[str]:
 def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, row_limit: int = 24) -> list[Any]:
     from reportlab.lib import colors
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+    from reportlab.platypus import CondPageBreak, Paragraph, Spacer, Table, TableStyle
 
     from nico.comprehensive_source_table_presentation_v1 import source_table_summary
 
     cell_style = ParagraphStyle("SourceEvidenceCell", fontName="Helvetica", fontSize=7.1, leading=9.0)
     title_style = ParagraphStyle("SourceEvidenceTitle", parent=cell_style, fontName="Helvetica-Bold", fontSize=8.2, leading=10.0, spaceBefore=5, spaceAfter=3, keepWithNext=True)
-    def cell(value: Any, heading: bool = False, literal: bool = False) -> Any:
-        return Paragraph(html.escape(str(value) if literal else _source_cell(value, spanish=spanish)), title_style if heading else cell_style)
+    def cell(value: Any, heading: bool = False, literal: bool = False, preview: bool = False) -> Any:
+        text = str(value) if literal else _source_cell(value, spanish=spanish)
+        if preview:
+            # Presentation only: keep long paths/cells within the preview budget.
+            # Full values and their original order remain bound by the table hash.
+            text = " ".join(text.split())
+            if len(text) > 80:
+                text = text[:79] + "…"
+        return Paragraph(html.escape(text), title_style if heading else cell_style)
     flowables: list[Any] = []
     observed = stage.get("source_observation")
     if isinstance(observed, dict):
@@ -585,6 +601,7 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
     )
     for table_index, table in enumerate(_source_tables(stage)):
         rows = table["rows"]
+        total_rows = len(rows)
         columns = table["columns"]
         summary = source_table_summary(table) if table_index < structured_count else None
         if summary is not None:
@@ -595,18 +612,21 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
             flowables.append(cell(f"{digest_label}: {summary['sha256']}", literal=True))
             flowables.append(cell(summary["reference_token"], literal=True))
             disclosure = (
-                "Este PDF presenta el resumen de la tabla. Todas las filas, columnas y valores, sin abreviar, "
+                "Este PDF presenta una vista previa en el orden original. Las demás filas se omiten del PDF. "
+                "Las celdas que terminan en … están truncadas a 80 caracteres. Todas las filas, columnas y valores, sin abreviar, "
                 "se conservan en el JSON de evidencia canónica de esta misma edición. El hash vincula el "
                 "título, las columnas y las filas completas en su orden original; no establece verificación "
                 "en ejecución, aprobación humana ni autorización de entrega."
                 if spanish else
-                "This PDF presents the table summary. Every complete row, column and value is retained "
+                "This PDF presents a preview in original order. Remaining rows are omitted from the PDF. "
+                "Cells ending in … are truncated to 80 characters. Every complete row, column and value is retained "
                 "in this same edition's canonical evidence JSON. The hash binds the title, columns and "
                 "complete rows in their original order; it does not establish runtime verification, "
                 "human approval or delivery authorization."
             )
             flowables += [cell(disclosure, literal=True), Spacer(1, 5)]
-            continue
+            preview_count = 24 if table["title"] == "Source interactions and potential boundaries" else 15
+            rows = rows[:preview_count]
         # row_limit bounds each layout batch, not the substantive evidence retained.
         # Existing report page, byte and process-time limits remain unchanged.
         batch_size = max(1, row_limit)
@@ -616,12 +636,24 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
             heading = table["title"]
             if offset:
                 heading = _source_cell(heading, spanish=spanish) + (" (continuación)" if spanish else " (continued)")
-            flowables.append(cell(heading, True))
+            batch_heading = cell(heading, True) if summary is None or offset else None
             values = [[cell(value) for value in columns]] + [
-                [cell(value, literal=column in {"Source", "Target"} or (column == "Value" and row[0] in table.get("literal_value_labels", ()) and value is not None)) for column, value in zip(columns, row)]
+                [cell(value, preview=summary is not None, literal=column in {"Source", "Target"} or (column == "Value" and row[0] in table.get("literal_value_labels", ()) and value is not None)) for column, value in zip(columns, row)]
                 for row in batch
             ]
-            if len(rows) <= batch_size:
+            narrative_rows = []
+            if columns == ["Measure", "Value"] and summary is None:
+                for row_index, row in enumerate(batch, 1):
+                    if row[0] in {"Limitations", "Policy scope and limitations"}:
+                        # Keep the complete label and prose together across the full
+                        # table width rather than wasting half the row on its label.
+                        values[row_index] = [cell(_source_cell(row[0], spanish=spanish) + ": " +
+                                                  _source_cell(row[1], spanish=spanish), literal=True), ""]
+                        narrative_rows.append(row_index)
+            if summary is not None:
+                note_text = (f"Vista previa: filas {offset + 1}–{end}; se muestran {len(rows)} de {total_rows} filas." if spanish else
+                             f"Preview: rows {offset + 1}–{end}; showing {len(rows)} of {total_rows} rows.")
+            elif len(rows) <= batch_size:
                 note_text = (f"Se muestran las {len(rows)} filas completas." if spanish else
                              f"Showing all {len(rows)} rows in full.")
             else:
@@ -632,6 +664,7 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
             values.append([cell(note_text)] + [""] * (len(columns) - 1))
             rendered = Table(values, colWidths=[width / len(columns)] * len(columns), repeatRows=1,
                              splitInRow=1, hAlign="LEFT")
+            rendered.setStyle(TableStyle([("SPAN", (0, row), (-1, row)) for row in narrative_rows]))
             rendered.setStyle(TableStyle([
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e0f2fe")),
                 ("GRID", (0, 0), (-1, -2), .3, colors.HexColor("#94a3b8")),
@@ -639,8 +672,21 @@ def _source_pdf_tables(stage: dict[str, Any], *, spanish: bool, width: float, ro
                 ("NOSPLIT", (0, -2), (-1, -1)),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-                ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
             ]))
+            if batch_heading is not None:
+                # keepWithNext groups the heading with the entire table batch,
+                # wasting the remaining frame even though Table can split rows.
+                # Reserve only a real header and first data row (plus the note
+                # when it is the last row's NOSPLIT partner), then allow splitting.
+                batch_heading.keepWithNext = False
+                heading_height = batch_heading.wrap(width, 100000)[1]
+                rendered.wrap(width, 100000)
+                first_rows = 3 if len(batch) <= 1 else 2
+                start_height = (heading_height + batch_heading.getSpaceBefore()
+                                + batch_heading.getSpaceAfter()
+                                + sum(rendered._rowHeights[:first_rows]))
+                flowables += [CondPageBreak(start_height), batch_heading]
             flowables += [rendered, Spacer(1, 5)]
     return flowables
 
@@ -800,6 +846,10 @@ def _markdown(
         "",
         f"## {localized('Technical Scorecard')}",
     ]
+    from nico.report_score_explanation import score_explanation
+    lines += [f"**{localized('Technical-to-adjusted score explanation')}**",
+              *[f"- {markdown_literal_markup(line, len(line))}"
+                for line in score_explanation(assessment, localized)], ""]
     sections = assessment.get("sections") if isinstance(assessment.get("sections"), list) else []
     if sections:
         for item in sections:
@@ -838,6 +888,7 @@ def _markdown(
                 "",
                 f"### {stage['title']} — {localized(stage['status'].upper())}",
                 stage["summary"],
+                *stage_preview_labels(stage, assessment, spanish=localize_presentation is not None),
                 "",
                 f"{localized('Evidence')}:",
             ]
@@ -881,6 +932,7 @@ def _markdown(
                 "",
                 f"### {stage['title']} — {localized(stage['status'].upper())}",
                 stage["summary"],
+                *stage_preview_labels(stage, assessment, spanish=localize_presentation is not None),
             ]
             lines.extend(
                 (
@@ -891,6 +943,8 @@ def _markdown(
                 for item in stage["evidence"]
             )
             lines.extend(_source_markdown(stage, spanish=localize_presentation is not None))
+            if stage_id == "review_required_candidate_register":
+                lines.extend(f"- {item}" for item in stage["findings"])
 
     unavailable = _dedupe(assessment.get("unavailable_data_notes") or [], 50)
     lines += [
@@ -1013,6 +1067,67 @@ def _semantic_html(markdown: str, title: str) -> str:
 <style>
 :root{{color-scheme:dark}}body{{margin:0;background:#071124;color:#dbeafe;font:16px/1.6 Inter,system-ui,sans-serif}}main{{max-width:1080px;margin:0 auto;padding:42px 22px 80px}}header{{padding:30px;border:1px solid #274060;border-radius:24px;background:#0d1a31;margin-bottom:24px}}header h1{{margin:0;color:#fff;font-size:clamp(28px,5vw,48px)}}.badge{{display:inline-block;margin-top:14px;padding:8px 12px;border:1px solid #f59e0b;border-radius:999px;color:#fde68a;background:#4a2406;font-weight:800}}article{{padding:26px;border:1px solid #274060;border-radius:24px;background:#0b172c}}h1{{color:#fff;line-height:1.08}}h2{{margin-top:34px;padding-top:24px;border-top:1px solid #274060;color:#7dd3fc}}h3{{margin-top:26px;color:#e0f2fe}}p{{color:#cbd5e1}}ul{{padding-left:24px}}li{{margin:7px 0;color:#cbd5e1}}p,li{{white-space:break-spaces;overflow-wrap:anywhere}}.check{{list-style:none;margin-left:-22px}}.warning{{padding:16px;border:1px solid #f59e0b;border-radius:14px;background:#4a2406;color:#fde68a;font-weight:800;letter-spacing:.02em}}
 .source-table{{overflow-x:auto;max-width:100%}}table{{width:100%;border-collapse:collapse;table-layout:fixed}}th,td{{border:1px solid #475569;padding:6px;text-align:left;vertical-align:top;overflow-wrap:anywhere}}th{{background:#0c4a6e}}</style></head><body><main><header><h1>{html.escape(title)}</h1>{badge}</header><article>{body}</article></main></body></html>"""
+
+
+def _scorecard_pdf_table(
+    sections: list[Any], *, width: float, localized: Callable[[str], str],
+) -> Any:
+    """Wrap complete scorecard cells inside the available PDF frame."""
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Paragraph, Table, TableStyle
+
+    cell = ParagraphStyle("ScorecardCell", fontName="Helvetica", fontSize=9,
+                          leading=12, textColor=colors.HexColor("#334155"))
+    header = ParagraphStyle("ScorecardHeader", parent=cell, fontName="Helvetica-Bold",
+                            textColor=colors.white)
+
+    def text(value: Any) -> str:
+        # Paragraph handles wrapping, including long unbroken identifiers. Do not
+        # shorten statuses or summaries to make the table fit a cosmetic budget.
+        return " ".join(str(value if value is not None else "").split())
+
+    rows = [[localized(label) for label in ("Control", "Status", "Score", "Summary")]]
+    for item in sections:
+        if not isinstance(item, dict):
+            continue
+        score = item.get("presented_score", item.get("score"))
+        rows.append([
+            text(item.get("label") or item.get("id")),
+            localized(text(item.get("presented_status") or item.get("status") or "unknown").upper()),
+            localized(f"{int(score)}/100" if isinstance(score, (int, float)) else "NOT SCORED"),
+            text(item.get("summary")),
+        ])
+    if len(rows) == 1:
+        rows.append([localized("Canonical scoring"), localized("PENDING"),
+                     localized("NOT SCORED"), localized("No canonical section scorecard was available.")])
+    paragraphs = [[Paragraph(html.escape(value), header if index == 0 else cell)
+                   for value in row] for index, row in enumerate(rows)]
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    column_widths = [width * fraction for fraction in (.23, .23, .11, .43)]
+    # Keep authored score words intact (notably Spanish PUNTUACIÓN) at 9pt.
+    # Only borrow the necessary space from the already-flowing summary column.
+    score_word_width = max(
+        stringWidth(word, style.fontName, style.fontSize)
+        for label, style in ((localized("Score"), header), (localized("NOT SCORED"), cell))
+        for word in label.split()
+    )
+    extra = max(0, score_word_width + 10.1 - column_widths[2])
+    column_widths[2] += extra
+    column_widths[3] -= extra
+    table = Table(paragraphs, colWidths=column_widths,
+                  repeatRows=1, splitInRow=1, hAlign="LEFT")
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0c4a6e")),
+        ("GRID", (0, 0), (-1, -1), .35, colors.HexColor("#cbd5e1")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    return table
 
 
 def _pdf(
@@ -1300,53 +1415,28 @@ def _pdf(
     ]
 
     sections = assessment.get("sections") if isinstance(assessment.get("sections"), list) else []
-    story += [PageBreak(), p(localized("Canonical Technical Scorecard"), h1)]
-    score_rows = [[localized("Control"), localized("Status"), localized("Score"), localized("Summary")]]
-    for item in sections:
-        if not isinstance(item, dict):
-            continue
-        section_score = item.get("presented_score", item.get("score"))
-        section_label = (
-            f"{int(section_score)}/100"
-            if isinstance(section_score, (int, float))
-            else "NOT SCORED"
-        )
-        score_rows.append(
-            [
-                _text(item.get("label") or item.get("id"), 90),
-                localized(_text(item.get("presented_status") or item.get("status") or "unknown", 30).upper()),
-                localized(section_label),
-                _text(item.get("summary"), 240),
-            ]
-        )
-    if len(score_rows) == 1:
-        score_rows.append(
-            [localized("Canonical scoring"), localized("PENDING"), localized("NOT SCORED"), localized("No canonical section scorecard was available.")]
-        )
-    score_table = Table(
-        score_rows,
-        colWidths=[1.5 * inch, 0.75 * inch, 0.75 * inch, 4.45 * inch],
-        repeatRows=1,
-    )
-    score_table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0c4a6e")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd5e1")),
-                ("FONTSIZE", (0, 0), (-1, -1), 7.2),
-                ("LEADING", (0, 0), (-1, -1), 9.5),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
-                ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ]
-        )
-    )
-    story.append(score_table)
+    scorecard_start, scorecard_end = Spacer(0, 0), Spacer(0, 0)
+    scorecard_pages: dict[str, int] = {}
+    def record_scorecard_page(flowable: Any) -> None:
+        if flowable is scorecard_start:
+            scorecard_pages["start"] = doc.page - 1
+        elif flowable is scorecard_end:
+            scorecard_pages["end"] = doc.page - 1
+    doc.afterFlowable = record_scorecard_page
+    story += [PageBreak(), scorecard_start,
+              p(localized("Canonical Technical Scorecard"), h1)]
+    # SimpleDocTemplate's frame reserves six points of padding at each side.
+    story.append(_scorecard_pdf_table(sections, width=doc.width - 12, localized=localized))
+    from nico.report_score_explanation import score_explanation
+    from nico.comprehensive_engagement_metadata_v1 import reportlab_literal_markup
+    # Move a page-sized explanation as a unit; KeepTogether releases oversized
+    # content for normal paragraph splitting rather than shrinking or truncating.
+    story.append(KeepTogether([
+        p(localized("Technical-to-adjusted score explanation"), h2),
+        *[Paragraph(reportlab_literal_markup(line, len(line)), body)
+          for line in score_explanation(assessment, localized)],
+    ]))
+    story.append(scorecard_end)
 
     for item in sections:
         if not isinstance(item, dict):
@@ -1403,6 +1493,15 @@ def _pdf(
                 if stage_id == "repository_and_delivery_evidence"
                 else 10
             )
+            if (stage_id == "ci_cd_architecture_complexity_velocity"
+                    and isinstance(stage.get("_retained_measurement_lines"), list)
+                    and stage["_retained_measurement_lines"]):
+                # Functional measurement disclosures (including missingness and
+                # denominators) must survive the client appendix projection.
+                preview_limit = 100
+            block.extend(p(label, body) for label in stage_preview_labels(
+                stage, assessment, evidence_limit=preview_limit, evidence_text_limit=1000, findings_limit=12,
+                spanish=localize_presentation is not None))
             preview = stage["evidence"][:preview_limit]
             block.extend(
                 bullets(
@@ -1438,6 +1537,9 @@ def _pdf(
             p(f"{localized('Stage ID')}: {stage['stage_id']} · {localized('Status')}: {localized(stage['status'].upper())}", small),
             p(stage["summary"], body),
         ]
+        story.extend(p(label, body) for label in stage_preview_labels(
+            stage, assessment, evidence_limit=100, evidence_text_limit=1000, findings_limit=50,
+            spanish=localize_presentation is not None))
         evidence_rows = [[p(f"{stage['title']} — {localized('Retained Evidence')}", h3)]]
         evidence_rows.extend([item] for item in bullets(
             stage["evidence"], limit=100, client_literal=client_literal_stage,
@@ -1491,6 +1593,21 @@ def _pdf(
 
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
     pdf_bytes = buffer.getvalue()
+    # Ownership comes from the actual layout, including flowing table and
+    # explanation continuations, never inferred from body text or page caps.
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import NameObject, NumberObject
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    start, end = scorecard_pages["start"], scorecard_pages["end"]
+    if not 0 <= start <= end < len(reader.pages):
+        raise ValueError("scorecard layout ownership unavailable")
+    writer = PdfWriter(clone_from=reader)
+    for index in range(start, end + 1):
+        writer.pages[index][NameObject("/NICOScorecardPage")] = NumberObject(index - start)
+        writer.pages[index][NameObject("/NICOScorecardPages")] = NumberObject(end - start + 1)
+    marked = io.BytesIO()
+    writer.write(marked)
+    pdf_bytes = marked.getvalue()
     page_count = 0
     try:
         from pypdf import PdfReader

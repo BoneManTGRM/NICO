@@ -186,3 +186,64 @@ def test_near_recursion_limit_keeps_standard_stream_failure(depth):
             records._canonical_hash(payload)
     else:
         assert records._canonical_hash(payload) == expected.hexdigest()
+
+
+@pytest.mark.parametrize("container", ["dict", "list", "tuple"])
+def test_deep_native_probe_cannot_bypass_standard_stream_fallback(monkeypatch, container):
+    payload = {"leaf": "retained"}
+    for _ in range(70):
+        if container == "dict":
+            payload = {"evidence": payload}
+        elif container == "list":
+            payload = [payload]
+        else:
+            payload = (payload,)
+    assert records._bounded_native_json(payload) is False
+    expected = _reference(payload)
+    calls = []
+    original = records.json.JSONEncoder.iterencode
+
+    def observed(self, value, _one_shot=False):
+        calls.append((value is payload, _one_shot))
+        return original(self, value, _one_shot=_one_shot)
+
+    monkeypatch.setattr(records.json.JSONEncoder, "iterencode", observed)
+    assert records._canonical_hash(payload) == expected
+    assert (True, False) in calls
+    assert (True, True) not in calls
+
+
+@pytest.mark.parametrize("extension", ["item", "item.keys()", "item.values()"])
+def test_source_cleared_after_extension_cannot_desynchronize_private_probe_stacks(extension):
+    # Internal-stack robustness only; this does not promise a mutation snapshot.
+    import inspect
+    import sys
+
+    source = [1, 2] if extension == "item" else {"first": 1, "second": 2}
+    lines, first_line = inspect.getsourcelines(records._bounded_native_json)
+    extension_line = first_line + next(
+        i for i, line in enumerate(lines) if line.strip() == f"pending.extend({extension})"
+    )
+    reached_extension = False
+    cleared = False
+    previous_trace = sys.gettrace()
+
+    def clear_after_extension(frame, event, arg):
+        nonlocal reached_extension, cleared
+        if frame.f_code is records._bounded_native_json.__code__ and event == "line":
+            if reached_extension and not cleared:
+                # A line event occurs before the next instruction, after extend
+                # has copied the old source population into the private stack.
+                source.clear()
+                cleared = True
+            elif frame.f_lineno == extension_line and frame.f_locals.get("item") is source:
+                reached_extension = True
+        return clear_after_extension
+
+    try:
+        sys.settrace(clear_after_extension)
+        assert records._bounded_native_json(source) is True
+    finally:
+        sys.settrace(previous_trace)
+    assert cleared
+    assert source == ([] if extension == "item" else {})

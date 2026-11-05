@@ -1,6 +1,7 @@
 "use client";
 
 import {useEffect, useMemo, useState} from "react";
+import {savedRun, useReviewScope, reviewResponse, reviewError, ambiguousWrite, reconciliationMessage, type WorkspaceProps} from "./reviewWorkspaceState";
 import ReviewSessionNotice from "./ReviewSessionNotice";
 import styles from "./review-browser.module.css";
 
@@ -47,20 +48,6 @@ function boolValue(value: unknown): boolean {
   return value === true;
 }
 
-function responseError(payload: JsonRecord, status: number, locale: Locale): string {
-  if (locale === "es-MX") {
-    const detail = payload.detail;
-    const detailRecord = detail && typeof detail === "object" ? detail as JsonRecord : {};
-    const rawCode = text(detailRecord.code);
-    const code = /^[A-Z0-9_.-]+$/.test(rawCode) ? rawCode : "";
-    return `No fue posible completar la solicitud protegida de revisión (HTTP ${status}${code ? ` · ${code}` : ""}).`;
-  }
-  const detail = payload.detail;
-  if (typeof detail === "string") return detail;
-  if (detail && typeof detail === "object") return JSON.stringify(detail);
-  return text(payload.error) || `HTTP ${status}`;
-}
-
 function searchHaystack(candidate: JsonRecord): string {
   const keys = [
     "candidate_id", "finding_id", "path", "file_path", "package", "package_name",
@@ -78,14 +65,15 @@ function renderDetail(candidate: JsonRecord): string {
   return JSON.stringify(candidate, null, 2);
 }
 
-export default function ReviewQueueBrowser() {
+export default function ReviewQueueBrowser({runId, refresh = 0, isCurrent, onChanged}: WorkspaceProps = savedRun()) {
+  const scope = useReviewScope(isCurrent);
   const [locale, setLocale] = useState<Locale>("en");
-  const [runId, setRunId] = useState("");
   const [reviewer, setReviewer] = useState("");
   const [reviewerRole, setReviewerRole] = useState("");
   const [projection, setProjection] = useState<Projection | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [queue, setQueue] = useState<Queue>("all");
   const [severity, setSeverity] = useState("all");
   const [verdict, setVerdict] = useState("all");
@@ -103,7 +91,6 @@ export default function ReviewQueueBrowser() {
   useEffect(() => {
     const params = new URL(window.location.href).searchParams;
     const requestedLocale: Locale = params.get("lang") === "es-MX" ? "es-MX" : "en";
-    setRunId(params.get("run_id") || "");
     setLocale(requestedLocale);
     document.documentElement.lang = requestedLocale;
     document.title = tr(requestedLocale, "Human review workspace | NICO", "Espacio de revisión humana | NICO");
@@ -114,31 +101,36 @@ export default function ReviewQueueBrowser() {
     [runId],
   );
 
+  useEffect(() => {if (refresh > 0) void load();}, [refresh]);
+
+  async function readProjection() {
+    const response = await fetch(endpoint, {
+      method: "GET", cache: "no-store", credentials: "same-origin", headers: {Accept: "application/json"},
+    });
+    return reviewResponse(response, runId, locale);
+  }
+
   async function load(): Promise<void> {
     if (!runId.trim()) return;
-    setBusy(true);
-    setError("");
-    setProjection(null);
+    // A sibling refresh must never supersede an in-flight write or unlock its form.
+    if (scope.mutation.current) {scope.refreshDeferred.current = true; return;}
+    const token = scope.begin();
+    setBusy(true); setError(""); setProjection(null);
     try {
-      const response = await fetch(endpoint, {
-        method: "GET",
-        cache: "no-store",
-        credentials: "same-origin",
-        headers: {Accept: "application/json"},
-      });
-      const payload = await response.json().catch(() => ({})) as Projection & JsonRecord;
-      if (!response.ok) throw new Error(responseError(payload, response.status, locale));
-      setProjection(payload);
+      const next = await readProjection();
+      if (scope.current(token)) setProjection(next);
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : String(caught);
-      setError(locale === "es-MX" ? (message.startsWith("No fue posible") ? message : "No fue posible cargar la verdad protegida de revisión.") : message);
+      if (scope.current(token)) setError(reviewError(caught, locale));
     } finally {
-      setBusy(false);
+      if (scope.current(token)) setBusy(false);
+      scope.finish(token);
     }
   }
 
   async function configureSampling(): Promise<void> {
-    if (!runId.trim() || !reviewer.trim() || !reviewerRole.trim()) return;
+    if (!runId.trim() || !projection || scope.pending.current || !reviewer.trim() || !reviewerRole.trim()) return;
+    const token = scope.begin();
+    scope.mutation.current = true;
     setBusy(true);
     setError("");
     setProjection(null);
@@ -159,19 +151,34 @@ export default function ReviewQueueBrowser() {
         headers: {"Content-Type": "application/json", Accept: "application/json"},
         body: JSON.stringify(payload),
       });
-      const result = await response.json().catch(() => ({})) as Projection & JsonRecord;
-      if (!response.ok) throw new Error(responseError(result, response.status, locale));
-      setProjection(result);
+      const next = await reviewResponse(response, runId, locale);
+      if (scope.current(token)) {setProjection(next); onChanged?.(runId);}
+
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : String(caught);
-      setError(locale === "es-MX" ? (message.startsWith("No fue posible") ? message : "No fue posible configurar la muestra de control de calidad.") : message);
+      if (scope.current(token)) {
+        if (ambiguousWrite(caught)) {
+          try {
+            const next = await readProjection();
+            if (scope.current(token)) {setProjection(next); onChanged?.(runId);}
+          } catch { /* Keep actions blocked when reconciliation cannot verify saved state. */ }
+          if (scope.current(token)) setNotice(reconciliationMessage(locale));
+        } else setError(reviewError(caught, locale));
+      }
     } finally {
-      setBusy(false);
+      if (scope.current(token)) {
+        setBusy(false);
+      }
+      scope.mutation.current = false;
+      scope.finish(token);
+      if (scope.current(token) && scope.refreshDeferred.current) {
+        scope.refreshDeferred.current = false;
+        void load();
+      }
     }
   }
 
   const candidates = useMemo(
-    () => (projection?.candidates || []).filter((candidate): candidate is JsonRecord => Boolean(candidate && typeof candidate === "object")),
+    () => (Array.isArray(projection?.candidates) ? projection.candidates : []).filter((candidate): candidate is JsonRecord => Boolean(candidate && typeof candidate === "object")),
     [projection],
   );
   const severities = useMemo(() => unique(candidates, "severity"), [candidates]);
@@ -208,7 +215,7 @@ export default function ReviewQueueBrowser() {
     });
   }, [attention, candidates, category, confidence, disposition, lineage, query, queue, scanner, severity, sort, verdict]);
 
-  const clusters = (projection?.clusters || []).filter((cluster): cluster is JsonRecord => Boolean(cluster && typeof cluster === "object"));
+  const clusters = (Array.isArray(projection?.clusters) ? projection.clusters : []).filter((cluster): cluster is JsonRecord => Boolean(cluster && typeof cluster === "object"));
   const sampling = projection?.quality_control_sampling || {};
   const workload = projection?.workload_metrics || {};
   const queueCounts = projection?.queue_counts || {};
@@ -223,9 +230,10 @@ export default function ReviewQueueBrowser() {
       <span className={projection?.ready_for_final_approval ? styles.ready : styles.blocked}>{projection?.ready_for_final_approval ? tr(locale, "Review ready for separate final approval", "Revisión lista para la aprobación final separada") : tr(locale, "Final approval blocked", "Aprobación final bloqueada")}</span>
     </header>
 
+    {notice ? <p role="alert">{notice}</p> : null}
     <ReviewSessionNotice runId={runId} locale={locale} />
     <div className={styles.credentials}>
-      <label>{tr(locale, "Exact run ID", "ID exacto de la ejecución")}<input disabled={busy} value={runId} onChange={(event) => {setRunId(event.target.value); setProjection(null);}} autoComplete="off" /></label>
+      <label>{tr(locale, "Exact run ID", "ID exacto de la ejecución")}<input disabled={busy} value={runId} readOnly autoComplete="off" /></label>
       <label>{tr(locale, "Authorized reviewer", "Revisor autorizado")}<input value={reviewer} onChange={(event) => setReviewer(event.target.value)} autoComplete="off" /></label>
       <label>{tr(locale, "Reviewer role", "Función del revisor")}<input value={reviewerRole} onChange={(event) => setReviewerRole(event.target.value)} autoComplete="off" /></label>
       <button type="button" onClick={load} disabled={busy || !runId.trim()}>{busy ? tr(locale, "Working…", "Procesando…") : projection ? tr(locale, "Refresh review truth", "Actualizar verdad de revisión") : tr(locale, "Load review truth", "Cargar verdad de revisión")}</button>

@@ -40,7 +40,10 @@ def _compact_pdf_call(
     projection is compacted.
     """
 
-    if not _COMPACT_FINAL_PDF.get():
+    compact = _COMPACT_FINAL_PDF.get()
+    from nico.pdf_cap_failure_diagnostics import record_render_arguments
+    record_render_arguments(identity, assessment, stages, [] if compact else stages, compact)
+    if not compact:
         return original(
             identity,
             assessment,

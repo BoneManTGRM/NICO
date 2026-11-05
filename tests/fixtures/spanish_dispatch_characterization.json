@@ -1,0 +1,1706 @@
+{
+  "Actionable production/report hotspots": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots"
+  ],
+  "Actionable production/report hotspots at complexity >=30: ": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots at complexity >=30: "
+  ],
+  "Actionable production/report hotspots at complexity >=30: (?P<count>\\d+)\\.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots at complexity >=30: (?P<count>\\d+)\\."
+  ],
+  "Actionable production/report hotspots at complexity >=30: 7.": [
+    "return",
+    "Puntos críticos accionables de producción o generación de informes con complejidad >=30: 7."
+  ],
+  "Actionable production/report hotspots at complexity >=30: 77.": [
+    "return",
+    "Puntos críticos accionables de producción o generación de informes con complejidad >=30: 77."
+  ],
+  "Actionable production/report hotspots: 2.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots: 2."
+  ],
+  "Classification counts:": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts:"
+  ],
+  "Classification counts: ": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts: "
+  ],
+  "Classification counts: (?P<counts>\\{[^\\r\\n]*\\})\\.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts: (?P<counts>\\{[^\\r\\n]*\\})\\."
+  ],
+  "Classification counts: {x}.": [
+    "return",
+    "Conteos por clasificación: {x}."
+  ],
+  "Classification counts: {}.": [
+    "return",
+    "Conteos por clasificación: {}."
+  ],
+  "Collection limitations recorded: 2.": [
+    "return",
+    "Limitaciones de recopilación registradas: 2."
+  ],
+  "Collection limitations recorded: 3.": [
+    "return",
+    "Limitaciones de recopilación registradas: 3."
+  ],
+  "Collection limitations recorded: 7.": [
+    "return",
+    "Limitaciones de recopilación registradas: 7."
+  ],
+  "Collection limitations recorded: 77.": [
+    "return",
+    "Limitaciones de recopilación registradas: 77."
+  ],
+  "Collection notes recorded: 2; informational acquisition notes: 1; remaining limitation notes: 1.": [
+    "return",
+    "Notas de recopilación registradas: 2; notas informativas de adquisición: 1; notas de limitación restantes: 1."
+  ],
+  "Collection notes recorded: 77; informational acquisition notes: 77; remaining limitation notes: 77.": [
+    "return",
+    "Notas de recopilación registradas: 77; notas informativas de adquisición: 77; notas de limitación restantes: 77."
+  ],
+  "Collection notes recorded: 7; informational acquisition notes: 7; remaining limitation notes: 7.": [
+    "return",
+    "Notas de recopilación registradas: 7; notas informativas de adquisición: 7; notas de limitación restantes: 7."
+  ],
+  "Exact-source locators: 40 present.": [
+    "return",
+    "Localizadores de fuente exacta: 40 presentes."
+  ],
+  "Exact-source locators: 42 present.": [
+    "return",
+    "Localizadores de fuente exacta: 42 presentes."
+  ],
+  "Exact-source locators: 7 present.": [
+    "return",
+    "Localizadores de fuente exacta: 7 presentes."
+  ],
+  "Exact-source locators: 77 present.": [
+    "return",
+    "Localizadores de fuente exacta: 77 presentes."
+  ],
+  "GitHub deployment evidence: observed=": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence: observed="
+  ],
+  "GitHub deployment evidence: observed=(?P<observed>\\d+), success=(?P<success>\\d+), non-success=(?P<non_success>\\d+)\\.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence: observed=(?P<observed>\\d+), success=(?P<success>\\d+), non-success=(?P<non_success>\\d+)\\."
+  ],
+  "GitHub deployment evidence: observed=23, success=19, non-success=4.": [
+    "return",
+    "Evidencia de despliegues de GitHub: observados=23, exitosos=19, no exitosos=4."
+  ],
+  "GitHub deployment evidence: observed=7, success=7, non-success=7.": [
+    "return",
+    "Evidencia de despliegues de GitHub: observados=7, exitosos=7, no exitosos=7."
+  ],
+  "GitHub deployment evidence: observed=77, success=77, non-success=77.": [
+    "return",
+    "Evidencia de despliegues de GitHub: observados=77, exitosos=77, no exitosos=77."
+  ],
+  "OSV lookup ": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup "
+  ],
+  "OSV lookup did not complete within the bounded dependency-review window.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup did not complete within the bounded dependency-review window."
+  ],
+  "OSV lookup returned HTTP ": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup returned HTTP "
+  ],
+  "OSV lookup returned HTTP (?P<status>\\d{3}); dependency vulnerability status is incomplete\\.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup returned HTTP (?P<status>\\d{3}); dependency vulnerability status is incomplete\\."
+  ],
+  "OSV lookup returned HTTP 429; dependency vulnerability status is incomplete.": [
+    "return",
+    "La consulta a OSV devolvió HTTP 429; el estado de vulnerabilidades de dependencias está incompleto."
+  ],
+  "OSV lookup returned HTTP 777; dependency vulnerability status is incomplete.": [
+    "return",
+    "La consulta a OSV devolvió HTTP 777; el estado de vulnerabilidades de dependencias está incompleto."
+  ],
+  "OSV lookup returned a non-JSON response.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup returned a non-JSON response."
+  ],
+  "OSV lookup skipped because no exact dependency versions were available from the inspected manifests.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup skipped because no exact dependency versions were available from the inspected manifests."
+  ],
+  "OSV lookup skipped because no exact normalized dependency versions were available from the inspected manifests.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup skipped because no exact normalized dependency versions were available from the inspected manifests."
+  ],
+  "OSV lookup unavailable: ": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup unavailable: "
+  ],
+  "OSV lookup unavailable: (?P<detail>[^\\r\\n]+)": [
+    "return",
+    "La consulta a OSV no estaba disponible; detalle técnico original: (?P<detail>[^\\r\\n]+)"
+  ],
+  "OSV lookup unavailable: HTTPSConnectionPool read timed out": [
+    "return",
+    "La consulta a OSV no estaba disponible; detalle técnico original: HTTPSConnectionPool read timed out"
+  ],
+  "OSV lookup unavailable: x": [
+    "return",
+    "La consulta a OSV no estaba disponible; detalle técnico original: x"
+  ],
+  "OSV lookup unavailable: xx": [
+    "return",
+    "La consulta a OSV no estaba disponible; detalle técnico original: xx"
+  ],
+  "Observed job success rate:": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate:"
+  ],
+  "Observed job success rate: ": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: "
+  ],
+  "Observed job success rate: -1%.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: -1%."
+  ],
+  "Observed job success rate: 0.925": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 0.925"
+  ],
+  "Observed job success rate: 1.0.": [
+    "return",
+    "Tasa de éxito observada de trabajos: 1.0."
+  ],
+  "Observed job success rate: 100%.": [
+    "return",
+    "Tasa de éxito observada de trabajos: 100%."
+  ],
+  "Observed job success rate: 100%. Additional context": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 100%. Additional context"
+  ],
+  "Observed job success rate: 100.0%": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 100.0%"
+  ],
+  "Observed job success rate: 101%.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 101%."
+  ],
+  "Observed job success rate: 92.5%.": [
+    "return",
+    "Tasa de éxito observada de trabajos: 92.5%."
+  ],
+  "Observed job success rate: claimed successful%.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: claimed successful%."
+  ],
+  "Raw high-complexity region count retained for audit:": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit:"
+  ],
+  "Raw high-complexity region count retained for audit: ": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit: "
+  ],
+  "Raw high-complexity region count retained for audit: (?P<count>\\d+)\\.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit: (?P<count>\\d+)\\."
+  ],
+  "Raw high-complexity region count retained for audit: 7.": [
+    "return",
+    "Conteo sin procesar de regiones de alta complejidad conservado para auditoría: 7."
+  ],
+  "Raw high-complexity region count retained for audit: 77.": [
+    "return",
+    "Conteo sin procesar de regiones de alta complejidad conservado para auditoría: 77."
+  ],
+  "Technical maturity remains based on exact-commit technical controls.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls."
+  ],
+  "Technical maturity remains based on exact-commit technical controls.\nEvidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 639 review-required candidates and 0 confirmed material\nfindings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls.\nEvidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 639 review-required candid"
+  ],
+  "Technical maturity remains based on exact-commit technical controls.\nThis changed contract has no approved Spanish translation and still says readiness scores.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls.\nThis changed contract has no approved Spanish translation and still says readiness scores."
+  ],
+  "Technical maturity remains based on exact-commit technical controls.\nThis changed contract has no approved Spanish translation.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls.\nThis changed contract has no approved Spanish translation."
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is ": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is "
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 7/100 versus technical maturity 7/100. NICO retains 7 review-required candidates and 7 confirmed material findings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores.": [
+    "return",
+    "La madurez técnica sigue basándose en controles técnicos del commit exacto. La puntuación técnica ajustada por evidencia es 7/100 frente a una madurez técnica de 7/100. NICO conserva 7 candidatos que requieren revisión y 7 hallazgos materiales confirmados como contexto explícito de revisión. El volumen de candidatos, la agrupación y la carga de trabajo de revisión no modifican las puntuaciones numéricas de los controles técnicos."
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 91/100 versus technical maturity 94/100. NICO retains 27 review-required candidates and 2 confirmed material findings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores.": [
+    "return",
+    "La madurez técnica sigue basándose en controles técnicos del commit exacto. La puntuación técnica ajustada por evidencia es 91/100 frente a una madurez técnica de 94/100. NICO conserva 27 candidatos que requieren revisión y 2 hallazgos materiales confirmados como contexto explícito de revisión. El volumen de candidatos, la agrupación y la carga de trabajo de revisión no modifican las puntuaciones numéricas de los controles técnicos."
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 639 review-required candidates and 0 confirmed material findings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores.": [
+    "return",
+    "La madurez técnica sigue basándose en controles técnicos del commit exacto. La puntuación técnica ajustada por evidencia es 93/100 frente a una madurez técnica de 93/100. NICO conserva 639 candidatos que requieren revisión y 0 hallazgos materiales confirmados como contexto explícito de revisión. El volumen de candidatos, la agrupación y la carga de trabajo de revisión no modifican las puntuaciones numéricas de los controles técnicos."
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 691 review-required candidates and 0 confirmed material findings as explicit review context. Candidate volume and reviewer workload are operational review metrics and have no numeric technical-maturity or Evidence-Adjusted score effect.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 691 review-required candid"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 691 review-required candidates and 0 confirmed material findings as explicit review context. Candidate volume and reviewer workload are operational review metrics and have no numeric technical-maturity or Evidence-Adjusted score effect. Explicit permissions control: passed. Provider-neutral immutable CI objective coverage: 100%. 1 of 1 applicable analyzers completed; 0 are incomplete. Candidate triage is separate: 2 review-required candidates and 0 confirmed material findings are retained. Review-required scanner candidates: 3.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 691 review-required candid"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted technical score is ": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted technical score is "
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted technical score is 77.77/100 versus technical maturity 77.77/100. NICO retains 77 review-required candidates and 77 confirmed material findings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric technical scores.": [
+    "return",
+    "La madurez técnica sigue basándose en controles técnicos del commit exacto. La puntuación técnica ajustada por evidencia es 77.77/100 frente a una madurez técnica de 77.77/100. NICO conserva 77 candidatos que requieren revisión y 77 hallazgos materiales confirmados como contexto explícito de revisión. El volumen de candidatos, la agrupación y la carga de trabajo de revisión no modifican las puntuaciones numéricas de los controles técnicos."
+  ],
+  "Unique classified hotspots:": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots:"
+  ],
+  "Unique classified hotspots: ": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots: "
+  ],
+  "Unique classified hotspots: (?P<count>\\d+)\\.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots: (?P<count>\\d+)\\."
+  ],
+  "Unique classified hotspots: 7.": [
+    "return",
+    "Puntos críticos únicos clasificados: 7."
+  ],
+  "Unique classified hotspots: 77.": [
+    "return",
+    "Puntos críticos únicos clasificados: 77."
+  ],
+  "Workflow jobs for run ": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run "
+  ],
+  "Workflow jobs for run (?P<run_id>[^\\r\\n]+) were returned without a jobs list\\.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run (?P<run_id>[^\\r\\n]+) were returned without a jobs list\\."
+  ],
+  "Workflow jobs for run 123 were unavailable through the GitHub API.": [
+    "return",
+    "La evidencia de trabajos del flujo de trabajo de la ejecución 123 no estaba disponible mediante la API de GitHub."
+  ],
+  "Workflow jobs for run 42": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run 42"
+  ],
+  "Workflow jobs for run 42 were returned without a jobs list.": [
+    "return",
+    "La evidencia de trabajos del flujo de trabajo de la ejecución 42 se devolvió sin una lista de trabajos."
+  ],
+  "Workflow jobs for run x were returned without a jobs list.": [
+    "return",
+    "La evidencia de trabajos del flujo de trabajo de la ejecución x se devolvió sin una lista de trabajos."
+  ],
+  "Workflow jobs for run xx were returned without a jobs list.": [
+    "return",
+    "La evidencia de trabajos del flujo de trabajo de la ejecución xx se devolvió sin una lista de trabajos."
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[77]: ..:77:77: -- — Dynamic code execution should be reviewed.": [
+    "return",
+    "repository_evidence.code_signal_evidence.risk_pattern_samples[77]: ..:77:77: -- — La ejecución dinámica de código requiere revisión."
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[77]: __:77:77: __ — Dynamic code execution should be reviewed.": [
+    "return",
+    "repository_evidence.code_signal_evidence.risk_pattern_samples[77]: __:77:77: __ — La ejecución dinámica de código requiere revisión."
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[77]: aa:77:77: aa — Dynamic code execution should be reviewed.": [
+    "return",
+    "repository_evidence.code_signal_evidence.risk_pattern_samples[77]: aa:77:77: aa — La ejecución dinámica de código requiere revisión."
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[7]: 0:7: 0 — Dynamic code execution should be reviewed.": [
+    "return",
+    "repository_evidence.code_signal_evidence.risk_pattern_samples[7]: 0:7: 0 — La ejecución dinámica de código requiere revisión."
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[7]: @:7: . — Dynamic code execution should be reviewed.": [
+    "return",
+    "repository_evidence.code_signal_evidence.risk_pattern_samples[7]: @:7: . — La ejecución dinámica de código requiere revisión."
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[7]: A:7: A — Dynamic code execution should be reviewed.": [
+    "return",
+    "repository_evidence.code_signal_evidence.risk_pattern_samples[7]: A:7: A — La ejecución dinámica de código requiere revisión."
+  ],
+  "Actionable production/report hotspots\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots\n"
+  ],
+  "Actionable production/report hotspots extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots extra"
+  ],
+  "Actionable production/report hotspots\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots\r\n"
+  ],
+  "Actionable production/report hotspots at complexity >=30: \n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots at complexity >=30: \n"
+  ],
+  "Actionable production/report hotspots at complexity >=30:  extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots at complexity >=30:  extra"
+  ],
+  "Actionable production/report hotspots at complexity >=30:": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots at complexity >=30:"
+  ],
+  "Actionable production/report hotspots at complexity >=30: \r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots at complexity >=30: \r\n"
+  ],
+  "Actionable production/report hotspots at complexity >=30: (?P<count>\\d+)\\.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots at complexity >=30: (?P<count>\\d+)\\.\n"
+  ],
+  "Actionable production/report hotspots at complexity >=30: (?P<count>\\d+)\\. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots at complexity >=30: (?P<count>\\d+)\\. extra"
+  ],
+  "Actionable production/report hotspots at complexity >=30:(?P<count>\\d+)\\.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots at complexity >=30:(?P<count>\\d+)\\."
+  ],
+  "Actionable production/report hotspots at complexity >=30: (?P<count>\\d+)\\.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots at complexity >=30: (?P<count>\\d+)\\.\r\n"
+  ],
+  "Actionable production/report hotspots at complexity >=30: 7.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots at complexity >=30: 7.\n"
+  ],
+  "Actionable production/report hotspots at complexity >=30: 7. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots at complexity >=30: 7. extra"
+  ],
+  "Actionable production/report hotspots at complexity >=30:7.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots at complexity >=30:7."
+  ],
+  "Actionable production/report hotspots at complexity >=30: 7.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots at complexity >=30: 7.\r\n"
+  ],
+  "Actionable production/report hotspots at complexity >=30: {literal}.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots at complexity >=30: {literal}."
+  ],
+  "Actionable production/report hotspots at complexity >=30: 77.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots at complexity >=30: 77.\n"
+  ],
+  "Actionable production/report hotspots at complexity >=30: 77. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots at complexity >=30: 77. extra"
+  ],
+  "Actionable production/report hotspots at complexity >=30:77.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots at complexity >=30:77."
+  ],
+  "Actionable production/report hotspots at complexity >=30: 77.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots at complexity >=30: 77.\r\n"
+  ],
+  "Actionable production/report hotspots at complexity >=30: {literal}7.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots at complexity >=30: {literal}7."
+  ],
+  "Actionable production/report hotspots: 2.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots: 2.\n"
+  ],
+  "Actionable production/report hotspots: 2. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots: 2. extra"
+  ],
+  "Actionable production/report hotspots:2.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots:2."
+  ],
+  "Actionable production/report hotspots: 2.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Actionable production/report hotspots: 2.\r\n"
+  ],
+  "Classification counts:\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts:\n"
+  ],
+  "Classification counts: extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts: extra"
+  ],
+  "Classification counts:\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts:\r\n"
+  ],
+  "Classification counts: \n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts: \n"
+  ],
+  "Classification counts:  extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts:  extra"
+  ],
+  "Classification counts: \r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts: \r\n"
+  ],
+  "Classification counts: (?P<counts>\\{[^\\r\\n]*\\})\\.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts: (?P<counts>\\{[^\\r\\n]*\\})\\.\n"
+  ],
+  "Classification counts: (?P<counts>\\{[^\\r\\n]*\\})\\. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts: (?P<counts>\\{[^\\r\\n]*\\})\\. extra"
+  ],
+  "Classification counts:(?P<counts>\\{[^\\r\\n]*\\})\\.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts:(?P<counts>\\{[^\\r\\n]*\\})\\."
+  ],
+  "Classification counts: (?P<counts>\\{[^\\r\\n]*\\})\\.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts: (?P<counts>\\{[^\\r\\n]*\\})\\.\r\n"
+  ],
+  "Classification counts: {x}.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts: {x}.\n"
+  ],
+  "Classification counts: {x}. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts: {x}. extra"
+  ],
+  "Classification counts:{x}.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts:{x}."
+  ],
+  "Classification counts: {x}.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts: {x}.\r\n"
+  ],
+  "Classification counts: {}.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts: {}.\n"
+  ],
+  "Classification counts: {}. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts: {}. extra"
+  ],
+  "Classification counts:{}.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts:{}."
+  ],
+  "Classification counts: {}.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Classification counts: {}.\r\n"
+  ],
+  "Collection limitations recorded: 2.\n": [
+    "return",
+    null
+  ],
+  "Collection limitations recorded: 2. extra": [
+    "return",
+    null
+  ],
+  "Collection limitations recorded:2.": [
+    "return",
+    null
+  ],
+  "Collection limitations recorded: 2.\r\n": [
+    "return",
+    null
+  ],
+  "Collection limitations recorded: 3.\n": [
+    "return",
+    null
+  ],
+  "Collection limitations recorded: 3. extra": [
+    "return",
+    null
+  ],
+  "Collection limitations recorded:3.": [
+    "return",
+    null
+  ],
+  "Collection limitations recorded: 3.\r\n": [
+    "return",
+    null
+  ],
+  "Collection limitations recorded: 7.\n": [
+    "return",
+    null
+  ],
+  "Collection limitations recorded: 7. extra": [
+    "return",
+    null
+  ],
+  "Collection limitations recorded:7.": [
+    "return",
+    null
+  ],
+  "Collection limitations recorded: 7.\r\n": [
+    "return",
+    null
+  ],
+  "Collection limitations recorded: {literal}.": [
+    "return",
+    null
+  ],
+  "Collection limitations recorded: 77.\n": [
+    "return",
+    null
+  ],
+  "Collection limitations recorded: 77. extra": [
+    "return",
+    null
+  ],
+  "Collection limitations recorded:77.": [
+    "return",
+    null
+  ],
+  "Collection limitations recorded: 77.\r\n": [
+    "return",
+    null
+  ],
+  "Collection limitations recorded: {literal}7.": [
+    "return",
+    null
+  ],
+  "Collection notes recorded: 2; informational acquisition notes: 1; remaining limitation notes: 1.\n": [
+    "return",
+    null
+  ],
+  "Collection notes recorded: 2; informational acquisition notes: 1; remaining limitation notes: 1. extra": [
+    "return",
+    null
+  ],
+  "Collection notes recorded:2; informational acquisition notes: 1; remaining limitation notes: 1.": [
+    "return",
+    null
+  ],
+  "Collection notes recorded: 2; informational acquisition notes: 1; remaining limitation notes: 1.\r\n": [
+    "return",
+    null
+  ],
+  "Collection notes recorded: 77; informational acquisition notes: 77; remaining limitation notes: 77.\n": [
+    "return",
+    null
+  ],
+  "Collection notes recorded: 77; informational acquisition notes: 77; remaining limitation notes: 77. extra": [
+    "return",
+    null
+  ],
+  "Collection notes recorded:77; informational acquisition notes: 77; remaining limitation notes: 77.": [
+    "return",
+    null
+  ],
+  "Collection notes recorded: 77; informational acquisition notes: 77; remaining limitation notes: 77.\r\n": [
+    "return",
+    null
+  ],
+  "Collection notes recorded: {literal}7; informational acquisition notes: 77; remaining limitation notes: 77.": [
+    "return",
+    null
+  ],
+  "Collection notes recorded: 7; informational acquisition notes: 7; remaining limitation notes: 7.\n": [
+    "return",
+    null
+  ],
+  "Collection notes recorded: 7; informational acquisition notes: 7; remaining limitation notes: 7. extra": [
+    "return",
+    null
+  ],
+  "Collection notes recorded:7; informational acquisition notes: 7; remaining limitation notes: 7.": [
+    "return",
+    null
+  ],
+  "Collection notes recorded: 7; informational acquisition notes: 7; remaining limitation notes: 7.\r\n": [
+    "return",
+    null
+  ],
+  "Collection notes recorded: {literal}; informational acquisition notes: 7; remaining limitation notes: 7.": [
+    "return",
+    null
+  ],
+  "Exact-source locators: 40 present.\n": [
+    "return",
+    null
+  ],
+  "Exact-source locators: 40 present. extra": [
+    "return",
+    null
+  ],
+  "Exact-source locators:40 present.": [
+    "return",
+    null
+  ],
+  "Exact-source locators: 40 present.\r\n": [
+    "return",
+    null
+  ],
+  "Exact-source locators: 42 present.\n": [
+    "return",
+    null
+  ],
+  "Exact-source locators: 42 present. extra": [
+    "return",
+    null
+  ],
+  "Exact-source locators:42 present.": [
+    "return",
+    null
+  ],
+  "Exact-source locators: 42 present.\r\n": [
+    "return",
+    null
+  ],
+  "Exact-source locators: 7 present.\n": [
+    "return",
+    null
+  ],
+  "Exact-source locators: 7 present. extra": [
+    "return",
+    null
+  ],
+  "Exact-source locators:7 present.": [
+    "return",
+    null
+  ],
+  "Exact-source locators: 7 present.\r\n": [
+    "return",
+    null
+  ],
+  "Exact-source locators: {literal} present.": [
+    "return",
+    null
+  ],
+  "Exact-source locators: 77 present.\n": [
+    "return",
+    null
+  ],
+  "Exact-source locators: 77 present. extra": [
+    "return",
+    null
+  ],
+  "Exact-source locators:77 present.": [
+    "return",
+    null
+  ],
+  "Exact-source locators: 77 present.\r\n": [
+    "return",
+    null
+  ],
+  "Exact-source locators: {literal}7 present.": [
+    "return",
+    null
+  ],
+  "GitHub deployment evidence: observed=\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence: observed=\n"
+  ],
+  "GitHub deployment evidence: observed= extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence: observed= extra"
+  ],
+  "GitHub deployment evidence:observed=": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence:observed="
+  ],
+  "GitHub deployment evidence: observed=\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence: observed=\r\n"
+  ],
+  "GitHub deployment evidence: observed=(?P<observed>\\d+), success=(?P<success>\\d+), non-success=(?P<non_success>\\d+)\\.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence: observed=(?P<observed>\\d+), success=(?P<success>\\d+), non-success=(?P<non_success>\\d+)\\.\n"
+  ],
+  "GitHub deployment evidence: observed=(?P<observed>\\d+), success=(?P<success>\\d+), non-success=(?P<non_success>\\d+)\\. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence: observed=(?P<observed>\\d+), success=(?P<success>\\d+), non-success=(?P<non_success>\\d+)\\. extra"
+  ],
+  "GitHub deployment evidence:observed=(?P<observed>\\d+), success=(?P<success>\\d+), non-success=(?P<non_success>\\d+)\\.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence:observed=(?P<observed>\\d+), success=(?P<success>\\d+), non-success=(?P<non_success>\\d+)\\."
+  ],
+  "GitHub deployment evidence: observed=(?P<observed>\\d+), success=(?P<success>\\d+), non-success=(?P<non_success>\\d+)\\.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence: observed=(?P<observed>\\d+), success=(?P<success>\\d+), non-success=(?P<non_success>\\d+)\\.\r\n"
+  ],
+  "GitHub deployment evidence: observed=23, success=19, non-success=4.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence: observed=23, success=19, non-success=4.\n"
+  ],
+  "GitHub deployment evidence: observed=23, success=19, non-success=4. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence: observed=23, success=19, non-success=4. extra"
+  ],
+  "GitHub deployment evidence:observed=23, success=19, non-success=4.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence:observed=23, success=19, non-success=4."
+  ],
+  "GitHub deployment evidence: observed=23, success=19, non-success=4.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence: observed=23, success=19, non-success=4.\r\n"
+  ],
+  "GitHub deployment evidence: observed=7, success=7, non-success=7.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence: observed=7, success=7, non-success=7.\n"
+  ],
+  "GitHub deployment evidence: observed=7, success=7, non-success=7. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence: observed=7, success=7, non-success=7. extra"
+  ],
+  "GitHub deployment evidence:observed=7, success=7, non-success=7.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence:observed=7, success=7, non-success=7."
+  ],
+  "GitHub deployment evidence: observed=7, success=7, non-success=7.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence: observed=7, success=7, non-success=7.\r\n"
+  ],
+  "GitHub deployment evidence: observed={literal}, success=7, non-success=7.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence: observed={literal}, success=7, non-success=7."
+  ],
+  "GitHub deployment evidence: observed=77, success=77, non-success=77.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence: observed=77, success=77, non-success=77.\n"
+  ],
+  "GitHub deployment evidence: observed=77, success=77, non-success=77. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence: observed=77, success=77, non-success=77. extra"
+  ],
+  "GitHub deployment evidence:observed=77, success=77, non-success=77.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence:observed=77, success=77, non-success=77."
+  ],
+  "GitHub deployment evidence: observed=77, success=77, non-success=77.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence: observed=77, success=77, non-success=77.\r\n"
+  ],
+  "GitHub deployment evidence: observed={literal}7, success=77, non-success=77.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: GitHub deployment evidence: observed={literal}7, success=77, non-success=77."
+  ],
+  "OSV lookup \n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup \n"
+  ],
+  "OSV lookup  extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup  extra"
+  ],
+  "OSV lookup \r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup \r\n"
+  ],
+  "OSV lookup did not complete within the bounded dependency-review window.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup did not complete within the bounded dependency-review window.\n"
+  ],
+  "OSV lookup did not complete within the bounded dependency-review window. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup did not complete within the bounded dependency-review window. extra"
+  ],
+  "OSV lookup did not complete within the bounded dependency-review window.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup did not complete within the bounded dependency-review window.\r\n"
+  ],
+  "OSV lookup returned HTTP \n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup returned HTTP \n"
+  ],
+  "OSV lookup returned HTTP  extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup returned HTTP  extra"
+  ],
+  "OSV lookup returned HTTP \r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup returned HTTP \r\n"
+  ],
+  "OSV lookup returned HTTP (?P<status>\\d{3}); dependency vulnerability status is incomplete\\.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup returned HTTP (?P<status>\\d{3}); dependency vulnerability status is incomplete\\.\n"
+  ],
+  "OSV lookup returned HTTP (?P<status>\\d{3}); dependency vulnerability status is incomplete\\. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup returned HTTP (?P<status>\\d{3}); dependency vulnerability status is incomplete\\. extra"
+  ],
+  "OSV lookup returned HTTP (?P<status>\\d{3}); dependency vulnerability status is incomplete\\.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup returned HTTP (?P<status>\\d{3}); dependency vulnerability status is incomplete\\.\r\n"
+  ],
+  "OSV lookup returned HTTP 429; dependency vulnerability status is incomplete.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup returned HTTP 429; dependency vulnerability status is incomplete.\n"
+  ],
+  "OSV lookup returned HTTP 429; dependency vulnerability status is incomplete. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup returned HTTP 429; dependency vulnerability status is incomplete. extra"
+  ],
+  "OSV lookup returned HTTP 429; dependency vulnerability status is incomplete.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup returned HTTP 429; dependency vulnerability status is incomplete.\r\n"
+  ],
+  "OSV lookup returned HTTP 777; dependency vulnerability status is incomplete.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup returned HTTP 777; dependency vulnerability status is incomplete.\n"
+  ],
+  "OSV lookup returned HTTP 777; dependency vulnerability status is incomplete. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup returned HTTP 777; dependency vulnerability status is incomplete. extra"
+  ],
+  "OSV lookup returned HTTP 777; dependency vulnerability status is incomplete.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup returned HTTP 777; dependency vulnerability status is incomplete.\r\n"
+  ],
+  "OSV lookup returned HTTP {literal}77; dependency vulnerability status is incomplete.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup returned HTTP {literal}77; dependency vulnerability status is incomplete."
+  ],
+  "OSV lookup returned a non-JSON response.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup returned a non-JSON response.\n"
+  ],
+  "OSV lookup returned a non-JSON response. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup returned a non-JSON response. extra"
+  ],
+  "OSV lookup returned a non-JSON response.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup returned a non-JSON response.\r\n"
+  ],
+  "OSV lookup skipped because no exact dependency versions were available from the inspected manifests.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup skipped because no exact dependency versions were available from the inspected manifests.\n"
+  ],
+  "OSV lookup skipped because no exact dependency versions were available from the inspected manifests. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup skipped because no exact dependency versions were available from the inspected manifests. extra"
+  ],
+  "OSV lookup skipped because no exact dependency versions were available from the inspected manifests.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup skipped because no exact dependency versions were available from the inspected manifests.\r\n"
+  ],
+  "OSV lookup skipped because no exact normalized dependency versions were available from the inspected manifests.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup skipped because no exact normalized dependency versions were available from the inspected manifests.\n"
+  ],
+  "OSV lookup skipped because no exact normalized dependency versions were available from the inspected manifests. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup skipped because no exact normalized dependency versions were available from the inspected manifests. extra"
+  ],
+  "OSV lookup skipped because no exact normalized dependency versions were available from the inspected manifests.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup skipped because no exact normalized dependency versions were available from the inspected manifests.\r\n"
+  ],
+  "OSV lookup unavailable: \n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup unavailable: \n"
+  ],
+  "OSV lookup unavailable:  extra": [
+    "return",
+    "La consulta a OSV no estaba disponible; detalle técnico original:  extra"
+  ],
+  "OSV lookup unavailable:": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup unavailable:"
+  ],
+  "OSV lookup unavailable: \r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup unavailable: \r\n"
+  ],
+  "OSV lookup unavailable: (?P<detail>[^\\r\\n]+)\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup unavailable: (?P<detail>[^\\r\\n]+)\n"
+  ],
+  "OSV lookup unavailable: (?P<detail>[^\\r\\n]+) extra": [
+    "return",
+    "La consulta a OSV no estaba disponible; detalle técnico original: (?P<detail>[^\\r\\n]+) extra"
+  ],
+  "OSV lookup unavailable:(?P<detail>[^\\r\\n]+)": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup unavailable:(?P<detail>[^\\r\\n]+)"
+  ],
+  "OSV lookup unavailable: (?P<detail>[^\\r\\n]+)\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup unavailable: (?P<detail>[^\\r\\n]+)\r\n"
+  ],
+  "OSV lookup unavailable: HTTPSConnectionPool read timed out\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup unavailable: HTTPSConnectionPool read timed out\n"
+  ],
+  "OSV lookup unavailable: HTTPSConnectionPool read timed out extra": [
+    "return",
+    "La consulta a OSV no estaba disponible; detalle técnico original: HTTPSConnectionPool read timed out extra"
+  ],
+  "OSV lookup unavailable:HTTPSConnectionPool read timed out": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup unavailable:HTTPSConnectionPool read timed out"
+  ],
+  "OSV lookup unavailable: HTTPSConnectionPool read timed out\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup unavailable: HTTPSConnectionPool read timed out\r\n"
+  ],
+  "OSV lookup unavailable: x\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup unavailable: x\n"
+  ],
+  "OSV lookup unavailable: x extra": [
+    "return",
+    "La consulta a OSV no estaba disponible; detalle técnico original: x extra"
+  ],
+  "OSV lookup unavailable:x": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup unavailable:x"
+  ],
+  "OSV lookup unavailable: x\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup unavailable: x\r\n"
+  ],
+  "OSV lookup unavailable: xx\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup unavailable: xx\n"
+  ],
+  "OSV lookup unavailable: xx extra": [
+    "return",
+    "La consulta a OSV no estaba disponible; detalle técnico original: xx extra"
+  ],
+  "OSV lookup unavailable:xx": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup unavailable:xx"
+  ],
+  "OSV lookup unavailable: xx\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: OSV lookup unavailable: xx\r\n"
+  ],
+  "Observed job success rate:\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate:\n"
+  ],
+  "Observed job success rate: extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: extra"
+  ],
+  "Observed job success rate:\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate:\r\n"
+  ],
+  "Observed job success rate: \n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: \n"
+  ],
+  "Observed job success rate:  extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate:  extra"
+  ],
+  "Observed job success rate: \r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: \r\n"
+  ],
+  "Observed job success rate: -1%.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: -1%.\n"
+  ],
+  "Observed job success rate: -1%. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: -1%. extra"
+  ],
+  "Observed job success rate:-1%.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate:-1%."
+  ],
+  "Observed job success rate: -1%.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: -1%.\r\n"
+  ],
+  "Observed job success rate: 0.925\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 0.925\n"
+  ],
+  "Observed job success rate: 0.925 extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 0.925 extra"
+  ],
+  "Observed job success rate:0.925": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate:0.925"
+  ],
+  "Observed job success rate: 0.925\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 0.925\r\n"
+  ],
+  "Observed job success rate: 1.0.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 1.0.\n"
+  ],
+  "Observed job success rate: 1.0. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 1.0. extra"
+  ],
+  "Observed job success rate:1.0.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate:1.0."
+  ],
+  "Observed job success rate: 1.0.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 1.0.\r\n"
+  ],
+  "Observed job success rate: 100%.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 100%.\n"
+  ],
+  "Observed job success rate: 100%. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 100%. extra"
+  ],
+  "Observed job success rate:100%.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate:100%."
+  ],
+  "Observed job success rate: 100%.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 100%.\r\n"
+  ],
+  "Observed job success rate: 100%. Additional context\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 100%. Additional context\n"
+  ],
+  "Observed job success rate: 100%. Additional context extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 100%. Additional context extra"
+  ],
+  "Observed job success rate:100%. Additional context": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate:100%. Additional context"
+  ],
+  "Observed job success rate: 100%. Additional context\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 100%. Additional context\r\n"
+  ],
+  "Observed job success rate: 100.0%\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 100.0%\n"
+  ],
+  "Observed job success rate: 100.0% extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 100.0% extra"
+  ],
+  "Observed job success rate:100.0%": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate:100.0%"
+  ],
+  "Observed job success rate: 100.0%\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 100.0%\r\n"
+  ],
+  "Observed job success rate: 101%.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 101%.\n"
+  ],
+  "Observed job success rate: 101%. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 101%. extra"
+  ],
+  "Observed job success rate:101%.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate:101%."
+  ],
+  "Observed job success rate: 101%.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 101%.\r\n"
+  ],
+  "Observed job success rate: 92.5%.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 92.5%.\n"
+  ],
+  "Observed job success rate: 92.5%. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 92.5%. extra"
+  ],
+  "Observed job success rate:92.5%.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate:92.5%."
+  ],
+  "Observed job success rate: 92.5%.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: 92.5%.\r\n"
+  ],
+  "Observed job success rate: claimed successful%.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: claimed successful%.\n"
+  ],
+  "Observed job success rate: claimed successful%. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: claimed successful%. extra"
+  ],
+  "Observed job success rate:claimed successful%.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate:claimed successful%."
+  ],
+  "Observed job success rate: claimed successful%.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Observed job success rate: claimed successful%.\r\n"
+  ],
+  "Raw high-complexity region count retained for audit:\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit:\n"
+  ],
+  "Raw high-complexity region count retained for audit: extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit: extra"
+  ],
+  "Raw high-complexity region count retained for audit:\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit:\r\n"
+  ],
+  "Raw high-complexity region count retained for audit: \n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit: \n"
+  ],
+  "Raw high-complexity region count retained for audit:  extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit:  extra"
+  ],
+  "Raw high-complexity region count retained for audit: \r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit: \r\n"
+  ],
+  "Raw high-complexity region count retained for audit: (?P<count>\\d+)\\.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit: (?P<count>\\d+)\\.\n"
+  ],
+  "Raw high-complexity region count retained for audit: (?P<count>\\d+)\\. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit: (?P<count>\\d+)\\. extra"
+  ],
+  "Raw high-complexity region count retained for audit:(?P<count>\\d+)\\.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit:(?P<count>\\d+)\\."
+  ],
+  "Raw high-complexity region count retained for audit: (?P<count>\\d+)\\.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit: (?P<count>\\d+)\\.\r\n"
+  ],
+  "Raw high-complexity region count retained for audit: 7.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit: 7.\n"
+  ],
+  "Raw high-complexity region count retained for audit: 7. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit: 7. extra"
+  ],
+  "Raw high-complexity region count retained for audit:7.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit:7."
+  ],
+  "Raw high-complexity region count retained for audit: 7.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit: 7.\r\n"
+  ],
+  "Raw high-complexity region count retained for audit: {literal}.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit: {literal}."
+  ],
+  "Raw high-complexity region count retained for audit: 77.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit: 77.\n"
+  ],
+  "Raw high-complexity region count retained for audit: 77. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit: 77. extra"
+  ],
+  "Raw high-complexity region count retained for audit:77.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit:77."
+  ],
+  "Raw high-complexity region count retained for audit: 77.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit: 77.\r\n"
+  ],
+  "Raw high-complexity region count retained for audit: {literal}7.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Raw high-complexity region count retained for audit: {literal}7."
+  ],
+  "Technical maturity remains based on exact-commit technical controls.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls.\n"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. extra"
+  ],
+  "Technical maturity remains based on exact-commit technical controls.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls.\r\n"
+  ],
+  "Technical maturity remains based on exact-commit technical controls.\nEvidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 639 review-required candidates and 0 confirmed material\nfindings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls.\nEvidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 639 review-required candid"
+  ],
+  "Technical maturity remains based on exact-commit technical controls.\nEvidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 639 review-required candidates and 0 confirmed material\nfindings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls.\nEvidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 639 review-required candid"
+  ],
+  "Technical maturity remains based on exact-commit technical controls.\nEvidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 639 review-required candidates and 0 confirmed material\nfindings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls.\nEvidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 639 review-required candid"
+  ],
+  "Technical maturity remains based on exact-commit technical controls.\nThis changed contract has no approved Spanish translation and still says readiness scores.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls.\nThis changed contract has no approved Spanish translation and still says readiness scores.\n"
+  ],
+  "Technical maturity remains based on exact-commit technical controls.\nThis changed contract has no approved Spanish translation and still says readiness scores. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls.\nThis changed contract has no approved Spanish translation and still says readiness scores. extra"
+  ],
+  "Technical maturity remains based on exact-commit technical controls.\nThis changed contract has no approved Spanish translation and still says readiness scores.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls.\nThis changed contract has no approved Spanish translation and still says readiness scores.\r\n"
+  ],
+  "Technical maturity remains based on exact-commit technical controls.\nThis changed contract has no approved Spanish translation.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls.\nThis changed contract has no approved Spanish translation.\n"
+  ],
+  "Technical maturity remains based on exact-commit technical controls.\nThis changed contract has no approved Spanish translation. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls.\nThis changed contract has no approved Spanish translation. extra"
+  ],
+  "Technical maturity remains based on exact-commit technical controls.\nThis changed contract has no approved Spanish translation.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls.\nThis changed contract has no approved Spanish translation.\r\n"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is \n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is \n"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is  extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is  extra"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is \r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is \r\n"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 7/100 versus technical maturity 7/100. NICO retains 7 review-required candidates and 7 confirmed material findings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 7/100 versus technical maturity 7/100. NICO retains 7 review-required candidates"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 7/100 versus technical maturity 7/100. NICO retains 7 review-required candidates and 7 confirmed material findings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 7/100 versus technical maturity 7/100. NICO retains 7 review-required candidates"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 7/100 versus technical maturity 7/100. NICO retains 7 review-required candidates and 7 confirmed material findings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 7/100 versus technical maturity 7/100. NICO retains 7 review-required candidates"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is {literal}/100 versus technical maturity 7/100. NICO retains 7 review-required candidates and 7 confirmed material findings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is {literal}/100 versus technical maturity 7/100. NICO retains 7 review-required ca"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 91/100 versus technical maturity 94/100. NICO retains 27 review-required candidates and 2 confirmed material findings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 91/100 versus technical maturity 94/100. NICO retains 27 review-required candida"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 91/100 versus technical maturity 94/100. NICO retains 27 review-required candidates and 2 confirmed material findings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 91/100 versus technical maturity 94/100. NICO retains 27 review-required candida"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 91/100 versus technical maturity 94/100. NICO retains 27 review-required candidates and 2 confirmed material findings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 91/100 versus technical maturity 94/100. NICO retains 27 review-required candida"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 91/100 versus technical maturity 94/100. NICO retains 2{literal} review-required candidates and 2 confirmed material findings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 91/100 versus technical maturity 94/100. NICO retains 2{literal} review-required"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 639 review-required candidates and 0 confirmed material findings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 639 review-required candid"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 639 review-required candidates and 0 confirmed material findings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 639 review-required candid"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 639 review-required candidates and 0 confirmed material findings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric security or readiness scores.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 639 review-required candid"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 691 review-required candidates and 0 confirmed material findings as explicit review context. Candidate volume and reviewer workload are operational review metrics and have no numeric technical-maturity or Evidence-Adjusted score effect.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 691 review-required candid"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 691 review-required candidates and 0 confirmed material findings as explicit review context. Candidate volume and reviewer workload are operational review metrics and have no numeric technical-maturity or Evidence-Adjusted score effect. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 691 review-required candid"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 691 review-required candidates and 0 confirmed material findings as explicit review context. Candidate volume and reviewer workload are operational review metrics and have no numeric technical-maturity or Evidence-Adjusted score effect.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 691 review-required candid"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 691 review-required candidates and 0 confirmed material findings as explicit review context. Candidate volume and reviewer workload are operational review metrics and have no numeric technical-maturity or Evidence-Adjusted score effect. Explicit permissions control: passed. Provider-neutral immutable CI objective coverage: 100%. 1 of 1 applicable analyzers completed; 0 are incomplete. Candidate triage is separate: 2 review-required candidates and 0 confirmed material findings are retained. Review-required scanner candidates: 3.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 691 review-required candid"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 691 review-required candidates and 0 confirmed material findings as explicit review context. Candidate volume and reviewer workload are operational review metrics and have no numeric technical-maturity or Evidence-Adjusted score effect. Explicit permissions control: passed. Provider-neutral immutable CI objective coverage: 100%. 1 of 1 applicable analyzers completed; 0 are incomplete. Candidate triage is separate: 2 review-required candidates and 0 confirmed material findings are retained. Review-required scanner candidates: 3. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 691 review-required candid"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 691 review-required candidates and 0 confirmed material findings as explicit review context. Candidate volume and reviewer workload are operational review metrics and have no numeric technical-maturity or Evidence-Adjusted score effect. Explicit permissions control:passed. Provider-neutral immutable CI objective coverage: 100%. 1 of 1 applicable analyzers completed; 0 are incomplete. Candidate triage is separate: 2 review-required candidates and 0 confirmed material findings are retained. Review-required scanner candidates: 3.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 691 review-required candid"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 691 review-required candidates and 0 confirmed material findings as explicit review context. Candidate volume and reviewer workload are operational review metrics and have no numeric technical-maturity or Evidence-Adjusted score effect. Explicit permissions control: passed. Provider-neutral immutable CI objective coverage: 100%. 1 of 1 applicable analyzers completed; 0 are incomplete. Candidate triage is separate: 2 review-required candidates and 0 confirmed material findings are retained. Review-required scanner candidates: 3.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted readiness is 93/100 versus technical maturity 93/100. NICO retains 691 review-required candid"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted technical score is \n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted technical score is \n"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted technical score is  extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted technical score is  extra"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted technical score is \r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted technical score is \r\n"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted technical score is 77.77/100 versus technical maturity 77.77/100. NICO retains 77 review-required candidates and 77 confirmed material findings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric technical scores.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted technical score is 77.77/100 versus technical maturity 77.77/100. NICO retains 77 review-requ"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted technical score is 77.77/100 versus technical maturity 77.77/100. NICO retains 77 review-required candidates and 77 confirmed material findings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric technical scores. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted technical score is 77.77/100 versus technical maturity 77.77/100. NICO retains 77 review-requ"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted technical score is 77.77/100 versus technical maturity 77.77/100. NICO retains 77 review-required candidates and 77 confirmed material findings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric technical scores.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted technical score is 77.77/100 versus technical maturity 77.77/100. NICO retains 77 review-requ"
+  ],
+  "Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted technical score is {literal}7.77/100 versus technical maturity 77.77/100. NICO retains 77 review-required candidates and 77 confirmed material findings as explicit review context. Candidate volume, clustering and reviewer workload do not change numeric technical scores.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Technical maturity remains based on exact-commit technical controls. Evidence-Adjusted technical score is {literal}7.77/100 versus technical maturity 77.77/100. NICO retains 77 rev"
+  ],
+  "Unique classified hotspots:\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots:\n"
+  ],
+  "Unique classified hotspots: extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots: extra"
+  ],
+  "Unique classified hotspots:\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots:\r\n"
+  ],
+  "Unique classified hotspots: \n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots: \n"
+  ],
+  "Unique classified hotspots:  extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots:  extra"
+  ],
+  "Unique classified hotspots: \r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots: \r\n"
+  ],
+  "Unique classified hotspots: (?P<count>\\d+)\\.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots: (?P<count>\\d+)\\.\n"
+  ],
+  "Unique classified hotspots: (?P<count>\\d+)\\. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots: (?P<count>\\d+)\\. extra"
+  ],
+  "Unique classified hotspots:(?P<count>\\d+)\\.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots:(?P<count>\\d+)\\."
+  ],
+  "Unique classified hotspots: (?P<count>\\d+)\\.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots: (?P<count>\\d+)\\.\r\n"
+  ],
+  "Unique classified hotspots: 7.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots: 7.\n"
+  ],
+  "Unique classified hotspots: 7. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots: 7. extra"
+  ],
+  "Unique classified hotspots:7.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots:7."
+  ],
+  "Unique classified hotspots: 7.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots: 7.\r\n"
+  ],
+  "Unique classified hotspots: {literal}.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots: {literal}."
+  ],
+  "Unique classified hotspots: 77.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots: 77.\n"
+  ],
+  "Unique classified hotspots: 77. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots: 77. extra"
+  ],
+  "Unique classified hotspots:77.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots:77."
+  ],
+  "Unique classified hotspots: 77.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots: 77.\r\n"
+  ],
+  "Unique classified hotspots: {literal}7.": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Unique classified hotspots: {literal}7."
+  ],
+  "Workflow jobs for run \n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run \n"
+  ],
+  "Workflow jobs for run  extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run  extra"
+  ],
+  "Workflow jobs for run \r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run \r\n"
+  ],
+  "Workflow jobs for run (?P<run_id>[^\\r\\n]+) were returned without a jobs list\\.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run (?P<run_id>[^\\r\\n]+) were returned without a jobs list\\.\n"
+  ],
+  "Workflow jobs for run (?P<run_id>[^\\r\\n]+) were returned without a jobs list\\. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run (?P<run_id>[^\\r\\n]+) were returned without a jobs list\\. extra"
+  ],
+  "Workflow jobs for run (?P<run_id>[^\\r\\n]+) were returned without a jobs list\\.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run (?P<run_id>[^\\r\\n]+) were returned without a jobs list\\.\r\n"
+  ],
+  "Workflow jobs for run 123 were unavailable through the GitHub API.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run 123 were unavailable through the GitHub API.\n"
+  ],
+  "Workflow jobs for run 123 were unavailable through the GitHub API. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run 123 were unavailable through the GitHub API. extra"
+  ],
+  "Workflow jobs for run 123 were unavailable through the GitHub API.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run 123 were unavailable through the GitHub API.\r\n"
+  ],
+  "Workflow jobs for run 42\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run 42\n"
+  ],
+  "Workflow jobs for run 42 extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run 42 extra"
+  ],
+  "Workflow jobs for run 42\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run 42\r\n"
+  ],
+  "Workflow jobs for run 42 were returned without a jobs list.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run 42 were returned without a jobs list.\n"
+  ],
+  "Workflow jobs for run 42 were returned without a jobs list. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run 42 were returned without a jobs list. extra"
+  ],
+  "Workflow jobs for run 42 were returned without a jobs list.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run 42 were returned without a jobs list.\r\n"
+  ],
+  "Workflow jobs for run x were returned without a jobs list.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run x were returned without a jobs list.\n"
+  ],
+  "Workflow jobs for run x were returned without a jobs list. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run x were returned without a jobs list. extra"
+  ],
+  "Workflow jobs for run x were returned without a jobs list.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run x were returned without a jobs list.\r\n"
+  ],
+  "Workflow jobs for run xx were returned without a jobs list.\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run xx were returned without a jobs list.\n"
+  ],
+  "Workflow jobs for run xx were returned without a jobs list. extra": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run xx were returned without a jobs list. extra"
+  ],
+  "Workflow jobs for run xx were returned without a jobs list.\r\n": [
+    "ValueError",
+    "unrecognized Spanish presentation contract: Workflow jobs for run xx were returned without a jobs list.\r\n"
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[77]: ..:77:77: -- — Dynamic code execution should be reviewed.\n": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[77]: ..:77:77: -- — Dynamic code execution should be reviewed. extra": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[77]:..:77:77: -- — Dynamic code execution should be reviewed.": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[77]: ..:77:77: -- — Dynamic code execution should be reviewed.\r\n": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[{literal}7]: ..:77:77: -- — Dynamic code execution should be reviewed.": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[77]: __:77:77: __ — Dynamic code execution should be reviewed.\n": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[77]: __:77:77: __ — Dynamic code execution should be reviewed. extra": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[77]:__:77:77: __ — Dynamic code execution should be reviewed.": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[77]: __:77:77: __ — Dynamic code execution should be reviewed.\r\n": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[{literal}7]: __:77:77: __ — Dynamic code execution should be reviewed.": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[77]: aa:77:77: aa — Dynamic code execution should be reviewed.\n": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[77]: aa:77:77: aa — Dynamic code execution should be reviewed. extra": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[77]:aa:77:77: aa — Dynamic code execution should be reviewed.": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[77]: aa:77:77: aa — Dynamic code execution should be reviewed.\r\n": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[{literal}7]: aa:77:77: aa — Dynamic code execution should be reviewed.": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[7]: 0:7: 0 — Dynamic code execution should be reviewed.\n": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[7]: 0:7: 0 — Dynamic code execution should be reviewed. extra": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[7]:0:7: 0 — Dynamic code execution should be reviewed.": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[7]: 0:7: 0 — Dynamic code execution should be reviewed.\r\n": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[{literal}]: 0:7: 0 — Dynamic code execution should be reviewed.": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[7]: @:7: . — Dynamic code execution should be reviewed.\n": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[7]: @:7: . — Dynamic code execution should be reviewed. extra": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[7]:@:7: . — Dynamic code execution should be reviewed.": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[7]: @:7: . — Dynamic code execution should be reviewed.\r\n": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[{literal}]: @:7: . — Dynamic code execution should be reviewed.": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[7]: A:7: A — Dynamic code execution should be reviewed.\n": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[7]: A:7: A — Dynamic code execution should be reviewed. extra": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[7]:A:7: A — Dynamic code execution should be reviewed.": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[7]: A:7: A — Dynamic code execution should be reviewed.\r\n": [
+    "return",
+    null
+  ],
+  "repository_evidence.code_signal_evidence.risk_pattern_samples[{literal}]: A:7: A — Dynamic code execution should be reviewed.": [
+    "return",
+    null
+  ],
+  "unknown presentation string": [
+    "return",
+    null
+  ],
+  "": [
+    "return",
+    null
+  ],
+  "OSV lookup unavailable: Workflow jobs for run {literal} were returned without a jobs list.": [
+    "return",
+    "La consulta a OSV no estaba disponible; detalle técnico original: Workflow jobs for run {literal} were returned without a jobs list."
+  ]
+}

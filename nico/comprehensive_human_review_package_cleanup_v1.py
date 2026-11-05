@@ -125,6 +125,24 @@ def sanitize_client_identity(canonical: Mapping[str, Any]) -> dict[str, Any]:
         if isinstance(result.get("identity"), Mapping)
         else {}
     )
+    from nico.retained_section_measurements_v1 import REPORT_SCOPE_KEY, REPORT_SCOPE_VERSION, SCOPE_KEYS
+    assessment = result.get('assessment')
+    sections = assessment.get('sections') if isinstance(assessment, Mapping) else None
+    has_measurements = isinstance(sections, list) and any(
+        isinstance(section, Mapping) and isinstance(section.get('retained_measurements'), Mapping)
+        for section in sections)
+    if has_measurements and REPORT_SCOPE_KEY not in result and all(isinstance(identity.get(k), str) and identity[k] for k in SCOPE_KEYS):
+        # Preserve the execution identity before its display-only normalization.
+        # An existing malformed/conflicting context is never silently refreshed.
+        result[REPORT_SCOPE_KEY] = {'artifact_schema': REPORT_SCOPE_VERSION,
+                                    'identity': {k: identity[k] for k in SCOPE_KEYS}}
+    from nico.candidate_investigation_report_scope_v1 import KEY as CANDIDATE_SCOPE_KEY, VERSION as CANDIDATE_SCOPE_VERSION
+    register = assessment.get('canonical_scanner_finding_register') if isinstance(assessment, Mapping) else None
+    from nico.retained_section_measurements_v1 import report_measurement_identity
+    candidate_identity = report_measurement_identity(result) or identity
+    if isinstance(register, Mapping) and CANDIDATE_SCOPE_KEY not in result and all(isinstance(identity.get(k), str) and identity[k] for k in SCOPE_KEYS):
+        result[CANDIDATE_SCOPE_KEY] = {'artifact_schema': CANDIDATE_SCOPE_VERSION,
+                                     'identity': {k: candidate_identity[k] for k in SCOPE_KEYS}}
     # Scope IDs and human-entered display names are independent canonical fields.
     # A missing or placeholder scope ID must remain explicitly not supplied; never
     # reconstruct it from client/project display metadata.
@@ -251,6 +269,7 @@ def build_scanner_execution_stage(
     incomplete = [item for item in records if item.get("completed") is not True]
     totals = _candidate_totals(canonical)
     evidence: list[str] = [
+        "Status record retention does not establish raw execution evidence.",
         f"Raw candidate count: {totals['raw']}.",
         f"Confirmed material finding count: {totals['confirmed_material']}.",
         f"Review-required candidate count: {totals['review_required']}.",
@@ -269,7 +288,7 @@ def build_scanner_execution_stage(
         evidence.append(
             f"{name}: {state}; "
             f"exact commit={'yes' if item.get('exact_commit_match') else 'no'}; "
-            f"artifact={'retained' if item.get('artifact_hash') else 'missing'}; "
+            f"status record={'retained' if item.get('artifact_hash') else 'missing'}; "
             f"confirmed material finding count={_scanner_material_count(item)}; "
             f"raw finding payload embedded={'yes' if item.get('findings') else 'no'}."
         )
@@ -476,7 +495,7 @@ def _outline_title(text: str) -> str:
 
 
 def _filename_markup(value: Any) -> str:
-    raw = _text(value, 900)
+    raw = " ".join(str(value or "").replace("\x7f", "-").split()).strip()
     if not raw:
         return "Not available"
     chunks: list[str] = []
@@ -498,7 +517,7 @@ def _filename_markup(value: Any) -> str:
 
 
 def _digest_markup(value: Any) -> str:
-    raw = _text(value, 900)
+    raw = " ".join(str(value or "").replace("\x7f", "-").split()).strip()
     if re.fullmatch(r"[0-9a-fA-F]{64}", raw):
         return html.escape(raw[:32]) + "<br/>" + html.escape(raw[32:])
     return _filename_markup(
@@ -510,7 +529,7 @@ def render_manifest_approval_supplement(
     canonical: Mapping[str, Any],
     entries: list[dict[str, Any]],
 ) -> bytes:
-    """Render the existing two-page approval supplement with legible identifiers."""
+    """Render the flowing approval supplement with legible identifiers."""
 
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter
@@ -555,16 +574,16 @@ def render_manifest_approval_supplement(
         "CleanupManifestBody",
         parent=styles["BodyText"],
         fontName="Helvetica",
-        fontSize=7.8,
-        leading=10.1,
+        fontSize=9,
+        leading=12,
         textColor=colors.HexColor("#334155"),
         spaceAfter=4,
     )
     small = ParagraphStyle(
         "CleanupManifestSmall",
         parent=body,
-        fontSize=6.2,
-        leading=7.7,
+        fontSize=9,
+        leading=12,
         textColor=colors.HexColor("#475569"),
         spaceAfter=1,
     )
@@ -572,8 +591,8 @@ def render_manifest_approval_supplement(
         "CleanupManifestDigest",
         parent=small,
         fontName="Courier",
-        fontSize=5.4,
-        leading=6.6,
+        fontSize=9,
+        leading=12,
     )
     warning = ParagraphStyle(
         "CleanupManifestWarning",
@@ -588,7 +607,7 @@ def render_manifest_approval_supplement(
     )
 
     def p(value: Any, style: ParagraphStyle = body, *, markup: bool = False) -> Paragraph:
-        rendered = str(value or "") if markup else html.escape(_text(value, 1800))
+        rendered = str(value or "") if markup else html.escape(" ".join(str(value or "").replace("\x7f", "-").split()).strip())
         return Paragraph(rendered, style)
 
     def footer(canvas: Any, doc: Any) -> None:
@@ -608,6 +627,7 @@ def render_manifest_approval_supplement(
     ]
     identity_table = Table(
         [[p(left, small), p(right, small)] for left, right in identity_rows],
+        splitInRow=1,
         colWidths=[1.35 * inch, 6.05 * inch],
     )
     identity_table.setStyle(
@@ -635,6 +655,7 @@ def render_manifest_approval_supplement(
         )
     artifact_table = Table(
         artifact_rows,
+        splitInRow=1,
         colWidths=[1.25 * inch, 2.9 * inch, 3.25 * inch],
         repeatRows=1,
     )
@@ -668,6 +689,7 @@ def render_manifest_approval_supplement(
     ]
     approval_table = Table(
         [[p(left, small), p(right, small)] for left, right in approval_rows],
+        splitInRow=1,
         colWidths=[1.65 * inch, 5.75 * inch],
     )
     approval_table.setStyle(

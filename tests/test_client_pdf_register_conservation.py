@@ -127,7 +127,8 @@ def test_heading_mentioned_within_finding_sentence_is_not_a_boundary(heading, re
 
 
 @pytest.mark.parametrize("heading,resume,appendix", LOCALES)
-def test_ambiguous_long_tail_cannot_bypass_page_boundary(heading, resume, appendix):
-    with pytest.raises(ValueError, match="60-page boundary"):
-        _compose(["Cover"], [heading],
-                 *[[f"Unclassified primary section {i}", f"Required content {i}"] for i in range(60)])
+def test_ambiguous_long_tail_preserves_all_evidence_without_page_ceiling(heading, resume, appendix):
+    text, count = _compose(["Cover"], [heading],
+                           *[[f"Unclassified primary section {i}", f"Required content {i}"] for i in range(80)])
+    assert count > 75
+    assert all(f"Required content {i}" in text for i in range(80))

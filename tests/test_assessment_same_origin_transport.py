@@ -158,7 +158,11 @@ def test_review_pdf_download_tracks_the_original_mobile_user_action() -> None:
     assert 'link.download = `nico-comprehensive-${runId}-${reportLanguage}-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf`' in source
     assert 'FINAL-PENDING-APPROVAL.pdf' not in source
     assert 'link.click();' in source
-    assert 'fetch(exactRunPdfHref(runId, reportLanguage), {' in source
+    retrieval = source.split('async function retrieveExactRunPdf(', 1)[1].split('const declaredSha', 1)[0]
+    assert 'const href = prepared ? `${preparationHref(runId, reportLanguage)}/pdf?${preparationQuery(prepared, binding)}`' in retrieval
+    assert ': exactRunPdfHref(runId, reportLanguage);' in retrieval
+    assert 'fetch(href, {' in retrieval
+    assert 'method: "GET", cache: "no-store", credentials: "same-origin"' in retrieval
     assert 'credentials: "same-origin"' in source
     assert 'new Uint8Array(await response.arrayBuffer())' in source
     assert 'crypto.subtle.digest("SHA-256", bytes)' in source

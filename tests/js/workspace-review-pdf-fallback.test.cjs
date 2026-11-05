@@ -75,6 +75,9 @@ function setup({source=commit, canonicalTruth=truth, overrides={}, language='en'
     copied:false,artifactStatus:'',workspaceStyles:{reportActionBar:'fixture'},
     copyMarkdown(){},downloadApprovedPdf(){},
     reportLanguageLabel:value=>value,
+    canonicalReportLanguage:value=>value === "es-MX" ? "es-MX" : "en",
+    persistReportLocale(value){context.requestedReportLanguage=value === "en-US" ? "en" : value;renderControls?.();},
+    chooseEnglishReport(){context.persistReportLocale("en-US");},
     copy:{runIdMissing:'Run identity missing',pdfMissing:'Bound PDF unavailable',copy:'Copy',
       downloadReviewPdf:'Download review PDF',downloadApprovedPdf:'Download approved PDF',newApprovalRequired:'New approval required'},
     setArtifactAction(value){actions.push(value);context.artifactAction=value;renderControls?.();},
@@ -156,7 +159,7 @@ test('actual Workspace fallback retrieves one verified bound draft with a body d
 });
 
 for(const language of ['en','es-MX'])test('actual rendered Workspace '+language+' fallback preserves exact verified bytes',async()=>{
-  const s=setup({language});await s.handler();
+  const s=setup({language});s.context.result.report_language=language;s.renderControls();await s.handler();
   assert.equal(s.calls.length,1);assert.equal(s.downloads.length,1);
   const blob=s.blobs.get(s.downloads[0].url);
   assert.deepEqual(Buffer.from(await blob.arrayBuffer()),pdf);
@@ -215,4 +218,20 @@ test('actual Workspace interrupted body does not hand off and explicit retry use
   await s.handler();assert.equal(s.downloads.length,0);assert.equal(s.errors.length,1);
   await s.handler();assert.equal(s.downloads.length,1);assert.equal(s.calls.length,2);
   assert.ok(s.calls.every(call=>call.init.method==='GET'));
+});
+
+test('Spanish selected over English source uses the same verified pending download',async()=>{
+  const s=setup({language:'es-MX'});
+  assert.equal(s.button.disabled,false);
+  await s.handler();
+  assert.equal(s.calls.length,1);
+  assert.equal(s.downloads.length,1);
+  assert.match(s.downloads[0].filename,/-es-MX-AUTOMATED-DRAFT-PENDING-APPROVAL.pdf$/);
+});
+test('frozen Spanish source remains selectable',()=>{
+  const s=setup({language:'es-MX'});
+  s.context.result.report_language='es-MX';
+  s.renderControls();
+  assert.equal(s.button.disabled,false);
+  assert.equal(s.container.attrs['data-assessment-spanish-generation-unavailable'],undefined);
 });

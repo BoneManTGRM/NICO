@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_work_package_identity_v1 import is_work_package
+
 import re
 from collections.abc import Mapping
 from nico.report_json_copy import deepcopy
@@ -53,7 +55,8 @@ _COMPLETED_STATES = {
     "succeeded",
 }
 _SOURCE_RE = re.compile(
-    r"([A-Za-z0-9_.\-/]+\.(?:py|pyi|ts|tsx|js|jsx|mjs|cjs|java|kt|swift|go|rs|rb|php|cs|c|cc|cpp|h|hpp|sh|yml|yaml|toml|json))",
+    r"(?<![A-Za-z0-9_.\-/\[\]])"
+    r"([A-Za-z0-9_.\-/\[\]]+\.(?:py|pyi|ts|tsx|js|jsx|mjs|cjs|java|kt|swift|go|rs|rb|php|cs|c|cc|cpp|h|hpp|sh|yml|yaml|toml|json))",
     re.IGNORECASE,
 )
 
@@ -302,7 +305,15 @@ def _sync_scanner_projection(
 
 def _source_path(value: Any) -> str:
     match = _SOURCE_RE.search(_text(value).replace("\\", "/"))
-    return match.group(1).casefold() if match else ""
+    if not match:
+        return ""
+    path = match.group(1)
+    # A reference wrapper closes after the extension (or line number), outside
+    # this match. Strip its unmatched opening brackets, not balanced route
+    # segments such as [id], [...path], or [[...path]].
+    leading = len(path) - len(path.lstrip("["))
+    wrappers = max(0, path.count("[") - path.count("]"))
+    return path[min(leading, wrappers):].casefold()
 
 
 def _symbol(item: Mapping[str, Any]) -> str:
@@ -430,6 +441,8 @@ def canonicalize_final_findings(
 def _sync_finding_reference(
     value: Any, by_alias: Mapping[str, Mapping[str, Any]]
 ) -> Any:
+    if is_work_package(value):
+        return deepcopy(dict(value))
     if isinstance(value, list):
         return [_sync_finding_reference(item, by_alias) for item in value]
     if not isinstance(value, Mapping):

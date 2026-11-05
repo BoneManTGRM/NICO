@@ -103,11 +103,19 @@ def test_review_ui_requires_download_of_the_current_digest_before_approval() -> 
     assert "!approvalCompleted && (!confirmed || !exactEditionDownloaded)" in approval
     assert "canonicalApprovalReady" not in approval
     assert 'reuseApproval ? resumed : await submitDecision("approved")' in approval
-    assert "stableIdentity(operatorEdition.source_review_artifact_identity)" in approval
+    validation = source.split("function validateApprovalResponse", 1)[1].split(
+        "function assertDeliveryResponseBinding", 1
+    )[0]
+    assert "stableIdentity(operatorEdition.source_review_artifact_identity) !== stableIdentity(reviewArtifactIdentity)" in validation
+    assert approval.index("validateApprovalResponse(") < approval.index("setResult(reviewed)")
     assert approval.index("await downloadExactPdf(reviewed, false)") < approval.index(
         "requestJson(deliveryAuthorizationUrl()"
     )
-    assert approval.index("authorized.client_delivery_allowed !== true") < approval.index(
+    delivery_validation = source.split("function assertDeliveryResponseBinding", 1)[1].split(
+        "export default function ComprehensiveFinalReviewWorkspace", 1
+    )[0]
+    assert "authorized.client_delivery_allowed !== true" in delivery_validation
+    assert approval.index("assertDeliveryResponseBinding(") < approval.index(
         "setResult(authorized)"
     )
     assert approval.index("setResult(authorized)") < approval.index(

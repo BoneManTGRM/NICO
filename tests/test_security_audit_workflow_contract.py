@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
+
+from packaging.requirements import Requirement
+from packaging.specifiers import SpecifierSet
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,7 +57,7 @@ def test_frontend_dependency_override_removes_vulnerable_image_optimizer_path() 
     assert "unoptimized: true" in config
 
 
-def test_pypdf_security_floor_excludes_cve_2026_71852_affected_pin() -> None:
+def test_pypdf_security_floor_excludes_october_2026_advisories() -> None:
     requirements = {
         line.strip()
         for line in REQUIREMENTS.read_text(encoding="utf-8").splitlines()
@@ -66,10 +70,41 @@ def test_pypdf_security_floor_excludes_cve_2026_71852_affected_pin() -> None:
         for requirement in requirements
         if requirement.startswith("pypdf==")
     )
-    assert _semver_core(pinned_pypdf) >= (6, 15, 0)
+    assert _semver_core(pinned_pypdf) >= (6, 21, 4)
     assert "pypdf==6.14.2" not in requirements
-    assert '"pypdf>=6.15.0,<7"' in pyproject
+    assert '"pypdf>=6.21.4,<7"' in pyproject
     assert '"pypdf>=6.14.2,<7"' not in pyproject
+
+
+def test_pillow_security_floor_and_python_support_are_consistent() -> None:
+    project = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]
+    python_versions = SpecifierSet(project["requires-python"])
+    assert "3.10" not in python_versions
+    assert "3.11" in python_versions
+    pillow = next(Requirement(value) for value in project["dependencies"]
+                  if Requirement(value).name.lower() == "pillow")
+    assert pillow.marker is None  # No installation path may bypass the floor.
+    assert "12.3.0" not in pillow.specifier
+    assert "13.0.0" in pillow.specifier
+    assert str(pillow.specifier) == "<14,>=13.0.0"
+    assert "pillow==13.0.0" in REQUIREMENTS.read_text().splitlines()
+    assert "Python 3.11 or newer" in (ROOT / "docs/LOCAL_DEVELOPMENT.md").read_text()
+
+
+def test_ci_runs_pdf_regressions_under_verified_pillow_version() -> None:
+    workflow = (ROOT / ".github/workflows/nico-ci.yml").read_text()
+    shards = workflow.split("  test_shards:", 1)[1].split("  test:\n", 1)[0]
+    assert "pip install -r requirements.txt" in shards
+    assert "assert version('Pillow') == '13.0.0'" in shards
+    assert shards.index("assert version('Pillow')") < shards.index("- name: Run isolated test files")
+    assert 'Path("tests").rglob("test_*.py")' in shards
+    assert "set(assigned) != set(files)" in shards
+    for filename in ("test_scorecard_cell_layout.py", "test_client_pdf_compose_v2.py",
+                     "test_pdf_cap_failure_diagnostics.py",
+                     "test_pillow_reportlab_image_compatibility.py"):
+        assert (ROOT / "tests" / filename).is_file()
+    assert "poppler-utils" in shards
+    assert "pip-audit -r requirements.txt" in WORKFLOW.read_text()
 
 
 def test_provider_dispatch_inputs_are_passed_through_environment() -> None:
@@ -92,3 +127,23 @@ def test_hardening_dispatch_inputs_are_passed_through_environment() -> None:
     assert '--expected-sha "${EXPECTED_SHA}"' in source
     assert "--expected-sha '${{ inputs.expected_sha }}'" not in source
     assert "test '${{ steps.acceptance.outcome }}'" not in source
+
+
+def test_active_workflow_pypdf_requirements_exclude_vulnerable_versions():
+    import re
+    for path in (ROOT / ".github/workflows").glob("*.yml"):
+        for spec in re.findall(r'pypdf((?:==|>=)[^"\s\\]+)', path.read_text()):
+            accepted = SpecifierSet(spec)
+            assert "6.21.4" in accepted, (path, spec)
+            for vulnerable in ("5.9.0", "6.15.0", "6.19.0", "6.21.1", "6.21.2", "6.21.3"):
+                assert vulnerable not in accepted, (path, spec, vulnerable)
+
+
+def test_next_security_patch_is_locked_for_app_and_next_runtime():
+    package = json.loads(PACKAGE.read_text())
+    lock = json.loads((PACKAGE.parent / "package-lock.json").read_text())
+    assert _semver_core(package["dependencies"]["next"]) >= (16, 4, 3)
+    assert lock["packages"][""]["dependencies"]["next"] == package["dependencies"]["next"]
+    for name, entry in lock["packages"].items():
+        if name == "node_modules/next" or name.startswith("node_modules/@next/"):
+            assert entry["version"] == package["dependencies"]["next"], name

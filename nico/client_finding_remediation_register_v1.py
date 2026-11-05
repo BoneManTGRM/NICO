@@ -22,7 +22,7 @@ _RISK_LINE = re.compile(
     re.IGNORECASE,
 )
 _HOTSPOT_LINE = re.compile(
-    r"(?:Actionable\s+hotspot\s+)?(?P<path>[A-Za-z0-9_@./+\-]+\.(?:py|js|jsx|ts|tsx))"
+    r"(?:Actionable\s+hotspot\s+)?(?P<path>[A-Za-z0-9_@./+\-\[\]]+\.(?:py|js|jsx|ts|tsx))"
     r":(?P<line>\d+)\s*[·-]\s*(?P<symbol>[^·]+?)\s*[·-]\s*complexity\s+(?P<complexity>\d+)",
     re.IGNORECASE,
 )
@@ -39,8 +39,8 @@ _RISK_LINE_START = re.compile(
     re.IGNORECASE,
 )
 _HOTSPOT_LINE_START = re.compile(
-    r"Actionable\s+hotspot\s+|(?<![A-Za-z0-9_@./+\-])"
-    r"[A-Za-z0-9_@./+\-]+\.(?:py|js|jsx|ts|tsx):",
+    r"Actionable\s+hotspot\s+|(?<![A-Za-z0-9_@./+\-\[\]])"
+    r"[A-Za-z0-9_@./+\-\[\]]+\.(?:py|js|jsx|ts|tsx):",
     re.IGNORECASE,
 )
 _SECRET_PATTERNS = (

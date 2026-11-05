@@ -118,3 +118,30 @@ def stub_live_full_run_repository_evidence(monkeypatch):
 
     monkeypatch.setattr("nico.full_assessment_repository_evidence.collect_repository_evidence", collect)
     monkeypatch.setattr("nico.full_assessment_complexity_repository.collect_repository_complexity_evidence", collect_complexity)
+
+
+@pytest.fixture
+def preserve_legacy_report_quality_bindings(monkeypatch):
+    """Legacy installer tests must restore the exact bindings they inherited."""
+    from nico import v2_automated_draft_quality_compat_v1 as legacy
+    from nico import v2_localized_report_quality_repairs as localized
+    from nico import v2_report_quality_repairs as quality
+
+    # Register the existing values with pytest before the installer assigns them.
+    # Do not install a different validator during setup or teardown.
+    bindings = (
+        (legacy, ("_contains_legacy_bare_draft", "_PDF_REPLACEMENTS", "_TEXT_REPLACEMENTS")),
+        (quality, ("_FINAL_PDF_REPLACEMENTS", "_FINAL_TEXT_REPLACEMENTS",
+                   "_final_status_overlay", "_normalize_final_text", "_validate_final_pdf")),
+        (localized, ("_replace_pdf_text", "_normalize_final_text", "_validate_final_pdf")),
+    )
+    for module, names in bindings:
+        for name in names:
+            monkeypatch.setattr(module, name, getattr(module, name))
+    # The installer also writes marker/previous-binding attributes on its callable.
+    attributes = dict(vars(legacy._validate_review_pdf))
+    try:
+        yield
+    finally:
+        vars(legacy._validate_review_pdf).clear()
+        vars(legacy._validate_review_pdf).update(attributes)

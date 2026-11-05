@@ -27,18 +27,22 @@ function response(language='en', overrides={}) {
     'x-nico-delivery-status':'blocked_pending_human_approval',
     'x-nico-client-delivery-allowed':'false', 'x-nico-pdf-sha256':digest,
     'x-nico-artifact-sha256':digest, 'x-nico-canonical-truth-sha256':truth,
+    'x-nico-review-pdf-artifact-mode':'pending-source-frozen',
+    'x-nico-frozen-source-artifact':'true',
+    'x-nico-localized-artifact-requires-new-approval':'false',
+    'x-nico-localized-artifact-approval-invalidated':'false',
     ...overrides,
   }});
 }
-function setup(fetchImpl, language='en', digestImpl) {
-  const calls=[], anchors=[], timers=[], effects=[], listeners=new Map(), statuses=[];
+function setup(fetchImpl, language='en', digestImpl, options={}) {
+  const calls=[], anchors=[], timers=[], effects=[], listeners=new Map(), statuses=[], controls=[];
   let cleanUp, operationState;
   class Element {
     constructor(tag='span') {this.tagName=tag;this.attrs={};this.style={};this.isConnected=true;this.textContent='';}
     getAttribute(key) {return this.attrs[key]??null;}
     setAttribute(key,value) {this.attrs[key]=String(value);}
     removeAttribute(key) {delete this.attrs[key];}
-    appendChild(node) {statuses.push(node);}
+    appendChild(node) {(node.tagName==='button'?controls:statuses).push(node);}
     querySelector() {return statuses.filter(node=>node.isConnected).at(-1)||null;}
     closest(selector) {return selector==='button'?button:actions;}
     remove() {this.isConnected=false;}
@@ -47,6 +51,7 @@ function setup(fetchImpl, language='en', digestImpl) {
   class HTMLButtonElement extends Element {constructor(){super('button');this.disabled=false;}}
   const actions=new Element('div');
   actions.attrs={'data-run-id':runId,'data-commit-sha':commit,'data-canonical-truth-sha256':truth,'data-assessment-report-ready':'true'};
+  if(options.reapproval)actions.attrs['data-assessment-locale-reapproval-required']='true';
   const button=new HTMLButtonElement();
   button.attrs={'data-assessment-pdf-kind':'localized-draft-pending-approval','data-report-language':language};
   button.textContent=language==='es-MX'?'Descargar PDF para revisión':'Download review PDF';
@@ -57,17 +62,24 @@ function setup(fetchImpl, language='en', digestImpl) {
   }
   const document={
     documentElement:{lang:language==='es-MX'?'es':'en'},
-    body:{appendChild(){}},createElement:tag=>new Element(tag),querySelectorAll:()=>[],
+    body:{appendChild(){}},createElement:tag=>new Element(tag),querySelectorAll:()=>options.recover||options.diagnostic?[button]:[],
     addEventListener:(type,fn)=>listeners.set(type,fn),
     removeEventListener:(type,fn)=>{if(listeners.get(type)===fn)listeners.delete(type);},
   };
-  const window={location:new URL(language==='es-MX'?'https://unit.invalid/es/assessment':'https://unit.invalid/assessment'),
+  const storage=options.storage||new Map();
+  const window={sessionStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},location:new URL(language==='es-MX'?'https://unit.invalid/es/assessment':'https://unit.invalid/assessment'),
     setTimeout(fn,ms){const id=timers.length+1;timers.push({id,fn,ms,cleared:false});return id;},
     clearTimeout(id){const timer=timers.find(t=>t.id===id);if(timer)timer.cleared=true;}};
   const module={exports:{}};
   vm.runInNewContext(compiled,{module,exports:module.exports,document,window,
-    URL:FixtureURL,Blob,Headers,Response,AbortSignal,AbortController,DOMException,Error,
-    Uint8Array,crypto:digestImpl?{subtle:{digest:digestImpl}}:webcrypto,Element,HTMLButtonElement,
+    URL:FixtureURL,URLSearchParams,Blob,Headers,Response,AbortController,DOMException,Error,
+    Date: options.clock ? class extends Date {static now(){return options.clock.now;}} : Date,
+    AbortSignal: options.clock ? {any:AbortSignal.any.bind(AbortSignal), timeout(ms){
+      options.clock.timeouts.push(ms);return new AbortController().signal;}} : AbortSignal,
+    process:{env:{NEXT_PUBLIC_NICO_REVIEW_PDF_PREPARATION:options.async?"true":"false",
+      NEXT_PUBLIC_NICO_REVIEW_PDF_CANARY_RUN_ID:options.canaryRun===undefined?runId:options.canaryRun,
+      NEXT_PUBLIC_NICO_REVIEW_PDF_CANARY_LANGUAGE:options.canaryLanguage===undefined?language:options.canaryLanguage}},
+    Uint8Array,TextDecoder,crypto:digestImpl?{subtle:{digest:digestImpl}}:webcrypto,Element,HTMLButtonElement,
     fetch:async(url,init)=>{calls.push({url,init});return fetchImpl(url,init);},
     require(name){
       if(name==='react')return{useEffect:fn=>effects.push(fn),useRef:value=>{operationState=value;return{current:value};}};
@@ -87,7 +99,7 @@ function setup(fetchImpl, language='en', digestImpl) {
     while(operationState.size && Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,5));
     assert.equal(operationState.size,0,'Download operation did not settle within the regression deadline');
   };
-  return{api:module.exports,calls,anchors,timers,button,actions,statuses,blobs,click,cleanUp,settled};
+  return{api:module.exports,calls,anchors,timers,button,actions,statuses,blobs,click,cleanUp,settled,storage,controls};
 }
 test('slow retained PDF stays tracked and repeat clicks cannot launch another request',async()=>{
   let release;
@@ -109,6 +121,8 @@ test('slow retained PDF stays tracked and repeat clicks cannot launch another re
   assert.deepEqual(Buffer.from(await s.blobs.get(s.anchors[0].href).arrayBuffer()),pdf);
   assert.match(s.statuses.at(-1).textContent,/verified and sent/);
   assert.equal(s.button.disabled,false);
+  assert.equal(s.calls[0].url,`/api/nico/assessment/comprehensive-run/${runId}/localized-report/en/pdf`);
+  assert.equal(s.calls[0].init.method,'GET');
   assert.equal(s.calls[0].init.credentials,'same-origin');
   assert.equal(s.calls[0].init.cache,'no-store');
 });
@@ -253,7 +267,7 @@ test('the response deadline aborts the request and leaves explicit retry availab
   assert.equal(s.calls[0].init.signal.aborted,true);
   assert.equal(s.anchors.length,0);
   assert.equal(s.button.disabled,false);
-  assert.match(s.statuses.at(-1).textContent,/timed out\. Retry this download/);
+  assert.match(s.statuses.at(-1).textContent,/timed out\. Preparation may still be running/);
 });
 
 
@@ -390,4 +404,518 @@ test('old stale completion cannot remove progress owned by a new control and tru
   assert.ok(s.actions.querySelector()?.isConnected);assert.match(s.actions.querySelector().textContent,/Downloading and verifying/);
   releases[1](response('en',{'x-nico-canonical-truth-sha256':'c'.repeat(64)}));await current;await s.settled();
   assert.equal(s.anchors.length,1);assert.match(s.actions.querySelector().textContent,/verified and sent/);
+});
+
+
+const preparationJob='reviewpdfprep_'+'e'.repeat(64);
+function preparation(state, language='en', changes={}) {
+  return new Response(JSON.stringify({job_id:preparationJob,state,run_id:runId,report_language:language,
+    commit_sha:commit,canonical_truth_sha256:truth,human_review_required:true,client_delivery_allowed:false,artifact_mode:'pending-source-frozen',...changes}),
+    {headers:{'content-type':'application/json'}});
+}
+async function poll(s) {
+  await flush();
+  const timer=s.timers.filter(t=>t.ms===2500&&!t.cleared).at(-1);
+  assert.ok(timer,'pending preparation poll');timer.cleared=true;timer.fn();await flush();
+}
+for(const language of ['en','es-MX'])test(`${language} async preparation is explicit, deduplicated and downloads only verified ready bytes`,async()=>{
+  let step=0;
+  const s=setup(async(url,init)=>{
+    if(url.includes('/pdf?'))return response(language);
+    return preparation(['queued','preparing','ready'][step++],language);
+  },language,undefined,{async:true});
+  assert.equal(s.calls.length,0);
+  s.click();await flush();
+  assert.equal(s.calls[0].init.method,'POST');
+  assert.equal(JSON.parse(s.calls[0].init.body).prepare,true);
+  s.button.disabled=false;s.click();await flush();assert.equal(s.calls.length,1);
+  assert.match(s.statuses[0].textContent,language==='en'?/queued/:/cola/);
+  assert.equal(s.timers.some(t=>t.ms===255000),false,'download clock starts after preparation');
+  await poll(s);assert.match(s.statuses[0].textContent,language==='en'?/Preparing/:/Preparando/);
+  await poll(s);await s.settled();
+  assert.equal(s.calls.filter(c=>c.init.method==='POST').length,1);
+  const download=s.calls.find(c=>c.url.includes('/pdf?'));
+  const target=new URL(download.url,'https://synthetic.invalid');
+  assert.ok(download.url.startsWith('/api/nico/assessment/'));
+  assert.equal(target.pathname,`/api/nico/assessment/comprehensive-run/${runId}/review-pdf/${language}/pdf`);
+  assert.deepEqual(Object.fromEntries(target.searchParams),{
+    job_id:preparationJob,commit_sha:commit,canonical_truth_sha256:truth,
+  });
+  assert.equal(download.init.method,'GET');
+  assert.equal(download.init.credentials,'same-origin');
+  assert.equal(download.init.cache,'no-store');
+  assert.equal(s.anchors.length,1);
+  assert.ok(s.timers.some(t=>t.ms===255000));
+  assert.equal(s.storage.size,0);
+});
+test('reload resumes saved preparation with GET and never starts another render',async()=>{
+  const storage=new Map();
+  const first=setup(async()=>preparation('preparing'),'en',undefined,{async:true,storage});
+  first.click();await flush();assert.equal(storage.size,1);
+  first.cleanUp();await flush();
+  const restored=setup(async(url)=>url.includes('/pdf?')?response():preparation('ready'),
+    'en',undefined,{async:true,storage,recover:true});
+  await restored.settled();
+  assert.ok(restored.calls.length>=2);
+  assert.equal(restored.calls.every(c=>c.init.method==='GET'),true);
+  assert.equal(restored.anchors.length,1);
+});
+for(const language of ['en','es-MX'])test(`${language} failed preparation has no PDF or approval`,async()=>{
+  const s=setup(async()=>preparation('failed',language),language,undefined,{async:true});
+  s.click();await s.settled();
+  assert.equal(s.anchors.length,0);assert.equal(s.calls.length,1);
+  assert.match(s.statuses[0].textContent,language==='en'?/failed or was cancelled/:/falló o se canceló/);
+});
+for(const change of ['locale','source','checksum','approval'])test(`async ${change} mismatch fails closed`,async()=>{
+  const s=setup(async(url)=>{
+    if(url.includes('/pdf?'))return change==='checksum'?response('en',{'x-nico-pdf-sha256':'0'.repeat(64)}):response();
+    return preparation('ready','en',change==='locale'?{report_language:'es-MX'}:
+      change==='source'?{canonical_truth_sha256:'0'.repeat(64)}:
+      change==='approval'?{client_delivery_allowed:true}:{});
+  },'en',undefined,{async:true});
+  s.click();await s.settled();assert.equal(s.anchors.length,0);
+});
+test('navigation cancels observation while retaining resumable server preparation',async()=>{
+  const s=setup(async()=>preparation('preparing'),'en',undefined,{async:true});
+  s.click();await flush();assert.equal(s.storage.size,1);s.cleanUp();await flush();
+  assert.equal(s.calls.length,1);assert.equal(s.anchors.length,0);assert.equal(s.storage.size,1);
+});
+test('late preparation response cannot download into a changed assessment',async()=>{
+  let finish;
+  const s=setup(()=>new Promise(resolve=>{finish=resolve;}),'en',undefined,{async:true});
+  s.click();s.actions.attrs['data-commit-sha']='c'.repeat(40);finish(preparation('ready'));
+  await s.settled();assert.equal(s.anchors.length,0);assert.equal(s.calls.length,1);
+});
+
+
+test('preparation sleep stops at the absolute deadline without another request',async()=>{
+  const clock={now:1000,timeouts:[]};
+  const s=setup(async()=>{clock.now=900000;return preparation('preparing');},'en',undefined,{async:true,clock});
+  s.click();await flush();
+  const timer=s.timers.find(t=>t.ms===1000&&!t.cleared);assert.ok(timer);
+  clock.now=901000;timer.fn();await s.settled();
+  assert.equal(s.calls.length,1);assert.equal(s.anchors.length,0);
+  assert.match(s.statuses.at(-1).textContent,/still pending/);assert.equal(s.storage.size,1);
+});
+test('final bounded poll consumes ready even when its response reaches the deadline',async()=>{
+  const clock={now:1000,timeouts:[]};let reads=0;
+  const s=setup(async(url)=>{
+    if(url.includes('/pdf?'))return response();
+    if(++reads===1){clock.now=897000;return preparation('verifying');}
+    clock.now=901000;return preparation('ready');
+  },'en',undefined,{async:true,clock});
+  s.click();await flush();clock.now=899500;await poll(s);await s.settled();
+  assert.deepEqual(clock.timeouts,[30000,1500]);assert.equal(s.anchors.length,1);
+});
+test('different retained preparation identities never share low-level download work',async()=>{
+  const releases=[];const s=setup(()=>new Promise(resolve=>releases.push(resolve)));
+  const first=s.api.startExactRunDownload(runId,'en',{commitSha:commit,canonicalTruthSha256:truth,preparationJobId:preparationJob,artifactMode:'pending-source-frozen'});
+  const next=s.api.startExactRunDownload(runId,'en',{commitSha:commit,canonicalTruthSha256:truth,preparationJobId:'reviewpdfprep_'+'f'.repeat(64),artifactMode:'pending-source-frozen'});
+  assert.equal(s.calls.length,2);releases[0](response());releases[1](response());await first;await next;
+});
+
+test('unqualified alternate-language source cannot enqueue or fall back to synchronous rendering',async()=>{
+  const s=setup(async()=>new Response('',{status:409}),'es-MX',undefined,{async:true});
+  s.actions.attrs['data-assessment-locale-reapproval-required']='true';
+  s.click();await s.settled();
+  assert.equal(s.calls.length,1);assert.equal(s.calls[0].init.method,'GET');
+  assert.match(s.calls[0].url,/review-pdf\/es-MX\?.*qualify=true/);
+  assert.equal(s.anchors.length,0);assert.equal(s.storage.size,0);
+});
+test('lost admission response resumes by bound GET lookup without creating another job',async()=>{
+  const storage=new Map();
+  const first=setup(async()=>{throw new DOMException('synthetic timeout','TimeoutError');},'en',undefined,{async:true,storage});
+  first.click();await first.settled();
+  assert.match([...storage.values()][0],/^requested:v1:\d+$/);
+  first.cleanUp();
+  const recovered=setup(async(url)=>url.includes('/pdf?')?response():preparation('ready'),
+    'en',undefined,{async:true,storage,recover:true});
+  await recovered.settled();
+  assert.equal(recovered.calls[0].init.method,'GET');
+  assert.equal(new URL(recovered.calls[0].url,'https://unit.invalid').searchParams.has('job_id'),false);
+  assert.equal(recovered.calls.every(call=>call.init.method==='GET'),true);
+  assert.equal(recovered.anchors.length,1);
+});
+
+for(const status of [409,422,503])test(`preparation HTTP ${status} preserves only recoverable request markers`,async()=>{
+  const storage=new Map();
+  const first=setup(async()=>{throw new DOMException('synthetic timeout','TimeoutError');},'en',undefined,{async:true,storage});
+  first.click();await first.settled();first.cleanUp();
+  assert.match([...storage.values()][0],/^requested:v1:\d+$/);
+  const restored=setup(async()=>new Response('{}',{status}), 'en',undefined,{async:true,storage,recover:true});
+  await restored.settled();
+  assert.equal(restored.calls.length,1);assert.equal(restored.calls[0].init.method,'GET');
+  assert.equal(restored.anchors.length,0);
+  assert.equal(storage.size,status===503?1:0);
+  if(status!==503){
+    restored.click();await restored.settled();
+    assert.equal(restored.calls[1].init.method,'POST','definitive stale identity allows explicit retry');
+  }
+});
+
+test('uncertain admission 503 then lookup 404 retains GET recovery until late commit is visible',async()=>{
+  const storage=new Map();
+  const first=setup(async()=>new Response('{}',{status:503}),'en',undefined,{async:true,storage});
+  first.click();await first.settled();first.cleanUp();
+  assert.match([...storage.values()][0],/^requested:v1:\d+$/);
+  let reads=0;
+  const restored=setup(async(url)=>url.includes('/pdf?')?response():
+    ++reads===1?new Response('{}',{status:404}):preparation('ready'),
+    'en',undefined,{async:true,storage,recover:true});
+  await flush();
+  assert.match([...storage.values()][0],/^requested:v1:\d+$/,'not-found before COMMIT is not authoritative absence');
+  await poll(restored);await restored.settled();
+  assert.equal(restored.calls.every(call=>call.init.method==='GET'),true);
+  assert.equal(restored.anchors.length,1);assert.equal(storage.size,0);
+});
+
+test('uncertain admission recovery retains original deadline across reload and permits one explicit GET',async()=>{
+  const storage=new Map(), clock={now:1000,timeouts:[]};
+  const first=setup(async()=>new Response('{}',{status:503}),'en',undefined,{async:true,storage,clock});
+  first.click();await first.settled();first.cleanUp();
+  assert.equal([...storage.values()][0],'requested:v1:901000');
+  clock.now=900000;
+  const restored=setup(async()=>new Response('{}',{status:404}),'en',undefined,{async:true,storage,clock,recover:true});
+  await flush();
+  const timer=restored.timers.find(t=>t.ms===1000&&!t.cleared);assert.ok(timer);
+  clock.now=901000;timer.fn();await restored.settled();restored.cleanUp();
+  assert.equal(restored.calls.length,1);assert.equal([...storage.values()][0],'requested:v1:901000');
+  const again=setup(async()=>new Response('{}',{status:404}),'en',undefined,{async:true,storage,clock,recover:true});
+  await again.settled();assert.equal(again.calls.length,0,'reload cannot restart polling deadline');
+  again.click();await again.settled();
+  assert.equal(again.calls.length,1);assert.equal(again.calls[0].init.method,'GET');
+  assert.equal([...storage.values()][0],'requested:v1:901000');
+});
+
+function derivativeResponse(changes={}) {
+  return response('es-MX', {
+    'x-nico-review-pdf-artifact-mode':'pending-source-localized-draft',
+    'x-nico-frozen-source-artifact':'false',
+    'x-nico-localized-artifact-requires-new-approval':'true',
+    'x-nico-localized-artifact-approval-invalidated':'true',
+    'x-nico-artifact-finality':'automated_draft', ...changes,
+  });
+}
+function derivativePreparation(state, changes={}) {
+  return preparation(state,'es-MX',{artifact_mode:'pending-source-localized-draft',...changes});
+}
+test('pending-source derivative qualifies before deduplicated admission and verifies draft bytes',async()=>{
+  const s=setup(async url=>url.includes('qualify=true')?derivativePreparation('eligible'):
+    url.includes('/pdf?')?derivativeResponse():derivativePreparation('ready'),'es-MX',undefined,{async:true});
+  s.actions.attrs['data-assessment-locale-reapproval-required']='true';
+  s.click();s.button.disabled=false;s.click();await s.settled();
+  assert.deepEqual(s.calls.map(c=>c.init.method),['GET','POST','GET']);
+  assert.match(s.calls[0].url,/qualify=true/);assert.equal(s.anchors.length,1);
+  assert.equal(s.calls.some(c=>c.url.includes('/localized-report/')),false);
+});
+for(const change of ['mode','source','locale','job','reapproval','invalidation','finality','frozen','accepted','human','mode_header'])
+test(`pending derivative ${change} mismatch cannot download`,async()=>{
+  const s=setup(async url=>{
+    if(url.includes('qualify=true'))return derivativePreparation('eligible');
+    if(url.includes('/pdf?'))return derivativeResponse(change==='reapproval'?{'x-nico-localized-artifact-requires-new-approval':''}:
+      change==='invalidation'?{'x-nico-localized-artifact-approval-invalidated':'false'}:
+      change==='finality'?{'x-nico-artifact-finality':'approved'}:
+      change==='frozen'?{'x-nico-frozen-source-artifact':'true'}:
+      change==='accepted'?{'x-nico-accepted-edition-language':'en'}:
+      change==='human'?{'x-nico-human-review-completed':'true'}:
+      change==='mode_header'?{'x-nico-review-pdf-artifact-mode':''}:{});
+    return derivativePreparation('ready',change==='mode'?{artifact_mode:'pending-source-frozen'}:
+      change==='source'?{canonical_truth_sha256:'0'.repeat(64)}:
+      change==='locale'?{report_language:'en'}:
+      change==='job'?{job_id:'reviewpdfprep_'+'f'.repeat(64)}:{});
+  },'es-MX',undefined,{async:true});
+  s.actions.attrs['data-assessment-locale-reapproval-required']='true';
+  s.click();await s.settled();assert.equal(s.anchors.length,0);
+});
+test('lost derivative admission response resumes with GET only and retains stricter approval checks',async()=>{
+  const storage=new Map();
+  const first=setup(async(url,init)=>{
+    if(url.includes('qualify=true'))return derivativePreparation('eligible');
+    throw new DOMException('synthetic timeout','TimeoutError');
+  },'es-MX',undefined,{async:true,storage});
+  first.actions.attrs['data-assessment-locale-reapproval-required']='true';
+  first.click();await first.settled();first.cleanUp();
+  assert.equal(first.calls.filter(c=>c.init.method==='POST').length,1);
+  const next=setup(async url=>url.includes('/pdf?')?derivativeResponse():derivativePreparation('ready'),
+    'es-MX',undefined,{async:true,storage});
+  next.actions.attrs['data-assessment-locale-reapproval-required']='true';
+  next.click();await next.settled();
+  assert.equal(next.calls.every(c=>c.init.method==='GET'),true);assert.equal(next.anchors.length,1);
+});
+
+for (const language of ['en','es-MX']) {
+  test(language+' qualified busy PDF gives manual retry guidance without claiming this run', async()=>{
+    let attempts=0;
+    const s=setup(async()=>++attempts===1
+      ? Response.json({detail:{reason:'retained_pdf_preparing'}},{status:503,headers:{'Retry-After':'5'}})
+      : response(language),language);
+    s.click();await s.settled();
+    assert.equal(s.statuses.at(-1).textContent,language==='en'
+      ? 'NICO is still preparing a PDF. Retry this download in at least 5 seconds; do not start another assessment.'
+      : 'NICO todavía está preparando un PDF. Reintenta esta descarga dentro de al menos 5 segundos; no inicies otra evaluación.');
+    assert.equal(s.calls.length,1);assert.equal(s.anchors.length,0);assert.equal(s.button.disabled,false);
+    for(const timer of s.timers.filter(t=>!t.cleared))timer.fn();
+    await flush();assert.equal(s.calls.length,1,'no automatic retry');
+    s.click();await s.settled();
+    assert.equal(s.calls.length,2);assert.equal(s.anchors.length,1);
+  });
+  for (const [label,status,body,delay] of [
+    ['other status',502,'{"detail":{"reason":"retained_pdf_preparing"}}','5'],
+    ['missing reason',503,'{}','5'],
+    ['wrong reason',503,'{"detail":{"reason":"other"}}','5'],
+    ['malformed JSON',503,'{','5'],
+    ['null JSON',503,'null','5'],
+    ...[null,'0','-1','1.5','61','9999999999999999999','05','5 seconds','Thu, 01 Jan 2026 00:00:00 GMT'].map(delay=>
+      ['invalid delay '+delay,503,'{"detail":{"reason":"retained_pdf_preparing"}}',delay]),
+  ]) test(language+' busy download keeps generic error for '+label,async()=>{
+    const headers={'x-request-id':'owned-request'};
+    if(delay!==null)headers['Retry-After']=delay;
+    const s=setup(async()=>new Response(body,{status,headers}),language);
+    s.click();await s.settled();
+    assert.equal(s.statuses.at(-1).textContent,(language==='en'
+      ? 'The PDF could not be downloaded. Retry this download.'
+      : 'No se pudo descargar el PDF. Vuelve a intentarlo.')+' (owned-request)');
+    assert.equal(s.calls.length,1);assert.equal(s.anchors.length,0);
+  });
+}
+
+for (const language of ['en', 'es-MX']) {
+  for (const invalid of [false, true]) test(language+' explicit timeout/busy recovery preserves validation '+invalid, async()=>{
+    let attempts=0;
+    const s=setup(async()=>{
+      attempts++;
+      if(attempts===1) return Response.json({}, {status:504});
+      if(attempts===2) return Response.json({detail:{reason:'retained_pdf_preparing'}}, {status:503,headers:{'Retry-After':'5'}});
+      return response(language, invalid ? {'x-nico-canonical-truth-sha256':'c'.repeat(64)} : {});
+    },language);
+    s.click(); await s.settled();
+    assert.match(s.statuses.at(-1).textContent,language==='en'?/may still be running/:/puede continuar/);
+    assert.match(s.statuses.at(-1).textContent,language==='en'?/does not confirm failure or that the PDF is ready/:/no confirma un fallo ni que el PDF esté listo/);
+    assert.match(s.statuses.at(-1).textContent,language==='en'?/No automatic retry/:/No se reintentará automáticamente/);
+    for(const timer of s.timers.filter(t=>!t.cleared)) timer.fn();
+    await flush(); assert.equal(s.calls.length,1); assert.equal(s.anchors.length,0);
+    s.click(); await s.settled(); assert.equal(s.calls.length,2); assert.equal(s.anchors.length,0);
+    s.click(); await s.settled(); assert.equal(s.calls.length,3);
+    assert.equal(s.anchors.length,invalid?0:1);
+    assert.equal(new Set(s.calls.map(c=>c.url)).size,1);
+    assert.ok(s.calls.every(c=>c.init.method==='GET' && c.init.cache==='no-store'));
+    assert.ok(s.calls[0].url.endsWith('/localized-report/'+language+'/pdf'));
+  });
+}
+
+for (const language of ['en','es-MX']) test(language+' visible cancel fences delivery and retains exact intent',async()=>{
+  const s=setup(async(url,init)=>preparation(url.endsWith('/cancel')?'cancelled':'queued',language),language,undefined,{async:true});
+  s.click();await flush();
+  assert.equal(s.controls.length,1);
+  assert.equal(s.controls[0].textContent,language==='en'?'Cancel preparation':'Cancelar preparación');
+  s.controls[0].onclick();s.controls[0].onclick();
+  await poll(s);await s.settled();
+  const cancels=s.calls.filter(c=>c.url.endsWith('/cancel'));
+  assert.equal(cancels.length,1);
+  assert.deepEqual(JSON.parse(cancels[0].init.body),{job_id:preparationJob,commit_sha:commit,canonical_truth_sha256:truth});
+  assert.equal(cancels[0].init.credentials,'same-origin');
+  assert.equal(s.anchors.length,0);
+  assert.match(s.statuses[0].textContent,language==='en'?/Process exit is not confirmed/:/no está confirmada/);
+  assert.ok([...s.storage.keys()].some(k=>k.startsWith('nico-review-cancel:')));
+  assert.equal(s.controls[0].isConnected,false);
+});
+
+test('cancel races ready without automatic delivery or false cancelled claim',async()=>{
+  const s=setup(async url=>preparation(url.endsWith('/cancel')?'ready':'queued'), 'en',undefined,{async:true});
+  s.click();await flush();s.controls[0].onclick();await poll(s);await s.settled();
+  assert.match(s.statuses[0].textContent,/finished before cancellation/);
+  assert.equal(s.anchors.length,0);
+});
+
+test('interrupted cancel resumes exact job with no second admission',async()=>{
+  const storage=new Map();
+  const first=setup(async url=>{
+    if(url.endsWith('/cancel'))throw new DOMException('interrupted','TimeoutError');
+    return preparation('queued');
+  },'en',undefined,{async:true,storage});
+  first.click();await flush();first.controls[0].onclick();await poll(first);await first.settled();first.cleanUp();
+  const next=setup(async url=>preparation(url.endsWith('/cancel')?'cancelled':'preparing'),'en',undefined,{async:true,storage,recover:true});
+  await next.settled();
+  assert.equal(next.calls.filter(c=>c.init.method==='POST'&&!c.url.endsWith('/cancel')).length,0);
+  assert.equal(next.calls.filter(c=>c.url.endsWith('/cancel')).length,1);
+  assert.equal(next.anchors.length,0);
+});
+
+for(const changes of [{run_id:'comprun_foreign'},{canonical_truth_sha256:'c'.repeat(64)},
+  {client_delivery_allowed:true},{job_id:'reviewpdfprep_'+'f'.repeat(64)}])test('cancel response rejects foreign or unsafe binding '+JSON.stringify(changes),async()=>{
+  const s=setup(async url=>preparation(url.endsWith('/cancel')?'cancelled':'queued','en',url.endsWith('/cancel')?changes:{}),'en',undefined,{async:true});
+  s.click();await flush();s.controls[0].onclick();await poll(s);await s.settled();
+  assert.equal(s.anchors.length,0);
+  assert.doesNotMatch(s.statuses[0].textContent,/Cancellation recorded/);
+});
+
+test('cancel during unknown admission survives lookup misses without duplicate POST',async()=>{
+  const storage=new Map();let resolveAdmission;
+  const first=setup(()=>new Promise(resolve=>{resolveAdmission=resolve;}),'en',undefined,{async:true,storage});
+  first.click();await flush();first.controls[0].onclick();
+  first.cleanUp();resolveAdmission(preparation('queued'));await first.settled();
+  let lookups=0;
+  const next=setup(async url=>{
+    if(url.endsWith('/cancel'))return preparation('cancelled');
+    return ++lookups===1?new Response('{}',{status:404}):preparation('preparing');
+  },'en',undefined,{async:true,storage,recover:true});
+  await flush();await poll(next);await next.settled();
+  assert.equal(next.calls.filter(c=>c.init.method==='POST'&&!c.url.endsWith('/cancel')).length,0);
+  assert.equal(next.calls.filter(c=>c.url.endsWith('/cancel')).length,1);
+  assert.equal(next.anchors.length,0);
+});
+
+test('stale visible cancel control cannot act on replacement source',async()=>{
+  const s=setup(async()=>preparation('queued'),'en',undefined,{async:true});
+  s.click();await flush();s.actions.attrs['data-commit-sha']='f'.repeat(40);
+  s.controls[0].onclick();s.cleanUp();await s.settled();
+  assert.equal(s.calls.filter(c=>c.url.endsWith('/cancel')).length,0);
+  assert.equal([...s.storage.keys()].some(k=>k.startsWith('nico-review-cancel:')),false);
+});
+
+test('resolved ready cancellation permits only a later explicit verified download',async()=>{
+  const storage=new Map();
+  const first=setup(async url=>preparation(url.endsWith('/cancel')?'ready':'queued'),'en',undefined,{async:true,storage});
+  first.click();await flush();first.controls[0].onclick();await poll(first);await first.settled();first.cleanUp();
+  const next=setup(async url=>url.includes('/pdf?')?response():preparation('ready'),'en',undefined,{async:true,storage,recover:true});
+  await flush();assert.equal(next.calls.length,0,'reload must not deliver after cancellation');
+  next.click();await next.settled();
+  assert.equal(next.calls.every(c=>c.init.method==='GET'),true);
+  assert.equal(next.anchors.length,1);
+});
+
+test('confirmed cancelled job stays terminal across reload and explicit clicks',async()=>{
+  const storage=new Map();
+  const first=setup(async url=>preparation(url.endsWith('/cancel')?'cancelled':'queued'),'en',undefined,{async:true,storage});
+  first.click();await flush();first.controls[0].onclick();await poll(first);await first.settled();first.cleanUp();
+  const next=setup(async()=>preparation('cancelled'),'en',undefined,{async:true,storage,recover:true});
+  await flush();assert.equal(next.calls.length,0);
+  next.click();await next.settled();next.click();await next.settled();
+  assert.equal(next.calls.every(c=>c.init.method==='GET'),true);
+  assert.equal(next.anchors.length,0);
+});
+
+test('cancel before admission permits a later explicit preparation, never an automatic one',async()=>{
+  const storage=new Map();let resolveQualification;
+  const first=setup(()=>new Promise(resolve=>{resolveQualification=resolve;}),'es-MX',undefined,{async:true,storage});
+  first.actions.attrs['data-assessment-locale-reapproval-required']='true';
+  first.click();await flush();first.controls[0].onclick();
+  resolveQualification(derivativePreparation('eligible'));await first.settled();
+  assert.equal(first.calls.every(c=>c.init.method==='GET'),true);
+  first.cleanUp();
+  const next=setup(async(url,init)=>url.includes('/pdf?')?derivativeResponse():derivativePreparation(url.includes('qualify=true')?'eligible':'ready'),'es-MX',undefined,{async:true,storage,recover:true});
+  next.actions.attrs['data-assessment-locale-reapproval-required']='true';
+  await flush();assert.equal(next.calls.length,0);
+  next.click();await next.settled();
+  assert.equal(next.calls.filter(c=>c.init.method==='POST').length,1);
+  assert.equal(next.anchors.length,1);
+});
+
+for (const config of [{canaryRun:''},{canaryRun:'comprun_other'},{canaryLanguage:'fr'},{canaryLanguage:'es-MX'}])test('non-canary report preserves existing synchronous download '+JSON.stringify(config),async()=>{
+  const s=setup(async()=>response(),'en',undefined,{async:true,...config});
+  s.click();await s.settled();
+  assert.equal(s.controls.length,0);
+  assert.equal(s.calls.length,1);
+  assert.equal(s.calls[0].init.method,'GET');
+  assert.equal(s.calls[0].url.includes('/review-pdf/'),false);
+  assert.equal(s.anchors.length,1);
+});
+
+for (const language of ['en','es-MX']) for (const reason of [
+  'review_pdf_preparation_unavailable', 'review_pdf_commit_outcome_unknown',
+  'review_pdf_operation_unavailable_or_timed_out', 'private secret /path',
+]) test(`bounded preparation failure ${language} ${reason}`, async()=>{
+  const s=setup(async()=>Response.json({detail:reason},{status:503,headers:{'x-nico-admission-trace':'d'.repeat(32)}}),language,undefined,{async:true});
+  s.click();await s.settled();
+  const text=s.statuses.at(-1).textContent;
+  assert.match(text,language==='en'?/unknown|unavailable|may exist/:/desconocido|disponible|Puede existir/);
+  assert.ok(text.includes('d'.repeat(32)));
+  assert.ok(!text.includes('private secret'));
+  assert.equal(s.calls.length,1);assert.equal(s.anchors.length,0);assert.equal(s.storage.size,1);
+  // The explicit next click checks status, never resubmits admission.
+  s.click();await s.settled();
+  assert.equal(s.calls.filter(c=>c.init.method==='POST').length,1);
+  assert.equal(s.calls[1].init.method,'GET');
+});
+
+for(const body of ['not JSON',JSON.stringify({detail:'x'.repeat(5000)}),JSON.stringify({detail:{reason:'review_pdf_commit_outcome_unknown'}})])
+test('malformed error remains unknown without raw output '+body.length,async()=>{
+  const s=setup(async()=>new Response(body,{status:503,headers:{'content-type':'application/json','x-nico-admission-trace':'unsafe/path'}}),'en',undefined,{async:true});
+  s.click();await s.settled();
+  assert.match(s.statuses.at(-1).textContent,/unrecognized.*unknown/);
+  assert.ok(!s.statuses.at(-1).textContent.includes('unsafe/path'));
+  assert.equal(s.calls.length,1);
+});
+
+function ledger(overrides={}) {return {schema:'nico.pdf-canary-ledger-read.v1',status:'complete',
+  search_scope:'configured-row-tenant-and-identity-run-locale', query_complete:true,read_only_transaction:true,
+  scoped_rows_present:false,exact_source_row_present:false,rows_returned:0,rows:[],
+  job_integrity_verified:false,physical_worker_exit_confirmed:null,activation_authorized:false,...overrides};}
+function diagnosticControl(s){return s.controls.find(c=>c.attrs['data-review-pdf-diagnostic']==='true');}
+for(const language of ['en','es-MX'])test('disabled preparation offers explicit read-only diagnostic '+language,async()=>{
+  let resolve;
+  const s=setup(()=>new Promise(r=>{resolve=r;}),language,undefined,{diagnostic:true});
+  const control=diagnosticControl(s);assert.ok(control);assert.equal(s.calls.length,0);
+  const operation=control.onclick();await flush();control.onclick();
+  assert.equal(s.calls.length,1);assert.equal(s.calls[0].init.method,'GET');
+  assert.equal(s.calls[0].init.redirect,'error');assert.match(s.calls[0].url,/\?canary_ledger=true$/);
+  resolve(Response.json(ledger()));await operation;
+  assert.match(s.statuses.at(-1).textContent,language==='en'?/No rows were observed.*does not prove historical/:/No se observaron filas.*No prueba ausencia histórica/);
+  assert.equal(s.storage.size,0);assert.equal(s.anchors.length,0);assert.equal(control.disabled,false);
+});
+for(const change of [
+  {status:'unavailable',query_complete:false,scoped_rows_present:null,exact_source_row_present:null},
+  {status:'partial',query_complete:false,scoped_rows_present:true,exact_source_row_present:null,rows_returned:32,
+   rows:Array.from({length:32},()=>({source_binding_matches:false,binding_mismatches:['source_revision']}))},
+])test('diagnostic truthful non-complete state '+change.status,async()=>{
+  const s=setup(async()=>Response.json(ledger(change)),'en',undefined,{diagnostic:true});
+  await diagnosticControl(s).onclick();
+  assert.match(s.statuses.at(-1).textContent,change.status==='partial'?/Partial read: 32 visible rows; 32 with a different/:/existence remains unknown/);
+  assert.equal(s.calls.length,1);
+});
+for(const change of [{schema:'wrong'},{activation_authorized:true},{read_only_transaction:false},
+ {rows_returned:1},{rows:[{source_binding_matches:false,binding_mismatches:['private secret']}],rows_returned:1,scoped_rows_present:true},
+ {status:'partial',query_complete:false}])test('reject malformed ledger '+JSON.stringify(change),async()=>{
+  const s=setup(async()=>Response.json(ledger(change)),'en',undefined,{diagnostic:true});
+  await diagnosticControl(s).onclick();assert.match(s.statuses.at(-1).textContent,/No valid diagnostic.*unknown/);
+  assert.ok(!s.statuses.at(-1).textContent.includes('private secret'));assert.equal(s.storage.size,0);
+});
+for(const status of [401,403,503])test('diagnostic HTTP failure remains unknown '+status,async()=>{
+  const s=setup(async()=>new Response('private error',{status}),'en',undefined,{diagnostic:true});
+  await diagnosticControl(s).onclick();assert.match(s.statuses.at(-1).textContent,/unknown.*sign-in/);
+  assert.ok(!s.statuses.at(-1).textContent.includes('private error'));
+});
+test('diagnostic oversize and stale completion cannot expose contents',async()=>{
+  let finish;
+  const s=setup(()=>new Promise(r=>{finish=r;}),'en',undefined,{diagnostic:true});
+  const operation=diagnosticControl(s).onclick();s.actions.attrs['data-commit-sha']='c'.repeat(40);
+  finish(Response.json(ledger()));await operation;
+  assert.ok(!s.statuses.at(-1).textContent.includes('Complete read'));
+  const next=setup(async()=>Response.json({...ledger(),private:'x'.repeat(24576)}),'en',undefined,{diagnostic:true});
+  await diagnosticControl(next).onclick();assert.match(next.statuses.at(-1).textContent,/No valid diagnostic/);
+});
+test('diagnostic interrupted response and reload never start admission',async()=>{
+  const s=setup(async()=>{throw new DOMException('private','TimeoutError');},'en',undefined,{diagnostic:true});
+  await diagnosticControl(s).onclick();s.cleanUp();
+  const next=setup(async()=>Response.json(ledger()),'en',undefined,{diagnostic:true,storage:s.storage});
+  assert.equal(next.calls.length,0);assert.equal(next.storage.size,0);
+  await diagnosticControl(next).onclick();assert.equal(next.calls[0].init.method,'GET');
+});
+
+
+test('Spanish diagnostic supports exact derivative requiring fresh approval with flags off',async()=>{
+  const s=setup(async()=>Response.json(ledger()),'es-MX',undefined,{diagnostic:true,reapproval:true});
+  await diagnosticControl(s).onclick();
+  assert.equal(s.calls.length,1);assert.equal(s.calls[0].init.method,'GET');
+  assert.match(s.statuses.at(-1).textContent,/Lectura completa/);
+  assert.equal(s.storage.size,0);assert.equal(s.anchors.length,0);
+});
+test('unknown admission cancel wording records local intent without claiming server cancellation',async()=>{
+  let finish;
+  const s=setup(()=>new Promise(r=>{finish=r;}),'en',undefined,{async:true});
+  s.click();await flush();s.controls[0].onclick();
+  assert.match(s.statuses.at(-1).textContent,/requested locally.*not confirmed/);
+  assert.equal(s.calls.filter(c=>c.url.endsWith('/cancel')).length,0);
+  finish(Response.json({detail:'review_pdf_commit_outcome_unknown'},{status:503}));await s.settled();
+  assert.equal(s.calls.filter(c=>c.init.method==='POST').length,1);
 });
