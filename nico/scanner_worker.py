@@ -80,7 +80,13 @@ def safe_repo_url(repository: str) -> str:
 
 
 def clean_env(home: Path) -> dict[str, str]:
-    return {"PATH": os.getenv("PATH", ""), "HOME": str(home), "TMPDIR": str(home), "PYTHONUNBUFFERED": "1"}
+    environment = {"PATH": os.getenv("PATH", ""), "HOME": str(home), "TMPDIR": str(home), "PYTHONUNBUFFERED": "1"}
+    # Keep the runtime's network route, as immutable snapshot acquisition does.
+    # Exclude unrelated application credentials, Git and TLS verification overrides.
+    for key in ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"):
+        if value := os.getenv(key):
+            environment[key] = value
+    return environment
 
 
 def repository_size_observation(path: Path, *, source_limit: int | None = None,

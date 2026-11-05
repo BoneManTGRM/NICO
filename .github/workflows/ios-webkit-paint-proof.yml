@@ -147,6 +147,42 @@ jobs:
             tests/test_mobile_visibility_lifecycle_proof_v1.py \
             -k installed_webkit_observes_real_browser_visibility
 
+      - name: Set up existing Node runtime for synthetic reviewer layout
+        if: github.event_name == 'pull_request'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "24"
+
+      - name: Build real frontend for isolated reviewer layout
+        if: github.event_name == 'pull_request'
+        timeout-minutes: 8
+        run: python scripts/reviewer_proof_environment.py
+
+      - name: Verify synthetic reviewer lexical binding in hosted WebKit
+        if: github.event_name == 'pull_request'
+        timeout-minutes: 4
+        run: |
+          python scripts/reviewer_binding_webkit_proof.py \
+            --expected-sha "${{ github.sha }}" \
+            --reviewed-head "${{ github.event.pull_request.head.sha }}" \
+            --output reviewer-binding-webkit-proof
+
+      - name: Validate and stage bounded reviewer evidence
+        id: reviewer_artifact
+        if: always() && github.event_name == 'pull_request'
+        timeout-minutes: 1
+        run: python scripts/reviewer_proof_diagnostics.py >> "$GITHUB_OUTPUT"
+
+      - name: Retain synthetic reviewer layout evidence
+        if: always() && github.event_name == 'pull_request' && steps.reviewer_artifact.outcome == 'success'
+        timeout-minutes: 2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reviewer-binding-webkit-proof
+          path: ${{ steps.reviewer_artifact.outputs.upload_path }}
+          if-no-files-found: error
+          retention-days: 1
+
   live-production:
     name: Prove iPhone WebKit intake, failure layout, exact-run recovery, and review PDF download
     if: >-
