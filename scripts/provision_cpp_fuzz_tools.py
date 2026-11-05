@@ -160,30 +160,47 @@ def provision(destination, *, run=subprocess.run, project_dependencies=False, ca
             os.fsync(output.fileno())
         os.replace(temporary, destination / 'receipt.json')
 
-    deadline = time.monotonic() + (30 if project or source else 90)
+    deadline = time.monotonic() + (30 if project else 90)
     retain()
     try:
         for row in rows:
-            left = min(30, int(deadline-time.monotonic()))
-            if left < 1: raise ValueError('fuzz_tool_download_deadline')
-            path = destination / (row['package'] + ('.tar.gz' if source else '.deb'))
+            final_path = destination / (row['package'] + ('.tar.gz' if source else '.deb'))
+            path = final_path.with_suffix(final_path.suffix + '.part') if source else final_path
             maximum = row['max_bytes'] if source else row['bytes']
-            run(['curl','--disable','--fail','--silent','--show-error','--proto','=https','--tlsv1.2',
-                 '--connect-timeout','3','--max-time',str(left),'--max-filesize',str(maximum),
-                 '--output',str(path),row['url']], check=True, timeout=left+1,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                env={'PATH':os.environ.get('PATH','/usr/bin:/bin')})
+            # Only the fixed source archive gets timeout retries. Every attempt
+            # starts from zero; the shared deadline includes subprocess grace.
+            for attempt in range(3 if source else 1):
+                left = min(30, int(deadline-time.monotonic()) - (1 if source else 0))
+                if left < 1: raise ValueError('fuzz_tool_download_deadline')
+                try:
+                    run(['curl','--disable','--fail','--silent','--show-error','--proto','=https','--tlsv1.2',
+                         '--connect-timeout','3','--max-time',str(left),'--max-filesize',str(maximum),
+                         '--output',str(path),row['url']], check=True, timeout=left+1,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        env={'PATH':os.environ.get('PATH','/usr/bin:/bin')})
+                    break
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                    if source:
+                        path.unlink(missing_ok=True)
+                    if (not source or attempt == 2 or
+                            isinstance(exc, subprocess.CalledProcessError) and exc.returncode != 28):
+                        raise
             if (path.is_symlink() or not path.is_file()
                     or (not 0 < path.stat().st_size <= maximum if source else path.stat().st_size != maximum)):
                 raise ValueError('fuzz_tool_download_size_invalid')
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             if digest != row['sha256']: raise ValueError('fuzz_tool_download_hash_invalid')
+            if source:
+                path.replace(final_path)
+                path = final_path
             result['packages'].append({'package':row['package'],'sha256':digest,'bytes':path.stat().st_size,
                 **({'version': row['version']} if project or source else {})})
             retain()
         (destination / 'SHA256SUMS').write_text(''.join(r['sha256']+'  '+r['package']+('.tar.gz\n' if source else '.deb\n') for r in rows))
         result['status']='VERIFIED_TOOL_INPUTS'
     finally:
+        if source:
+            (destination / 'capnproto.tar.gz.part').unlink(missing_ok=True)
         retain()
     return result
 

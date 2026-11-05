@@ -55,7 +55,7 @@ function nodes(node) {
   if (!node || typeof node !== 'object') return [];
   return Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
 }
-function workspace({locale = 'en', scanner = 'complete', running = true, report = false, compactMobile = false, phase = null, issue = null, sections = null} = {}) {
+function workspace({locale = 'en', scanner = 'complete', running = true, report = false, compactMobile = false, phase = null, issue = null, sections = null, elapsed = 1} = {}) {
   const result = {run_id: 'comprun_presentation_fixture', commit_sha: commit, terminal: !running,
     current_stage: 'cross_format_truth_verification', human_review_required: true, client_delivery_allowed: false,
     record: {stage_results: {dependency_security_static_analysis: {status: scanner}}},
@@ -64,9 +64,34 @@ function workspace({locale = 'en', scanner = 'complete', running = true, report 
     ...(report ? {reports: {report_id: 'report_fixture', pdf_available: true}} : {})};
   const controller = {service: 'comprehensive', repository: 'owner/control', client: '', project: '',
     authorized: true, humanEvidence: {}, engagementFieldStates: {client_name: {state: 'not_supplied'}, project_name: {state: 'not_supplied'}}, phase: phase || (running ? 'running' : 'review_required'),
-    result, running, protectedRunId: result.run_id, message: '', error: '', issue, attempt: 1, elapsed: 1};
+    result, running, protectedRunId: result.run_id, message: '', error: '', issue, attempt: 1, elapsed};
   const render = loadModules(controller, compactMobile)('AssessmentWorkspace.tsx').default;
   return render({locale});
+}
+
+for (const locale of ['en', 'es-MX']) {
+  test(`${locale}: clock ticks stay readable without changing polite announcement content`, () => {
+    function announcedText(node) {
+      if (node == null || typeof node === 'boolean') return '';
+      if (typeof node !== 'object') return String(node);
+      if (Array.isArray(node)) return node.map(announcedText).join(' ');
+      return node.props?.['aria-live'] === 'off' ? '' : announcedText(node.props?.children);
+    }
+    const panel = view => nodes(view).find(node => node.props?.['data-assessment-run-state'] === 'true');
+    const first = panel(workspace({locale, elapsed: 61}));
+    const next = panel(workspace({locale, elapsed: 62}));
+    assert.equal(first.props['aria-live'], 'polite');
+    assert.equal(announcedText(first), announcedText(next), 'time-only changes must not enter the polite region');
+    const clock = nodes(first).find(node => node.props?.['data-assessment-elapsed'] === 'true');
+    assert.ok(clock, 'elapsed time remains available for deliberate reading');
+    assert.equal(clock.props['aria-live'], 'off');
+    assert.notEqual(clock.props['aria-hidden'], true);
+    assert.match(text(clock), /1\s*:\s*01/);
+    assert.match(text(next), /1\s*:\s*02/);
+    const terminal = panel(workspace({locale, running: false, phase: 'review_required', elapsed: 62}));
+    assert.equal(terminal.props['aria-live'], 'polite');
+    assert.notEqual(announcedText(next), announcedText(terminal), 'meaningful status changes remain announced');
+  });
 }
 
 test('Spanish preserves both real sampled populations, limits, identity, and review boundary', () => {

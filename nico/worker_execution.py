@@ -3,6 +3,9 @@ from __future__ import annotations
 import os
 import io
 import re
+import selectors
+from contextlib import contextmanager
+from contextvars import ContextVar
 import shutil
 import signal
 import subprocess
@@ -94,6 +97,63 @@ def _cleanup_group(process: subprocess.Popen, group: int) -> None:
 class WorkerLimits:
     timeout_seconds: int = 60
     max_output_chars: int = 16_000
+    max_capture_bytes: int = 20 * 1024 * 1024
+    native_report_flag: str | None = None
+
+
+_SUITE_DEADLINE = ContextVar('scanner_suite_deadline', default=None)
+
+
+@contextmanager
+def scanner_suite_deadline(deadline: float):
+    previous = _SUITE_DEADLINE.get()
+    token = _SUITE_DEADLINE.set(min(previous, deadline) if previous is not None else deadline)
+    try:
+        yield
+    finally:
+        _SUITE_DEADLINE.reset(token)
+
+
+def suite_time_remaining() -> float:
+    deadline = _SUITE_DEADLINE.get()
+    return float('inf') if deadline is None else max(0.0, deadline - time.monotonic())
+
+
+class _BoundedCapture:
+    """Single-threaded pipe drain; child never receives the output file descriptor."""
+    def __init__(self, process, limit, output):
+        self.selector = selectors.DefaultSelector()
+        self.buffers = [bytearray(), bytearray()]
+        self.limit, self.output, self.retained = limit, output, 0
+        self.exceeded = False
+        try:
+            for index, pipe in enumerate((process.stdout, process.stderr)):
+                os.set_blocking(pipe.fileno(), False)
+                self.selector.register(pipe, selectors.EVENT_READ, index)
+        except BaseException:
+            self.selector.close()
+            raise
+
+    def pump(self, timeout):
+        for key, _ in self.selector.select(timeout):
+            data = os.read(key.fd, 65536)
+            if not data:
+                self.selector.unregister(key.fileobj)
+                continue
+            room = max(0, self.limit - self.retained)
+            kept = data[:room]
+            self.exceeded |= len(data) > room
+            self.retained += len(kept)
+            if key.data == 0 and self.output is not None:
+                self.output.write(kept)
+            else:
+                self.buffers[key.data].extend(kept)
+
+    def active(self):
+        return bool(self.selector.get_map())
+
+    def close(self):
+        self.selector.close()
 
 
 @dataclass(frozen=True)
@@ -108,6 +168,8 @@ class WorkerCommandResult:
     stdout_bytes: int = 0
     stderr_bytes: int = 0
     scanner_execution_receipt: dict | None = None
+    output_limit_exceeded: bool = False
+    execution_observed: bool = True
 
     @property
     def ok(self) -> bool:
@@ -224,6 +286,19 @@ def run_command(
     if any(not isinstance(part, str) or not part for part in args):
         raise ValueError("args must be non-empty strings")
     limits = limits or WorkerLimits()
+    if type(limits.max_capture_bytes) is not int or limits.max_capture_bytes < 1:
+        raise ValueError('max_capture_bytes must be a positive integer')
+    if limits.native_report_flag is not None:
+        flag = limits.native_report_flag
+        expected = {'-o': 'bandit', '--report-path': 'gitleaks'}
+        if flag not in expected or Path(args[0]).name != expected[flag] or list(args).count(flag) != 1:
+            raise ValueError('unsupported native report redirection')
+        index = list(args).index(flag) + 1
+        if index >= len(args):
+            raise ValueError('missing native report destination')
+        stdout_path = Path(args[index])
+        destination = '-' if flag == '--report-path' else '/dev/stdout'
+        args = tuple(destination if i == index else value for i, value in enumerate(args))
     cwd = cwd.resolve()
     if not cwd.exists() or not cwd.is_dir():
         raise ValueError("cwd must exist and be a directory")
@@ -232,36 +307,50 @@ def run_command(
     if os.name != "posix":
         raise WorkerExecutionError("owned process-group execution requires POSIX")
 
+    remaining = suite_time_remaining()
+    if remaining <= 0:
+        return WorkerCommandResult(tuple(args), 124, '', '', timed_out=True, execution_observed=False)
+    deadline = time.monotonic() + min(limits.timeout_seconds, remaining)
     output_handle = None
+    capture = None
     resolved_stdout_path: Path | None = None
     if stdout_path is not None:
         resolved_stdout_path = stdout_path.resolve()
         resolved_stdout_path.parent.mkdir(parents=True, exist_ok=True)
-        output_handle = resolved_stdout_path.open("w", encoding="utf-8", errors="replace")
+        output_handle = resolved_stdout_path.open("wb")
 
     process = None
     cleanup_attempted = False
     try:
         if _CLEANUP_UNCERTAIN.is_set():
             raise WorkerCleanupError("prior worker cleanup unconfirmed; command launch blocked")
+        if time.monotonic() >= deadline:
+            return WorkerCommandResult(tuple(args), 124, '', '', timed_out=True, execution_observed=False)
         process = subprocess.Popen(
             list(args), cwd=str(cwd), env=_clean_env(extra_env),
-            stdout=output_handle if output_handle is not None else subprocess.PIPE,
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             shell=False, start_new_session=True,
         )
         timed_out = False
-        try:
-            process.communicate(timeout=limits.timeout_seconds)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-        # Preserve the direct command's status before cleaning surviving descendants.
-        normal_returncode = process.returncode
+        capture = _BoundedCapture(process, limits.max_capture_bytes, output_handle)
+        while capture.active() or process.poll() is None:
+            if time.monotonic() >= deadline:
+                timed_out = True
+                break
+            capture.pump(min(.05, max(0, deadline - time.monotonic())))
+            if capture.exceeded:
+                break
+        normal_returncode = process.poll()
         try:
             cleanup_attempted = True
             _cleanup_group(process, process.pid)
-            # communicate retains prior buffers; never concatenate TimeoutExpired output.
-            raw_stdout, raw_stderr = process.communicate(timeout=_DRAIN_SECONDS)
+            drain_deadline = time.monotonic() + _DRAIN_SECONDS
+            while capture.active():
+                if time.monotonic() >= drain_deadline:
+                    raise WorkerCleanupError('output drain deadline exceeded')
+                capture.pump(min(.05, max(0, drain_deadline - time.monotonic())))
+            raw_stdout, raw_stderr = map(bytes, capture.buffers)
         except BaseException as exc:
             _CLEANUP_UNCERTAIN.set()
             raise WorkerCleanupError("worker cleanup or output drain unconfirmed") from exc
@@ -269,7 +358,7 @@ def run_command(
         # default encoding/newline behavior; TimeoutExpired historically exposed
         # bytes decoded by our UTF-8 replacement helper instead.
         def decode(value):
-            if timed_out:
+            if timed_out or capture.exceeded:
                 return _decode_timeout_value(value)
             with io.TextIOWrapper(io.BytesIO(value or b''), encoding=None) as stream:
                 return stream.read()
@@ -282,9 +371,10 @@ def run_command(
             stdout_bytes = len(raw_stdout.encode("utf-8", errors="replace"))
         stderr, err_truncated = _truncate(raw_stderr, limits.max_output_chars)
         return WorkerCommandResult(
-            args=tuple(args), returncode=124 if timed_out else normal_returncode,
+            args=tuple(args), returncode=124 if timed_out else 125 if capture.exceeded else normal_returncode,
             stdout=stdout, stderr=stderr, timed_out=timed_out,
-            output_truncated=out_truncated or err_truncated,
+            output_truncated=out_truncated or err_truncated or capture.exceeded,
+            output_limit_exceeded=capture.exceeded,
             stdout_path=str(resolved_stdout_path) if resolved_stdout_path is not None else None,
             stdout_bytes=stdout_bytes,
             stderr_bytes=len(raw_stderr.encode("utf-8", errors="replace")),
@@ -293,12 +383,13 @@ def run_command(
         if process is not None and not cleanup_attempted:
             try:
                 _cleanup_group(process, process.pid)
-                process.communicate(timeout=_DRAIN_SECONDS)
             except BaseException as cleanup_error:
                 _CLEANUP_UNCERTAIN.set()
                 raise WorkerCleanupError("exception cleanup unconfirmed; further launches blocked") from cleanup_error
         raise
     finally:
+        if capture is not None:
+            capture.close()
         if process is not None:
             for pipe in (process.stdout, process.stderr):
                 if pipe is not None:
