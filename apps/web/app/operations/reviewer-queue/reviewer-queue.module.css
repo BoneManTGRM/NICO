@@ -3,3 +3,5 @@
 .exactSourceRecord{max-height:42rem;overflow:auto;margin:18px 0 0;padding:16px;border:1px solid #284650;border-radius:12px;background:#050c11;color:#d8e9eb;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
 
 .assistance{min-width:0;overflow-wrap:anywhere}
+
+.shell pre[tabindex="0"]:focus-visible { outline: 3px solid #d9b65d; outline-offset: -3px; }

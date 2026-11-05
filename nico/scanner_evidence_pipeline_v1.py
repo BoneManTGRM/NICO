@@ -5,6 +5,7 @@ from dataclasses import replace
 import gzip
 import hashlib
 import inspect
+import io
 import json
 import os
 import re
@@ -100,31 +101,46 @@ def _run(
     result = replace(result, scanner_execution_receipt=invocation_receipt(
         result.args, cwd=observed_cwd, before=before, after=after,
         returncode=result.returncode, timed_out=result.timed_out,
-    ))
+    ) if result.execution_observed else None)
     if not stdout_path.exists():
         stdout_path.write_text(result.stdout or "", encoding="utf-8", errors="replace")
     return result
 
 
-def _read_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+def _read_report_bytes(path: Path) -> tuple[bytes, bool]:
+    # Bound the actual read, not only a racy stat-before-read check. Retain a
+    # prefix as explicitly partial evidence if an older/alternate writer exceeds it.
+    if type(MAX_PARSE_BYTES) is not int or MAX_PARSE_BYTES <= 0:
+        raise ValueError('native report read limit must be a positive integer')
+    with path.open('rb') as handle:
+        raw = handle.read(MAX_PARSE_BYTES + 1)
+    return raw[:MAX_PARSE_BYTES], len(raw) > MAX_PARSE_BYTES
+
+
+def _read_text(path: Path, *, errors: str = 'replace') -> str:
+    if not path.exists():
+        return ''
+    raw, truncated = _read_report_bytes(path)
+    if truncated:
+        raise ValueError('native report exceeds bounded read limit')
+    return raw.decode('utf-8', errors=errors)
 
 
 def _read_json(path: Path) -> tuple[Any, str]:
-    if not path.exists():
-        return None, "scanner output file is missing"
-    size = path.stat().st_size
-    if size > MAX_PARSE_BYTES:
-        return None, f"scanner output exceeded the bounded parse limit of {MAX_PARSE_BYTES} bytes"
     try:
-        return json.loads(_read_text(path)), ""
+        raw, truncated = _read_report_bytes(path)
+        if truncated:
+            return None, f'scanner output exceeded the bounded parse limit of {MAX_PARSE_BYTES} bytes'
+        return json.loads(raw.decode('utf-8', errors='replace')), ''
+    except OSError:
+        return None, 'scanner output file is unavailable'
     except json.JSONDecodeError as exc:
-        return None, f"scanner JSON output could not be parsed: line {exc.lineno} column {exc.colno}"
+        return None, f'scanner JSON output could not be parsed: line {exc.lineno} column {exc.colno}'
 
 
 def _raw_blob(tool: str, path: Path, raw_format: str) -> dict[str, Any]:
     present = path.exists() and path.is_file()
-    raw = path.read_bytes() if present else b""
+    raw, truncated = _read_report_bytes(path) if present else (b"", False)
     redacted = redact_text(raw.decode("utf-8", errors="replace")).encode("utf-8")
     compressed = gzip.compress(redacted, compresslevel=6, mtime=0)
     return {
@@ -132,7 +148,9 @@ def _raw_blob(tool: str, path: Path, raw_format: str) -> dict[str, Any]:
         "filename": f"{tool}.{raw_format}.gz".replace("/", "_"),
         "raw_format": raw_format,
         "present": present,
-        "source_bytes": len(raw),
+        "source_bytes": len(raw) if not truncated else None,
+        "source_bytes_lower_bound": len(raw) + int(truncated),
+        "capture_truncated": truncated,
         "retained_bytes": len(redacted),
         "gzip_bytes": len(compressed),
         "sha256": _sha256(redacted),
@@ -214,7 +232,12 @@ def _tool_payload(
     from nico.scanner_execution_receipt_v1 import native_coverage_observation, safe_argv
 
     valid = set(valid_returncodes or spec.valid_returncodes)
-    if result.timed_out:
+    if result.output_limit_exceeded or not result.execution_observed or raw_blob.get("capture_truncated"):
+        capture_complete = False
+        reason = 'scanner_output_byte_limit_exceeded' if result.output_limit_exceeded else 'native_report_read_limit_exceeded' if raw_blob.get('capture_truncated') else 'scanner_suite_deadline_exhausted_before_launch'
+    if not result.execution_observed:
+        status = "unavailable"
+    elif result.timed_out:
         status = "timeout"
         reason = reason or f"{spec.name} exceeded its {spec.timeout_seconds}-second timeout."
     elif result.returncode not in valid:
@@ -237,6 +260,7 @@ def _tool_payload(
         "returncode_valid": result.returncode in valid,
         "timed_out": result.timed_out,
         "output_truncated": result.output_truncated,
+        "output_limit_exceeded": result.output_limit_exceeded,
         "output_capture_complete": capture_complete,
         "stdout_bytes": result.stdout_bytes,
         "stderr_bytes": result.stderr_bytes,
@@ -251,12 +275,12 @@ def _tool_payload(
         "reason": reason,
         "failure_or_unavailable_reason": reason,
         "execution_source": execution_source,
-        "execution_observed_for_this_report": True,
+        "execution_observed_for_this_report": result.execution_observed,
         "current_run": True,
         "verified_for_this_report": status == "completed",
         "scans_git_history": spec.scans_git_history,
         "full_history_verified": full_history_verified if spec.scans_git_history else False,
-        "raw_artifact_capture_complete": bool(raw_blob.get("present")) and bool(raw_blob.get("sha256")),
+        "raw_artifact_capture_complete": bool(raw_blob.get("present")) and bool(raw_blob.get("sha256")) and not raw_blob.get("capture_truncated", False) and not result.output_limit_exceeded,
         "raw_artifact_sha256": raw_blob.get("sha256"),
         "raw_artifact_format": raw_blob.get("raw_format"),
         "raw_artifact_bytes": raw_blob.get("retained_bytes"),
@@ -540,13 +564,13 @@ def _run_bandit(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Calla
     raw.parent.mkdir(parents=True, exist_ok=True)
     log = workspace.root / "scanner-output" / "bandit.log"
     command = (binary, "-r", ".", "-f", "csv", "-o", str(raw), "-x", ",".join(sorted(GENERATED_DIRS)))
-    result = _run(runner, command, cwd=workspace.repo_dir, limits=WorkerLimits(spec.timeout_seconds, max(spec.max_output_chars, 4_000_000)), stdout_path=log)
+    result = _run(runner, command, cwd=workspace.repo_dir, limits=WorkerLimits(spec.timeout_seconds, max(spec.max_output_chars, 4_000_000), native_report_flag="-o"), stdout_path=log)
     findings: list[dict[str, Any]] = []
     reason = ""
     capture_complete = raw.exists()
     if raw.exists():
         try:
-            with raw.open("r", encoding="utf-8", errors="replace", newline="") as handle:
+            with io.StringIO(_read_text(raw), newline="") as handle:
                 reader = csv.DictReader(handle)
                 required_columns = {"filename", "line_number", "issue_severity", "issue_confidence", "test_id"}
                 if not required_columns.issubset(set(reader.fieldnames or [])):
@@ -559,7 +583,7 @@ def _run_bandit(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Calla
                         except ValueError:
                             pass
                     findings.append(item)
-        except (OSError, csv.Error) as exc:
+        except (OSError, csv.Error, ValueError) as exc:
             capture_complete = False
             reason = f"Bandit CSV output could not be parsed: {type(exc).__name__}"
     else:
@@ -810,8 +834,8 @@ def _run_typescript(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: C
         parse_reason = f"TypeScript output exceeded the bounded parse limit of {MAX_PARSE_BYTES} bytes."
     else:
         try:
-            text = raw.read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
+            text = _read_text(raw, errors="strict")
+        except (OSError, UnicodeError, ValueError):
             text, findings, parsed_complete = "", [], False
             parse_reason = "TypeScript native stdout artifact could not be decoded completely as UTF-8."
         else:
@@ -852,14 +876,20 @@ def _run_gitleaks(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Cal
     raw.parent.mkdir(parents=True, exist_ok=True)
     log = workspace.root / "scanner-output" / "gitleaks.log"
     command = (binary, "detect", "--source", ".", "--report-format", "json", "--report-path", str(raw), "--no-banner", "--redact")
-    result = _run(runner, command, cwd=workspace.repo_dir, limits=WorkerLimits(spec.timeout_seconds, max(spec.max_output_chars, 4_000_000)), stdout_path=log)
-    if result.returncode == 0 and not raw.exists():
+    result = _run(runner, command, cwd=workspace.repo_dir, limits=WorkerLimits(spec.timeout_seconds, max(spec.max_output_chars, 4_000_000), native_report_flag="--report-path"), stdout_path=log)
+    empty_report_normalized = (
+        result.returncode == 0 and result.execution_observed and not result.timed_out
+        and not result.output_limit_exceeded and not raw.exists()
+    )
+    if empty_report_normalized:
+        # Preserve legacy absent-report normalization only for observed success.
+        # An existing empty capture is not a valid JSON report.
         raw.parent.mkdir(parents=True, exist_ok=True)
         raw.write_text("[]\n", encoding="utf-8")
     payload, reason = _read_json(raw)
     findings = payload if isinstance(payload, list) else []
     blob = _raw_blob(spec.name, raw if raw.exists() else log, "json")
-    return _tool_payload(spec, result, findings=findings, capture_complete=isinstance(payload, list), reason=reason, raw_blob=blob, execution_source="canonical_gitleaks_full_history", workspace=workspace, valid_returncodes={0, 1}, full_history_verified=bool(history["full_history_verified"]), extra=history)
+    return _tool_payload(spec, result, findings=findings, capture_complete=isinstance(payload, list), reason=reason, raw_blob=blob, execution_source="canonical_gitleaks_full_history", workspace=workspace, valid_returncodes={0, 1}, full_history_verified=bool(history["full_history_verified"]), extra={**history, "empty_report_normalized": empty_report_normalized})
 
 
 def _run_trufflehog(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable[..., WorkerCommandResult]) -> dict[str, Any]:
@@ -872,7 +902,8 @@ def _run_trufflehog(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: C
     result = _run(runner, command, cwd=workspace.repo_dir, limits=WorkerLimits(spec.timeout_seconds, max(spec.max_output_chars, 8_000_000)), stdout_path=raw)
     findings: list[Any] = []
     invalid = 0
-    for line in _read_text(raw).splitlines():
+    raw_prefix, read_limited = _read_report_bytes(raw) if raw.exists() else (b'', False)
+    for line in raw_prefix.decode('utf-8', errors='replace').splitlines():
         if not line.strip():
             continue
         try:
@@ -885,7 +916,7 @@ def _run_trufflehog(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: C
         else:
             invalid += 1
     blob = _raw_blob(spec.name, raw, "jsonl")
-    return _tool_payload(spec, result, findings=findings, capture_complete=invalid == 0, reason="" if invalid == 0 else f"{invalid} TruffleHog output line(s) were not valid JSON", raw_blob=blob, execution_source="canonical_trufflehog_full_history", workspace=workspace, valid_returncodes={0, 183}, full_history_verified=bool(history["full_history_verified"]), extra={**history, "invalid_json_lines": invalid})
+    return _tool_payload(spec, result, findings=findings, capture_complete=invalid == 0 and not read_limited, reason="" if invalid == 0 else f"{invalid} TruffleHog output line(s) were not valid JSON", raw_blob=blob, execution_source="canonical_trufflehog_full_history", workspace=workspace, valid_returncodes={0, 183}, full_history_verified=bool(history["full_history_verified"]), extra={**history, "invalid_json_lines": invalid})
 
 
 def _run_cppcheck(spec: ScannerToolSpec, workspace: WorkerWorkspace,

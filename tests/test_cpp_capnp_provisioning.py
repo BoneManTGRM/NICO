@@ -128,3 +128,58 @@ def test_full_project_image_provisions_frozen_bitcoin_pycapnp_offline():
     assert digest + '  /opt/pycapnp.whl' in image
     assert "capnp.__version__ == '2.2.1'" in image
     assert 'ENV PYTHONPATH=/opt/pycapnp' in image
+
+
+@pytest.mark.parametrize('failure', ['curl_timeout', 'process_timeout', 'exhausted', 'tls', 'digest', 'size', 'interrupt', 'deadline'])
+def test_source_timeout_recovery_is_bounded_and_never_promotes_partial_inputs(tmp_path, monkeypatch, failure):
+    lock = tmp_path / 'lock.json'
+    lock.write_text(json.dumps(source_lock()))
+    monkeypatch.setattr(tool, 'CAPNP_LOCK', lock)
+    clock = [0.0]
+    monkeypatch.setattr(tool.time, 'monotonic', lambda: clock[0])
+    out = tmp_path / 'inputs'
+    calls = []
+
+    def run(args, **kwargs):
+        path = Path(args[args.index('--output') + 1])
+        assert not path.exists(), 'each attempt must discard partial bytes'
+        assert args[-1] == source_lock()['packages'][0]['url']
+        assert args[args.index('--proto') + 1] == '=https'
+        assert '--tlsv1.2' in args and '--insecure' not in args
+        assert '--location' not in args and '-L' not in args
+        assert args[args.index('--max-filesize') + 1] == '4194304'
+        assert set(kwargs['env']) == {'PATH'}
+        assert 1 <= int(args[args.index('--max-time') + 1]) <= 30
+        assert kwargs['timeout'] <= 31
+        assert clock[0] + kwargs['timeout'] <= 90
+        calls.append(args)
+        path.write_bytes(b'partial')
+        if failure == 'interrupt':
+            raise KeyboardInterrupt()
+        if failure == 'tls':
+            raise subprocess.CalledProcessError(60, args)
+        if failure == 'deadline':
+            clock[0] = 90
+            raise subprocess.CalledProcessError(28, args)
+        if failure == 'exhausted' or len(calls) == 1 and failure in ('curl_timeout', 'process_timeout'):
+            clock[0] += kwargs['timeout']
+            if failure == 'process_timeout':
+                raise subprocess.TimeoutExpired(args, kwargs['timeout'])
+            raise subprocess.CalledProcessError(28, args)
+        path.write_bytes(b'bad' if failure == 'digest' else b'x' * 4194305 if failure == 'size' else b'owned')
+
+    if failure in ('curl_timeout', 'process_timeout'):
+        result = tool.provision(out, run=run, capnp_source=True)
+        assert result['status'] == 'VERIFIED_TOOL_INPUTS'
+        assert len(calls) == 2
+        assert (out / 'capnproto.tar.gz').read_bytes() == b'owned'
+        assert (out / 'SHA256SUMS').exists()
+    else:
+        with pytest.raises((subprocess.CalledProcessError, ValueError, KeyboardInterrupt)):
+            tool.provision(out, run=run, capnp_source=True)
+        assert len(calls) == (3 if failure == 'exhausted' else 1)
+        result = json.loads((out / 'receipt.json').read_text())
+        assert result['status'] == 'UNPROVEN' and result['packages'] == []
+        assert not (out / 'capnproto.tar.gz').exists()
+        assert not (out / 'SHA256SUMS').exists()
+    assert not (out / 'capnproto.tar.gz.part').exists()

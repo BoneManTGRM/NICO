@@ -193,6 +193,32 @@ def test_invalid_encoding_or_duplicate_json_is_rejected(tmp_path, payload):
     assert not list(tmp_path.glob('reviewer-binding-validated-*'))
 
 
+def test_all_produced_screenshot_names_can_be_staged(tmp_path):
+    publish = tmp_path / 'reviewer-binding-webkit-proof/publish'
+    publish.mkdir(parents=True)
+    names = {f'{locale}-{viewport}-{scenario}.png'
+             for locale in ('en', 'es-MX') for viewport in proof.VIEWPORTS
+             for scenario in proof.SCENARIOS}
+    assert len(names) == 20
+    for name in names:
+        (publish / name).write_bytes(b'synthetic artifact bytes')
+    destination = diagnostic.stage_upload(tmp_path)
+    assert {p.name for p in destination.iterdir()} == names
+    assert all(p.read_bytes() == b'synthetic artifact bytes' for p in destination.iterdir())
+
+
+@pytest.mark.parametrize('name', ['en-desktop-dependency-extra.png',
+    'en-desktop-dependency.png.txt', 'en-desktop-unknown.png',
+    'fr-desktop-dependency.png', 'en-tablet-dependency.png'])
+def test_unknown_screenshot_names_cannot_be_staged(tmp_path, name):
+    publish = tmp_path / 'reviewer-binding-webkit-proof/publish'
+    publish.mkdir(parents=True)
+    (publish / name).write_bytes(b'synthetic artifact bytes')
+    with pytest.raises(ValueError, match='unexpected proof artifact'):
+        diagnostic.stage_upload(tmp_path)
+    assert not list(tmp_path.glob('reviewer-binding-validated-*'))
+
+
 def test_aggregate_upload_cap_includes_diagnostics_and_proof(tmp_path, monkeypatch):
     diagnostic.run_with_diagnostics(tmp_path, 'build', lambda: None)
     diagnostic.run_with_diagnostics(tmp_path, 'proof', lambda: None)
