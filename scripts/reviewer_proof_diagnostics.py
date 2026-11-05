@@ -162,8 +162,8 @@ def stage_upload(root):
                     try:
                         for name in sorted(os.listdir(publish_fd)):
                             if name not in {'server.log', 'manifest.json'} and not re.fullmatch(
-                                r'(en|es-MX)-(desktop|mobile)-(qualified|unqualified|duplicate|stale)\.png', name
-                            ):
+                                r'(en|es-MX)-(desktop|mobile)-(qualified|unqualified|duplicate|stale|dependency)\.png', name
+                            ) and name not in {'en-desktop-navigation.png', 'es-MX-desktop-navigation.png'}:
                                 raise ValueError('unexpected proof artifact')
                             data = _read_regular(publish_fd, name, UPLOAD_BYTES - total)
                             total += len(data)

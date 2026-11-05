@@ -95,7 +95,7 @@ def _tool_record(spec: dict[str, str]) -> dict[str, Any]:
         "category": spec["category"],
         "required_for": spec["required_for"],
         "path": path or "",
-        "installed": bool(path) and version["status"] in {"installed", "command_failed"},
+        "installed": bool(path) and version["status"] == "installed",
         "status": version["status"],
         "returncode": version["returncode"],
         "version": version["version"],
@@ -106,6 +106,7 @@ def _tool_record(spec: dict[str, str]) -> dict[str, Any]:
 def hosted_scanner_runtime_diagnostics() -> dict[str, Any]:
     tools = [_tool_record(spec) for spec in REQUIRED_RUNTIME_TOOLS]
     scanner_tools = [item for item in tools if item["category"] in {"dependency", "static", "secret"}]
+    # Preserve the summary contract: missing includes tools whose availability is unverified.
     missing = [item["tool"] for item in scanner_tools if not item["installed"]]
     installed = [item["tool"] for item in scanner_tools if item["installed"]]
     config = {
@@ -122,8 +123,14 @@ def hosted_scanner_runtime_diagnostics() -> dict[str, Any]:
         blockers.append("NICO_ALLOW_PROJECT_COMMANDS is false, so ESLint/TypeScript project-command evidence will stay unavailable.")
     if not config["NICO_ENABLE_FULL_HISTORY_SECRET_SCAN"]:
         blockers.append("NICO_ENABLE_FULL_HISTORY_SECRET_SCAN is false, so gitleaks/trufflehog full-history coverage is disabled.")
-    if missing:
-        blockers.append("Scanner binaries missing from PATH: " + ", ".join(missing) + ".")
+    missing_binaries = [item["tool"] for item in tools if item["status"] == "not_installed"]
+    failed_probes = [item for item in tools if not item["installed"] and item["status"] != "not_installed"]
+    if missing_binaries:
+        blockers.append("Scanner binaries missing from PATH (including required runtime tools): " + ", ".join(missing_binaries) + ".")
+    if failed_probes:
+        blockers.append("Required tool version probes failed: " + ", ".join(
+            f"{item['tool']} ({item['status']})" for item in failed_probes
+        ) + ".")
     return {
         "status": "ok",
         "generated_at": _now_iso(),

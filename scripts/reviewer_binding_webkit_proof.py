@@ -13,6 +13,7 @@ import time
 import threading
 import shutil
 import re
+import reviewer_desktop_navigation_proof as desktop_navigation
 from reviewer_proof_environment import environment
 from reviewer_proof_diagnostics import RESERVED_BYTES, run_with_diagnostics, set_stage
 from urllib.parse import urlsplit
@@ -20,7 +21,7 @@ from urllib.parse import urlsplit
 ORIGIN = 'http://127.0.0.1:3107'
 RUN = 'comprun_synthetic_visual'
 API = f'/api/nico/assessment/comprehensive-run/{RUN}/review-work'
-SCENARIOS = ('qualified', 'unqualified', 'duplicate', 'stale')
+SCENARIOS = ('qualified', 'unqualified', 'duplicate', 'stale', 'dependency')
 VIEWPORTS = {'desktop': (1280, 1000), 'mobile': (390, 844)}
 
 
@@ -39,6 +40,8 @@ def request_kind(method, url):
 
 def fixture(sha, scenario):
     assert scenario in SCENARIOS
+    if scenario == 'dependency':
+        return dependency_fixture(sha)
     row = {'candidate_id':'synthetic-candidate','record_index':0,
            'recommendation':'resolve_evidence_gaps','limitations':['unresolved_proof_gaps'],
            'source_url':None,'input_sha256':'a'*64,'existing_review_profile_cluster_id':'synthetic'}
@@ -67,6 +70,74 @@ def fixture(sha, scenario):
                 'source_investigation':{'available':True,'candidate_count':len(queue),'completed_count':1,'packets':[source]}}}
 
 
+DEPENDENCY_CASES = ('qualified', 'stale', 'duplicate', 'missing', 'foreign', 'wrong-index',
+    'unknown', 'collected-without-receipt', 'supply_scanner_identity', 'supply_current_capture',
+    'supply_lockfile_observation', 'inspect_lockfile_capture', 'reconcile_lockfile_identity')
+DEPENDENCY_PACKAGE = '@synthetic/' + 'long-package-name-' * 6
+DEPENDENCY_PATH = 'synthetic/' + 'nested-directory/' * 8 + 'package-lock.json'
+
+
+def dependency_fixture(sha):
+    payload = fixture(sha, 'qualified')
+    queue, packets = [], []
+    for index, case in enumerate(DEPENDENCY_CASES):
+        row = deepcopy(payload['review_assistance']['queue'][0])
+        row.update(candidate_id='dependency-' + case, record_index=index,
+            source_record_index=index + 20, source_candidate_input_sha256='b'*64,
+            evidence_tasks=['identify_package', 'identify_locked_version', 'verify_affectedness', 'verify_runtime_use'])
+        source = dict(candidate_id=row['candidate_id'], record_index=index + 20,
+            candidate_input_sha256='b'*64, completed=False, rule_id='SYNTHETIC-DEPENDENCY',
+            reason='unsupported_or_missing_exact_source_evidence', dependency_next_step='verify_installation_and_use')
+        if case in ('qualified', 'stale', 'duplicate', 'foreign', 'wrong-index'):
+            source['dependency_identity'] = dict(package=DEPENDENCY_PACKAGE, locked_version='1.2.3-synthetic',
+                lockfile_path=DEPENDENCY_PATH, source_sha256='c'*64)
+        if case == 'stale': source['candidate_input_sha256'] = 'd'*64
+        if case == 'foreign': source['candidate_id'] = 'unrelated-source'
+        if case == 'wrong-index': source['record_index'] = -1
+        if case == 'unknown': source['dependency_next_step'] = 'PRIVATE_UNTRUSTED_GUIDANCE'
+        if case.startswith(('supply_', 'inspect_', 'reconcile_')): source['dependency_next_step'] = case
+        if case != 'missing': packets.append(source)
+        if case == 'duplicate': packets.append(deepcopy(source))
+        queue.append(row)
+    for key in ('candidate_count', 'remaining_candidate_count', 'quality_control_required_count'):
+        payload[key] = len(queue)
+    payload['candidates'] = [{'candidate_id':row['candidate_id']} for row in queue]
+    payload['review_assistance'].update(queue=queue, pending_record_count=len(queue),
+        source_investigation={'available':True, 'candidate_count':len(queue), 'completed_count':0, 'packets':packets})
+    return payload
+
+
+def validate_dependency_text(case, locale, text, guidance_count):
+    """Shared assertions exercise actual rendered text, never fixture truth alone."""
+    es = locale == 'es-MX'
+    qualified = case == 'qualified'
+    assert ('1.2.3-synthetic' in text) == qualified
+    assert (DEPENDENCY_PACKAGE in text) == qualified
+    assert (DEPENDENCY_PATH in text) == qualified
+    assert ('Identificar el paquete en' if es else 'Identify the package in') in text or qualified
+    assert ('afectación sigue sin resolverse' if es else 'affectedness remains unresolved') in text
+    assert ('Mantener el candidato pendiente' if es else 'Keep the candidate pending') in text
+    assert 'PRIVATE_UNTRUSTED_GUIDANCE' not in text
+    expected_guidance = qualified or case.startswith(('supply_', 'inspect_', 'reconcile_'))
+    assert guidance_count == int(expected_guidance)
+    if qualified:
+        assert ('no confirma instalación ni seguridad' if es else 'not proof of installation or safety') in text
+        assert ('Identificar el paquete en' if es else 'Identify the package in') not in text
+    guidance_labels = {
+        'supply_scanner_identity': ('First obtain the scanner', 'Primero obtener el nombre del paquete'),
+        'supply_current_capture': ('First obtain retained source evidence', 'Primero obtener evidencia conservada'),
+        'supply_lockfile_observation': ('First obtain an observation', 'Primero obtener una observación'),
+        'inspect_lockfile_capture': ('First inspect the retained capture outcome', 'Primero revisar el resultado conservado'),
+        'reconcile_lockfile_identity': ('First reconcile the scanner claim', 'Primero conciliar la afirmación'),
+    }
+    if case in guidance_labels:
+        assert guidance_labels[case][int(es)] in text
+    if case == 'supply_lockfile_observation':
+        assert ('causa se desconoce' if es else 'cause is unknown') in text
+    if case == 'reconcile_lockfile_identity':
+        assert ('no suponer que se intentó la coincidencia' if es else 'do not assume that matching was attempted') in text
+
+
 def validate_styles(styles, responses, computed):
     assert styles, 'no application stylesheet'
     for item in styles:
@@ -77,6 +148,20 @@ def validate_styles(styles, responses, computed):
 
 
 TOTAL_ARTIFACT_BYTES = 20 * 1024 * 1024 - RESERVED_BYTES
+
+
+def proof_complete(manifest, succeeded):
+    reviewer = manifest['cases']
+    desktop = manifest['desktop_navigation_cases']
+    reviewer_expected = {f'{locale}-{viewport}-{scenario}' for locale in ('en', 'es-MX')
+                         for viewport in VIEWPORTS for scenario in SCENARIOS}
+    desktop_expected = {(locale, case) for locale in desktop_navigation.LOCALES
+                        for case in desktop_navigation.CASES}
+    return bool(succeeded and len(reviewer) == len(reviewer_expected)
+                and {case['name'] for case in reviewer} == reviewer_expected
+                and len(desktop) == len(desktop_expected)
+                and {(case['locale'], case['case']) for case in desktop} == desktop_expected
+                and all(case['status'] == 'passed' for case in reviewer + desktop))
 
 
 def finalize_artifacts(raw, publish, manifest):
@@ -103,7 +188,9 @@ def main():
     args.output.mkdir(parents=True,exist_ok=False)
     raw=args.output/'raw';raw.mkdir()
     manifest={'schema':'nico.reviewer-binding-webkit-proof.v1','checkout_sha':sha,'reviewed_head_sha':args.reviewed_head,'tree_sha':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],cwd=root,text=True).strip(),'cases':[],
-              'synthetic_only':True,'authentication_verified':False,'production_deployment_verified':False}
+              'synthetic_only':True,'authentication_verified':False,'production_deployment_verified':False,
+              'desktop_navigation_cases':[], 'screen_reader_observed':False}
+    proof_succeeded = False
     set_stage('playwright-import')
     from playwright.sync_api import sync_playwright
     start=time.monotonic()
@@ -159,6 +246,11 @@ def main():
                             if scenario=='qualified':
                                 assert proof.is_visible() and 'subprocess.run' in proof.inner_text()
                                 assert ('runtime dispatch' if locale=='en' else 'despacho en ejecución') in section.inner_text()
+                            if scenario == 'dependency':
+                                for case in DEPENDENCY_CASES:
+                                    detail = section.locator('[data-review-assistance-candidate="dependency-' + case + '"]')
+                                    assert detail.locator('[data-dependency-evidence="true"]').count() == 1
+                                    validate_dependency_text(case, locale, detail.inner_text(), detail.locator('[data-dependency-next-step="true"]').count())
                             assert ('Every disposition remains human' if locale=='en' else 'Cada disposición sigue siendo humana') in section.inner_text()
                             assert payload['human_review_required'] and not payload['client_delivery_allowed'] and not payload['ready_for_final_approval']
                             # Require real loaded production styles, not a fixture stylesheet.
@@ -168,7 +260,7 @@ def main():
                             geometry=section.evaluate('''el => {const r=el.getBoundingClientRect();return {width:r.width,left:r.left,right:r.right,viewport:innerWidth,scroll:el.scrollWidth,client:el.clientWidth};}''')
                             assert geometry['width']>0 and geometry['left']>=-1 and geometry['right']<=width+1,geometry
                             assert geometry['scroll']<=geometry['client']+1,geometry
-                            for node in section.locator('p, summary, code').all():
+                            for node in section.locator('p, summary, code, [data-dependency-evidence] li').all():
                                 if node.is_visible():
                                     box=node.bounding_box();assert box and box['width']>0 and box['x']>=-1 and box['x']+box['width']<=width+1,box
                             assert not errors,errors
@@ -187,7 +279,11 @@ def main():
                                 'screenshot':image.name,'screenshot_sha256':hashlib.sha256(image.read_bytes()).hexdigest(),'status':'passed'})
                             assert sum(f.stat().st_size for f in raw.iterdir() if f.is_file()) <= 20*1024*1024, 'artifact budget exhausted'
                             context.close()
+                desktop_navigation.run(browser, ORIGIN, request_kind, raw,
+                                       manifest['desktop_navigation_cases'], start, TOTAL_ARTIFACT_BYTES)
+                assert time.monotonic()-start < 180, 'browser proof budget exhausted'
                 browser.close()
+                proof_succeeded = True
         finally:
             server.terminate()
             try:server.wait(timeout=5)
@@ -195,7 +291,7 @@ def main():
             reader.join(timeout=5);assert not reader.is_alive(), 'server log drain incomplete'
             log.flush()
             manifest['elapsed_seconds']=time.monotonic()-start
-            manifest['complete']=len(manifest['cases'])==16
+            manifest['complete']=proof_complete(manifest, proof_succeeded)
             finalize_artifacts(raw,args.output/'publish',manifest)
     assert manifest['complete']
 

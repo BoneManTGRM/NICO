@@ -107,7 +107,10 @@ def build_review_assistance(rows: Sequence[Mapping], scope: Mapping) -> dict:
             sort_keys=True, separators=(',', ':'), default=str).encode()).hexdigest()
         queue.append({
             'candidate_id': candidate_id, 'record_index': index,
+            'source_record_index': row.get('source_record_index'),
+            'source_candidate_input_sha256': row.get('source_candidate_input_sha256'),
             'recommendation': recommendation, 'limitations': limitations,
+            **({'evidence_tasks': ['identify_package', 'identify_locked_version', 'verify_affectedness', 'verify_runtime_use']} if row.get('category') == 'dependency' else {}),
             'source_url': source_url, 'input_sha256': digest,
             'existing_review_profile_cluster_id': _text(row.get('cluster_id')),
             'priority': 0 if high_impact or verdict == 'confirmed' else 1 if limitations else 2,

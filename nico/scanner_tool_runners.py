@@ -11,7 +11,7 @@ from typing import Any, Callable
 import requests
 
 from nico.scanner_worker_artifacts import normalize_scanner_worker_artifact
-from nico.worker_execution import WorkerCommandResult, WorkerLimits, WorkerWorkspace, run_command
+from nico.worker_execution import WorkerCommandResult, WorkerLimits, WorkerWorkspace, run_command, suite_time_remaining
 
 OSV_API = "https://api.osv.dev/v1/querybatch"
 MAX_SCANNER_PARSE_BYTES = int(os.getenv("NICO_MAX_SCANNER_PARSE_BYTES", str(20 * 1024 * 1024)))
@@ -236,7 +236,7 @@ def _complete_stdout(result: WorkerCommandResult) -> tuple[str, bool, str]:
             size = path.stat().st_size
             if size > MAX_SCANNER_PARSE_BYTES:
                 return result.stdout, False, f"scanner output exceeded the bounded parse limit of {MAX_SCANNER_PARSE_BYTES} bytes"
-            return path.read_text(encoding="utf-8", errors="replace"), True, ""
+            return path.read_text(encoding="utf-8", errors="replace"), not result.output_limit_exceeded, "scanner_output_byte_limit_exceeded" if result.output_limit_exceeded else ""
         except OSError as exc:
             return result.stdout, False, f"scanner output file could not be read: {type(exc).__name__}"
     return result.stdout, not result.output_truncated, "" if not result.output_truncated else "scanner output was truncated before parsing"
@@ -392,7 +392,10 @@ def _osv_api_fallback_tool(spec: ScannerToolSpec, repo_dir: Path) -> dict[str, A
         for item in dependencies
     ]
     try:
-        response = requests.post(OSV_API, json={"queries": queries}, timeout=30)
+        remaining = suite_time_remaining()
+        if remaining <= 0:
+            return _unavailable_tool(spec, 'scanner_suite_deadline_exhausted_before_api_request')
+        response = requests.post(OSV_API, json={"queries": queries}, timeout=min(30, remaining))
         response.raise_for_status()
         payload = response.json()
     except (requests.RequestException, ValueError) as exc:
@@ -682,6 +685,10 @@ def run_scanner_tool(
     if result.timed_out:
         status = "timeout"
         execution_error = f"{spec.name} exceeded its {spec.timeout_seconds}-second bounded timeout."
+    elif result.output_limit_exceeded:
+        status = "failed"
+        capture_complete = False
+        execution_error = "scanner_output_byte_limit_exceeded; retained bytes are partial, not exhaustive"
     elif not returncode_valid:
         status = "failed"
         execution_error = redact_text(result.stderr or result.stdout or f"unexpected return code {result.returncode}")[:4000]
@@ -700,6 +707,7 @@ def run_scanner_tool(
         "returncode_valid": returncode_valid,
         "timed_out": result.timed_out,
         "output_truncated": result.output_truncated,
+        "output_limit_exceeded": result.output_limit_exceeded,
         "output_capture_complete": capture_complete,
         "stdout_bytes": result.stdout_bytes,
         "stderr_bytes": result.stderr_bytes,

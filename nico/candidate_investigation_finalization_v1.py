@@ -18,7 +18,7 @@ def _analysis_identity(row):
     # These fields identify the exact scanner claim and source analyzed. Human
     # routing/enrichment is not evidence of a new analysis or a disposition.
     fields = ('candidate_id', 'finding_id', 'raw_fingerprint', 'scanner', 'tool', 'category',
-              'rule_id', 'rule', 'line', 'column', 'exact_commit_sha', 'source_commit_sha',
+              'dependency_identity_request', 'rule_id', 'rule', 'line', 'column', 'exact_commit_sha', 'source_commit_sha',
               'source_repository', 'evidence_quality', 'evidence', 'occurrence_count')
     result = {key: row.get(key) for key in fields}
     raw = row.get('source_path') or row.get('path')
