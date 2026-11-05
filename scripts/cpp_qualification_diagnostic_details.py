@@ -99,6 +99,42 @@ def _outcome(execution):
     return 'nonzero_exit' if execution['exit_code'] != 0 else 'record_error'
 
 
+def compiler_message_categories(raw):
+    """Observed message classes, not root causes; never return native text."""
+    if type(raw) is not bytes or len(raw) > MAX_LOG_BYTES:
+        raise ValueError('diagnostic_output_invalid')
+    categories = set()
+    for line in raw.decode('utf-8', errors='strict').splitlines():
+        if len(line) > 4096 or any(ord(char) < 32 or ord(char) == 127 for char in line):
+            continue
+        driver = re.fullmatch(
+            r'(?:cc1plus|cc1|g\+\+|gcc|c\+\+|/usr/local/bin/g\+\+|/usr/local/bin/gcc): '
+            r'(?P<kind>fatal error|error|internal compiler error): (?P<message>.*)', line)
+        located = _LOCATION.fullmatch(line)
+        match = driver or located
+        if match is None or match['kind'] == 'runtime error':
+            continue
+        message, kind = match['message'], match['kind']
+        if kind == 'internal compiler error':
+            category = 'internal_compiler_error'
+        elif message.startswith('unrecognized command-line option '):
+            category = 'unsupported_option'
+        elif message.startswith('cannot execute '):
+            category = 'tool_launch_failed'
+        elif message.endswith(': No such file or directory'):
+            category = 'missing_file'
+        elif message.endswith(': Permission denied'):
+            category = 'permission_denied'
+        elif message.startswith('Killed signal terminated program '):
+            category = 'process_killed'
+        elif message.startswith('#error '):
+            category = 'explicit_error_directive'
+        else:
+            category = 'compiler_fatal_error' if kind == 'fatal error' else 'compiler_error'
+        categories.add(category)
+    return sorted(categories) if categories else ['unclassified' if raw else 'no_output']
+
+
 def compiler_details(proof, read, public_paths):
     """Proof must come from this invocation's validate_project_compiler result."""
     ref = proof['artifact']
@@ -117,9 +153,21 @@ def compiler_details(proof, read, public_paths):
             or len(records) > 10000
             or [row['context_id'] for row in records] != proof['required_contexts']):
         raise ValueError('diagnostic_population_invalid')
+    from scripts.cpp_qualification_diagnostics import execution_summary
     rows, total = [], 0
+    counts = dict.fromkeys(('executed', 'not_executed', 'timed_out', 'nonzero_exit',
+                           'output_truncated', 'collector_errors'), 0)
+    durations = []
     for index, record in enumerate(records):
         execution = record['execution']
+        counts['collector_errors'] += record['error'] is not None
+        counts['not_executed' if execution is None else 'executed'] += 1
+        if execution is not None:
+            scalar = execution_summary(execution)
+            durations.append(scalar['duration_ms'])
+            counts['timed_out'] += scalar['timed_out'] is True
+            counts['output_truncated'] += scalar['output_truncated'] is True
+            counts['nonzero_exit'] += scalar['exit_code'] is not None and scalar['exit_code'] != 0
         if record['error'] is None and execution is not None and _outcome(execution) == 'record_error':
             continue
         total += 1
@@ -129,11 +177,18 @@ def compiler_details(proof, read, public_paths):
         # untrusted identifier or the command that produced it.
         row = {'context_index': index, 'outcome': _outcome(execution)}
         if execution is not None:
-            from scripts.cpp_qualification_diagnostics import execution_summary
             row['execution'] = execution_summary(execution)
-            row.update(locations(_decoded_output(execution), public_paths))
+            output = _decoded_output(execution)
+            row.update(locations(output, public_paths))
+            row['observed_message_categories'] = compiler_message_categories(output)
         rows.append(row)
-    return {'state': 'available', 'failed_records': total, 'omitted': total - len(rows), 'records': rows}
+    # Counts overlap (for example a timed-out process also has a nonzero exit).
+    # Summed concurrent process time is not CPU time or a hashing profile.
+    elapsed = sum(durations) if all(value is not None for value in durations) else None
+    return {'state': 'available', 'failed_records': total, 'omitted': total - len(rows), 'records': rows,
+            'population': len(records), 'observed_counts': counts,
+            'collection_duration_ms': execution_summary(value)['duration_ms'],
+            'execution_duration_ms': execution_summary({'duration_ms': elapsed})['duration_ms']}
 
 
 def primary_static_details(proof, read):

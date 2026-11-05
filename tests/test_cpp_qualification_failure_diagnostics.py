@@ -324,9 +324,12 @@ def _diagnostic_execution(raw, **changes):
             'output_sha256': hashlib.sha256(raw).hexdigest(), **changes}
 
 
-def _diagnostic_compiler(records):
+def _diagnostic_compiler(records, duration_ms=None):
     import hashlib
-    raw = json.dumps({'schema': 'nico.cpp-project-compiler-evidence.v2', 'records': records}).encode()
+    value = {'schema': 'nico.cpp-project-compiler-evidence.v2', 'records': records}
+    if duration_ms is not None:
+        value['duration_ms'] = duration_ms
+    raw = json.dumps(value).encode()
     sha = hashlib.sha256(raw).hexdigest()
     proof = {'native_evidence_sha256': sha, 'required_contexts': [r['context_id'] for r in records],
              'artifact': {'path': 'artifacts/project-compiler-evidence-' + sha + '.json',
@@ -392,6 +395,72 @@ def test_compiler_details_keep_failed_record_indexes_and_omissions():
     assert result['records'][0]['execution']['output_truncated'] is False
     assert 'SECRET' not in json.dumps(result)
     assert result['records'][0]['locations'][0]['path'] == 'src/test/a.cpp'
+    assert result['records'][0]['observed_message_categories'] == ['compiler_error']
+    assert result['population'] == result['observed_counts']['executed'] == 21
+    assert result['observed_counts']['nonzero_exit'] == 20
+    assert result['execution_duration_ms'] == 21
+    assert result['collection_duration_ms'] is None
+
+
+@pytest.mark.parametrize('message,category', [
+    (b'cc1plus: fatal error: SECRET: No such file or directory', 'missing_file'),
+    (b'g++: error: unrecognized command-line option SECRET', 'unsupported_option'),
+    (b'gcc: fatal error: cannot execute SECRET', 'tool_launch_failed'),
+    (b'cc1plus: fatal error: SECRET: Permission denied', 'permission_denied'),
+    (b'cc1plus: fatal error: Killed signal terminated program cc1plus', 'process_killed'),
+    (b'cc1plus: internal compiler error: SECRET', 'internal_compiler_error'),
+    (b'src/test/a.cpp:1:2: error: #error SECRET', 'explicit_error_directive'),
+    (b'PRIVATE_SOURCE', 'unclassified'),
+    (b'', 'no_output'),
+    (b'prefix cc1plus: fatal error: SECRET: Permission denied', 'unclassified'),
+    (b'cc1plus: fatal error: \x1b[31mSECRET: Permission denied', 'unclassified'),
+])
+def test_compiler_message_categories_are_fixed_observations(message, category):
+    from scripts.cpp_qualification_diagnostic_details import compiler_message_categories
+    result = compiler_message_categories(message)
+    assert result == [category]
+    assert 'SECRET' not in json.dumps(result)
+
+
+def test_compiler_aggregate_counts_include_unlisted_tail_records():
+    from scripts.cpp_qualification_diagnostic_details import compiler_details
+    records = [{'context_id': 'ok', 'error': None,
+                'execution': _diagnostic_execution(b'', exit_code=0, duration_ms=100)},
+               {'context_id': 'timeout', 'error': None,
+                'execution': _diagnostic_execution(b'', exit_code=124, timed_out=True, duration_ms=20000)}]
+    records += [{'context_id': str(i), 'error': 'worker_project_compiler_deadline',
+                 'execution': None} for i in range(20)]
+    proof, read = _diagnostic_compiler(records, duration_ms=15000)
+    result = compiler_details(proof, read, frozenset())
+    assert result['population'] == 22
+    assert result['omitted'] == 5
+    assert result['observed_counts'] == {'executed': 2, 'not_executed': 20,
+        'timed_out': 1, 'nonzero_exit': 1, 'output_truncated': 0, 'collector_errors': 20}
+    assert result['execution_duration_ms'] == 20100
+    assert result['collection_duration_ms'] == 15000
+
+
+@pytest.mark.parametrize('case,category', [
+    ('option', 'unsupported_option'), ('include', 'missing_file'),
+    ('directive', 'explicit_error_directive'),
+])
+def test_owned_real_gcc_failures_have_sanitized_categories(tmp_path, case, category):
+    import shutil
+    from scripts.cpp_qualification_diagnostic_details import compiler_message_categories
+    compiler = shutil.which('g++')
+    if compiler is None:
+        pytest.skip('local GCC unavailable; synthetic category controls remain required')
+    (tmp_path / 'src').mkdir()
+    source = tmp_path / 'src/control.cpp'
+    source.write_text('#include "PRIVATE_SOURCE_MISSING.h"\n' if case == 'include' else
+                      '#error PRIVATE_SOURCE\n' if case == 'directive' else 'int owned;\n')
+    args = [compiler, '-fsyntax-only', 'src/control.cpp']
+    if case == 'option':
+        args.append('-fPRIVATE_SOURCE_UNSUPPORTED')
+    result = subprocess.run(args, cwd=tmp_path, env={'PATH': '/usr/bin:/bin', 'LANG': 'C'},
+                            capture_output=True, timeout=10, check=False)
+    assert result.returncode != 0
+    assert compiler_message_categories(result.stdout + result.stderr) == [category]
 
 
 @pytest.mark.parametrize('fault', ['hash', 'size', 'path', 'population', 'duplicate_json',
