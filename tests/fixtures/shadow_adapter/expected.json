@@ -1,0 +1,93 @@
+{
+  "cases": [
+    {
+      "candidates": [
+        {
+          "candidate_id": "confirmed",
+          "expected_verdict": "confirmed"
+        },
+        {
+          "candidate_id": "missing-verdict",
+          "expected_verdict": "confirmed"
+        },
+        {
+          "candidate_id": "absent",
+          "expected_verdict": "confirmed"
+        },
+        {
+          "candidate_id": "unknown",
+          "expected_verdict": "needs_review"
+        }
+      ],
+      "case_id": "mixed",
+      "material_findings": [
+        {
+          "candidate_ids": [
+            "confirmed"
+          ],
+          "finding_id": "seed-1"
+        },
+        {
+          "candidate_ids": [
+            "missing-verdict"
+          ],
+          "finding_id": "seed-2"
+        },
+        {
+          "candidate_ids": [
+            "absent"
+          ],
+          "finding_id": "seed-3"
+        },
+        {
+          "candidate_ids": [],
+          "finding_id": "undiscovered"
+        }
+      ],
+      "scope": {
+        "repository": "example.invalid/shadow",
+        "revision": "1111111111111111111111111111111111111111",
+        "source_id": "synthetic-mixed",
+        "source_schema": "nico.candidate-technical-triage.v2"
+      }
+    },
+    {
+      "candidates": [],
+      "case_id": "zero",
+      "material_findings": [],
+      "scope": {
+        "repository": "example.invalid/shadow",
+        "revision": "1111111111111111111111111111111111111111",
+        "source_id": "synthetic-zero",
+        "source_schema": "nico.candidate-technical-triage.v2"
+      }
+    },
+    {
+      "candidates": [
+        {
+          "candidate_id": "missing",
+          "expected_verdict": "confirmed"
+        }
+      ],
+      "case_id": "missing-case",
+      "material_findings": [
+        {
+          "candidate_ids": [
+            "missing"
+          ],
+          "finding_id": "seed-5"
+        }
+      ],
+      "scope": {
+        "repository": "example.invalid/shadow",
+        "revision": "1111111111111111111111111111111111111111",
+        "source_id": "synthetic-missing-case",
+        "source_schema": "nico.candidate-technical-triage.v2"
+      }
+    }
+  ],
+  "corpus_id": "synthetic-adapter",
+  "corpus_version": "1",
+  "label_kind": "test_expectations",
+  "schema": "nico.shadow-expected.v1"
+}

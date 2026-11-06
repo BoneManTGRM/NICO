@@ -1,0 +1,14 @@
+{
+  "artifact_schema": "nico.canonical-scanner-findings.v1",
+  "assessment_subject": {
+    "repository": "example.invalid/shadow"
+  },
+  "exact_commit_sha": "1111111111111111111111111111111111111111",
+  "findings": [],
+  "status": "complete",
+  "technical_triage": {
+    "artifact_schema": "nico.candidate-technical-triage.v2",
+    "status": "complete",
+    "technical_triage_coverage_pct": 100
+  }
+}
