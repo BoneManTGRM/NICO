@@ -349,7 +349,7 @@ def test_real_malformed_seal_is_identified_without_relaxing_schema(owned, capfd)
     captured = capfd.readouterr()
     assert captured.err == '' and CANARY not in captured.out
     assert json.loads(captured.out) == {'schema': 'nico.security-identity.v1', 'state': 'invalid',
-                                     'phase': 'seal', 'reason': 'report_validation'}
+                                     'phase': 'seal', 'reason': 'finding_tags_list'}
     assert not (root / identity.CONTEXT).exists()
 
 
@@ -362,3 +362,203 @@ def test_cli_failure_reasons_do_not_reflect_arguments(owned, capfd):
         assert captured.err == '' and CANARY not in captured.out
         value = json.loads(captured.out)
         assert (value['phase'], value['reason']) == (phase, reason)
+
+
+# Report-only reason refinement: all fixtures are synthetic and retain old limits.
+def report_summary(count=1):
+    return {'scanner': 'gitleaks', 'status': 'completed', 'finding_count': count,
+            'artifact_present': True, 'history_depth': 'full', 'exit_code': 1 if count else 0}
+
+
+def assert_report_reason(report, summary, reason):
+    with pytest.raises(identity.DiagnosticFailure) as error:
+        identity.parse_findings(report, summary)
+    assert error.value.reason == reason
+    raw = identity.invalid_record('seal', error.value.reason)
+    assert len(raw) <= 512 and CANARY.encode() not in raw
+    assert json.loads(raw)['reason'] == reason
+
+
+@pytest.mark.parametrize('which', ['report', 'summary'])
+@pytest.mark.parametrize('raw,suffix', [
+    (None, 'raw_type'), (b'', 'raw_empty'), (b'x' * (identity.LIMIT + 1), 'raw_size'),
+    (b'\xff', 'utf8'), (b'{"x":1,"x":2}', 'duplicate_keys'),
+    (b'[NaN]', 'nonfinite_json'), (b'{', 'json_syntax'),
+])
+def test_raw_report_and_summary_have_distinct_fixed_decode_codes(which, raw, suffix):
+    report = identity.canonical([finding()])
+    summary = identity.canonical(report_summary())
+    if which == 'report':
+        report = raw
+    else:
+        summary = raw
+    assert_report_reason(report, summary, which + '_' + suffix)
+
+
+@pytest.mark.parametrize('field,value,reason', [
+    ('scanner', 'other', 'summary_scanner'), ('status', 'unavailable', 'summary_status'),
+    ('artifact_present', 1, 'summary_artifact_present'), ('history_depth', 'shallow', 'summary_history_depth'),
+    ('finding_count', True, 'summary_count_type'), ('finding_count', -1, 'summary_count_range'),
+    ('finding_count', 10**12 + 1, 'summary_count_range'), ('finding_count', 2, 'summary_count_match'),
+    ('exit_code', True, 'summary_exit_type'), ('exit_code', 0, 'summary_exit_value'),
+])
+def test_each_summary_predicate_has_its_own_reason(field, value, reason):
+    summary = report_summary()
+    summary[field] = value
+    assert_report_reason(identity.canonical([finding()]), identity.canonical(summary), reason)
+
+
+@pytest.mark.parametrize('field,prefix,limit', [
+    ('Commit', 'finding_commit', 40), ('File', 'finding_path', 4096),
+    ('RuleID', 'finding_rule', 256), ('Fingerprint', 'finding_fingerprint', 8192),
+    ('Match', 'finding_match', 65536), ('Description', 'finding_description', 16384),
+    ('Author', 'finding_author', 16384), ('Email', 'finding_email', 16384),
+    ('Date', 'finding_date', 16384), ('Message', 'finding_message', 16384),
+    ('SymlinkFile', 'finding_symlink_file', 16384), ('Link', 'finding_link', 16384),
+])
+@pytest.mark.parametrize('failure', ['type', 'encoding', 'bytes'])
+def test_text_check_codes_are_field_specific_without_echoing_values(field, prefix, limit, failure):
+    item = finding()
+    item[field] = None if failure == 'type' else '\ud800' if failure == 'encoding' else 'x' * (limit + 1)
+    # JSON ASCII escapes carry the invalid surrogate to the existing UTF8 predicate.
+    report = json.dumps([item], ensure_ascii=True).encode()
+    assert_report_reason(report, identity.canonical(report_summary()), prefix + '_' + failure)
+
+
+@pytest.mark.parametrize('field,prefix', [
+    ('StartLine', 'finding_start_line'), ('EndLine', 'finding_end_line'),
+    ('StartColumn', 'finding_start_column'), ('EndColumn', 'finding_end_column'),
+])
+@pytest.mark.parametrize('value,suffix', [(True, 'type'), (1.0, 'type'), (0, 'range'), (10**9 + 1, 'range')])
+def test_position_types_and_ranges_are_distinguished(field, prefix, value, suffix):
+    item = finding()
+    item[field] = value
+    assert_report_reason(identity.canonical([item]), identity.canonical(report_summary()), prefix + '_' + suffix)
+
+
+@pytest.mark.parametrize('change,reason', [
+    ({'Commit': 'z' * 40}, 'finding_commit_hex'),
+    ({'File': ''}, 'finding_path_empty'), ({'File': '/owned'}, 'finding_path_absolute'),
+    ({'File': 'x\\y'}, 'finding_path_backslash'), ({'File': 'x/../y'}, 'finding_path_components'),
+    ({'File': 'x\ny'}, 'finding_path_control'), ({'RuleID': ''}, 'finding_rule_empty'),
+    ({'RuleID': 'x\ny'}, 'finding_rule_control'),
+    ({'StartLine': 2, 'EndLine': 1}, 'finding_line_order'),
+    ({'StartColumn': 3, 'EndColumn': 2}, 'finding_column_order'),
+    ({'Fingerprint': CANARY}, 'finding_fingerprint_match'),
+    ({'Secret': False}, 'finding_secret_type'), ({'Secret': CANARY}, 'finding_secret_marker'),
+    ({'Match': CANARY}, 'finding_match_redaction'),
+    ({'Entropy': True}, 'finding_entropy_type'), ({'Entropy': -1}, 'finding_entropy_range'),
+    ({'Entropy': 101}, 'finding_entropy_range'),
+    ({'Tags': None}, 'finding_tags_list'), ({'Tags': [''] * 129}, 'finding_tags_count'),
+    ({'Tags': [1]}, 'finding_tag_type'), ({'Tags': ['x' * 257]}, 'finding_tag_bytes'),
+])
+def test_structural_guards_emit_only_their_fixed_check(change, reason):
+    item = finding()
+    item.update(change)
+    assert_report_reason(identity.canonical([item]), identity.canonical(report_summary()), reason)
+
+
+@pytest.mark.parametrize('which', ['report', 'summary'])
+def test_numeric_decode_bound_remains_rejected(which):
+    import sys
+    bound = sys.get_int_max_str_digits()
+    if not bound:
+        pytest.skip('interpreter integer digit limit disabled; no decode-number failure to observe')
+    raw = b'9' * (bound + 1)
+    report, summary = identity.canonical([finding()]), identity.canonical(report_summary())
+    assert_report_reason(raw if which == 'report' else report,
+                         raw if which == 'summary' else summary, which + '_json_value_error')
+
+
+def test_entropy_nonfinite_and_conversion_overflow_remain_rejected():
+    # Exponent overflow is accepted by JSON decoding, then rejected by math.isfinite.
+    report = identity.canonical([finding()]).replace(b'"Entropy":1.5', b'"Entropy":1e999')
+    assert_report_reason(report, identity.canonical(report_summary()), 'finding_entropy_finite')
+    item = finding()
+    item['Entropy'] = 10**400
+    assert_report_reason(identity.canonical([item]), identity.canonical(report_summary()), 'finding_entropy_finite_check_overflow')
+
+
+def test_collection_shapes_and_duplicate_occurrence_codes():
+    summary = identity.canonical(report_summary())
+    assert_report_reason(b'{}', summary, 'report_list')
+    assert_report_reason(identity.canonical([finding()]), b'[]', 'summary_dict')
+    assert_report_reason(identity.canonical([finding()]), b'{}', 'summary_keys')
+    assert_report_reason(b'[0]', summary, 'finding_dict')
+    assert_report_reason(b'[{}]', summary, 'finding_required_keys')
+    item = finding()
+    item['Verified'] = False
+    assert_report_reason(identity.canonical([item]), summary, 'finding_extra_keys')
+    assert_report_reason(identity.canonical([finding(), finding()]),
+                         identity.canonical(report_summary(2)), 'finding_duplicate_occurrence')
+    n = identity.MAX_RECORDS - len(identity.BINDINGS) - 2
+    assert_report_reason(identity.canonical([finding(i) for i in range(n)]),
+                         identity.canonical(report_summary(n)), 'report_count_cap')
+
+
+def test_tag_encoding_code_never_contains_element_or_index():
+    item = finding()
+    item['Tags'] = ['\ud800']
+    assert_report_reason(json.dumps([item]).encode(), identity.canonical(report_summary()), 'finding_tag_encoding')
+
+
+@pytest.mark.parametrize('field', ['Description', 'Author', 'Email', 'Date', 'Message', 'SymlinkFile', 'Link'])
+def test_optional_text_byte_boundary_is_unchanged(field):
+    item = finding()
+    item[field] = '\u00e9' * 8192  # Exactly16384 UTF8 bytes; character count is smaller.
+    assert identity.parse_findings(identity.canonical([item]), identity.canonical(report_summary()))[0]['finding'] == item
+    item[field] += 'x'
+    with pytest.raises(identity.DiagnosticFailure) as error:
+        identity.parse_findings(identity.canonical([item]), identity.canonical(report_summary()))
+    assert error.value.reason in identity.REPORT_REASONS and error.value.reason.endswith('_bytes')
+
+
+@pytest.mark.parametrize('which', ['report', 'summary'])
+def test_decoder_depth_exception_has_a_fixed_boundary(which):
+    # CPython 3.12's JSON C-stack bound differs from sys.getrecursionlimit().
+    # This bounded synthetic input exceeds both supported runtime limits.
+    depth = 10000
+    raw = b'[' * depth + b'0' + b']' * depth
+    assert len(raw) <= identity.LIMIT
+    report, summary = identity.canonical([finding()]), identity.canonical(report_summary())
+    assert_report_reason(raw if which == 'report' else report,
+                         raw if which == 'summary' else summary, which + '_json_depth')
+
+
+def test_every_report_reason_has_an_actual_invalid_input(monkeypatch):
+    # Execute the category fixtures, collecting observed reasons rather than
+    # merely checking that arbitrary strings belong to the vocabulary.
+    import itertools
+    observed = set()
+    original = assert_report_reason
+
+    def observe(report, summary, reason):
+        original(report, summary, reason)
+        observed.add(reason)
+
+    monkeypatch.setitem(globals(), 'assert_report_reason', observe)
+    cases = [
+        test_raw_report_and_summary_have_distinct_fixed_decode_codes,
+        test_each_summary_predicate_has_its_own_reason,
+        test_text_check_codes_are_field_specific_without_echoing_values,
+        test_position_types_and_ranges_are_distinguished,
+        test_structural_guards_emit_only_their_fixed_check,
+        test_numeric_decode_bound_remains_rejected,
+        test_entropy_nonfinite_and_conversion_overflow_remain_rejected,
+        test_collection_shapes_and_duplicate_occurrence_codes,
+        test_tag_encoding_code_never_contains_element_or_index,
+        test_decoder_depth_exception_has_a_fixed_boundary,
+    ]
+    for case in cases:
+        dimensions = []
+        for mark in getattr(case, 'pytestmark', []):
+            if mark.name == 'parametrize':
+                names = [name.strip() for name in mark.args[0].split(',')]
+                dimensions.append([
+                    dict(zip(names, (value,) if len(names) == 1 else value))
+                    for value in mark.args[1]
+                ])
+        for combination in itertools.product(*dimensions):
+            arguments = {key: value for mapping in combination for key, value in mapping.items()}
+            case(**arguments)
+    assert observed == identity.REPORT_REASONS
