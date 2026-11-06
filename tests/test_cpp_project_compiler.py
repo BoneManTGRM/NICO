@@ -46,6 +46,7 @@ def test_source_verification_cannot_dispatch_compiler_after_shared_deadline(monk
         calls.append((clock[0], deadline))
         return {'exit_code': 124, 'timed_out': True, 'output_truncated': False}
 
+    monkeypatch.setattr(compiler, '_observe_cpu_capacity', lambda workers: {'state':'unavailable'})
     monkeypatch.setattr(compiler, '_run', run)
     result = compiler.collect_project_compiler(request)
     record = result['records'][0]
