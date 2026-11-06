@@ -1,0 +1,111 @@
+{
+  "schema": "nico.shadow-expected.v1",
+  "corpus_id": "synthetic-ordinary-repository",
+  "corpus_version": "1",
+  "label_kind": "test_expectations",
+  "cases": [
+    {
+      "case_id": "mixed",
+      "scope": {
+        "source_id": "synthetic-run-1",
+        "repository": "example.invalid/shadow",
+        "revision": "1111111111111111111111111111111111111111",
+        "source_schema": "nico.candidate-technical-triage.v2"
+      },
+      "candidates": [
+        {
+          "candidate_id": "material",
+          "expected_verdict": "confirmed"
+        },
+        {
+          "candidate_id": "benign",
+          "expected_verdict": "not_actionable"
+        },
+        {
+          "candidate_id": "unsafe",
+          "expected_verdict": "confirmed"
+        },
+        {
+          "candidate_id": "false-confirmation",
+          "expected_verdict": "not_actionable"
+        },
+        {
+          "candidate_id": "abstain",
+          "expected_verdict": "confirmed"
+        },
+        {
+          "candidate_id": "omitted",
+          "expected_verdict": "confirmed"
+        },
+        {
+          "candidate_id": "unknown",
+          "expected_verdict": "needs_review"
+        }
+      ],
+      "material_findings": [
+        {
+          "finding_id": "seed-material",
+          "candidate_ids": [
+            "material"
+          ]
+        },
+        {
+          "finding_id": "seed-unsafe",
+          "candidate_ids": [
+            "unsafe"
+          ]
+        },
+        {
+          "finding_id": "seed-abstain",
+          "candidate_ids": [
+            "abstain"
+          ]
+        },
+        {
+          "finding_id": "seed-omitted",
+          "candidate_ids": [
+            "omitted"
+          ]
+        },
+        {
+          "finding_id": "never-emitted",
+          "candidate_ids": []
+        }
+      ]
+    },
+    {
+      "case_id": "true-zero",
+      "scope": {
+        "source_id": "synthetic-run-1",
+        "repository": "example.invalid/shadow",
+        "revision": "1111111111111111111111111111111111111111",
+        "source_schema": "nico.candidate-technical-triage.v2"
+      },
+      "candidates": [],
+      "material_findings": []
+    },
+    {
+      "case_id": "missing-case",
+      "scope": {
+        "source_id": "synthetic-run-1",
+        "repository": "example.invalid/shadow",
+        "revision": "1111111111111111111111111111111111111111",
+        "source_schema": "nico.candidate-technical-triage.v2"
+      },
+      "candidates": [
+        {
+          "candidate_id": "missing",
+          "expected_verdict": "confirmed"
+        }
+      ],
+      "material_findings": [
+        {
+          "finding_id": "missing-seed",
+          "candidate_ids": [
+            "missing"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+# Dependency identity assistance v1
+
+This change collects npm package-lock v2/v3 identity evidence from already acquired verified Git blobs, and gives English/es-MX reviewer tasks. It does not resolve vulnerabilities, prove installation, change scores/dispositions/QC, or authorize client delivery.
+
+The canonical scanner request preserves only a bounded package claim, optional version claim and exact package-lock path. Unsupported/missing paths, conflicting names/versions/ecosystems and ambiguous deduplicated requests are not guessed. Existing candidate IDs and population expansion remain unchanged. This covers path-bearing scanner records, including OSV; npm-audit records without a lockfile path remain unresolved.
+
+The existing workspace capture reads only regular Git blobs at the fixed snapshot. Existing limits remain: 256 KiB/file, 8 MiB aggregate input, 2 MiB retained capture and a cooperative five-second deadline. No additional fetch, npm execution, dependency installation or GET-time parse occurs. JSON duplicate keys, unsupported formats, bad UTF-8, excessive inventory (>4096 entries), invalid paths and mismatched blob OIDs fail closed. Source bytes are not retained; resolved URLs, integrity strings and arbitrary package prose are omitted. Workspaces, links, aliases, non-semver versions and multiple matching installation locations do not produce a qualified identity. Even identical versions at two locations remain ambiguous.
+
+A receipt is separately bound to run/repository/customer/project/commit plus lockfile SHA-256/Git OID. It means uniquely observed locked package/version, not an authenticated installation or advisory determination. Installed state, affectedness and reachability are explicitly unknown. A persisted receipt alone is insufficient: the read projection requalifies the separate server-persisted capture, checks exact receipt equality and existing register/row fingerprints. This is existing storage trust, not cryptographic producer authentication.
+
+Investigation shares the existing two-second cooperative deadline, limits distinct identity lookups to128, and caps added receipt bytes at256 KiB. Display has the same distinct-lookup/output caps. Cached results include candidate scope. Attempted and identity-collected counts are separate from bounded rule completion and human dispositions. Budget-exhausted rows receive no identity credit. Unknowns are never scored as passes.
+
+The reviewer queue uses original canonical record index and fingerprint before sorting/enrichment. Qualified identity replaces only the two identity-acquisition instructions; installed-version advisory verification and production-use/control questions remain. No candidate-ID-only association is used for the new receipt. Duplicate/ambiguous/stale packets suppress details. Existing canonical unique-ID validation and human gates remain intact.
+
+Validation uses synthetic Git blobs and ordinary fixture seams. No assessment or deployment is part of this change. Browser pixel/layout qualification is not claimed; deterministic rendered component tests and TypeScript checks exercise the bilingual contract. This is not evidence of reduced production workload.
+
+## Integration status
+
+The implementation originally proposed in PR #1873 was integrated through merged
+PR #1877 (`71a21713`) and is present in accepted main `bf42c567`. The original
+branch now reconciles its history with main rather than reintroducing older
+source. Current lexical-binding, dependency-guidance and handler-evidence
+safeguards are preserved. Its reconciliation diff contains this status note only.
+
+The validation statements above describe the original change. Later release
+qualification does not establish measured reviewer-time savings or convert
+locked identity into installation, affectedness or reachability proof.

@@ -71,3 +71,122 @@ New assessments capture bounded, text-free Python observations from the source t
 The canonical scoring stage persists compact versioned investigation records alongside unchanged candidate findings. Existing review-work GETs only validate and display those records; they do not parse source or launch work. The bilingual panel shows coverage, source hash/path/line, rationale, counterevidence, reviewer questions and explicit unresolved reasons. No new endpoint, model/API call, disposition, score or approval action is added. Existing assessments without retained observations remain explicitly unavailable; their source is not silently reacquired or their historic artifacts rewritten.
 
 Synthetic installed EN/ES final-report roundtrips verify all 1,675 investigation records survive final rendering and the review-work projection. This is integration qualification, not measured production coverage; the actual 1,177-record result above remains the separately authorized offline analysis.
+
+## Offline preparation of shared missing-evidence requests
+
+`python -m scripts.prepare_retained_triage_evidence_requests --output /private/new-requests.json`
+reads the repository's existing validated compact technical-triage package and
+creates a separate owner-only output exclusively (mode 0600 on POSIX). Stdout
+contains only counts, never retained evidence text or reason labels. An optional `--triage` accepts the same
+compact format from an already authorized local file. No source acquisition,
+scanner, model, database, assessment mutation or production action is involved.
+
+The packet binds the repository and assessed commit plus a SHA-256 of the decoded
+payload serialized with sorted keys and compact separators. It retains every
+candidate ID, retained verdict, proposal and reason code. Exact repeated proof-gap
+text is consolidated into evidence requests within that single scope, with each
+affected candidate ID listed once. Family-specific next steps remain separately
+listed. These groups are requests, not evidence of common applicability and not
+batch dispositions. Each candidate still needs its own evidence assessment.
+
+Inspection and integration against main `71a2171330d68de0ee35f7f22e2c22a5eb8e1f3d`
+used the historical retained package for `BoneManTGRM/NICO` at
+`9c876ba4e3e9bb152de52567232038e52a6bbb3e`. All 662 candidates have retained
+technical-triage records: 624 `not_actionable` proposals and 38 `needs_review`
+proposals. The latter comprise 36 image-dependency and two HTTP-dependency cases.
+All 38 record three gaps: the exact deployed dependency lock/SBOM, supported
+lower-trust input reachability, and deployed fixed-version verification. Thus the
+packet prepares three shared evidence requests and two family-specific next-step
+groups. The other 624 records contain no recorded gaps; this does not establish
+complete evidence or safety. The retained package explicitly records no runtime
+validation and pending human approval. Exact source/path coverage cannot be
+reconstructed from this compact triage package. These committed artifacts were
+introduced by `434bcbe8d41ff60c7654b0f499da26e8855252f3` (PR #1108) and are unchanged
+on the integration baseline. Their read-only use is covered by the present
+authorized NICO repository task; no new assessment or external data access is
+authorized by the artifact's presence.
+
+For this available corpus, the highest remaining evidence opportunity is binding
+an already authorized exact-release dependency inventory to the original
+candidates, then verifying candidate-specific supported call paths and fixes.
+The compact package does not contain that inventory or proof. This helper
+automates repeated request preparation only; it neither acquires missing evidence
+nor treats it as resolved. Missing gap descriptions stay explicitly unknown,
+malformed descriptions fail, and reviewer time saved remains null. A measured
+specialist session is required before claiming reduced reviewer time.
+
+These historical counts do not describe current production or its zero-candidate
+acceptance run. No current production
+candidate export was available locally. The older 1,675/1,678/1,681-candidate
+results elsewhere in these notes were not rerun or substituted as fresh evidence.
+Normal CI/release qualification and human report approval/delivery requirements
+remain separate; this change performs no GitHub PR approval.
+
+Local verification on the integration baseline passed 510 tests with no failures,
+errors or skips on Python 3.12. Each of the 20 `tests/test_candidate*.py` files ran
+in a separate `python -m pytest -q` process, following repository CI isolation.
+The same check also covered `test_retained_triage_evidence_requests.py`,
+`test_phase1_candidate_intelligence.py`, `test_phase2_review_work_v1.py`,
+`test_phase2_review_work_runtime_contract_v1.py`,
+`test_phase4_client_delivery_contract_v1.py` and
+`test_review_artifact_approval_boundary_v1.py` (all under `tests/`). The final
+10-test helper suite includes before/after privacy regressions for owner-only
+output, numeric-only stdout and rejecting padded identifiers without echoing
+retained text. Independent read-only review found no remaining material issue
+after those corrections; this is not PR or report approval.
+The CLI produced a packet whose 662 candidate IDs were independently reconciled
+against the validated retained lineage baseline. Its 114 candidate-to-gap links
+resolve to three requests, each retaining 38 candidate references. This is a
+representation count, not a measurement of avoided human tasks or time.
+Preparation also completed with socket connections, subprocess launches and
+SQLite connections blocked by instrumentation. `python -m bandit -q
+scripts/prepare_retained_triage_evidence_requests.py`, `python -m py_compile` for
+the helper and its tests, and `git diff --check` passed. Hosted CI and Python 3.11
+remain unverified. No production qualification or deployment is included.
+
+## Optional exception-handler evidence
+
+The ordinary verified-workspace capture can retain optional text-free B110/B112
+handler facts for at most one eligible file. It reuses the existing AST parse,
+finishes baseline capture first, then inspects that AST only within the remaining
+shared deadline. Existing supported-rule priorities, source reads, baseline
+observations and input/output limits remain unchanged. The optional sidecar is
+capped at 4 KiB within the existing envelope reservation; unavailable space, time,
+source binding or supported structure means no handler evidence. It never reads
+or parses source again. The AST is invocation-local and source text is not stored.
+
+Only ordinary handlers whose whole body is one `pass` or one loop-context-valid
+`continue` qualify. Mixed bodies, `except*`, ambiguous lines, warnings, legacy
+captures and mismatched scope/source remain unavailable. Syntax alone does not
+establish safety, vulnerability, reachability or swallowed-error consequences.
+
+Persistence retains at most 64 versioned receipts and 64 KiB. Each receipt binds
+candidate fingerprint, exact scope, source SHA-256, Git blob, path, line and body
+kind. Display requalifies against the retained trusted capture and requires exact
+receipt equality. Candidate-authored receipt fields cannot issue evidence. B110
+and B112 remain unresolved and never receive bounded-analysis completion credit,
+dispositions, score changes, report approval or delivery authorization.
+
+The reviewer UI shows qualified facts, provenance and explicit remaining human
+questions in English and es-MX. The installed PDF currently lacks trusted capture
+at this display seam, so it explicitly discloses handler evidence unavailable and
+human contextual review required. It does not authenticate packet-embedded facts
+or export a handler evidence count. Historical reports are not upgraded.
+
+The source characterization at `9c876ba4` used a synthetic candidate probe, not a
+join to the historical 662 candidates. Those compact records do not contain the
+path/rule detail required for a safe join. No historical candidate is claimed
+resolved or newly covered, and no reviewer-time saving has been measured.
+
+Local qualification against merged main `bc3c60fe1c065d201a6a42e3ae28b2517f2ac71b`:
+609 Python tests passed across 29 isolated files, with zero failures/errors/skips;
+98 reviewer JavaScript tests passed; TypeScript and the standard Next.js production
+build passed. Tests cover the real Git collector, baseline ordered reads and
+observation/output parity, optional deadline exhaustion, one-file/32-line bounds,
+receipt count/byte limits, JSON persistence, finalization, trusted review display,
+tampering/privacy and installed EN/es-MX PDF abstention with exact artifact hashes,
+input nonmutation and approval/delivery gates. Independent review found and
+verified a correction for rule-alias PDF disclosure; final review found no
+remaining material issue. Bandit reports the same three existing low-severity
+Git subprocess findings as the baseline; the new handler module adds none.
+Hosted CI and production qualification for this follow-on remain separate.

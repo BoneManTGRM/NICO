@@ -31,6 +31,10 @@ scanners = [
   "bandit>=1.9,<2",
 ]
 
+[project.entry-points."bandit.plugins"]
+nico_requests_bound_false = "nico_bandit.bounded_candidates:nico_requests_bound_false"
+nico_hashlib_getattr_md5 = "nico_bandit.bounded_candidates:nico_hashlib_getattr_md5"
+
 [project.scripts]
 nico = "nico.__main__:main"
 nico-api = "nico.api_runner:main"

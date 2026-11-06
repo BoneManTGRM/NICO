@@ -130,14 +130,17 @@ def test_cleanup_uncertainty_blocks_future_launch_even_if_caught(tmp_path,monkey
 
 @pytest.mark.parametrize('failure',[KeyboardInterrupt, RuntimeError])
 def test_exception_cleanup_preserves_exception(tmp_path,monkeypatch,failure):
-    original = subprocess.Popen.communicate
+    original = worker._BoundedCapture.pump
     processes=[]
+    original_popen = subprocess.Popen
+    def track(*args, **kwargs):
+        process = original_popen(*args, **kwargs)
+        processes.append(process)
+        return process
     def interrupted(self,*args,**kwargs):
-        if not processes:
-            processes.append(self)
-            raise failure('synthetic cancellation')
-        return original(self,*args,**kwargs)
-    monkeypatch.setattr(subprocess.Popen,'communicate',interrupted)
+        raise failure('synthetic cancellation')
+    monkeypatch.setattr(subprocess,'Popen',track)
+    monkeypatch.setattr(worker._BoundedCapture,'pump',interrupted)
     with pytest.raises(failure):
         worker.run_command([sys.executable,'-c','import time;time.sleep(8)'],cwd=tmp_path)
     assert processes[0].poll() is not None
@@ -169,18 +172,26 @@ def test_scanner_sequence_aborts_on_cleanup_uncertainty(tmp_path,monkeypatch):
 
 
 def test_drain_failure_latches_without_unbounded_communicate(tmp_path,monkeypatch):
-    original=subprocess.Popen.communicate
-    calls=[]
-    def drain_timeout(self,*args,**kwargs):
-        calls.append(kwargs.get('timeout'))
-        if len(calls)==2:
-            raise subprocess.TimeoutExpired(self.args,kwargs['timeout'])
-        return original(self,*args,**kwargs)
-    monkeypatch.setattr(subprocess.Popen,'communicate',drain_timeout)
+    original_cleanup=worker._cleanup_group
+    cleaned=[]
+    def cleanup(*args):
+        original_cleanup(*args)
+        cleaned.append(True)
+    original_pump=worker._BoundedCapture.pump
+    original_active=worker._BoundedCapture.active
+    def pump(self, timeout):
+        assert 0 <= timeout <= .05
+        if cleaned:
+            raise OSError('synthetic drain failure')
+        return original_pump(self, timeout)
+    monkeypatch.setattr(worker,'_cleanup_group',cleanup)
+    monkeypatch.setattr(worker._BoundedCapture,'active',lambda self: bool(cleaned) or original_active(self))
+    monkeypatch.setattr(worker._BoundedCapture,'pump',pump)
+    def forbidden(*args,**kwargs):raise AssertionError('unbounded communicate used')
+    monkeypatch.setattr(subprocess.Popen,'communicate',forbidden)
     with pytest.raises(worker.WorkerCleanupError,match='drain'):
         worker.run_command([sys.executable,'-c','print(1)'],cwd=tmp_path)
-    assert calls==[60,worker._DRAIN_SECONDS]
-    assert worker._CLEANUP_UNCERTAIN.is_set()
+    assert cleaned and worker._CLEANUP_UNCERTAIN.is_set()
 
 
 def test_kill_failure_is_bounded_and_latched(tmp_path,monkeypatch):
@@ -205,6 +216,7 @@ def test_zombie_only_group_is_not_live(tmp_path,monkeypatch):
         def __enter__(self):return iter([Entry()])
         def __exit__(self,*args):pass
     monkeypatch.setattr(os,'scandir',lambda _:Entries())
+    monkeypatch.setattr(os,'killpg',lambda group, sig: None)  # group exists; inspect zombie state
     assert not worker._live_group(1234)
 
 
@@ -287,3 +299,54 @@ def test_cleanup_control_wrong_identity_fails_closed(monkeypatch):
         'cleanup_identity':{**snapshot._cleanup_control_identity(payload),'customer_id':'other'}})
     with pytest.raises(worker.WorkerCleanupError,match='admission blocked'):
         snapshot._cleanup_control(payload)
+
+
+def test_completed_group_absence_does_not_require_unrelated_proc_inventory(tmp_path, monkeypatch):
+    # A real owned child is reaped by communicate; the kernel can prove its
+    # process group no longer exists without reading unrelated process records.
+    def inaccessible_inventory(path):
+        raise PermissionError('synthetic unrelated process inventory denial')
+    monkeypatch.setattr(os, 'scandir', inaccessible_inventory)
+    result = worker.run_command([sys.executable, '-c', 'print("done")'], cwd=tmp_path)
+    assert result.returncode == 0 and result.stdout == 'done\n'
+    assert not worker._CLEANUP_UNCERTAIN.is_set()
+
+
+def test_existing_group_still_requires_readable_inventory(monkeypatch):
+    calls = []
+    def present(group, sig):
+        calls.append((group, sig))
+    def inaccessible_inventory(path):
+        raise PermissionError('synthetic inventory denial')
+    monkeypatch.setattr(os, 'killpg', present)
+    monkeypatch.setattr(os, 'scandir', inaccessible_inventory)
+    with pytest.raises(PermissionError):
+        worker._live_group(987654)
+    assert calls == [(987654, 0)]
+
+
+@pytest.mark.parametrize('error', [PermissionError, OSError])
+def test_group_probe_uncertainty_is_not_absence(monkeypatch, error):
+    def uncertain(*args):
+        raise error('synthetic group probe uncertainty')
+    monkeypatch.setattr(os, 'killpg', uncertain)
+    with pytest.raises(error):
+        worker._live_group(987654)
+
+
+def test_group_probe_permission_failure_latches_and_blocks_next_command(tmp_path, monkeypatch):
+    # The real direct child has already completed; injecting uncertainty must
+    # still fail closed rather than interpreting EPERM as group absence.
+    def denied(group, sig):
+        assert sig == 0
+        raise PermissionError('synthetic group probe denial')
+    monkeypatch.setattr(os, 'killpg', denied)
+    with pytest.raises(worker.WorkerCleanupError) as failure:
+        worker.run_command([sys.executable, '-c', 'pass'], cwd=tmp_path)
+    assert isinstance(failure.value.__cause__, PermissionError)
+    assert worker._CLEANUP_UNCERTAIN.is_set()
+    def forbidden(*args, **kwargs):
+        raise AssertionError('next command launched')
+    monkeypatch.setattr(subprocess, 'Popen', forbidden)
+    with pytest.raises(worker.WorkerCleanupError, match='prior'):
+        worker.run_command([sys.executable, '-c', 'pass'], cwd=tmp_path)
