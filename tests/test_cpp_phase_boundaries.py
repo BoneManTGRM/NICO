@@ -210,3 +210,18 @@ def test_replacement_receipt_missing_from_binding_rejected():
     del value['files']['replacement_index_receipt']
     with pytest.raises(ValueError,match='phase_binding_identity'):
         build.validate_binding(value,value['image'])
+
+
+def test_ctu_repair_is_bound_after_index_before_probe():
+    recipe=build.recipe(binding()['original_image'])
+    index=recipe.index('cmp /opt/phase-replacement-index.json /opt/nico-cppcheck-replacement-index.json')
+    repair=recipe.index('python3 /opt/repair_cppcheck_ctu_first_use.py')
+    comparison=recipe.index('cmp /opt/phase-ctu-first-use.json /opt/nico-cppcheck-ctu-first-use.json')
+    probe=recipe.index('python3 /opt/cpp_template_probe.py --source')
+    assert index < repair < comparison < probe
+    assert build.FILES['ctu_first_use_receipt']=='/opt/nico-cppcheck-ctu-first-use.json'
+    assert 'COPY cppcheck-ctu-first-use /opt/cppcheck-ctu-first-use' in recipe
+    value=binding()
+    del value['files']['ctu_first_use_receipt']
+    with pytest.raises(ValueError,match='phase_binding_identity'):
+        build.validate_binding(value,value['image'])

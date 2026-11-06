@@ -194,3 +194,14 @@ def test_replacement_count_semantics_cannot_be_misrepresented():
     assert value['replacement_visit_unit']==probe.REPLACEMENT_VISIT_UNIT
     value['replacement_visit_unit']='all_tokens_or_index_slots'
     assert not probe.valid_summary(value)
+
+
+def test_ctu_production_source_is_bound_and_not_instrumented(monkeypatch):
+    raw=b'owned CTU source'
+    expected='f3e363ae33cb8489ff25f4c1ab7ca02adbf0ee9f5fe1f7d463669e1eaa259ada'
+    assert probe.BASELINE['lib/ctu.cpp']==probe.AFTER['lib/ctu.cpp']==expected
+    assert probe.expected_receipt()['production_ctu_first_use'] is True
+    with pytest.raises(ValueError,match='template_probe_source_identity'):
+        probe.instrument_baseline('lib/ctu.cpp',raw)
+    monkeypatch.setitem(probe.BASELINE,'lib/ctu.cpp',probe.digest(raw))
+    assert probe.instrument_baseline('lib/ctu.cpp',raw)==raw
