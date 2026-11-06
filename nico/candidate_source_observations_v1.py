@@ -28,7 +28,7 @@ def candidate_source_path(value):
 
 
 def observe_python_source(source: bytes, *, repository: str, commit_sha: str,
-                          path: str, blob_oid: str) -> dict:
+                          path: str, blob_oid: str, tree_sink=None) -> dict:
     if len(source) > MAX_SOURCE_BYTES:
         return {'status': 'source_size_limit', 'statements': {}}
     # The offline loader obtains this OID from the exact commit tree, not from
@@ -65,6 +65,10 @@ def observe_python_source(source: bytes, *, repository: str, commit_sha: str,
                 'shell_keyword': str(shell.value).lower() if isinstance(shell, ast.Constant) and type(shell.value) is bool else 'unspecified' if shell is None else 'dynamic',
                 'api_binding': bindings[id(node)],
             })
+    # Trusted collector may hold one invocation-local tree for optional work
+    # after baseline capture. Never put AST/source into the observation envelope.
+    if tree_sink is not None:
+        tree_sink(tree)
     return {'status': 'parsed', 'source_binding': binding, 'source_sha256': digest, 'parse_warning_count': len(parse_warnings),
             'call_resolution_version': CALL_VERSION, 'complete_source_blob': True,
             'statements': {str(k): sorted(v) for k, v in statements.items()}, 'calls': calls}

@@ -188,6 +188,14 @@ def retained_coverage_disclosures(context: Mapping[str, Any], *, spanish: bool) 
         elif isinstance(investigation, Mapping):
             lines.append('Desglose de motivos no disponible: identidad o huellas de evidencia no validadas.' if spanish else
                          'Reason breakdown unavailable: identity or evidence fingerprints not validated.')
+        # This export has no authenticated producer capture. Never authenticate a
+        # packet's optional handler receipt from its own embedded fields.
+        findings = register.get('findings')
+        if isinstance(findings, list) and any(
+                isinstance(row, Mapping) and (row.get('rule_id') or row.get('rule')) in ('B110', 'B112')
+                for row in findings):
+            lines.append('Evidencia del cuerpo del manejador no disponible para esta exportación; los candidatos de manejadores siguen sin resolver y requieren revisión contextual humana.' if spanish else
+                         'Handler body evidence unavailable for this export; handler candidates remain unresolved and require human contextual review.')
         if view.get('available') and view.get('source_availability_counts'):
             lines.append('Detalle del subconjunto sin análisis sintáctico disponible:' if spanish else
                          'Breakdown of the subset without available source parsing:')

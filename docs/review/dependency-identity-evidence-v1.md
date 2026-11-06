@@ -13,3 +13,15 @@ Investigation shares the existing two-second cooperative deadline, limits distin
 The reviewer queue uses original canonical record index and fingerprint before sorting/enrichment. Qualified identity replaces only the two identity-acquisition instructions; installed-version advisory verification and production-use/control questions remain. No candidate-ID-only association is used for the new receipt. Duplicate/ambiguous/stale packets suppress details. Existing canonical unique-ID validation and human gates remain intact.
 
 Validation uses synthetic Git blobs and ordinary fixture seams. No assessment or deployment is part of this change. Browser pixel/layout qualification is not claimed; deterministic rendered component tests and TypeScript checks exercise the bilingual contract. This is not evidence of reduced production workload.
+
+## Integration status
+
+The implementation originally proposed in PR #1873 was integrated through merged
+PR #1877 (`71a21713`) and is present in accepted main `bf42c567`. The original
+branch now reconciles its history with main rather than reintroducing older
+source. Current lexical-binding, dependency-guidance and handler-evidence
+safeguards are preserved. Its reconciliation diff contains this status note only.
+
+The validation statements above describe the original change. Later release
+qualification does not establish measured reviewer-time savings or convert
+locked identity into installation, affectedness or reachability proof.

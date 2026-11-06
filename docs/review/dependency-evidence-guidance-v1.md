@@ -7,3 +7,16 @@ Codes distinguish: missing supported scanner identity, missing/current-scope cap
 English/es-MX advice preserves installation/advisory/runtime-use questions and existing human gates. UI association retains original canonical index and fingerprint; unmatched/duplicate/stale packets cannot supply the guidance. The collected-identity message additionally requires the matching identity object. Unknown authored codes are not rendered as prose.
 
 Baseline7 tests failed because the field was absent. Final151 guarded backend tests and64 deterministic rendered component tests passed; TypeScript and diff checks passed. Zero final loader/network/SQLite guard events. No browser layout qualification or measured production workload reduction. Broad architecture/velocity scorecards remain unchanged.
+
+## Integration status
+
+The opening paragraph records this change's historical stacked origin. Both
+dependency changes were integrated into main by merged PR #1877 (`71a21713`);
+#1873 is no longer a runtime prerequisite awaiting integration. The original
+#1874 branch now reconciles its history with accepted main `bf42c567` and targets
+main directly. This reconciliation changes documentation only and retains all
+current evidence, lexical-binding, handler, approval and delivery safeguards.
+
+Historical test counts above are preserved as historical evidence. Current
+release qualification does not imply observed workload reduction or autonomous
+review correctness. Missing proof still requires human contextual review.

@@ -312,7 +312,8 @@ def scanner_suite_provider(context: dict[str, Any]) -> dict[str, Any]:
                 "actual_commit_sha": scan["actual_commit_sha"], "tools_run": []},
             unavailable_data_notes=scan.get("unavailable_data_notes") or [])
     if status != "complete" or scan.get("snapshot_match") is not True:
-        return _result(context, "blocked", reason="snapshot_scanner_not_verified", scan_id=scan.get("scan_id"), scanner_status=status or "unavailable", unavailable_data_notes=scan.get("unavailable_data_notes") or ["Scanner output did not verify the immutable snapshot."])
+        from nico.qualification_failure_diagnostics import scanner_failure_diagnostic
+        return _result(context, "blocked", reason="snapshot_scanner_not_verified", scanner_diagnostic=scanner_failure_diagnostic(scan), scan_id=scan.get("scan_id"), scanner_status=status or "unavailable", unavailable_data_notes=scan.get("unavailable_data_notes") or ["Scanner output did not verify the immutable snapshot."])
     counts = _counts(scan)
     summary = ("The dedicated worker retained native scanner evidence. Individual tool records state completion and limitations."
                if scan.get("worker_job_id") else
