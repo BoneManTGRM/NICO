@@ -1,10 +1,18 @@
-// Exact indexed production methods, with owned minimal Token storage in tokenlist.h.
 #include "tokenlist.h"
 const std::vector<Token*>* TokensFrontBack::lessTokens()
 {
     if (mLessDisabled)
         return nullptr;
     if (!mLessValid) {
+        // Only a fresh query may rebuild; never refresh an in-flight cursor.
+        // One lifetime attempt bounds all extra full-list construction work.
+        if (mLessRebuildPending) {
+            if (mLessRebuildAttempted) {
+                invalidateLessTokens();
+                return nullptr;
+            }
+            mLessRebuildAttempted = true;
+        }
         try {
             std::vector<Token*> tokens;
             std::unordered_map<Token*, std::size_t> slots;
@@ -17,6 +25,7 @@ const std::vector<Token*>* TokensFrontBack::lessTokens()
             mLessTokens.swap(tokens);
             mLessSlots.swap(slots);
             mLessValid = true;
+            mLessRebuildPending = false;
         } catch (const std::bad_alloc&) {
             invalidateLessTokens();
             mLessDisabled = true;
@@ -29,7 +38,8 @@ const std::vector<Token*>* TokensFrontBack::lessTokens()
 void TokensFrontBack::invalidateLessTokens()
 {
     // Unsupported mutations permanently restore linear traversal for this list.
-    mLessDisabled = mLessDisabled || mLessValid;
+    mLessDisabled = mLessDisabled || mLessValid || mLessRebuildPending;
+    mLessRebuildPending = false;
     mLessValid = false;
     mLessTokens.clear();
     mLessSlots.clear();
@@ -51,6 +61,13 @@ void TokensFrontBack::removedLessToken(Token* token)
 
 void TokensFrontBack::changedLessToken(Token* token)
 {
+    if (mLessRebuildPending && token && token->str() == "<" &&
+        (token == front || token->previous() || token->next())) {
+        // The empty pending cache cannot certify an attached token's identity.
+        // Unlinked construction is handled after insertion installs its links.
+        invalidateLessTokens();
+        return;
+    }
     if (!mLessValid)
         return;
     if (token->str() != "<") {
@@ -67,7 +84,16 @@ void TokensFrontBack::insertedLessToken(Token* token)
     if (!mLessValid || token->str() != "<")
         return;
     if (token != back) {
-        invalidateLessTokens();
+        if (mLessRebuildAttempted) {
+            invalidateLessTokens();
+        } else {
+            // Invalidate immediately; the current caller resumes linearNext.
+            // Further insertions/deletions are safe while both caches are empty.
+            mLessValid = false;
+            mLessRebuildPending = true;
+            mLessTokens.clear();
+            mLessSlots.clear();
+        }
         return;
     }
     try {

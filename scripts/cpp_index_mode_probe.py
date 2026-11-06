@@ -1,7 +1,9 @@
 """Pinned diagnostic-only index-mode insertions; no production decisions change.
 
 Apply before the existing template subphase overlay, and strip in reverse order.
-Counters describe one observer thread's lists, not global or terminal state.
+Counters aggregate one observer thread's lists, not global or terminal state.
+The sticky first reason records an invalidation; a later rebuild may succeed.
+It is not a statement of current or permanent disabled state.
 """
 from __future__ import annotations
 import hashlib
@@ -9,12 +11,12 @@ from pathlib import Path
 
 BASELINE = {
     'lib/token.cpp': '479bfa7451c7be5483195980aff7a7100481dd551e003766ab75a66124765547',
-    'lib/tokenlist.cpp': '42923e2ca209f582f415be75a21e14d36341fa9b2ed862c19a81f09e394d89a1',
+    'lib/tokenlist.cpp': 'fdf5ada5848554ac3509350aed8d523f3dcb3dedd548917f7998365783fa4cfc',
     'lib/templatesimplifier.cpp': '23930579ec1ce6837cc4c3de8499a81761afe220fa5f00d6965b6975c25565ba',
 }
 HEADER_BASE_SHA256 = '2a3a4e2351e62b21d43f1922c6ea2c06a6f0145ca10ccbc05297745aa221d71c'
 HEADER_AFTER_SHA256 = 'aa28847a75d1ca89c856b030c7c84f90437dbcc72f2c4c3c64ff713061b49a1e'
-AFTER = {'lib/token.cpp': '479bfa7451c7be5483195980aff7a7100481dd551e003766ab75a66124765547', 'lib/tokenlist.cpp': 'dd285957f00adf3aaa70c9e8f0400d4dee1d9e18fdb202f9c5057b96fa9d749e', 'lib/templatesimplifier.cpp': '00ca2e96d28a04af21914d986dabf0cceda550edb8919024d0ed4190e9d71b7e'}
+AFTER = {'lib/token.cpp': '479bfa7451c7be5483195980aff7a7100481dd551e003766ab75a66124765547', 'lib/tokenlist.cpp': '42de980b59eca05912cb9adc22d3d22e217e85a8684e0de0f69b19d510c0c704', 'lib/templatesimplifier.cpp': '00ca2e96d28a04af21914d986dabf0cceda550edb8919024d0ed4190e9d71b7e'}
 FIELDS = ('indexed_selected', 'linear_selected', 'indexed_queries', 'fallback_queries',
           'successful_builds', 'first_disable_reason', 'peak_live_slots', 'peak_total_slots',
           'index_build_visits')
@@ -60,7 +62,7 @@ def instrument_baseline(relative, raw):
         result = _after(result, '        } catch (const std::bad_alloc&) {\n',
                         '            NicoStage::indexDisable(NicoStage::IndexBuildAlloc);')
         result = _after(result, '    // Unsupported mutations permanently restore linear traversal for this list.\n',
-                        '    if (mLessValid) NicoStage::indexDisable(NicoStage::IndexIdentityOrOrder);')
+                        '    if (mLessValid || mLessRebuildPending) NicoStage::indexDisable(NicoStage::IndexIdentityOrOrder);')
         # Preserve the original unbraced condition and statement byte-for-byte.
         # Added braces/counter are wholly delimited and stripped for restoration.
         result = _after(result, '        if (mLessTokens.size() - mLessSlots.size() > mLessSlots.size())\n',
@@ -70,6 +72,8 @@ def instrument_baseline(relative, raw):
             raise ValueError('index_mode_anchor_mismatch')
         result = result.replace(anchor, b'            invalidateLessTokens();\n' + BEGIN + b'        }\n' + END + b'    }\n}\n\nvoid TokensFrontBack::changedLessToken')
         result = _after(result, "        // An existing token became '<'. Its lexical position is not cached.\n",
+                        '        NicoStage::indexDisable(NicoStage::IndexExistingToAngle);')
+        result = _after(result, '        // Unlinked construction is handled after insertion installs its links.\n',
                         '        NicoStage::indexDisable(NicoStage::IndexExistingToAngle);')
         result = _after(result, '    if (token != back) {\n',
                         '        NicoStage::indexDisable(NicoStage::IndexNonTailInsert);')
@@ -157,5 +161,6 @@ def receipt():
             'base_header_sha256': HEADER_BASE_SHA256, 'header_sha256': HEADER_AFTER_SHA256,
             'script_sha256': digest(Path(__file__).read_bytes()), 'fields': list(FIELDS),
             'disable_reasons': DISABLE_REASONS, 'aggregation': 'observer_thread_lane',
+            'first_reason_scope': 'first_observed_invalidation_may_rebuild_not_current_state',
             'query_unit': 'replacement_function_entry', 'selected_unit': 'nonnull_candidate_token',
             'instrumentation_only': True, 'qualification_credit': False}

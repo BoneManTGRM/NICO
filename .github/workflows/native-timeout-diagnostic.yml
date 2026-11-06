@@ -52,7 +52,7 @@ jobs:
     - name: Verify diagnostic contracts
       run: 'python -m pip install --disable-pip-version-check -r requirements.txt
 
-        python -m pytest tests/test_cpp_replacement_index_repair.py tests/test_cpp_replacement_index_wiring.py tests/test_cpp_ctu_first_use_repair.py tests/test_cpp_ctu_first_use_wiring.py tests/test_cpp_template_probe.py tests/test_cpp_index_mode_probe.py tests/test_cpp_index_mode_evidence.py tests/test_cpp_phase_boundaries.py tests/test_fresh_cpp_phase_diagnostic.py -q --junitxml=native-diagnostic-evidence/contracts.xml
+        python -m pytest tests/test_cpp_replacement_index_repair.py tests/test_cpp_replacement_index_wiring.py tests/test_cpp_ctu_first_use_repair.py tests/test_cpp_ctu_first_use_wiring.py tests/test_cpp_template_probe.py tests/test_cpp_index_mode_probe.py tests/test_cpp_index_mode_evidence.py tests/test_cpp_phase_boundaries.py tests/test_fresh_cpp_phase_diagnostic.py -q --junitxml=native-diagnostic-evidence/contracts.xml tests/test_cpp_replacement_rebuild_repair.py tests/test_cpp_replacement_rebuild_wiring.py
         tests/test_native_template_subphases.py tests/test_native_timeout_diagnostic.py tests/test_native_stage_counters.py
         tests/test_native_specialization_groups.py tests/test_cpp_project_static_stage.py tests/test_no_production_unsafe_primitives.py
 
@@ -85,8 +85,10 @@ jobs:
         cp scripts/patch_cppcheck_header_evidence.py toolchain/full-project/
         cp scripts/repair_cppcheck_replacement_index.py toolchain/full-project/
         cp scripts/repair_cppcheck_ctu_first_use.py toolchain/full-project/
+        cp scripts/repair_cppcheck_replacement_rebuild.py toolchain/full-project/
         cp -R scripts/cppcheck-replacement-index toolchain/full-project/
         cp -R scripts/cppcheck-ctu-first-use toolchain/full-project/
+        cp -R scripts/cppcheck-replacement-rebuild toolchain/full-project/
         cp -R scripts/cppcheck-header-evidence toolchain/full-project/
         cp scripts/build_cpp_clang_header_observer.py toolchain/full-project/
         cp -R scripts/clang-header-evidence toolchain/full-project/
@@ -101,8 +103,10 @@ jobs:
         docker cp "$toolchain_container:/opt/nico-cppcheck-header-grammar.json" cppcheck-header-grammar.json
         docker cp "$toolchain_container:/opt/nico-cppcheck-replacement-index.json" cppcheck-replacement-index.json
         docker cp "$toolchain_container:/opt/nico-cppcheck-ctu-first-use.json" cppcheck-ctu-first-use.json
+        docker cp "$toolchain_container:/opt/nico-cppcheck-replacement-rebuild.json" cppcheck-replacement-rebuild.json
         docker cp "$toolchain_container:/opt/nico-cppcheck-replacement-index-control.txt" cppcheck-replacement-index-control.txt
         docker cp "$toolchain_container:/opt/nico-cppcheck-ctu-first-use-control.txt" cppcheck-ctu-first-use-control.txt
+        docker cp "$toolchain_container:/opt/nico-cppcheck-replacement-rebuild-control.txt" cppcheck-replacement-rebuild-control.txt
         docker cp "$toolchain_container:/opt/nico-clang-header-observer.json" clang-header-observer.json
         docker cp "$toolchain_container:/opt/nico-clang-header-startup" clang-header-startup
     - name: Verify owned physical-header grammar on the same image

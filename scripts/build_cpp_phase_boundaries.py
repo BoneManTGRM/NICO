@@ -19,6 +19,7 @@ FILES={'production_binary':'/usr/local/bin/cppcheck',
        'grammar_receipt':'/opt/nico-cppcheck-header-grammar.json',
        'header_receipt':'/opt/nico-cppcheck-header-observer.json',
        'replacement_index_receipt':'/opt/nico-cppcheck-replacement-index.json',
+       'replacement_rebuild_receipt':'/opt/nico-cppcheck-replacement-rebuild.json',
        'ctu_first_use_receipt':'/opt/nico-cppcheck-ctu-first-use.json',
        'clang_receipt':'/opt/nico-clang-header-observer.json'}
 
@@ -34,11 +35,12 @@ def recipe(original):
 FROM nico-phase-base:{original[7:]}
 USER 0:0
 COPY cppcheck /opt/phase-tool-src
-COPY repair_cppcheck_placement_ast.py repair_cppcheck_header_grammar.py patch_cppcheck_header_evidence.py repair_cppcheck_replacement_index.py repair_cppcheck_ctu_first_use.py cpp_phase_boundaries.py cpp_template_probe.py cpp_index_mode_probe.py /opt/
+COPY repair_cppcheck_placement_ast.py repair_cppcheck_header_grammar.py patch_cppcheck_header_evidence.py repair_cppcheck_replacement_index.py repair_cppcheck_ctu_first_use.py repair_cppcheck_replacement_rebuild.py cpp_phase_boundaries.py cpp_template_probe.py cpp_index_mode_probe.py /opt/
 COPY native_stage_counters /opt/native_stage_counters
 COPY cppcheck-header-evidence /opt/cppcheck-header-evidence
 COPY cppcheck-replacement-index /opt/cppcheck-replacement-index
 COPY cppcheck-ctu-first-use /opt/cppcheck-ctu-first-use
+COPY cppcheck-replacement-rebuild /opt/cppcheck-replacement-rebuild
 RUN test "$(g++ -dumpfullversion)" = 14.2.0 \\
  && python3 /opt/repair_cppcheck_placement_ast.py /opt/phase-tool-src/lib/tokenlist.cpp > /opt/phase-repair.json \\
  && cmp /opt/phase-repair.json /opt/nico-cppcheck-repair.json \\
@@ -49,7 +51,9 @@ RUN test "$(g++ -dumpfullversion)" = 14.2.0 \\
  && python3 /opt/repair_cppcheck_replacement_index.py /opt/phase-tool-src /opt/cppcheck-replacement-index > /opt/phase-replacement-index.json \\
  && cmp /opt/phase-replacement-index.json /opt/nico-cppcheck-replacement-index.json \\
  && python3 /opt/repair_cppcheck_ctu_first_use.py /opt/phase-tool-src /opt/cppcheck-ctu-first-use > /opt/phase-ctu-first-use.json \\
+ && python3 /opt/repair_cppcheck_replacement_rebuild.py /opt/phase-tool-src /opt/cppcheck-replacement-rebuild > /opt/phase-replacement-rebuild.json \\
  && cmp /opt/phase-ctu-first-use.json /opt/nico-cppcheck-ctu-first-use.json \\
+ && cmp /opt/phase-replacement-rebuild.json /opt/nico-cppcheck-replacement-rebuild.json \\
  && python3 /opt/cpp_template_probe.py --source /opt/phase-tool-src > /opt/nico-phase-overlay.json \\
  && timeout 180s make -C /opt/phase-tool-src -j2 MATCHCOMPILER=yes FILESDIR=/opt/cppcheck 'CXXFLAGS=-O2 -DNDEBUG' \\
  && cp /opt/phase-tool-src/cppcheck {BINARY} \\
@@ -75,7 +79,7 @@ def prepare(context,source,original):
     context.mkdir()
     shutil.copytree(source,context/'cppcheck',ignore=shutil.ignore_patterns('.git'))
     scripts=Path(__file__).resolve().parent
-    for name in ('repair_cppcheck_placement_ast.py','repair_cppcheck_header_grammar.py','patch_cppcheck_header_evidence.py','repair_cppcheck_replacement_index.py','repair_cppcheck_ctu_first_use.py','cpp_phase_boundaries.py','cpp_template_probe.py','cpp_index_mode_probe.py'):
+    for name in ('repair_cppcheck_placement_ast.py','repair_cppcheck_header_grammar.py','patch_cppcheck_header_evidence.py','repair_cppcheck_replacement_index.py','repair_cppcheck_ctu_first_use.py','repair_cppcheck_replacement_rebuild.py','cpp_phase_boundaries.py','cpp_template_probe.py','cpp_index_mode_probe.py'):
         shutil.copyfile(scripts/name,context/name)
     (context/'native_stage_counters').mkdir()
     for name in ('instrument.py','nico_stage_counters.h'):
@@ -83,6 +87,7 @@ def prepare(context,source,original):
     shutil.copytree(scripts/'cppcheck-header-evidence',context/'cppcheck-header-evidence')
     shutil.copytree(scripts/'cppcheck-replacement-index',context/'cppcheck-replacement-index')
     shutil.copytree(scripts/'cppcheck-ctu-first-use',context/'cppcheck-ctu-first-use')
+    shutil.copytree(scripts/'cppcheck-replacement-rebuild',context/'cppcheck-replacement-rebuild')
     (context/'Dockerfile').write_text(recipe(original))
     return {'recipe_sha256':digest(recipe(original).encode()),'upstream':UPSTREAM}
 

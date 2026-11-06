@@ -16,7 +16,7 @@ static void reasons(){
  {clear();TokensFrontBack l;Token a("<");l.add(&a);failAfter=0;assert(!l.lessTokens());failAfter=-1;reason(1);assert(l.mLessDisabled);}
  {clear();TokensFrontBack l;Token a("<"),b("<");l.add(&a);assert(l.lessTokens());l.add(&b);failAfter=0;l.insertedLessToken(&b);failAfter=-1;assert(l.back==&b&&!l.mLessValid);reason(2);}
  {clear();TokensFrontBack l;Token a("A"),b("<");l.add(&a);l.add(&b);assert(l.lessTokens());a.text="<";l.changedLessToken(&a);assert(!l.mLessValid);reason(4);}
- {clear();TokensFrontBack l;Token a("<"),b("B"),x("<");l.add(&a);l.add(&b);assert(l.lessTokens());x.before=&a;x.after=&b;a.after=&x;b.before=&x;l.insertedLessToken(&x);assert(!l.mLessValid);reason(5);}
+ {clear();TokensFrontBack l;Token a("<"),b("B"),x("<");l.add(&a);l.add(&b);assert(l.lessTokens());x.before=&a;x.after=&b;a.after=&x;b.before=&x;l.insertedLessToken(&x);assert(!l.mLessValid);reason(5);assert(l.lessTokens());indexQuery(true);reason(5);if(enabled()){assert(state().v[SuccessfulBuilds]==2);assert(state().v[IndexedQueries]==1);}l.insertedLessToken(&x);assert(!l.lessTokens());reason(5);}
  {clear();TokensFrontBack l;Token a("<");l.add(&a);l.invalidateLessTokens();reason(0);assert(l.lessTokens());l.invalidateLessTokens();assert(!l.lessTokens());reason(6);indexDisable(IndexBuildAlloc);reason(6);}
 }
 static void dense(){clear();TokensFrontBack l;std::vector<Token*>tokens;for(int i=0;i<512;++i){auto*t=new Token("<");tokens.push_back(t);l.add(t);}assert(l.lessTokens()->size()==512);Token tail("<");l.add(&tail);l.insertedLessToken(&tail);assert(l.mLessTokens.size()==513);if(enabled()){assert(state().v[PeakLiveSlots]==513&&state().v[PeakTotalSlots]==513);assert(state().v[IndexBuildVisits]==512);}for(auto*t:tokens)delete t;}

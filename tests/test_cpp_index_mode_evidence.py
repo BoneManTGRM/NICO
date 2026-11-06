@@ -108,3 +108,12 @@ def test_multiple_lanes_are_not_combined_or_recast_as_global():
     value=summarize(first+second)
     assert value['replacement_index']=={'state':'no_query_observed','scope':probe.INDEX_SCOPE}
     assert value['last_interval_deltas'] is None
+
+
+def test_successful_rebuild_keeps_reason_without_implying_permanent_fallback():
+    value=summarize(sparse_record(**active(indexed_queries=2,successful_builds=2,first_disable_reason=5)))
+    index=value['replacement_index']
+    assert index['first_disable_reason']=='non_tail_insert'
+    assert index['first_reason_scope']==probe.INDEX_REASON_SCOPE
+    assert index['indexed_queries']==2 and index['successful_builds']==2
+    assert probe.valid_index_summary(index)

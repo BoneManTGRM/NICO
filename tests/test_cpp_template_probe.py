@@ -118,7 +118,7 @@ def test_worst_width_projection_fits_existing_console_bound(capsys):
     detailed['last_interval_deltas']={k:2**64-1 for k in probe.DELTA_FIELDS}
     detailed['replacement_index']={**{k:2**64-2 for k in probe.INDEX_COUNTS},
         'state':'observed_prefix','scope':probe.INDEX_SCOPE,'lane':2**32-1,
-        'first_disable_reason':'identity_or_order_mutation'}
+        'first_disable_reason':'identity_or_order_mutation','first_reason_scope':probe.INDEX_REASON_SCOPE}
     for i in range(16):
         summary['records'].append(dict(context_index=i,exit_code=124,timed_out=True,output_truncated=False,
             duration_ms=90063,phases={v:{'state':'available','cpu_microseconds':540000000} for v in fresh.PHASES.values()},

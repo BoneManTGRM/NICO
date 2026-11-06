@@ -10,7 +10,7 @@ struct Token {
 };
 struct TokensFrontBack {
  Token* front=nullptr;Token* back=nullptr;
- bool mLessValid=false,mLessDisabled=false;
+ bool mLessValid=false,mLessDisabled=false,mLessRebuildPending=false,mLessRebuildAttempted=false;
  std::vector<Token*> mLessTokens;std::unordered_map<Token*,std::size_t>mLessSlots;
  const std::vector<Token*>* lessTokens(); void invalidateLessTokens();
  void removedLessToken(Token*);void changedLessToken(Token*);void insertedLessToken(Token*);
