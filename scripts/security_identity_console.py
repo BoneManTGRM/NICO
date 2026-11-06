@@ -1,6 +1,7 @@
 """Fresh, bounded identity-only diagnostic. Never changes scanner dispositions."""
 from __future__ import annotations
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import math
@@ -33,7 +34,41 @@ DISPOSITIONS={'blocking':'blocking','approved_test_placeholder':'approved_test_p
     'approved_public_verifier_digest':'approved_public_verifiers',
     'approved_public_signing_fingerprint':'approved_public_signing_fingerprints',
     'approved_public_source_hash':'approved_public_source_hashes'}
-INVALID=b'{"schema":"nico.security-identity.v1","state":"invalid"}\n'
+PHASES = frozenset({'cli', 'prepare', 'seal', 'emit'})
+REASONS = frozenset({
+    'unexpected', 'arguments', 'root', 'tracked_context', 'context_remove',
+    'tracked_outputs', 'outputs_remove', 'capture_bindings', 'context_read',
+    'context_schema', 'context_bindings', 'context_write', 'freshness_flag',
+    'context_phase', 'report_read', 'summary_read', 'report_validation',
+    'manifest_read', 'artifact_binding', 'manifest_validation', 'run_binding',
+    'output_bounds',
+})
+
+
+class DiagnosticFailure(ValueError):
+    def __init__(self, reason):
+        # Only internal fixed codes are retained; exception messages never are.
+        self.reason = reason if type(reason) is str and reason in REASONS else 'unexpected'
+        super().__init__()
+
+
+@contextmanager
+def stage(reason):
+    try:
+        yield
+    except DiagnosticFailure:
+        raise
+    except (Exception, SystemExit):
+        raise DiagnosticFailure(reason) from None
+
+
+def invalid_record(phase, reason):
+    phase = phase if type(phase) is str and phase in PHASES else 'cli'
+    reason = reason if type(reason) is str and reason in REASONS else 'unexpected'
+    return (json.dumps({'schema': 'nico.security-identity.v1', 'state': 'invalid',
+                        'phase': phase, 'reason': reason},
+                       sort_keys=True, separators=(',', ':')).encode('ascii') + b'\n')
+
 INVOKE=['gitleaks','detect','--source','.','--report-format','json','--report-path',REPORT,'--no-banner','--redact']
 
 
@@ -212,15 +247,20 @@ def capture_bindings(root,nonce):
 
 
 def context_read(root):
-    require(not git_bytes(root,['ls-files','-z','--',CONTEXT]))
-    value=decode(read(root/CONTEXT));require(type(value)is dict and set(value)=={'schema','phase','bindings','artifacts'})
-    require(value['schema']=='nico.security-identity-context.v1'and value['phase']in {'prepared','sealed'})
-    require(type(value['bindings'])is dict and set(value['bindings'])==set(BINDINGS))
-    require(all(sha(x)or x=='unavailable'for x in value['bindings'].values())and sha(value['bindings']['nonce']))
-    require(type(value['artifacts'])is dict)
-    require(set(value['artifacts'])==({REPORT,SUMMARY}if value['phase']=='sealed'else set()))
-    require(all(sha(x)for x in value['artifacts'].values()))
-    require(capture_bindings(root,value['bindings']['nonce'])==value['bindings'])
+    with stage('tracked_context'):
+        require(not git_bytes(root,['ls-files','-z','--',CONTEXT]))
+    with stage('context_read'):
+        value=decode(read(root/CONTEXT))
+    with stage('context_schema'):
+        require(type(value)is dict and set(value)=={'schema','phase','bindings','artifacts'})
+        require(value['schema']=='nico.security-identity-context.v1'and value['phase']in {'prepared','sealed'})
+        require(type(value['bindings'])is dict and set(value['bindings'])==set(BINDINGS))
+        require(all(sha(x)or x=='unavailable'for x in value['bindings'].values())and sha(value['bindings']['nonce']))
+        require(type(value['artifacts'])is dict)
+        require(set(value['artifacts'])==({REPORT,SUMMARY}if value['phase']=='sealed'else set()))
+        require(all(sha(x)for x in value['artifacts'].values()))
+    with stage('context_bindings'):
+        require(capture_bindings(root,value['bindings']['nonce'])==value['bindings'])
     return value
 
 
@@ -235,46 +275,82 @@ def context_write(root,value):
 
 def prepare(root):
     # Refuse tracked sources; workflow freshness flags fence any pre-unlink failure.
-    context=root/CONTEXT
-    require(not git_bytes(root,['ls-files','-z','--',CONTEXT]))
-    if context.exists()or context.is_symlink():context.unlink()
-    require(not git_bytes(root,['ls-files','-z','--',REPORT,SUMMARY,MANIFEST]))
-    for name in (REPORT,SUMMARY,MANIFEST):
-        path=root/name
-        if path.exists()or path.is_symlink():path.unlink()
-    value={'schema':'nico.security-identity-context.v1','phase':'prepared','bindings':capture_bindings(root,digest(secrets.token_bytes(32))),'artifacts':{}}
-    context_write(root,value)
+    context = root / CONTEXT
+    with stage('tracked_context'):
+        require(not git_bytes(root, ['ls-files', '-z', '--', CONTEXT]))
+    with stage('context_remove'):
+        if context.exists() or context.is_symlink():
+            context.unlink()
+    with stage('tracked_outputs'):
+        require(not git_bytes(root, ['ls-files', '-z', '--', REPORT, SUMMARY, MANIFEST]))
+    with stage('outputs_remove'):
+        for name in (REPORT, SUMMARY, MANIFEST):
+            path = root / name
+            if path.exists() or path.is_symlink():
+                path.unlink()
+    with stage('capture_bindings'):
+        value = {'schema': 'nico.security-identity-context.v1', 'phase': 'prepared',
+                 'bindings': capture_bindings(root, digest(secrets.token_bytes(32))), 'artifacts': {}}
+    with stage('context_write'):
+        context_write(root, value)
 
 
 def seal(root):
-    require(not git_bytes(root,['ls-files','-z','--',CONTEXT]))
+    with stage('tracked_context'):
+        require(not git_bytes(root, ['ls-files', '-z', '--', CONTEXT]))
     try:
-        context=context_read(root)
+        context = context_read(root)
     finally:
-        path=root/CONTEXT
-        if path.exists()or path.is_symlink():path.unlink()
-    require(os.environ.get('SECURITY_IDENTITY_PREPARE_OK')=='1')
-    require(context['phase']=='prepared')
-    report,summary=read(root/REPORT),read(root/SUMMARY);parse_findings(report,summary)
-    context['artifacts']={REPORT:digest(report),SUMMARY:digest(summary)};context['phase']='sealed';context_write(root,context)
+        with stage('context_remove'):
+            path = root / CONTEXT
+            if path.exists() or path.is_symlink():
+                path.unlink()
+    with stage('freshness_flag'):
+        require(os.environ.get('SECURITY_IDENTITY_PREPARE_OK') == '1')
+    with stage('context_phase'):
+        require(context['phase'] == 'prepared')
+    with stage('report_read'):
+        report = read(root / REPORT)
+    with stage('summary_read'):
+        summary = read(root / SUMMARY)
+    with stage('report_validation'):
+        parse_findings(report, summary)
+    context['artifacts'] = {REPORT: digest(report), SUMMARY: digest(summary)}
+    context['phase'] = 'sealed'
+    with stage('context_write'):
+        context_write(root, context)
 
 
 def emit(root):
-    require(os.environ.get('SECURITY_IDENTITY_FRESH_CAPTURE')=='true')
-    context=context_read(root);require(context['phase']=='sealed')
-    report,summary,manifest=read(root/REPORT),read(root/SUMMARY),read(root/MANIFEST)
-    require(context['artifacts']=={REPORT:digest(report),SUMMARY:digest(summary)})
-    rows=parse_findings(report,summary);value,counts=validate_manifest(manifest,report,summary,rows)
-    require(context['bindings']['run']==digest(value['run_id'].encode()))
-    output=[{'schema':'nico.security-identity.v1','state':'observed','finding_count':len(rows),'blocking_count':counts['blocking'],
-             'gate':value['security_gate']['status'],'report_sha256':digest(report),'summary_sha256':digest(summary),'manifest_sha256':digest(manifest),'context_sha256':digest(canonical(context))}]
-    output.append({'record':'counts',**counts,'identity_scope':'redacted_metadata','effective_config':'unverified'})
-    output.extend({'record':'binding','key':key,'sha256':context['bindings'][key]}for key in BINDINGS)
-    output.extend({'record':'finding','index':i,'fingerprint_sha256':row['fingerprint_sha256'],'shape_hash':row['shape_hash'],'disposition':row['disposition']}for i,row in enumerate(rows))
-    lines=[canonical(row)+b'\n'for row in output]
-    lines.append(canonical({'record':'end','records':len(lines),'output_sha256':digest(b''.join(lines))})+b'\n')
-    require(len(lines)<=MAX_RECORDS and all(len(line)<=MAX_RECORD_BYTES for line in lines)and sum(map(len,lines))<=MAX_OUTPUT)
-    return b''.join(lines)
+    with stage('freshness_flag'):
+        require(os.environ.get('SECURITY_IDENTITY_FRESH_CAPTURE') == 'true')
+    context = context_read(root)
+    with stage('context_phase'):
+        require(context['phase'] == 'sealed')
+    with stage('report_read'):
+        report = read(root / REPORT)
+    with stage('summary_read'):
+        summary = read(root / SUMMARY)
+    with stage('manifest_read'):
+        manifest = read(root / MANIFEST)
+    with stage('artifact_binding'):
+        require(context['artifacts'] == {REPORT: digest(report), SUMMARY: digest(summary)})
+    with stage('report_validation'):
+        rows = parse_findings(report, summary)
+    with stage('manifest_validation'):
+        value, counts = validate_manifest(manifest, report, summary, rows)
+    with stage('run_binding'):
+        require(context['bindings']['run'] == digest(value['run_id'].encode()))
+    with stage('output_bounds'):
+        output=[{'schema':'nico.security-identity.v1','state':'observed','finding_count':len(rows),'blocking_count':counts['blocking'],
+                 'gate':value['security_gate']['status'],'report_sha256':digest(report),'summary_sha256':digest(summary),'manifest_sha256':digest(manifest),'context_sha256':digest(canonical(context))}]
+        output.append({'record':'counts',**counts,'identity_scope':'redacted_metadata','effective_config':'unverified'})
+        output.extend({'record':'binding','key':key,'sha256':context['bindings'][key]}for key in BINDINGS)
+        output.extend({'record':'finding','index':i,'fingerprint_sha256':row['fingerprint_sha256'],'shape_hash':row['shape_hash'],'disposition':row['disposition']}for i,row in enumerate(rows))
+        lines=[canonical(row)+b'\n'for row in output]
+        lines.append(canonical({'record':'end','records':len(lines),'output_sha256':digest(b''.join(lines))})+b'\n')
+        require(len(lines)<=MAX_RECORDS and all(len(line)<=MAX_RECORD_BYTES for line in lines)and sum(map(len,lines))<=MAX_OUTPUT)
+        return b''.join(lines)
 
 
 def validate_console(raw):
@@ -327,17 +403,31 @@ class QuietParser(argparse.ArgumentParser):
 
 
 def main(argv=None):
+    phase = 'cli'
     try:
-        command=QuietParser(add_help=False,exit_on_error=False)
-        command.add_argument('action',choices=['prepare','seal','emit']);command.add_argument('--root',default='.')
-        command.add_argument('--context',default=CONTEXT)
-        args=command.parse_args(argv);require(args.context==CONTEXT)
-        root=Path(args.root).absolute();require(root==root.resolve(strict=True)and root.is_dir())
-        if args.action=='prepare':prepare(root);output=b''
-        elif args.action=='seal':seal(root);output=b''
-        else:output=emit(root)
-    except (Exception,SystemExit):
-        write_output(INVALID);return 1
+        with stage('arguments'):
+            command = QuietParser(add_help=False, exit_on_error=False)
+            command.add_argument('action', choices=['prepare', 'seal', 'emit'])
+            command.add_argument('--root', default='.')
+            command.add_argument('--context', default=CONTEXT)
+            args = command.parse_args(argv)
+            require(args.context == CONTEXT)
+        phase = args.action
+        with stage('root'):
+            root = Path(args.root).absolute()
+            require(root == root.resolve(strict=True) and root.is_dir())
+        if args.action == 'prepare':
+            prepare(root)
+            output = b''
+        elif args.action == 'seal':
+            seal(root)
+            output = b''
+        else:
+            output = emit(root)
+    except (Exception, SystemExit) as error:
+        reason = error.reason if type(error) is DiagnosticFailure else 'unexpected'
+        write_output(invalid_record(phase, reason))
+        return 1
     return 0 if write_output(output) else 1
 
 

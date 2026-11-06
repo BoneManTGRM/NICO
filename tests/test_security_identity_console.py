@@ -8,6 +8,16 @@ from scripts import security_audit_gate as gate
 
 CANARY='PRIVATE_CANARY_never_print'
 
+def is_invalid(raw):
+    assert len(raw) <= 512 and raw.endswith(b'\n') and len(raw.splitlines()) == 1
+    value = json.loads(raw)
+    assert set(value) == {'schema', 'state', 'phase', 'reason'}
+    assert value['schema'] == 'nico.security-identity.v1' and value['state'] == 'invalid'
+    assert value['phase'] in identity.PHASES and value['reason'] in identity.REASONS
+    assert not identity.validate_console(raw)
+    return True
+
+
 
 def finding(index=0):
     commit='a'*40;path=f'src/{CANARY}{index}.txt';rule='generic-api-key'
@@ -63,7 +73,7 @@ def test_complete_identity_console_no_raw_fields_and_exact_hashes(owned,capfd):
 @pytest.mark.parametrize('which',[identity.REPORT,identity.SUMMARY,identity.MANIFEST,identity.CONTEXT])
 def test_duplicate_keys_and_tampering_never_print_input(owned,capfd,which):
     root,_=owned;(root/which).write_text('{"canary":"'+CANARY+'","canary":1}')
-    status,raw=emit_cli(root,capfd);assert status==1 and raw==identity.INVALID
+    status,raw=emit_cli(root,capfd);assert status==1 and is_invalid(raw)
 
 
 @pytest.mark.parametrize('mutation',[
@@ -98,7 +108,7 @@ def test_duplicate_occurrence_and_fingerprint_rejected(owned):
 def test_manifest_mismatch_and_policy_changes_fail_closed(owned,capfd,mutation):
     root,_=owned;m=json.loads((root/identity.MANIFEST).read_bytes());mutation(m)
     (root/identity.MANIFEST).write_bytes(identity.canonical(m));status,raw=emit_cli(root,capfd)
-    assert status==1 and raw==identity.INVALID
+    assert status==1 and is_invalid(raw)
 
 
 def test_exact_record_cap_and_one_over(owned,capfd):
@@ -111,7 +121,7 @@ def test_exact_record_cap_and_one_over(owned,capfd):
 
 def test_oversized_input_no_disclosure(owned,capfd):
     root,_=owned;(root/identity.MANIFEST).write_bytes(b'X'*(identity.LIMIT+1))
-    status,raw=emit_cli(root,capfd);assert status==1 and raw==identity.INVALID
+    status,raw=emit_cli(root,capfd);assert status==1 and is_invalid(raw)
 
 
 def test_console_truncation_reorder_duplicate_trailer_fail(owned):
@@ -123,7 +133,7 @@ def test_console_truncation_reorder_duplicate_trailer_fail(owned):
 
 def test_prepare_removes_stale_context_before_later_failure(owned,monkeypatch):
     root,_=owned;(root/identity.REPORT).unlink();(root/identity.REPORT).mkdir()
-    with pytest.raises(OSError):identity.prepare(root)
+    with pytest.raises(identity.DiagnosticFailure):identity.prepare(root)
     assert not (root/identity.CONTEXT).exists()
 
 
@@ -143,13 +153,13 @@ def test_reseal_rejects_and_invalidates_old_seal(owned):
 def test_symlink_input_refused_without_reading_target(owned,capfd,tmp_path_factory):
     root,_=owned;target=tmp_path_factory.mktemp('outside')/'private';target.write_text(CANARY)
     (root/identity.MANIFEST).unlink();(root/identity.MANIFEST).symlink_to(target)
-    status,raw=emit_cli(root,capfd);assert status==1 and raw==identity.INVALID
+    status,raw=emit_cli(root,capfd);assert status==1 and is_invalid(raw)
     assert target.read_text()==CANARY
 
 
 def test_invalid_cli_never_echoes_values(capfd):
     assert identity.main(['emit','--'+CANARY,CANARY])==1
-    captured=capfd.readouterr();assert captured.out.encode()==identity.INVALID and captured.err==''
+    captured=capfd.readouterr();assert is_invalid(captured.out.encode()) and captured.err==''
 
 
 def test_context_binding_change_rejected(owned,monkeypatch,capfd):
@@ -157,7 +167,7 @@ def test_context_binding_change_rejected(owned,monkeypatch,capfd):
     def changed(root,nonce):
         data=old(root,nonce);data['attempt']='0'*64;return data
     monkeypatch.setattr(identity,'capture_bindings',changed)
-    status,raw=emit_cli(root,capfd);assert status==1 and raw==identity.INVALID
+    status,raw=emit_cli(root,capfd);assert status==1 and is_invalid(raw)
 
 
 def test_same_fingerprint_distinct_columns_remain_two_occurrences(owned,capfd):
@@ -174,7 +184,7 @@ def test_same_fingerprint_distinct_columns_remain_two_occurrences(owned,capfd):
 @pytest.mark.parametrize('raw',[b'['*2000+b'0'+b']'*2000,b'{"x":NaN}',b'{"x":Infinity}'])
 def test_deep_and_nonfinite_input_is_fixed_invalid(owned,capfd,raw):
     root,_=owned;(root/identity.MANIFEST).write_bytes(raw)
-    status,output=emit_cli(root,capfd);assert status==1 and output==identity.INVALID
+    status,output=emit_cli(root,capfd);assert status==1 and is_invalid(output)
 
 
 def test_tool_fifo_rejected_without_blocking(tmp_path):
@@ -236,16 +246,16 @@ def test_short_or_broken_output_never_claims_success(owned,monkeypatch,failure):
 
 def test_missing_fresh_capture_flag_rejects_unchanged_valid_seal(owned,monkeypatch,capfd):
     root,_=owned;monkeypatch.delenv('SECURITY_IDENTITY_FRESH_CAPTURE')
-    status,raw=emit_cli(root,capfd);assert status==1 and raw==identity.INVALID
+    status,raw=emit_cli(root,capfd);assert status==1 and is_invalid(raw)
 
 
 def test_prepare_failure_before_unlink_cannot_emit_without_fresh_token(owned,monkeypatch,capfd):
     root,_=owned;before=(root/identity.CONTEXT).read_bytes()
     monkeypatch.setattr(identity,'git_bytes',lambda *args:(_ for _ in ()).throw(OSError(CANARY)))
-    with pytest.raises(OSError):identity.prepare(root)
+    with pytest.raises(identity.DiagnosticFailure):identity.prepare(root)
     assert (root/identity.CONTEXT).read_bytes()==before
     monkeypatch.delenv('SECURITY_IDENTITY_FRESH_CAPTURE')
-    status,raw=emit_cli(root,capfd);assert status==1 and raw==identity.INVALID
+    status,raw=emit_cli(root,capfd);assert status==1 and is_invalid(raw)
 
 
 def test_seal_refuses_tracked_context_without_modification(owned,monkeypatch):
@@ -259,3 +269,96 @@ def test_no_prepare_success_flag_invalidates_untracked_seal(owned,monkeypatch):
     root,_=owned;monkeypatch.setenv('SECURITY_IDENTITY_PREPARE_OK','0')
     with pytest.raises(ValueError):identity.seal(root)
     assert not (root/identity.CONTEXT).exists()
+
+
+_FAILURE_STAGES = {
+    'prepare': ('tracked_context', 'context_remove', 'tracked_outputs', 'outputs_remove',
+                'capture_bindings', 'context_write'),
+    'seal': ('tracked_context', 'context_read', 'context_schema', 'context_bindings',
+             'context_remove', 'freshness_flag', 'context_phase', 'report_read',
+             'summary_read', 'report_validation', 'context_write'),
+    'emit': ('freshness_flag', 'tracked_context', 'context_read', 'context_schema',
+             'context_bindings', 'context_phase', 'report_read', 'summary_read',
+             'manifest_read', 'artifact_binding', 'report_validation',
+             'manifest_validation', 'run_binding', 'output_bounds'),
+}
+
+
+@pytest.mark.parametrize('action,reason', [(action, reason) for action, reasons in _FAILURE_STAGES.items() for reason in reasons])
+def test_each_failure_boundary_emits_only_fixed_code(owned, monkeypatch, capfd, action, reason):
+    from contextlib import contextmanager
+    root, _ = owned
+    if action == 'seal':
+        context = identity.context_read(root)
+        context.update(phase='prepared', artifacts={})
+        identity.context_write(root, context)
+    original_stage = identity.stage
+
+    @contextmanager
+    def injected_stage(actual_reason):
+        with original_stage(actual_reason):
+            if actual_reason == reason:
+                raise OSError(CANARY + '/path?private=hidden')
+            yield
+
+    monkeypatch.setattr(identity, 'stage', injected_stage)
+    assert identity.main([action, '--root', str(root)]) == 1
+    captured = capfd.readouterr()
+    assert captured.err == '' and CANARY not in captured.out
+    raw = captured.out.encode()
+    assert is_invalid(raw)
+    value = json.loads(raw)
+    assert (value['phase'], value['reason']) == (action, reason)
+
+
+@pytest.mark.parametrize('action', ['prepare', 'seal', 'emit'])
+def test_unexpected_exception_body_is_never_inspected(owned, monkeypatch, capfd, action):
+    root, _ = owned
+
+    class HostileError(Exception):
+        def __str__(self):
+            raise AssertionError('must not inspect exception body')
+
+    def broken(_):
+        raise HostileError(CANARY)
+
+    monkeypatch.setattr(identity, action, broken)
+    assert identity.main([action, '--root', str(root)]) == 1
+    captured = capfd.readouterr()
+    assert captured.err == '' and CANARY not in captured.out
+    assert is_invalid(captured.out.encode())
+    assert json.loads(captured.out)['reason'] == 'unexpected'
+
+
+@pytest.mark.parametrize('phase', list(identity.PHASES) + [CANARY, None, [], {'private': CANARY}])
+@pytest.mark.parametrize('reason', list(identity.REASONS) + [CANARY, None, [], {'private': CANARY}])
+def test_invalid_vocabulary_is_finite_and_never_reflects_input(phase, reason):
+    raw = identity.invalid_record(phase, reason)
+    assert is_invalid(raw) and CANARY.encode() not in raw
+
+
+def test_real_malformed_seal_is_identified_without_relaxing_schema(owned, capfd):
+    root, _ = owned
+    context = identity.context_read(root)
+    context.update(phase='prepared', artifacts={})
+    identity.context_write(root, context)
+    report = [finding()]
+    report[0]['Tags'] = None
+    (root / identity.REPORT).write_bytes(identity.canonical(report))
+    assert identity.main(['seal', '--root', str(root)]) == 1
+    captured = capfd.readouterr()
+    assert captured.err == '' and CANARY not in captured.out
+    assert json.loads(captured.out) == {'schema': 'nico.security-identity.v1', 'state': 'invalid',
+                                     'phase': 'seal', 'reason': 'report_validation'}
+    assert not (root / identity.CONTEXT).exists()
+
+
+def test_cli_failure_reasons_do_not_reflect_arguments(owned, capfd):
+    root, _ = owned
+    for args, phase, reason in [(['--unknown', CANARY], 'cli', 'arguments'),
+                                (['emit', '--root', str(root / CANARY)], 'emit', 'root')]:
+        assert identity.main(args) == 1
+        captured = capfd.readouterr()
+        assert captured.err == '' and CANARY not in captured.out
+        value = json.loads(captured.out)
+        assert (value['phase'], value['reason']) == (phase, reason)
