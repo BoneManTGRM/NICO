@@ -117,3 +117,34 @@ def test_configuration_probe_uses_same_analyst_invocation_and_requested_resource
     assert "'python3', '-I', '-S', '-c', PROGRAM]" in text
     assert "seconds=request['limits']['wall_seconds'] + 10" in text
     assert "result['project_compiler_requested_cpus'] = int(resources['cpus'])" in text
+
+
+@pytest.mark.parametrize('transport_fault',[None,'output_truncated','timed_out','exit_code'])
+def test_transport_failure_suppresses_even_complete_json_cpu_prefix(tmp_path,monkeypatch,transport_fault):
+    from nico import assessment_cpp_configuration_probe as probe
+    from tests.test_cpp_compiler_budget_v2 import probe_fixture
+    real=probe.probe_project_configuration
+    observation=observed()
+    from functools import wraps
+    @wraps(real)
+    def with_owned_transport(*args,**kwargs):
+        command=kwargs['command']
+        def wrapped(argv,**options):
+            response=command(argv,**options)
+            if compiler.PROGRAM in argv:
+                # Retained bytes form complete valid JSON even when transport
+                # reports loss, so JSON parsing alone cannot justify projection.
+                native=json.loads(response['output']);native['cpu_capacity']=observation
+                response={**response,'output':compiler._canonical(native)}
+                if transport_fault:response[transport_fault]=7 if transport_fault=='exit_code' else True
+            return response
+        kwargs['command']=wrapped
+        return real(*args,**kwargs)
+    monkeypatch.setattr(probe,'probe_project_configuration',with_owned_transport)
+    result,_,_,static_calls=probe_fixture(tmp_path,monkeypatch,version='v2')
+    assert result['project_compiler_requested_cpus']==4
+    if transport_fault:
+        assert result['project_compiler_cpu_capacity']==cpu.unavailable()
+        assert result['error']=='worker_configuration_probe_compiler_failed'
+        assert result['project_compiler'] is None and not static_calls
+    else:assert result['project_compiler_cpu_capacity']==observation

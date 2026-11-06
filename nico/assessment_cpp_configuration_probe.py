@@ -652,11 +652,15 @@ def probe_project_configuration(source, targets, image, *, project_options,
                     seconds=request['limits']['wall_seconds'] + 10, external=True)
                 # Optional numeric diagnostics never influence compiler/collection acceptance.
                 from nico.assessment_cpp_cpu_capacity import summarize as summarize_cpu_capacity
-                try:
-                    cpu_raw = _json(compiler_observed['output'])
-                    cpu_raw = cpu_raw.get('cpu_capacity') if isinstance(cpu_raw, dict) else None
-                except (ValueError, TypeError, RecursionError):
-                    cpu_raw = None
+                cpu_raw = None
+                # A complete JSON prefix is not complete transport evidence.
+                if (compiler_observed['exit_code'] == 0 and not compiler_observed['timed_out']
+                        and not compiler_observed['output_truncated']):
+                    try:
+                        cpu_raw = _json(compiler_observed['output'])
+                        cpu_raw = cpu_raw.get('cpu_capacity') if isinstance(cpu_raw, dict) else None
+                    except (ValueError, TypeError, RecursionError):
+                        cpu_raw = None
                 result['project_compiler_cpu_capacity'] = summarize_cpu_capacity(cpu_raw)
                 result['project_compiler_requested_cpus'] = int(resources['cpus'])
                 save()
