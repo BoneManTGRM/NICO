@@ -1,0 +1,67 @@
+{
+  "upstream_commit": "ac9db3069b9f90e81e126a090b99ad456e122cf8",
+  "base_tool_version": "2.17.1",
+  "patch_parser_sha256": "9f3261e77b3c75154f67ed23eac5001d988ff46363ffd0cecd763e77e6d34fdc",
+  "schema": "nico.cppcheck-ctu-first-use-manifest.v1",
+  "repair_id": "ctu-first-use-v1",
+  "patch": "ctu-first-use-v1.patch",
+  "patch_sha256": "3c18903b81a20c266d1ef3e946d0680b1a01bcdc7a9cf12503cf2e7805cd1f8d",
+  "native_controls": "native-controls.cpp",
+  "native_controls_sha256": "ee430445d7afd44c7231fefe358645ed5fbde061fafa4ab865048172c67962f9",
+  "variants": {
+    "placement-v1-grammar-v2": {
+      "sources": {
+        "lib/ctu.cpp": {
+          "before_sha256": "ad9b01ac6a44f5d5f4101443d550876312b12a17ab11eec332f67b3eb9a85806",
+          "after_sha256": "f3e363ae33cb8489ff25f4c1ab7ca02adbf0ee9f5fe1f7d463669e1eaa259ada"
+        }
+      },
+      "prerequisites": {
+        "externals/simplecpp/simplecpp.cpp": "7f92c920b66ad9a0ba82fa460f25be2721e28ded51e0d66992976e3c11a9e8a5",
+        "externals/simplecpp/simplecpp.h": "900f3608d157b4553566abc4f43cc6249005e9cc489707661984a52b32292633",
+        "lib/cppcheck.cpp": "377cde381b0f6b3b4ea55ec8beeea4691992628f18589e8238f344e49ba078bd",
+        "lib/cppcheck.h": "c298b694faf230b2b66233d02b1a1a3351c03e10ceeb46a5ba1f53f616b801c0",
+        "lib/preprocessor.cpp": "acf71bb200123151ae978f7d9611d010ade2e2ec5b21508505638d522e214852",
+        "lib/preprocessor.h": "c255dbb80348c3699dbf3d5c46e771b28adeb50b93ce20778388b173a269633c",
+        "lib/tokenize.cpp": "76beaa920046dbe057c5b20b09c043802351692657e2b3f269cf4612984eac88",
+        "lib/templatesimplifier.cpp": "23930579ec1ce6837cc4c3de8499a81761afe220fa5f00d6965b6975c25565ba",
+        "lib/token.cpp": "479bfa7451c7be5483195980aff7a7100481dd551e003766ab75a66124765547",
+        "lib/tokenlist.cpp": "dd648f30ee6f28fae801afee65b70b6eb1c0017d157a55c2c7dccc76f99365d9",
+        "lib/tokenlist.h": "83bce74b758052f684468bd5996c0e6b541cbe44e49ee8ace9a818cb030da7bd"
+      },
+      "expected_prior_repairs": {
+        "repair_cppcheck_placement_ast.py": "b7766109bc264cdaf5a2be254c71a98595929637235fc490cb44ea633d771c2f",
+        "repair_cppcheck_header_grammar.py": "bf5d21f080ee54730134ebec296748d8b819eddb016bb15feef8d39f32983683",
+        "patch_cppcheck_header_evidence.py": "9f3261e77b3c75154f67ed23eac5001d988ff46363ffd0cecd763e77e6d34fdc",
+        "repair_cppcheck_replacement_index.py": "0be86ec91ddc76aa56d7f3036d862f9c15346236dbac0096c3bb325e9c2bb5e0"
+      }
+    },
+    "placement-v2-grammar-v3": {
+      "sources": {
+        "lib/ctu.cpp": {
+          "before_sha256": "ad9b01ac6a44f5d5f4101443d550876312b12a17ab11eec332f67b3eb9a85806",
+          "after_sha256": "f3e363ae33cb8489ff25f4c1ab7ca02adbf0ee9f5fe1f7d463669e1eaa259ada"
+        }
+      },
+      "prerequisites": {
+        "externals/simplecpp/simplecpp.cpp": "7f92c920b66ad9a0ba82fa460f25be2721e28ded51e0d66992976e3c11a9e8a5",
+        "externals/simplecpp/simplecpp.h": "900f3608d157b4553566abc4f43cc6249005e9cc489707661984a52b32292633",
+        "lib/cppcheck.cpp": "377cde381b0f6b3b4ea55ec8beeea4691992628f18589e8238f344e49ba078bd",
+        "lib/cppcheck.h": "c298b694faf230b2b66233d02b1a1a3351c03e10ceeb46a5ba1f53f616b801c0",
+        "lib/preprocessor.cpp": "acf71bb200123151ae978f7d9611d010ade2e2ec5b21508505638d522e214852",
+        "lib/preprocessor.h": "c255dbb80348c3699dbf3d5c46e771b28adeb50b93ce20778388b173a269633c",
+        "lib/tokenize.cpp": "76beaa920046dbe057c5b20b09c043802351692657e2b3f269cf4612984eac88",
+        "lib/templatesimplifier.cpp": "23930579ec1ce6837cc4c3de8499a81761afe220fa5f00d6965b6975c25565ba",
+        "lib/token.cpp": "479bfa7451c7be5483195980aff7a7100481dd551e003766ab75a66124765547",
+        "lib/tokenlist.cpp": "42923e2ca209f582f415be75a21e14d36341fa9b2ed862c19a81f09e394d89a1",
+        "lib/tokenlist.h": "83bce74b758052f684468bd5996c0e6b541cbe44e49ee8ace9a818cb030da7bd"
+      },
+      "expected_prior_repairs": {
+        "repair_cppcheck_placement_ast.py": "412309dff85ee7a7722218ba30e6a17b22740400c634c9d766e8855eac0a8693",
+        "repair_cppcheck_header_grammar.py": "48dfcea5ff52076bd007408caf296f38085350e4ce1226199d930e680627dd2d",
+        "patch_cppcheck_header_evidence.py": "9f3261e77b3c75154f67ed23eac5001d988ff46363ffd0cecd763e77e6d34fdc",
+        "repair_cppcheck_replacement_index.py": "0be86ec91ddc76aa56d7f3036d862f9c15346236dbac0096c3bb325e9c2bb5e0"
+      }
+    }
+  }
+}
