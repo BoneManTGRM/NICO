@@ -16,6 +16,9 @@ jobs:
     name: Audit evidence collection
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    env:
+      SECURITY_IDENTITY_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+      SECURITY_IDENTITY_BASE: ${{ github.event.pull_request.base.sha || github.sha }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -150,9 +153,15 @@ jobs:
           PY
 
       - name: Collect gitleaks git-history evidence
+        id: gitleaks_identity
         run: |
+          # Diagnostic setup must not skip scanners; the always-run emitter rejects missing seals.
+          export SECURITY_IDENTITY_PREPARE_OK=0
+          if python scripts/security_identity_console.py prepare --root .; then
+            export SECURITY_IDENTITY_PREPARE_OK=1
+          fi
           set +e
-          gitleaks detect --source . --report-format json --report-path gitleaks.json --no-banner --redact
+          gitleaks detect --source . --report-format json --report-path gitleaks.json --no-banner --redact >/dev/null 2>&1
           status=$?
           set -e
           python - "$status" <<'PY'
@@ -176,6 +185,9 @@ jobs:
               'exit_code': status,
           }, indent=2), encoding='utf-8')
           PY
+          if python scripts/security_identity_console.py seal --root .; then
+            echo "sealed=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Collect trufflehog git-history evidence
         run: |
@@ -375,6 +387,12 @@ jobs:
       - name: Build fail-closed scanner manifest
         if: always()
         run: python scripts/security_audit_gate.py --require-sanitized-trufflehog
+
+      - name: Emit fresh bounded security identities
+        if: always()
+        env:
+          SECURITY_IDENTITY_FRESH_CAPTURE: ${{ steps.gitleaks_identity.outputs.sealed }}
+        run: python scripts/security_identity_console.py emit --root .
 
       - name: Upload audit evidence before enforcement
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
