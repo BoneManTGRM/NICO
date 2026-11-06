@@ -110,11 +110,20 @@ jobs:
           PY
 
       - name: Collect Semgrep evidence
+        id: semgrep_projection
         run: |
+          export SECURITY_PROJECTION_PREPARE_OK=0
+          export SECURITY_PROJECTION_CAPTURE_OK=0
+          if timeout --kill-after=2s 30s python scripts/security_fresh_projection.py prepare --tool semgrep; then
+            export SECURITY_PROJECTION_PREPARE_OK=1
+          fi
           set +e
-          semgrep scan --config auto --json --output semgrep.json 2>semgrep.stderr.txt
+          semgrep scan --config auto --json --output semgrep.json >/dev/null 2>semgrep.stderr.txt
           status=$?
           set -e
+          if timeout --kill-after=2s 30s python scripts/security_fresh_projection.py capture --tool semgrep --exit-code "$status"; then
+            export SECURITY_PROJECTION_CAPTURE_OK=1
+          fi
           python - "$status" <<'PY'
           from pathlib import Path
           import json, sys
@@ -128,6 +137,10 @@ jobs:
               reason = Path('semgrep.stderr.txt').read_text(encoding='utf-8', errors='replace')[-2000:]
               path.write_text(json.dumps({'results': [], 'errors': [{'level': 'error', 'message': reason or f'exit {status}'}]}, indent=2), encoding='utf-8')
           PY
+
+          if timeout --kill-after=2s 30s python scripts/security_fresh_projection.py seal --tool semgrep; then
+            echo 'sealed=true' >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Collect OSV Scanner evidence
         run: |
@@ -150,11 +163,20 @@ jobs:
           PY
 
       - name: Collect gitleaks git-history evidence
+        id: gitleaks_projection
         run: |
+          export SECURITY_PROJECTION_PREPARE_OK=0
+          export SECURITY_PROJECTION_CAPTURE_OK=0
+          if timeout --kill-after=2s 30s python scripts/security_fresh_projection.py prepare --tool gitleaks; then
+            export SECURITY_PROJECTION_PREPARE_OK=1
+          fi
           set +e
-          gitleaks detect --source . --report-format json --report-path gitleaks.json --no-banner --redact
+          gitleaks detect --source . --report-format json --report-path gitleaks.json --no-banner --redact >/dev/null 2>gitleaks.stderr.txt
           status=$?
           set -e
+          if timeout --kill-after=2s 30s python scripts/security_fresh_projection.py capture --tool gitleaks --exit-code "$status"; then
+            export SECURITY_PROJECTION_CAPTURE_OK=1
+          fi
           python - "$status" <<'PY'
           from pathlib import Path
           import json, sys
@@ -176,6 +198,10 @@ jobs:
               'exit_code': status,
           }, indent=2), encoding='utf-8')
           PY
+
+          if timeout --kill-after=2s 30s python scripts/security_fresh_projection.py seal --tool gitleaks; then
+            echo 'sealed=true' >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Collect trufflehog git-history evidence
         run: |
@@ -375,6 +401,13 @@ jobs:
       - name: Build fail-closed scanner manifest
         if: always()
         run: python scripts/security_audit_gate.py --require-sanitized-trufflehog
+
+      - name: Project bounded fresh security diagnostics
+        if: always()
+        env:
+          SECURITY_PROJECTION_GITLEAKS_FRESH: ${{ steps.gitleaks_projection.outputs.sealed }}
+          SECURITY_PROJECTION_SEMGREP_FRESH: ${{ steps.semgrep_projection.outputs.sealed }}
+        run: timeout --kill-after=2s 30s python scripts/security_fresh_projection.py emit
 
       - name: Upload audit evidence before enforcement
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
