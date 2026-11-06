@@ -52,7 +52,7 @@ jobs:
     - name: Verify diagnostic contracts
       run: 'python -m pip install --disable-pip-version-check -r requirements.txt
 
-        python -m pytest tests/test_fresh_cpp_phase_diagnostic.py -q --junitxml=native-diagnostic-evidence/contracts.xml
+        python -m pytest tests/test_cpp_phase_boundaries.py tests/test_fresh_cpp_phase_diagnostic.py -q --junitxml=native-diagnostic-evidence/contracts.xml
         tests/test_native_template_subphases.py tests/test_native_timeout_diagnostic.py tests/test_native_stage_counters.py
         tests/test_native_specialization_groups.py tests/test_cpp_project_static_stage.py tests/test_no_production_unsafe_primitives.py
 
@@ -100,6 +100,12 @@ jobs:
     - name: Verify immutable generated-source snapshots on owned positive and negative controls
       run: python -m scripts.qualify_cpp_project_generated_context --project-static-analysis --extended-compiler-budget
         --compiler-environment --image "$(cat full-project-image-id.txt)"
+    - name: Build and bind the diagnostic-only phase boundary image
+      run: |
+        set -euo pipefail
+        python -m scripts.build_cpp_phase_boundaries prepare --context toolchain/phase-boundaries --source toolchain/full-project/cppcheck --original-image "$(cat full-project-image-id.txt)"
+        timeout --kill-after=10s 300s docker build --network=none --iidfile phase-image-id.txt toolchain/phase-boundaries
+        python -m scripts.build_cpp_phase_boundaries capture --original-image "$(cat full-project-image-id.txt)" --image "$(cat phase-image-id.txt)" --output phase-image-binding --recipe toolchain/phase-boundaries/Dockerfile
     - name: Acquire pinned public qualification source without execution
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
@@ -129,4 +135,4 @@ jobs:
         NICO_PRODUCER_SOURCE_SHA: ${{ github.sha }}
       run: python -m scripts.fresh_cpp_phase_diagnostic --qualification-source qualification-input --unit-test-data
         qualification-unit-test-data --producer-source-sha "$NICO_PRODUCER_SOURCE_SHA" --output fresh-cpp-phase-evidence
-        --image "$(cat full-project-image-id.txt)"
+        --image "$(cat phase-image-id.txt)" --boundary-binding phase-image-binding/binding.json

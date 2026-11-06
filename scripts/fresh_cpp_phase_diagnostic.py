@@ -56,17 +56,28 @@ def phase_measurements(raw):
     return result
 
 
-def diagnostic_program():
+def diagnostic_program(binding=None):
     suffix = '\nrun_project_static()\n'
     if not PROGRAM.endswith(suffix):
         raise ValueError('diagnostic_program_changed')
+    verification = ''
+    replacement = ''
+    if binding is not None:
+        from scripts.build_cpp_phase_boundaries import FILES, BINARY
+        hashes = {FILES[k]:v for k,v in binding['files'].items()}
+        hashes[BINARY] = binding['diagnostic_binary_sha256']
+        verification = ('\nfor _phase_path, _phase_sha in ' + repr(hashes) + '.items():\n'
+            "    if _digest(_regular_bytes(_phase_path, 67108864)) != _phase_sha:\n"
+            "        raise ValueError('phase_runtime_tool_identity')\n")
+        replacement = "\n        actual[0] = " + repr(BINARY)
     # No selection, scheduler, clock, source verification or resource change.
-    return PROGRAM[:-len(suffix)] + '''
+    return PROGRAM[:-len(suffix)] + verification + '''
 original_run = _run
 def _run(argv, stem, deadline, environment):
     actual = list(argv)
-    if actual[0] == '/usr/local/bin/cppcheck' and '--version' not in actual:
-        actual.append('--showtime=file')
+    if actual[0] == '/usr/local/bin/cppcheck':
+        if '--version' not in actual:
+            actual.append('--showtime=file')''' + replacement + '''
     return original_run(actual, stem, deadline, environment)
 run_project_static()
 '''
@@ -83,7 +94,7 @@ def empty_summary(state):
         'records': []}
 
 
-def summarize(observed, request):
+def summarize(observed, request, binding=None):
     summary = empty_summary('unavailable')
     try:
         if (not isinstance(request, dict) or len(request['contexts']) != EXPECTED_CONTEXTS
@@ -103,6 +114,14 @@ def summarize(observed, request):
             source_population_sha256=_digest(_canonical(request['targets'])),
             collection_duration_ms=json.loads(raw)['duration_ms'])
         executed = [(i, row) for i, row in enumerate(records) if row['execution'] is not None]
+        if binding is not None:
+            from scripts.build_cpp_phase_boundaries import canonical, BINARY
+            summary['boundary_binding_sha256'] = _digest(canonical(binding))
+            summary['diagnostic_image_sha256'] = binding['image'][7:]
+            summary['diagnostic_binary_sha256'] = binding['diagnostic_binary_sha256']
+            summary['planned_probe_invocations_sha256'] = _digest(_canonical([
+                [BINARY, *context['analyzer_invocation'][1:], '--showtime=file']
+                for context in request['contexts']]))
         summary['omitted_executed_records'] = max(0, len(executed) - MAX_ROWS)
         for index, row in executed[:MAX_ROWS]:
             execution = row['execution']
@@ -112,6 +131,10 @@ def summarize(observed, request):
                 'output_truncated': execution['output_truncated'],
                 'duration_ms': execution['duration_ms'],
                 'phases': phase_measurements(output)})
+            if binding is not None:
+                from scripts.cpp_phase_boundaries import parse_markers
+                summary['records'][-1]['boundaries'] = (parse_markers(output) if not execution['output_truncated']
+                    else {'state':'unavailable','last_boundary':None,'precise_hotspot_known':False})
         return summary
     except Exception:
         return empty_summary('invalid')
@@ -121,7 +144,7 @@ class DiagnosticFinished(BaseException):
     """Unwind every sandbox finally block before any acceptance/fallback/runtime."""
 
 
-def diagnostic_command(run, emit):
+def diagnostic_command(run, emit, binding=None):
     used = False
 
     def command(argv, **kwargs):
@@ -140,8 +163,8 @@ def diagnostic_command(run, emit):
                     or request['limits'] != {'wall_seconds': 540, 'case_seconds': 90, 'parallel': 2}):
                 raise ValueError('diagnostic_request_invalid')
             used = True
-            result = run([*argv[:-1], diagnostic_program()], **kwargs)
-            summary = summarize(result, request)
+            result = run([*argv[:-1], diagnostic_program(binding)], **kwargs)
+            summary = summarize(result, request, binding)
         except (Exception, KeyboardInterrupt):
             summary = empty_summary('preparation_or_execution_failed')
         try:
@@ -158,7 +181,10 @@ def emit_summary(summary):
     # Defend the console boundary even if a future caller passes the wrong object.
     def allowed(value):
         base = empty_summary('unavailable')
-        if type(value) is not dict or set(value) - (set(base) | {
+        boundary_keys = {'boundary_binding_sha256','diagnostic_image_sha256',
+                         'diagnostic_binary_sha256','planned_probe_invocations_sha256'}
+        has_boundaries = type(value) is dict and bool(set(value) & boundary_keys)
+        if type(value) is not dict or set(value) - (set(base) | boundary_keys | {
                 'request_sha256', 'native_evidence_sha256', 'source_population_sha256',
                 'collection_duration_ms', 'omitted_executed_records'}):
             return False
@@ -170,12 +196,14 @@ def emit_summary(summary):
             return False
         extra = {'request_sha256', 'native_evidence_sha256', 'source_population_sha256',
                  'collection_duration_ms', 'omitted_executed_records'}
+        if has_boundaries:
+            extra |= boundary_keys
         if value['state'] == 'collected':
             if set(value) != set(base) | extra or type(value.get('observed_contexts')) is not int:
                 return False
         elif set(value) != set(base) or value.get('observed_contexts') is not None or value.get('records') != []:
             return False
-        for key in ('request_sha256', 'native_evidence_sha256', 'source_population_sha256'):
+        for key in {'request_sha256', 'native_evidence_sha256', 'source_population_sha256'} | boundary_keys:
             if key in value and (type(value[key]) is not str or not re.fullmatch('[a-f0-9]{64}', value[key])):
                 return False
         for key, maximum in (('observed_contexts', EXPECTED_CONTEXTS),
@@ -187,13 +215,23 @@ def emit_summary(summary):
             return False
         for row in rows:
             if type(row) is not dict or set(row) != {'context_index', 'exit_code', 'timed_out',
-                                                    'output_truncated', 'duration_ms', 'phases'}:
+                                                    'output_truncated', 'duration_ms', 'phases'} | ({'boundaries'} if has_boundaries else set()):
                 return False
             for key, low, high in (('context_index', 0, EXPECTED_CONTEXTS-1), ('exit_code', -255, 255), ('duration_ms', 0, 93000)):
                 if type(row[key]) is not int or not low <= row[key] <= high:
                     return False
             if any(type(row[k]) is not bool for k in ('timed_out', 'output_truncated')):
                 return False
+            if has_boundaries:
+                boundary = row['boundaries']
+                if type(boundary) is not dict or set(boundary) != {'state','last_boundary','precise_hotspot_known'}:
+                    return False
+                if boundary['precise_hotspot_known'] is not False:
+                    return False
+                if boundary['state'] == 'observed':
+                    if boundary['last_boundary'] not in {'using_begin','using_end','template_begin','template_end'}: return False
+                elif boundary['state'] not in {'unavailable','invalid','capped'} or boundary['last_boundary'] is not None:
+                    return False
             phases = row['phases']
             if type(phases) is not dict or set(phases) != set(PHASES.values()):
                 return False
@@ -222,6 +260,7 @@ def emit_summary(summary):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image', required=True)
+    parser.add_argument('--boundary-binding', type=Path)
     parser.add_argument('--qualification-source', type=Path, required=True)
     parser.add_argument('--unit-test-data', type=Path, required=True)
     parser.add_argument('--producer-source-sha', required=True)
@@ -239,8 +278,15 @@ def main(argv=None):
     try:
         if args.output.exists() or args.output.is_symlink():
             raise ValueError('diagnostic_fresh_output_required')
+        binding = None
+        if args.boundary_binding is not None:
+            from scripts.build_cpp_phase_boundaries import validate_binding
+            with args.boundary_binding.open('rb') as stream:
+                raw = stream.read(16385)
+            if len(raw)>16384: raise ValueError('phase_binding_limit')
+            binding = validate_binding(json.loads(raw),args.image)
         from scripts.qualify_cpp_project_configuration import qualify_configuration_checkout
-        qualify_configuration_checkout(args, command=diagnostic_command(_command, emit_summary),
+        qualify_configuration_checkout(args, command=diagnostic_command(_command, emit_summary, binding),
                                        diagnostic_primary_only=True)
     except DiagnosticFinished:
         return 1  # Never a qualification success exit.
