@@ -20,7 +20,7 @@ export type Assistance = {
   pending_record_count: number;
   queue: Packet[];
   source_investigation?: {available: boolean; candidate_count?: number; completed_count?: number; source_availability_counts?: Record<string, number>;
-    packets: {dependency_next_step?: string; record_index?: number; candidate_input_sha256?: string; dependency_identity?: {package: string; locked_version: string; lockfile_path: string; source_sha256: string}; lexical_binding?: {version: string; api: string; import_line: number; line: number; source_sha256: string}; candidate_id: string; rule_id: string; completed: boolean; source_sha256?: string; source_path?: string; line?: number; reason: string; source_availability_detail?: string}[]};
+    packets: {exception_handler?: {version: string; body_kind: string; line: number; source_sha256: string; blob_oid: string; path: string; candidate_input_sha256: string; scope: Record<string, string>}; dependency_next_step?: string; record_index?: number; candidate_input_sha256?: string; dependency_identity?: {package: string; locked_version: string; lockfile_path: string; source_sha256: string}; lexical_binding?: {version: string; api: string; import_line: number; line: number; source_sha256: string}; candidate_id: string; rule_id: string; completed: boolean; source_sha256?: string; source_path?: string; line?: number; reason: string; source_availability_detail?: string}[]};
 };
 
 const dependencyNextSteps: Record<string, [string, string]> = {
@@ -182,7 +182,28 @@ export default function CandidateReviewAssistance({value, locale}: {value: Assis
             if (packet.evidence_tasks) return null;
             const source = sourceFor(packet);
             if (!source) return null;
-            if (!source.completed) return <p>{(Object.hasOwn(investigationReasons, source.reason) ? investigationReasons[source.reason] : ["Investigation unresolved", "Investigación sin resolver"])[language]}. {source.reason === "source_parse_unavailable" ? (Object.hasOwn(sourceAvailabilityLabels, source.source_availability_detail || "") ? sourceAvailabilityLabels[source.source_availability_detail!] : sourceAvailabilityLabels.not_recorded)[language] + ". " : ""}{es ? "Solicitar evidencia antes de decidir." : "Request evidence before disposition."}</p>;
+            const handler = source.exception_handler;
+            const handlerBound = !source.completed && handler?.version === "nico.exception-handler-evidence.v1" &&
+              ((source.rule_id === "B110" && handler.body_kind === "single_pass") ||
+               (source.rule_id === "B112" && handler.body_kind === "single_continue")) &&
+              Number.isSafeInteger(source.record_index) && source.record_index === packet.source_record_index &&
+              /^[0-9a-f]{64}$/.test(packet.source_candidate_input_sha256 || "") &&
+              source.candidate_input_sha256 === packet.source_candidate_input_sha256 &&
+              handler.candidate_input_sha256 === source.candidate_input_sha256 &&
+              Number.isSafeInteger(handler.line) && handler.line > 0 && handler.line === source.line &&
+              /^[0-9a-f]{64}$/.test(handler.source_sha256) && handler.source_sha256 === source.source_sha256 &&
+              /^[0-9a-f]{40}$/.test(handler.blob_oid) && handler.path === source.source_path &&
+              handler.scope && ["run_id", "repository", "commit_sha", "customer_id", "project_id"].every(key =>
+                typeof handler.scope[key] === "string" && handler.scope[key].length > 0 && handler.scope[key].length <= 200) &&
+              /^[0-9a-f]{40}$/.test(handler.scope.commit_sha);
+            if (!source.completed) return <div>
+              {handlerBound ? <div data-exception-handler-evidence="true">
+                <p>{es ? `El cuerpo del manejador contiene solo ${handler.body_kind === "single_pass" ? "pass" : "continue"}` : `Handler body contains only ${handler.body_kind === "single_pass" ? "pass" : "continue"}`}.</p>
+                <p>{es ? "Las consecuencias y la alcanzabilidad en producción siguen sin conocerse. Conservar para revisión contextual humana." : "Consequences and production reachability remain unknown. Retain for human contextual review."}</p>
+                <p><code>{handler.path}</code> · {es ? "Línea" : "Line"}: {handler.line} · SHA-256: <code>{handler.source_sha256}</code> · Git blob: <code>{handler.blob_oid}</code></p>
+                <p>{es ? "Alcance exacto" : "Exact scope"}: {Object.entries(handler.scope).filter(([key]) => ["run_id", "repository", "commit_sha", "customer_id", "project_id"].includes(key)).map(([key, value]) => <span key={key}>{key}: <code>{value}</code> </span>)}</p>
+              </div> : null}
+              <p>{(Object.hasOwn(investigationReasons, source.reason) ? investigationReasons[source.reason] : ["Investigation unresolved", "Investigación sin resolver"])[language]}. {source.reason === "source_parse_unavailable" ? (Object.hasOwn(sourceAvailabilityLabels, source.source_availability_detail || "") ? sourceAvailabilityLabels[source.source_availability_detail!] : sourceAvailabilityLabels.not_recorded)[language] + ". " : ""}{es ? "Solicitar evidencia antes de decidir." : "Request evidence before disposition."}</p></div>;
             const assertion = source.rule_id === "B101";
             const imported = source.rule_id === "B404" || source.rule_id === "B405";
             const proof = source.lexical_binding;

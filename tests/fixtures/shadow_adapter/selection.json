@@ -1,0 +1,26 @@
+{
+  "cases": [
+    {
+      "case_id": "mixed",
+      "register_sha256": "ec7bb76ae6cf01b0469ff8d9e8710b2892e215ed4a03d611c1d66eacc8efe368",
+      "scope": {
+        "repository": "example.invalid/shadow",
+        "revision": "1111111111111111111111111111111111111111",
+        "source_id": "synthetic-mixed",
+        "source_schema": "nico.candidate-technical-triage.v2"
+      }
+    },
+    {
+      "case_id": "zero",
+      "register_sha256": "7327452a874ef28b2d5387cbbefbd25aef16a282412ffabe88f8620796a5d890",
+      "scope": {
+        "repository": "example.invalid/shadow",
+        "revision": "1111111111111111111111111111111111111111",
+        "source_id": "synthetic-zero",
+        "source_schema": "nico.candidate-technical-triage.v2"
+      }
+    }
+  ],
+  "expected_sha256": "41e3317ae638f08fb755361e16bcc012d3642600947182a9c01ac17f83d80f65",
+  "schema": "nico.shadow-selection.v1"
+}

@@ -37,6 +37,7 @@ _EXIT_CRITERIA_TRANSLATIONS: dict[str, str] = {
 # the approved production vocabulary here so all report surfaces share one bounded
 # contract. Unknown prose still delegates to the canonical fail-closed translator.
 _TARGETED_PRESENTATION_TRANSLATIONS: dict[str, str] = {
+    "retained bounded workflow run history": "historial acotado conservado de ejecuciones de flujos de trabajo",
     'Validate the retained finding; implement its retained correction only when the disposition and change scope authorize remediation.': 'Validar el hallazgo conservado; aplicar su corrección conservada únicamente cuando la disposición y el alcance del cambio autoricen la remediación.',
     'The proposal addresses this retained finding and preserves its current review state.': 'La propuesta atiende este hallazgo conservado y mantiene su estado actual de revisión.',
     'Retain the exact remediation revision, the finding-specific verification evidence, and regression results; obtain the required specialist disposition.': 'Conservar la revisión exacta de remediación, la evidencia de verificación específica del hallazgo y los resultados de regresión; obtener la disposición profesional requerida.',
@@ -186,7 +187,15 @@ def _translate_targeted_presentation_literal(value: Any) -> str | None:
     translated = _TARGETED_PRESENTATION_TRANSLATIONS.get(text)
     if translated is not None:
         return translated
-    return _TARGETED_PRESENTATION_TRANSLATIONS_CASEFOLD.get(text.casefold())
+    translated = _TARGETED_PRESENTATION_TRANSLATIONS_CASEFOLD.get(text.casefold())
+    if translated is not None:
+        return translated
+    from nico.spanish_retained_candidate_contracts import translate_retained_candidate_contract
+    translated = translate_retained_candidate_contract(text)
+    if translated is not None:
+        return translated
+    from nico.spanish_scanner_unavailable_contracts import translate_scanner_unavailable_contract
+    return translate_scanner_unavailable_contract(text)
 
 
 def _translate_complexity_method(method: str) -> str | None:
