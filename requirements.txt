@@ -1,11 +1,11 @@
 setuptools>=83,<85
-fastapi==0.151.0
+fastapi==0.162.0
 uvicorn==0.54.0
-pydantic==2.14.1
+pydantic==2.14.2
 pytest==9.1.1
 httpx==0.28.1
 requests==2.34.2
-reportlab==5.0.1
+reportlab==5.1.0
 pillow==13.0.0
 idna==3.20
 pypdf==6.21.4
