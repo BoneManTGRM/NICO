@@ -9,9 +9,9 @@ import shutil
 import subprocess
 from uuid import uuid4
 from . import cpp_phase_boundaries as phase
+from . import cpp_template_probe as template_probe
 
 UPSTREAM='ac9db3069b9f90e81e126a090b99ad456e122cf8'
-AFTER='5032dbae909f6eb3b06e94511b9e5c0cc84b8c5c64b1cd985c39336dc2f5eec7'
 BINARY='/usr/local/bin/cppcheck-phase-boundaries'
 FILES={'production_binary':'/usr/local/bin/cppcheck',
        'clang_observer':'/opt/nico-clang-header-observer.so',
@@ -32,7 +32,8 @@ def recipe(original):
 FROM nico-phase-base:{original[7:]}
 USER 0:0
 COPY cppcheck /opt/phase-tool-src
-COPY repair_cppcheck_placement_ast.py repair_cppcheck_header_grammar.py patch_cppcheck_header_evidence.py cpp_phase_boundaries.py /opt/
+COPY repair_cppcheck_placement_ast.py repair_cppcheck_header_grammar.py patch_cppcheck_header_evidence.py cpp_phase_boundaries.py cpp_template_probe.py /opt/
+COPY native_stage_counters /opt/native_stage_counters
 COPY cppcheck-header-evidence /opt/cppcheck-header-evidence
 RUN test "$(g++ -dumpfullversion)" = 14.2.0 \\
  && python3 /opt/repair_cppcheck_placement_ast.py /opt/phase-tool-src/lib/tokenlist.cpp > /opt/phase-repair.json \\
@@ -41,7 +42,7 @@ RUN test "$(g++ -dumpfullversion)" = 14.2.0 \\
  && cmp /opt/phase-grammar.json /opt/nico-cppcheck-header-grammar.json \\
  && python3 /opt/patch_cppcheck_header_evidence.py /opt/phase-tool-src /opt/cppcheck-header-evidence > /opt/phase-header.json \\
  && cmp /opt/phase-header.json /opt/nico-cppcheck-header-observer.json \\
- && python3 /opt/cpp_phase_boundaries.py --source /opt/phase-tool-src > /opt/nico-phase-overlay.json \\
+ && python3 /opt/cpp_template_probe.py --source /opt/phase-tool-src > /opt/nico-phase-overlay.json \\
  && timeout 180s make -C /opt/phase-tool-src -j2 MATCHCOMPILER=yes FILESDIR=/opt/cppcheck 'CXXFLAGS=-O2 -DNDEBUG' \\
  && cp /opt/phase-tool-src/cppcheck {BINARY} \\
  && rm -rf /opt/phase-tool-src
@@ -49,10 +50,8 @@ USER 1000:1000
 '''
 
 def expected_overlay():
-    return {'schema':'nico.cpp-phase-overlay.v1','source_sha256':phase.PIN,
-        'instrumented_source_sha256':AFTER,'restored_source_sha256':phase.PIN,
-        'script_sha256':digest(Path(phase.__file__).read_bytes()),
-        'instrumentation_only':True,'qualification_credit':False}
+    return template_probe.expected_receipt()
+
 
 def prepare(context,source,original):
     if context.exists() or context.is_symlink():raise ValueError('phase_context_not_fresh')
@@ -68,8 +67,11 @@ def prepare(context,source,original):
     context.mkdir()
     shutil.copytree(source,context/'cppcheck',ignore=shutil.ignore_patterns('.git'))
     scripts=Path(__file__).resolve().parent
-    for name in ('repair_cppcheck_placement_ast.py','repair_cppcheck_header_grammar.py','patch_cppcheck_header_evidence.py','cpp_phase_boundaries.py'):
+    for name in ('repair_cppcheck_placement_ast.py','repair_cppcheck_header_grammar.py','patch_cppcheck_header_evidence.py','cpp_phase_boundaries.py','cpp_template_probe.py'):
         shutil.copyfile(scripts/name,context/name)
+    (context/'native_stage_counters').mkdir()
+    for name in ('instrument.py','nico_stage_counters.h'):
+        shutil.copyfile(scripts/'native_stage_counters'/name,context/'native_stage_counters'/name)
     shutil.copytree(scripts/'cppcheck-header-evidence',context/'cppcheck-header-evidence')
     (context/'Dockerfile').write_text(recipe(original))
     return {'recipe_sha256':digest(recipe(original).encode()),'upstream':UPSTREAM}
@@ -91,12 +93,13 @@ def capture_files(image,paths,output):
     finally:cleanup_capture_container(name,owner)
 
 def validate_binding(value,image):
-    keys={'schema','original_image','image','upstream','recipe_sha256','overlay','files','diagnostic_binary_sha256','diagnostic_binary_path','qualification_credit'}
+    keys={'schema','original_image','image','upstream','recipe_sha256','overlay','files','diagnostic_binary_sha256','diagnostic_binary_path','qualification_credit','activation'}
     if not isinstance(value,dict) or set(value)!=keys:raise ValueError('phase_binding_shape')
     original=image_id(value['original_image']);image_id(image)
-    if (value['schema']!='nico.cpp-phase-binding.v1' or value['image']!=image or image==original
+    if (value['schema']!='nico.cpp-phase-binding.v2' or value['image']!=image or image==original
         or value['upstream']!=UPSTREAM or value['recipe_sha256']!=digest(recipe(original).encode())
         or canonical(value['overlay'])!=canonical(expected_overlay()) or value['diagnostic_binary_path']!=BINARY
+        or value['activation']!={'NICO_CPP_STAGE_COUNTERS':'1'}
         or value['qualification_credit'] is not False or not isinstance(value['files'],dict)
         or set(value['files'])!=set(FILES)):raise ValueError('phase_binding_identity')
     for sha in [*value['files'].values(),value['diagnostic_binary_sha256']]:
@@ -122,10 +125,10 @@ def capture(original,image,output,recipe_path):
     after=capture_files(image,{**FILES,'diagnostic_binary':BINARY,'overlay':'/opt/nico-phase-overlay.json'},output/'diagnostic')
     if any(before[k]!=after[k] for k in FILES):raise ValueError('phase_production_tool_changed')
     if canonical(json.loads(after['overlay']))!=canonical(expected_overlay()):raise ValueError('phase_overlay_identity')
-    binding={'schema':'nico.cpp-phase-binding.v1','original_image':original,'image':image,'upstream':UPSTREAM,
+    binding={'schema':'nico.cpp-phase-binding.v2','original_image':original,'image':image,'upstream':UPSTREAM,
         'recipe_sha256':digest(recipe(original).encode()),'overlay':expected_overlay(),
         'files':{k:digest(before[k]) for k in FILES},'diagnostic_binary_sha256':digest(after['diagnostic_binary']),
-        'diagnostic_binary_path':BINARY,'qualification_credit':False}
+        'diagnostic_binary_path':BINARY,'qualification_credit':False,'activation':{'NICO_CPP_STAGE_COUNTERS':'1'}}
     validate_binding(binding,image)
     (output/'binding.json').write_bytes(canonical(binding)+b'\n')
     return binding

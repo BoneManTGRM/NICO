@@ -3,6 +3,8 @@ import hashlib
 PIN='76beaa920046dbe057c5b20b09c043802351692657e2b3f269cf4612984eac88'
 BEGIN=b'/* NICO_PHASE_BOUNDARY_BEGIN */\n'
 END=b'/* NICO_PHASE_BOUNDARY_END */\n'
+BOUNDARIES=('using_begin','using_end','template_begin','template_end',
+            'tokens_simplified','parsed_membership_end','normal_checks_begin','normal_checks_end')
 
 def strip(raw):
     while BEGIN in raw:
@@ -12,10 +14,20 @@ def strip(raw):
 
 def overlay(raw):
     if hashlib.sha256(raw).hexdigest()!=PIN: raise ValueError('source_identity_mismatch')
+    return _insert_boundaries(raw)
+
+
+def overlay_subphases(raw):
+    # Exact output of the separately pinned baseline subphase instrumentation.
+    if hashlib.sha256(raw).hexdigest() != '0ad11c73e55a130a3e9eb660b807353527f065d6eae58564546f00852d594c5e':
+        raise ValueError('subphase_source_identity_mismatch')
+    return _insert_boundaries(raw)
+
+
+def _insert_boundaries(raw):
     original=raw
     anchors=[
-      (b'#include "tokenize.h"\n', b'''namespace {
-void nicoPhaseBoundary(const char* phase) {
+      (b'#include "tokenize.h"\n', b'''void nicoPhaseBoundary(const char* phase) {
     static std::atomic<unsigned> emitted{0};
     unsigned count = emitted.load();
     while (count < 16) {
@@ -25,7 +37,6 @@ void nicoPhaseBoundary(const char* phase) {
             return;
         }
     }
-}
 }
 '''),
     ]
@@ -62,7 +73,7 @@ def apply_to_source(source):
 
 def parse_markers(raw):
     """Complete, unique first-cycle boundaries only; uncertainty is explicit."""
-    vocabulary=('using_begin','using_end','template_begin','template_end')
+    vocabulary=BOUNDARIES
     unknown={'state':'unavailable', 'last_boundary':None, 'precise_hotspot_known':False}
     if not isinstance(raw,bytes) or len(raw)>65536: return unknown
     markers=[]
@@ -77,7 +88,7 @@ def parse_markers(raw):
         markers.append(name)
     if not markers: return unknown
     if len(markers)>=16: return dict(unknown,state='capped')
-    if len(markers)>4 or tuple(markers)!=vocabulary[:len(markers)]:
+    if len(markers)>len(vocabulary) or tuple(markers)!=vocabulary[:len(markers)]:
         return dict(unknown,state='invalid')
     return {'state':'observed', 'last_boundary':markers[-1], 'precise_hotspot_known':False}
 
@@ -86,3 +97,25 @@ if __name__=='__main__':
     import argparse,json
     p=argparse.ArgumentParser();p.add_argument('--source',required=True)
     print(json.dumps(apply_to_source(p.parse_args().source),sort_keys=True))
+
+
+def overlay_later_stages(raw):
+    if hashlib.sha256(raw).hexdigest()!='377cde381b0f6b3b4ea55ec8beeea4691992628f18589e8238f344e49ba078bd':
+        raise ValueError('later_stage_source_identity')
+    original=raw
+    anchors=[
+      (b'#include "cppcheck.h"\n', b'void nicoPhaseBoundary(const char* phase);\n'),
+      (b'                    nicoConfig.disposition = "simplification_failed";\n                    continue;\n                }\n',
+       b'                nicoPhaseBoundary("NICO_PHASE_V1 tokens_simplified\\n");\n'),
+      (b'                    nicoConfig.parsed.capture(tokenizer, nicoConfig.tokenMembershipBytes, nicoConfig.tokenMembershipEntries);\n',
+       b'                if (nicoFileTrace.enabled()) nicoPhaseBoundary("NICO_PHASE_V1 parsed_membership_end\\n");\n'),
+      (b'                if (nicoFileTrace.enabled()) nicoConfig.normalPassStarted = true;\n',
+       b'                nicoPhaseBoundary("NICO_PHASE_V1 normal_checks_begin\\n");\n'),
+      (b'                checkNormalTokens(tokenizer, analyzerInformation.get(), nicoFileTrace.enabled() ? &nicoConfig.checksComplete : nullptr);\n',
+       b'                nicoPhaseBoundary("NICO_PHASE_V1 normal_checks_end\\n");\n'),
+    ]
+    for anchor,addition in anchors:
+        if raw.count(anchor)!=1:raise ValueError('later_stage_anchor_mismatch')
+        raw=raw.replace(anchor,anchor+BEGIN+addition+END)
+    if strip(raw)!=original:raise ValueError('later_stage_semantic_source_changed')
+    return raw

@@ -69,7 +69,8 @@ def diagnostic_program(binding=None):
         verification = ('\nfor _phase_path, _phase_sha in ' + repr(hashes) + '.items():\n'
             "    if _digest(_regular_bytes(_phase_path, 67108864)) != _phase_sha:\n"
             "        raise ValueError('phase_runtime_tool_identity')\n")
-        replacement = "\n        actual[0] = " + repr(BINARY)
+        replacement = ("\n        actual[0] = " + repr(BINARY)
+            + "\n        environment = {**environment, **" + repr(binding['activation']) + "}")
     # No selection, scheduler, clock, source verification or resource change.
     return PROGRAM[:-len(suffix)] + verification + '''
 original_run = _run
@@ -119,6 +120,7 @@ def summarize(observed, request, binding=None):
             summary['boundary_binding_sha256'] = _digest(canonical(binding))
             summary['diagnostic_image_sha256'] = binding['image'][7:]
             summary['diagnostic_binary_sha256'] = binding['diagnostic_binary_sha256']
+            summary['probe_activation_sha256'] = _digest(_canonical(binding['activation']))
             summary['planned_probe_invocations_sha256'] = _digest(_canonical([
                 [BINARY, *context['analyzer_invocation'][1:], '--showtime=file']
                 for context in request['contexts']]))
@@ -130,14 +132,37 @@ def summarize(observed, request, binding=None):
                 'exit_code': execution['exit_code'], 'timed_out': execution['timed_out'],
                 'output_truncated': execution['output_truncated'],
                 'duration_ms': execution['duration_ms'],
-                'phases': phase_measurements(output)})
+                'phases': phase_measurements(output if not execution['output_truncated'] else None)})
             if binding is not None:
                 from scripts.cpp_phase_boundaries import parse_markers
                 summary['records'][-1]['boundaries'] = (parse_markers(output) if not execution['output_truncated']
                     else {'state':'unavailable','last_boundary':None,'precise_hotspot_known':False})
+        if binding is not None:
+            from scripts.cpp_template_probe import summarize_prefix, unknown_summary
+            # Bound console detail without changing execution population or retained evidence.
+            selected = _subphase_detail_indices(summary['records'])
+            for row in summary['records']:
+                index=row['context_index']
+                if index not in selected:
+                    row['subphases']=unknown_summary('omitted')
+                    continue
+                _, output=_execution(records[index]['execution'],93000)
+                row['subphases']=summarize_prefix(output,
+                    binary_sha256=binding['diagnostic_binary_sha256'],timed_out=row['timed_out'],
+                    output_truncated=row['output_truncated'])
         return summary
     except Exception:
         return empty_summary('invalid')
+
+
+def _subphase_detail_indices(records):
+    # Two detailed prefixes fit the unchanged 16 KiB console cap at worst numeric widths.
+    # Every retained context still has its timing, boundary and execution outcome.
+    selected = {row['context_index'] for row in records[:1]}
+    later = [row for row in records if row['boundaries']['last_boundary'] in {
+        'template_end','tokens_simplified','parsed_membership_end','normal_checks_begin','normal_checks_end'}]
+    selected.update(row['context_index'] for row in later[-1:])
+    return selected
 
 
 class DiagnosticFinished(BaseException):
@@ -182,7 +207,7 @@ def emit_summary(summary):
     def allowed(value):
         base = empty_summary('unavailable')
         boundary_keys = {'boundary_binding_sha256','diagnostic_image_sha256',
-                         'diagnostic_binary_sha256','planned_probe_invocations_sha256'}
+                         'diagnostic_binary_sha256','planned_probe_invocations_sha256','probe_activation_sha256'}
         has_boundaries = type(value) is dict and bool(set(value) & boundary_keys)
         if type(value) is not dict or set(value) - (set(base) | boundary_keys | {
                 'request_sha256', 'native_evidence_sha256', 'source_population_sha256',
@@ -215,7 +240,7 @@ def emit_summary(summary):
             return False
         for row in rows:
             if type(row) is not dict or set(row) != {'context_index', 'exit_code', 'timed_out',
-                                                    'output_truncated', 'duration_ms', 'phases'} | ({'boundaries'} if has_boundaries else set()):
+                                                    'output_truncated', 'duration_ms', 'phases'} | ({'boundaries','subphases'} if has_boundaries else set()):
                 return False
             for key, low, high in (('context_index', 0, EXPECTED_CONTEXTS-1), ('exit_code', -255, 255), ('duration_ms', 0, 93000)):
                 if type(row[key]) is not int or not low <= row[key] <= high:
@@ -223,13 +248,16 @@ def emit_summary(summary):
             if any(type(row[k]) is not bool for k in ('timed_out', 'output_truncated')):
                 return False
             if has_boundaries:
+                from scripts.cpp_template_probe import valid_summary
+                if not valid_summary(row['subphases']):return False
                 boundary = row['boundaries']
                 if type(boundary) is not dict or set(boundary) != {'state','last_boundary','precise_hotspot_known'}:
                     return False
                 if boundary['precise_hotspot_known'] is not False:
                     return False
                 if boundary['state'] == 'observed':
-                    if boundary['last_boundary'] not in {'using_begin','using_end','template_begin','template_end'}: return False
+                    from scripts.cpp_phase_boundaries import BOUNDARIES
+                    if boundary['last_boundary'] not in BOUNDARIES: return False
                 elif boundary['state'] not in {'unavailable','invalid','capped'} or boundary['last_boundary'] is not None:
                     return False
             phases = row['phases']

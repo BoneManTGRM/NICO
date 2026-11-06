@@ -12,10 +12,10 @@ from scripts import fresh_cpp_phase_diagnostic as fresh
 
 def binding():
     original='sha256:'+'1'*64;image='sha256:'+'2'*64
-    return dict(schema='nico.cpp-phase-binding.v1',original_image=original,image=image,
+    return dict(schema='nico.cpp-phase-binding.v2',original_image=original,image=image,
         upstream=build.UPSTREAM,recipe_sha256=build.digest(build.recipe(original).encode()),
         overlay=build.expected_overlay(),files={k:'3'*64 for k in build.FILES},
-        diagnostic_binary_sha256='4'*64,diagnostic_binary_path=build.BINARY,qualification_credit=False)
+        diagnostic_binary_sha256='4'*64,diagnostic_binary_path=build.BINARY,qualification_credit=False,activation={'NICO_CPP_STAGE_COUNTERS':'1'})
 
 
 def test_overlay_rejects_wrong_source_and_restores_owned_bytes(monkeypatch):
@@ -94,7 +94,8 @@ def test_runtime_checks_hashes_before_execution_and_redirects_only_analyzer(monk
     assert all(limit==67108864 for _,limit in seen)
     env={'PATH':'owned'}
     ns['_run'](['/usr/local/bin/cppcheck','--project=owned'],'stem',123,env)
-    assert calls[-1]==([build.BINARY,'--project=owned','--showtime=file'],'stem',123,env)
+    assert calls[-1]==([build.BINARY,'--project=owned','--showtime=file'],'stem',123,{**env,'NICO_CPP_STAGE_COUNTERS':'1'})
+    assert env=={'PATH':'owned'}
     ns['_run'](['/usr/local/bin/cppcheck','--version'],'version',5,env)
     assert calls[-1][0]==[build.BINARY,'--version']
     value['files']['production_binary']='f'*64
