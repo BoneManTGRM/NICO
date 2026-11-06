@@ -78,6 +78,8 @@ jobs:
           cp scripts/repair_cppcheck_placement_ast.py toolchain/full-project/
           cp scripts/repair_cppcheck_header_grammar.py toolchain/full-project/
           cp scripts/patch_cppcheck_header_evidence.py toolchain/full-project/
+          cp scripts/repair_cppcheck_replacement_index.py toolchain/full-project/
+          cp -R scripts/cppcheck-replacement-index toolchain/full-project/
           cp -R scripts/cppcheck-header-evidence toolchain/full-project/
           cp scripts/build_cpp_clang_header_observer.py toolchain/full-project/
           cp -R scripts/clang-header-evidence toolchain/full-project/
@@ -89,6 +91,8 @@ jobs:
           docker cp "$toolchain_container:/opt/nico-cpp-runtime-toolchain.json" cpp-runtime-toolchain.json
           docker cp "$toolchain_container:/opt/nico-cppcheck-header-observer.json" cppcheck-header-observer.json
           docker cp "$toolchain_container:/opt/nico-cppcheck-header-grammar.json" cppcheck-header-grammar.json
+          docker cp "$toolchain_container:/opt/nico-cppcheck-replacement-index.json" cppcheck-replacement-index.json
+          docker cp "$toolchain_container:/opt/nico-cppcheck-replacement-index-control.txt" cppcheck-replacement-index-control.txt
           docker cp "$toolchain_container:/opt/nico-clang-header-observer.json" clang-header-observer.json
           docker cp "$toolchain_container:/opt/nico-clang-header-startup" clang-header-startup
       - name: Verify container boundary and same-image owned runtime controls
@@ -145,6 +149,8 @@ jobs:
             cpp-runtime-toolchain.json
             cppcheck-header-observer.json
             cppcheck-header-grammar.json
+            cppcheck-replacement-index.json
+            cppcheck-replacement-index-control.txt
             cpp-header-grammar-control/
             clang-header-observer.json
             clang-header-startup/
