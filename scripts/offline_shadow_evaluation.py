@@ -213,8 +213,8 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def read_bounded(path):
-    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+def read_bounded(path, *, dir_fd=None):
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW, dir_fd=dir_fd)
     with os.fdopen(fd, "rb") as stream:
         require(stat.S_ISREG(os.fstat(stream.fileno()).st_mode), "input_not_regular_file")
         data = stream.read(MAX_BYTES + 1)
