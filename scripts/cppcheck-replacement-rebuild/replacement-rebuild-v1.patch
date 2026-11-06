@@ -1,0 +1,81 @@
+diff --git a/lib/tokenlist.h b/lib/tokenlist.h
+--- a/lib/tokenlist.h
++++ b/lib/tokenlist.h
+@@ -60,6 +60,8 @@
+ private:
+     bool mLessValid = false;
+     bool mLessDisabled = false;
++    bool mLessRebuildPending = false;
++    bool mLessRebuildAttempted = false;
+     std::vector<Token*> mLessTokens;
+     std::unordered_map<Token*, std::size_t> mLessSlots;
+ };
+diff --git a/lib/tokenlist.cpp b/lib/tokenlist.cpp
+--- a/lib/tokenlist.cpp
++++ b/lib/tokenlist.cpp
+@@ -73,6 +73,15 @@
+     if (mLessDisabled)
+         return nullptr;
+     if (!mLessValid) {
++        // Only a fresh query may rebuild; never refresh an in-flight cursor.
++        // One lifetime attempt bounds all extra full-list construction work.
++        if (mLessRebuildPending) {
++            if (mLessRebuildAttempted) {
++                invalidateLessTokens();
++                return nullptr;
++            }
++            mLessRebuildAttempted = true;
++        }
+         try {
+             std::vector<Token*> tokens;
+             std::unordered_map<Token*, std::size_t> slots;
+@@ -85,6 +94,7 @@
+             mLessTokens.swap(tokens);
+             mLessSlots.swap(slots);
+             mLessValid = true;
++            mLessRebuildPending = false;
+         } catch (const std::bad_alloc&) {
+             invalidateLessTokens();
+             mLessDisabled = true;
+@@ -97,7 +107,8 @@
+ void TokensFrontBack::invalidateLessTokens()
+ {
+     // Unsupported mutations permanently restore linear traversal for this list.
+-    mLessDisabled = mLessDisabled || mLessValid;
++    mLessDisabled = mLessDisabled || mLessValid || mLessRebuildPending;
++    mLessRebuildPending = false;
+     mLessValid = false;
+     mLessTokens.clear();
+     mLessSlots.clear();
+@@ -119,6 +130,13 @@
+ 
+ void TokensFrontBack::changedLessToken(Token* token)
+ {
++    if (mLessRebuildPending && token && token->str() == "<" &&
++        (token == front || token->previous() || token->next())) {
++        // The empty pending cache cannot certify an attached token's identity.
++        // Unlinked construction is handled after insertion installs its links.
++        invalidateLessTokens();
++        return;
++    }
+     if (!mLessValid)
+         return;
+     if (token->str() != "<") {
+@@ -135,7 +153,16 @@
+     if (!mLessValid || token->str() != "<")
+         return;
+     if (token != back) {
+-        invalidateLessTokens();
++        if (mLessRebuildAttempted) {
++            invalidateLessTokens();
++        } else {
++            // Invalidate immediately; the current caller resumes linearNext.
++            // Further insertions/deletions are safe while both caches are empty.
++            mLessValid = false;
++            mLessRebuildPending = true;
++            mLessTokens.clear();
++            mLessSlots.clear();
++        }
+         return;
+     }
+     try {
