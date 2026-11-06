@@ -1,132 +1,157 @@
+# Fresh public-source diagnostic. Historical run records remain unchanged.
 name: Isolated Native Timeout Diagnostic
-
-on:
+'on':
   pull_request:
+    types:
+    - synchronize
     paths:
-      - 'scripts/native_timeout_diagnostic.py'
-      - 'tests/test_native_timeout_diagnostic.py'
-      - '.github/workflows/native-timeout-diagnostic.yml'
-
+    - scripts/native_timeout_diagnostic.py
+    - tests/test_native_timeout_diagnostic.py
+    - scripts/fresh_cpp_phase_diagnostic.py
+    - tests/test_fresh_cpp_phase_diagnostic.py
+    - .github/workflows/native-timeout-diagnostic.yml
 permissions:
   contents: read
   actions: read
-
-# The same PR ref/group prevents overlap with the preserved full qualification.
 concurrency:
-  group: cpp-full-project-integration-${{ github.ref }}
-  # Keep waiting diagnostics and qualification runs; false alone protects only the running one.
+  group: cpp-full-project-integration-refs/pull/1722/merge
   queue: max
   cancel-in-progress: false
-
 jobs:
   isolated-diagnostic:
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/cpp-runtime-scratch-retention'
+    if: github.run_attempt == 1 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref
+      == 'diagnostic/current-primary-38380333159' && github.event.pull_request.base.ref == 'repair/ast-boundary-independent-fc9a0a75-20261012'
     runs-on: ubuntu-24.04
     timeout-minutes: 55
+    # Ephemeral owned-control prerequisite; no production database access.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nico
+          POSTGRES_PASSWORD: nico
+          POSTGRES_DB: nico
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U nico -d nico"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      NICO_TEST_DATABASE_URL: postgresql://nico:nico@127.0.0.1:5432/nico
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - name: Preserve the current qualification and skip an unnecessary diagnostic
-        id: need
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          mkdir -p native-diagnostic-evidence
-          gh api repos/BoneManTGRM/NICO/actions/runs/36177497388 > native-diagnostic-evidence/predecessor.json
-          status=$(jq -r .status native-diagnostic-evidence/predecessor.json)
-          conclusion=$(jq -r .conclusion native-diagnostic-evidence/predecessor.json)
-          test "$status" = completed
-          test "$(jq -r .head_sha native-diagnostic-evidence/predecessor.json)" = f4abf2cb29ff9371b3da7230190a0d99c111117c
-          case "$conclusion" in
-            success) echo 'required=false' >> "$GITHUB_OUTPUT" ;;
-            failure) echo 'required=true' >> "$GITHUB_OUTPUT" ;;
-            *) echo 'Predecessor is not a completed success or failure; no native work launched.'; exit 1 ;;
-          esac
-          git rev-parse HEAD > native-diagnostic-evidence/source-commit.txt
-          git rev-parse HEAD^{tree} > native-diagnostic-evidence/source-tree.txt
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
-        if: steps.need.outputs.required == 'true'
-        with:
-          python-version: '3.11'
-      - name: Verify diagnostic contracts
-        if: steps.need.outputs.required == 'true'
-        run: |
-          python -m pip install --disable-pip-version-check -r requirements.txt
-          python -m pytest -q tests/test_native_timeout_diagnostic.py tests/test_cpp_clang_fallback.py tests/test_cpp_project_static_stage.py
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        if: steps.need.outputs.required == 'true'
-        with:
-          repository: cppcheck-opensource/cppcheck
-          ref: ac9db3069b9f90e81e126a090b99ad456e122cf8
-          path: toolchain/full-project/cppcheck
-          persist-credentials: false
-      - name: Reuse the exact existing tool recipe
-        if: steps.need.outputs.required == 'true'
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          from scripts.native_timeout_diagnostic import provision_script
-          workflow=Path('.github/workflows/cpp-full-project-integration.yml').read_text()
-          for label,filename in [('Provision exact tools without assessed source or runtime network','provision.sh'),
-                                 ('Stage the pinned unit-test asset outside the assessed source','asset.sh')]:
-              Path('native-diagnostic-evidence',filename).write_text(provision_script(workflow,label))
-          PY
-          bash native-diagnostic-evidence/provision.sh
-          bash native-diagnostic-evidence/asset.sh
-      - name: Exercise the owned diagnostic boundary first
-        if: steps.need.outputs.required == 'true'
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          from scripts.native_timeout_diagnostic import owned_control
-          owned_control(Path('full-project-image-id.txt').read_text().strip(), Path('native-diagnostic-evidence/owned'))
-          PY
-      - name: Retrieve the immutable failed evidence
-        if: steps.need.outputs.required == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh api repos/BoneManTGRM/NICO/actions/artifacts/10883294546/zip > retained-timeout.zip
-          echo 'd4933e0120105b8427ebe813cfec2f8487e5d801b980e7cbfbc942adc0ffd41e  retained-timeout.zip' | sha256sum -c -
-          test "$(wc -c < retained-timeout.zip)" -eq 20434872
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        if: steps.need.outputs.required == 'true'
-        with:
-          repository: bitcoin/bitcoin
-          ref: bb5296576e8f1a9fc11c19d9a25ba02ed4547e24
-          path: qualification-input
-          persist-credentials: false
-          submodules: false
-          lfs: false
-      - name: Measure only the two retained timeout cases
-        if: steps.need.outputs.required == 'true'
-        run: >-
-          python -m scripts.native_timeout_diagnostic
-          --archive retained-timeout.zip
-          --archive-sha256 d4933e0120105b8427ebe813cfec2f8487e5d801b980e7cbfbc942adc0ffd41e
-          --qualification-source qualification-input
-          --qualification-manifest tests/fixtures/cpp/bitcoin-configuration-benchmark.json
-          --runtime-scope tests/fixtures/cpp/bitcoin-runtime-scope.json
-          --unit-test-data qualification-unit-test-data
-          --image "$(cat full-project-image-id.txt)"
-          --test cluster_linearize_tests
-          --context c2d48aa8de514849e4167b32061fe921be8df2b06bca621bb2c96ba4990ef65e
-          --output native-diagnostic-evidence/isolated
-      - name: Preserve evidence including actual failures
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: isolated-native-timeout-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            native-diagnostic-evidence/
-            full-project-image-id.txt
-            full-project-image.json
-            toolchain/full-project/llvm/receipt.json
-            toolchain/full-project/project-dependencies/receipt.json
-            toolchain/full-project/capnp-source/receipt.json
-            toolchain/full-project/runtime-dependencies/receipt.json
-          if-no-files-found: error
-          retention-days: 30
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      with:
+        python-version: '3.11'
+    - name: Install the native control dependencies
+      run: python -m pip install --disable-pip-version-check -r requirements.txt
+    - name: Verify diagnostic contracts
+      run: 'python -m pip install --disable-pip-version-check -r requirements.txt
+
+        python -m pytest tests/test_cpp_replacement_index_repair.py tests/test_cpp_replacement_index_wiring.py tests/test_cpp_ctu_first_use_repair.py tests/test_cpp_ctu_first_use_wiring.py tests/test_cpp_template_probe.py tests/test_cpp_index_mode_probe.py tests/test_cpp_index_mode_evidence.py tests/test_cpp_phase_boundaries.py tests/test_fresh_cpp_phase_diagnostic.py -q --junitxml=native-diagnostic-evidence/contracts.xml tests/test_cpp_replacement_rebuild_repair.py tests/test_cpp_replacement_rebuild_wiring.py
+        tests/test_native_template_subphases.py tests/test_native_timeout_diagnostic.py tests/test_native_stage_counters.py
+        tests/test_native_specialization_groups.py tests/test_cpp_project_static_stage.py tests/test_no_production_unsafe_primitives.py
+
+        '
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: cppcheck-opensource/cppcheck
+        ref: ac9db3069b9f90e81e126a090b99ad456e122cf8
+        path: toolchain/full-project/cppcheck
+        persist-credentials: false
+    - name: Provision exact tools without assessed source or runtime network
+      run: |
+        set -euo pipefail
+        test "$(git -C toolchain/full-project/cppcheck rev-parse HEAD)" = ac9db3069b9f90e81e126a090b99ad456e122cf8
+        printf 'cppcheck/.git\n' > toolchain/full-project/.dockerignore
+        python -m pip download --disable-pip-version-check --only-binary=:all: --no-deps --platform manylinux2014_x86_64 --implementation py --abi none cmake==3.31.6 --dest toolchain/full-project
+        mv toolchain/full-project/cmake-3.31.6-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl toolchain/full-project/cmake.whl
+        echo '1c8b05df0602365da91ee6a3336fe57525b137706c4ab5675498f662ae1dbcec  toolchain/full-project/cmake.whl' | sha256sum -c -
+        curl --proto '=https' --tlsv1.2 --fail --retry 3 --retry-delay 2 --max-filesize 8388608 \
+          --output toolchain/full-project/pycapnp.whl \
+          https://files.pythonhosted.org/packages/f0/a6/eeb28ab162eed10340921aca24efe062d6bf7d9b98acc7a55c3b6900bf7a/pycapnp-2.2.1-cp311-cp311-manylinux_2_28_x86_64.whl
+        echo 'd682ae9f23a0c6568533ca2ebf6d70ac7e599dd222f671fa87dff278de343eec  toolchain/full-project/pycapnp.whl' | sha256sum -c -
+        python -m scripts.provision_cpp_fuzz_tools --destination toolchain/full-project/llvm
+        python -m scripts.provision_cpp_fuzz_tools --header-observer-sdk --destination toolchain/full-project/clang-header-sdk
+        python -m scripts.provision_cpp_fuzz_tools --project-dependencies --destination toolchain/full-project/project-dependencies
+        python -m scripts.provision_cpp_fuzz_tools --capnp-source --destination toolchain/full-project/capnp-source
+        python -m scripts.provision_cpp_runtime_dependencies --destination toolchain/full-project/runtime-dependencies
+        cp scripts/repair_cppcheck_placement_ast.py toolchain/full-project/
+        cp scripts/repair_cppcheck_header_grammar.py toolchain/full-project/
+        cp scripts/patch_cppcheck_header_evidence.py toolchain/full-project/
+        cp scripts/repair_cppcheck_replacement_index.py toolchain/full-project/
+        cp scripts/repair_cppcheck_ctu_first_use.py toolchain/full-project/
+        cp scripts/repair_cppcheck_replacement_rebuild.py toolchain/full-project/
+        cp -R scripts/cppcheck-replacement-index toolchain/full-project/
+        cp -R scripts/cppcheck-ctu-first-use toolchain/full-project/
+        cp -R scripts/cppcheck-replacement-rebuild toolchain/full-project/
+        cp -R scripts/cppcheck-header-evidence toolchain/full-project/
+        cp scripts/build_cpp_clang_header_observer.py toolchain/full-project/
+        cp -R scripts/clang-header-evidence toolchain/full-project/
+        cp scripts/verify_cpp_runtime_toolchain.py toolchain/full-project/
+        # Allow bounded layer export after the separately capped 180s tool builds.
+        timeout --kill-after=10s 300s docker build --network=none --iidfile full-project-image-id.txt -f docker/assessment-full-project-fuzz.Dockerfile toolchain/full-project
+        docker image inspect "$(cat full-project-image-id.txt)" > full-project-image.json
+        toolchain_container="$(docker create --network=none --read-only --entrypoint=/bin/true "$(cat full-project-image-id.txt)")"
+        trap 'docker rm --force "$toolchain_container" >/dev/null' EXIT
+        docker cp "$toolchain_container:/opt/nico-cpp-runtime-toolchain.json" cpp-runtime-toolchain.json
+        docker cp "$toolchain_container:/opt/nico-cppcheck-header-observer.json" cppcheck-header-observer.json
+        docker cp "$toolchain_container:/opt/nico-cppcheck-header-grammar.json" cppcheck-header-grammar.json
+        docker cp "$toolchain_container:/opt/nico-cppcheck-replacement-index.json" cppcheck-replacement-index.json
+        docker cp "$toolchain_container:/opt/nico-cppcheck-ctu-first-use.json" cppcheck-ctu-first-use.json
+        docker cp "$toolchain_container:/opt/nico-cppcheck-replacement-rebuild.json" cppcheck-replacement-rebuild.json
+        docker cp "$toolchain_container:/opt/nico-cppcheck-replacement-index-control.txt" cppcheck-replacement-index-control.txt
+        docker cp "$toolchain_container:/opt/nico-cppcheck-ctu-first-use-control.txt" cppcheck-ctu-first-use-control.txt
+        docker cp "$toolchain_container:/opt/nico-cppcheck-replacement-rebuild-control.txt" cppcheck-replacement-rebuild-control.txt
+        docker cp "$toolchain_container:/opt/nico-clang-header-observer.json" clang-header-observer.json
+        docker cp "$toolchain_container:/opt/nico-clang-header-startup" clang-header-startup
+    - name: Verify owned physical-header grammar on the same image
+      run: python -m scripts.qualify_cpp_header_grammar --image "$(cat full-project-image-id.txt)" --output cpp-header-grammar-control
+    - name: Verify standalone worker compatibility on the same full-project image
+      run: python -m scripts.qualify_cppcheck_worker_control --image "$(cat full-project-image-id.txt)"
+    - name: Exercise owned project through worker lease, receipt and report
+      run: python -m scripts.qualify_cpp_full_project_integration --generated-headers --bounded-fuzz --project-dependencies
+        --project-compiler-options --image "$(cat full-project-image-id.txt)"
+    - name: Verify immutable generated-source snapshots on owned positive and negative controls
+      run: python -m scripts.qualify_cpp_project_generated_context --project-static-analysis --extended-compiler-budget
+        --compiler-environment --image "$(cat full-project-image-id.txt)"
+    - name: Build and bind the diagnostic-only phase boundary image
+      run: |
+        set -euo pipefail
+        python -m scripts.build_cpp_phase_boundaries prepare --context toolchain/phase-boundaries --source toolchain/full-project/cppcheck --original-image "$(cat full-project-image-id.txt)"
+        timeout --kill-after=10s 300s docker build --network=none --iidfile phase-image-id.txt toolchain/phase-boundaries
+        python -m scripts.build_cpp_phase_boundaries capture --original-image "$(cat full-project-image-id.txt)" --image "$(cat phase-image-id.txt)" --output phase-image-binding --recipe toolchain/phase-boundaries/Dockerfile
+    - name: Acquire pinned public qualification source without execution
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: bitcoin/bitcoin
+        ref: bb5296576e8f1a9fc11c19d9a25ba02ed4547e24
+        path: qualification-input
+        persist-credentials: false
+        submodules: false
+        lfs: false
+    - name: Stage the pinned unit-test asset outside the assessed source
+      run: 'set -euo pipefail
+
+        mkdir -p qualification-unit-test-data
+
+        # qa-assets revision b33d85102d169b54d966ea315ad81a636680aefa remains fixed in the helper.
+
+        timeout --kill-after=1s 90s python -m scripts.stage_cpp_unit_test_asset --destination qualification-unit-test-data/script_assets_test.json
+
+        echo ''cd789a58ec45916e1721cdd14e82ca4c93100959f1cef4e229b22e3bf539f095  qualification-unit-test-data/script_assets_test.json''
+        | sha256sum -c -
+
+        test "$(wc -c < qualification-unit-test-data/script_assets_test.json)" -eq 9243520
+
+        '
+    - name: Measure fresh source-bound primary phases without qualification credit
+      env:
+        NICO_PRODUCER_SOURCE_SHA: ${{ github.sha }}
+      run: python -m scripts.fresh_cpp_phase_diagnostic --qualification-source qualification-input --unit-test-data
+        qualification-unit-test-data --producer-source-sha "$NICO_PRODUCER_SOURCE_SHA" --output fresh-cpp-phase-evidence
+        --image "$(cat phase-image-id.txt)" --boundary-binding phase-image-binding/binding.json
