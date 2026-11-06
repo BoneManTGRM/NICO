@@ -1,0 +1,8 @@
+...................................................................      [100%]
+=============================== warnings summary ===============================
+nico/express_score_assurance_export_v1.py:113
+  /workspace/NICO-ast-pr1712-check/nico/express_score_assurance_export_v1.py:113: SyntaxWarning: invalid escape sequence '\s'
+    Horizontal whitespace is matched deliberately. A broad ``\s*`` can consume the
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+67 passed, 1 warning in 3.69s
