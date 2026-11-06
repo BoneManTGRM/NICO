@@ -21,6 +21,9 @@ SPARSE_FIELDS = ('stable_selection_ns', 'stable_matching_ns', 'stable_expansion_
     'transition_id', 'transition_saturated', 'clock_reads', 'unattributed_ns', 'outside_ns',
     'observer_ns', 'interval_ns', 'interval_kind')
 FIELDS_V3 = FIELDS + SPARSE_FIELDS
+INDEX_FIELDS = ('indexed_selected', 'linear_selected', 'indexed_queries', 'fallback_queries',
+    'successful_builds', 'first_disable_reason', 'peak_live_slots', 'peak_total_slots', 'index_build_visits')
+FIELDS_V4 = FIELDS_V3 + INDEX_FIELDS
 MAX_RECORDS = 128
 MAX_RECORD_BYTES = 1024
 
@@ -29,7 +32,7 @@ def parse_snapshots(stderr: bytes, *, timed_out: bool, binary_sha256: str,
                    output_truncated: bool | None = None, expected_version: int | None = None) -> dict:
     if not re.fullmatch(r'[0-9a-f]{64}', binary_sha256) or binary_sha256 == ORIGINAL_BINARY_SHA256:
         raise ValueError('instrumented_binary_requires_distinct_identity')
-    if expected_version is not None and (type(expected_version) is not int or expected_version not in (1, 2, 3)):
+    if expected_version is not None and (type(expected_version) is not int or expected_version not in (1, 2, 3, 4)):
         raise ValueError('stage_version_invalid')
     version = expected_version
     records = []
@@ -39,9 +42,9 @@ def parse_snapshots(stderr: bytes, *, timed_out: bool, binary_sha256: str,
         line = raw_line.rstrip(b'\r\n')
         if line.startswith(b'NICO_STAGE_') and len(line) >= MAX_RECORD_BYTES:
             raise ValueError('stage_output_bound_exceeded')
-        if line.startswith(b'NICO_STAGE_') and b' ' in line and line.split(b' ', 1)[0] not in (b'NICO_STAGE_V1', b'NICO_STAGE_V2', b'NICO_STAGE_V3'):
+        if line.startswith(b'NICO_STAGE_') and b' ' in line and line.split(b' ', 1)[0] not in (b'NICO_STAGE_V1', b'NICO_STAGE_V2', b'NICO_STAGE_V3', b'NICO_STAGE_V4'):
             raise ValueError('stage_version_mismatch')
-        for known, known_version in ((b'NICO_STAGE_V1 ', 1), (b'NICO_STAGE_V2 ', 2), (b'NICO_STAGE_V3 ', 3)):
+        for known, known_version in ((b'NICO_STAGE_V1 ', 1), (b'NICO_STAGE_V2 ', 2), (b'NICO_STAGE_V3 ', 3), (b'NICO_STAGE_V4 ', 4)):
             if line.startswith(known) and version is not None and known_version != version:
                 raise ValueError('stage_version_mismatch')
             if line.startswith(known):
@@ -53,11 +56,11 @@ def parse_snapshots(stderr: bytes, *, timed_out: bool, binary_sha256: str,
         if not line.startswith(b'NICO_STAGE_'):
             continue
         prefix = line.split(b' ', 1)[0]
-        current_version = {b'NICO_STAGE_V1': 1, b'NICO_STAGE_V2': 2, b'NICO_STAGE_V3': 3}.get(prefix)
+        current_version = {b'NICO_STAGE_V1': 1, b'NICO_STAGE_V2': 2, b'NICO_STAGE_V3': 3, b'NICO_STAGE_V4': 4}.get(prefix)
         if current_version is None or (version is not None and current_version != version):
             raise ValueError('stage_version_mismatch')
         version = current_version
-        fields = {1: FIELDS, 2: FIELDS_V2, 3: FIELDS_V3}[version]
+        fields = {1: FIELDS, 2: FIELDS_V2, 3: FIELDS_V3, 4: FIELDS_V4}[version]
         if len(line) + 1 > MAX_RECORD_BYTES or len(records) >= MAX_RECORDS:
             raise ValueError('stage_output_bound_exceeded')
         words = line[len(prefix) + 1:].split(b' ')
@@ -94,7 +97,9 @@ def parse_snapshots(stderr: bytes, *, timed_out: bool, binary_sha256: str,
                              or row['thread_clock_status'] < previous['thread_clock_status']):
                 raise ValueError('stage_record_regressed')
             lanes[lane] = row
-        if version == 3:
+        if version in (3, 4):
+            if version == 4:
+                validate_index(row, lanes.get(lane))
             validate_sparse(row, lanes.get(lane), seq)
             if (any(v > 2**64-1 for v in values) or lane > 2**32-1
                     or (records and (wall_us < records[-1]['wall_us'] or clock_scale != records[-1]['clock_scale']))):
@@ -111,9 +116,26 @@ def parse_snapshots(stderr: bytes, *, timed_out: bool, binary_sha256: str,
             'last_observed_snapshot': records[-1] if records else None,
             'clock_interpretation': {'wall_us': 'monotonic wall time',
                 'cpu_ticks': 'process CPU; -1 means unavailable; divide by clock_scale',
-                'template_cpu_ns': ('unchanged-phase intervals only; mixed CPU unattributed; observer cost lagged; prefix and tail unknown' if version == 3 else 'exclusive thread CPU; status 0 unattempted, 1 available, 2 unavailable; retained totals may be partial')},
+                'template_cpu_ns': ('unchanged-phase intervals only; mixed CPU unattributed; observer cost lagged; prefix and tail unknown' if version in (3, 4) else 'exclusive thread CPU; status 0 unattempted, 1 available, 2 unavailable; retained totals may be partial')},
             'precise_termination_hotspot_known': False,
             'analysis_completed': False, 'qualification_claimed': False}
+
+
+
+def validate_index(row, previous):
+    """Lane-local cumulative work, never installation/activation or CPU proof."""
+    maximum = 2**64 - 1
+    if (row['first_disable_reason'] not in range(7)
+            or row['peak_live_slots'] > row['peak_total_slots']
+            or min(maximum, row['indexed_selected'] + row['linear_selected']) != row['replacement_visits']
+            or (row['indexed_selected'] and not row['indexed_queries'])
+            or (row['linear_selected'] and not (row['indexed_queries'] or row['fallback_queries']))):
+        raise ValueError('stage_index_record_invalid')
+    if previous:
+        if any(row[k] < previous[k] for k in INDEX_FIELDS if k != 'first_disable_reason'):
+            raise ValueError('stage_index_record_regressed')
+        if previous['first_disable_reason'] and row['first_disable_reason'] != previous['first_disable_reason']:
+            raise ValueError('stage_index_reason_changed')
 
 
 def validate_sparse(row, previous, sequence):

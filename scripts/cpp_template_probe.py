@@ -6,9 +6,11 @@ from pathlib import Path
 try:
     from .native_stage_counters import instrument
     from . import cpp_phase_boundaries as boundaries
+    from . import cpp_index_mode_probe as index_mode
 except ImportError:
     from native_stage_counters import instrument
     import cpp_phase_boundaries as boundaries
+    import cpp_index_mode_probe as index_mode
 
 BASELINE = {
  'lib/ctu.cpp':'f3e363ae33cb8489ff25f4c1ab7ca02adbf0ee9f5fe1f7d463669e1eaa259ada',
@@ -24,9 +26,9 @@ AFTER = {
  'lib/ctu.cpp':'f3e363ae33cb8489ff25f4c1ab7ca02adbf0ee9f5fe1f7d463669e1eaa259ada',
  'lib/cppcheck.cpp':'3dd79cefdedebb75f4f28d81fb52409efcdc0f51e418451fdee865ca98f1eaff',
  'lib/tokenize.cpp':'dea56ed2255b18f622ee8fc35274880843595d308c5677387b2dce5b24b8b9c6',
- 'lib/templatesimplifier.cpp':'cea26281ad627048e2915fdc52b8cc6c4690337a0344f7b8c48b03193304909a',
+ 'lib/templatesimplifier.cpp':'11521bb269caa1bf1ad6083894f828d0a841af462b308bfe63295bc352093d03',
  'lib/token.cpp':'479bfa7451c7be5483195980aff7a7100481dd551e003766ab75a66124765547',
- 'lib/tokenlist.cpp':'42923e2ca209f582f415be75a21e14d36341fa9b2ed862c19a81f09e394d89a1',
+ 'lib/tokenlist.cpp':'dd285957f00adf3aaa70c9e8f0400d4dee1d9e18fdb202f9c5057b96fa9d749e',
  'lib/tokenlist.h':'83bce74b758052f684468bd5996c0e6b541cbe44e49ee8ace9a818cb030da7bd',
 }
 
@@ -38,17 +40,20 @@ def digest(raw):return hashlib.sha256(raw).hexdigest()
 
 def instrument_baseline(relative,raw):
     if relative not in BASELINE or digest(raw)!=BASELINE[relative]:raise ValueError('template_probe_source_identity')
+    original=raw
+    if relative in index_mode.BASELINE:
+        raw=index_mode.instrument_baseline(relative,raw)
     # Private build-process module state only; restore even when anchor checks fail.
     if relative=='lib/cppcheck.cpp':return boundaries.overlay_later_stages(raw)
     if relative in {'lib/ctu.cpp','lib/token.cpp','lib/tokenlist.cpp','lib/tokenlist.h'}:return raw
     prior=instrument.SOURCE_SHA256
     try:
-        instrument.SOURCE_SHA256=BASELINE
+        instrument.SOURCE_SHA256={**BASELINE, **index_mode.AFTER}
         result=instrument.instrument(relative,raw,replacement_index=True)
     finally:instrument.SOURCE_SHA256=prior
     if relative=='lib/tokenize.cpp':result=boundaries.overlay_subphases(result)
-    restored=instrument.strip_instrumentation(boundaries.strip(result))
-    if restored!=raw:raise ValueError('template_probe_semantic_source_changed')
+    restored=index_mode.strip(instrument.strip_instrumentation(boundaries.strip(result)))
+    if restored!=original:raise ValueError('template_probe_semantic_source_changed')
     return result
 
 def expected_receipt():
@@ -57,7 +62,8 @@ def expected_receipt():
         'script_sha256':digest(Path(__file__).read_bytes()),
         'instrument_script_sha256':digest(Path(instrument.__file__).read_bytes()),
         'boundary_script_sha256':digest(Path(boundaries.__file__).read_bytes()),
-        'header_sha256':digest(instrument.HEADER.read_bytes()),
+        'header_sha256':digest(index_mode.transform_header(instrument.HEADER.read_bytes())),
+        'index_mode_overlay':index_mode.receipt(), 'record_version':4,
         'replacement_visit_unit':REPLACEMENT_VISIT_UNIT,
         'production_replacement_index':True,'production_ctu_first_use':True,'grouping_applied':False,'instrumentation_only':True,'qualification_credit':False}
 
@@ -70,7 +76,7 @@ def apply_to_source(source):
         if digest(result)!=AFTER[relative]:raise ValueError('template_probe_output_identity')
         prepared[relative]=result
     for relative,result in prepared.items():(source/relative).write_bytes(result)
-    (source/'lib/nico_stage_counters.h').write_bytes(instrument.HEADER.read_bytes())
+    (source/'lib/nico_stage_counters.h').write_bytes(index_mode.transform_header(instrument.HEADER.read_bytes()))
     return expected_receipt()
 
 
@@ -85,6 +91,38 @@ COUNT_FIELDS=('pass','using_calls','active_bucket','transition_id','transition_s
 DELTA_FIELDS=('transition_id','using_calls','selection_visits','specialization_visits',
               'expansion_outer_visits','replacement_visits')
 
+INDEX_REASONS = ('none_observed', 'build_allocation', 'append_allocation', 'tombstones',
+    'existing_token_became_angle', 'non_tail_insert', 'identity_or_order_mutation')
+INDEX_SCOPE = 'last_observed_lane_prefix'
+INDEX_COUNTS = ('indexed_selected', 'linear_selected', 'indexed_queries', 'fallback_queries',
+    'successful_builds', 'peak_live_slots', 'peak_total_slots', 'index_build_visits')
+
+
+def index_summary(row):
+    """No counts means no observation, not proof that indexing never ran."""
+    if any(row[k] == 2**64-1 for k in INDEX_COUNTS):
+        return {'state':'saturated', 'scope':INDEX_SCOPE}
+    if not row['indexed_queries'] and not row['fallback_queries']:
+        return {'state':'no_query_observed', 'scope':INDEX_SCOPE}
+    return {'state':'observed_prefix', 'scope':INDEX_SCOPE,
+        'lane':row['lane'], 'first_disable_reason':INDEX_REASONS[row['first_disable_reason']],
+        **{k:row[k] for k in INDEX_COUNTS}}
+
+
+def valid_index_summary(value):
+    if type(value) is not dict or value.get('scope') != INDEX_SCOPE:return False
+    if value.get('state') in ('saturated','no_query_observed'):
+        return set(value)=={'state','scope'}
+    if value.get('state')!='observed_prefix' or set(value)!=(set(INDEX_COUNTS)|{'state','scope','lane','first_disable_reason'}):return False
+    if type(value['lane']) is not int or not 0<=value['lane']<2**32:return False
+    if type(value['first_disable_reason']) is not str or value['first_disable_reason'] not in INDEX_REASONS:return False
+    if any(type(value[k]) is not int or not 0<=value[k]<2**64-1 for k in INDEX_COUNTS):return False
+    if not value['indexed_queries'] and not value['fallback_queries']:return False
+    if value['peak_live_slots']>value['peak_total_slots']:return False
+    if value['indexed_selected'] and not value['indexed_queries']:return False
+    return True
+
+
 def unknown_summary(state='unavailable'):
     return {'state':state,'precise_termination_hotspot_known':False}
 
@@ -94,7 +132,7 @@ def summarize_prefix(raw,*,binary_sha256,timed_out,output_truncated):
     try:
         from scripts.native_stage_counters.evidence import parse_snapshots
         parsed=parse_snapshots(raw,timed_out=timed_out,binary_sha256=binary_sha256,
-                               output_truncated=False,expected_version=3)
+                               output_truncated=False,expected_version=4)
         rows=parsed['records']
         if parsed['incomplete_tail']:return unknown_summary('invalid')
         if len(rows)>=128:return unknown_summary('capped')
@@ -109,6 +147,7 @@ def summarize_prefix(raw,*,binary_sha256,timed_out,output_truncated):
             'last_sample_wall_us_since_probe_start':row['wall_us'],
             'sample_age_state':'unavailable','last_interval_deltas':deltas,
             'replacement_visit_unit':REPLACEMENT_VISIT_UNIT,
+            'replacement_index':index_summary(row),
             'cpu_attribution':'stable_intervals_only_mixed_unattributed_prefix_tail_unknown',
             **{key:row[key] for key in COUNT_FIELDS}}
     except (ValueError,TypeError,KeyError):return unknown_summary('invalid')
@@ -119,8 +158,12 @@ def valid_summary(value):
     if state in {'unavailable','invalid','capped','truncated','omitted'}:
         return set(value)==set(unknown_summary())
     if state!='observed_prefix':return False
-    if set(value)!=set(unknown_summary())|set(COUNT_FIELDS)|{'records','last_sample_wall_us_since_probe_start','sample_age_state','cpu_attribution','last_interval_deltas','replacement_visit_unit'}:return False
+    if set(value)!=set(unknown_summary())|set(COUNT_FIELDS)|{'records','last_sample_wall_us_since_probe_start','sample_age_state','cpu_attribution','last_interval_deltas','replacement_visit_unit','replacement_index'}:return False
     if value['replacement_visit_unit']!=REPLACEMENT_VISIT_UNIT:return False
+    if not valid_index_summary(value['replacement_index']):return False
+    index=value['replacement_index']
+    if index['state']=='observed_prefix' and min(2**64-1,index['indexed_selected']+index['linear_selected'])!=value.get('replacement_visits'):return False
+    if index['state']=='no_query_observed' and value.get('replacement_visits')!=0:return False
     if value['sample_age_state']!='unavailable' or value['cpu_attribution']!='stable_intervals_only_mixed_unattributed_prefix_tail_unknown':return False
     for key,allowed in {'pass':range(11),'active_bucket':range(5),'transition_saturated':(0,1),
                         'thread_clock_status':(1,2),'interval_kind':range(8)}.items():
