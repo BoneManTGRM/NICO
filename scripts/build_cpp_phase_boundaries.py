@@ -34,7 +34,7 @@ def recipe(original):
 FROM nico-phase-base:{original[7:]}
 USER 0:0
 COPY cppcheck /opt/phase-tool-src
-COPY repair_cppcheck_placement_ast.py repair_cppcheck_header_grammar.py patch_cppcheck_header_evidence.py repair_cppcheck_replacement_index.py repair_cppcheck_ctu_first_use.py cpp_phase_boundaries.py cpp_template_probe.py /opt/
+COPY repair_cppcheck_placement_ast.py repair_cppcheck_header_grammar.py patch_cppcheck_header_evidence.py repair_cppcheck_replacement_index.py repair_cppcheck_ctu_first_use.py cpp_phase_boundaries.py cpp_template_probe.py cpp_index_mode_probe.py /opt/
 COPY native_stage_counters /opt/native_stage_counters
 COPY cppcheck-header-evidence /opt/cppcheck-header-evidence
 COPY cppcheck-replacement-index /opt/cppcheck-replacement-index
@@ -75,7 +75,7 @@ def prepare(context,source,original):
     context.mkdir()
     shutil.copytree(source,context/'cppcheck',ignore=shutil.ignore_patterns('.git'))
     scripts=Path(__file__).resolve().parent
-    for name in ('repair_cppcheck_placement_ast.py','repair_cppcheck_header_grammar.py','patch_cppcheck_header_evidence.py','repair_cppcheck_replacement_index.py','repair_cppcheck_ctu_first_use.py','cpp_phase_boundaries.py','cpp_template_probe.py'):
+    for name in ('repair_cppcheck_placement_ast.py','repair_cppcheck_header_grammar.py','patch_cppcheck_header_evidence.py','repair_cppcheck_replacement_index.py','repair_cppcheck_ctu_first_use.py','cpp_phase_boundaries.py','cpp_template_probe.py','cpp_index_mode_probe.py'):
         shutil.copyfile(scripts/name,context/name)
     (context/'native_stage_counters').mkdir()
     for name in ('instrument.py','nico_stage_counters.h'):

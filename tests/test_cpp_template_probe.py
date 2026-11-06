@@ -5,7 +5,14 @@ import pytest
 from scripts import cpp_template_probe as probe
 from scripts import build_cpp_phase_boundaries as build
 from scripts import fresh_cpp_phase_diagnostic as fresh
-from tests.test_native_template_subphases import sparse_record
+from scripts.native_stage_counters import evidence as stage_evidence
+
+
+def sparse_record(seq=1, **updates):
+    row=dict.fromkeys(stage_evidence.FIELDS_V4,0)
+    row.update(phase=1,thread_clock_status=1,clock_reads=2*seq-1)
+    row.update(updates)
+    return (f'NICO_STAGE_V4 {seq} 0 1 0 {seq*100} 10 1000000 '+' '.join(str(row[k]) for k in stage_evidence.FIELDS_V4)+'\n').encode()
 
 
 def summarize(raw,**kwargs):
@@ -54,6 +61,7 @@ def test_source_guard_rejects_grouped_or_unknown_input_and_restores_module_state
     with pytest.raises(ValueError):probe.instrument_baseline('lib/templatesimplifier.cpp',b'grouped or unknown')
     assert probe.instrument.SOURCE_SHA256 is original
     raw=b'owned source';monkeypatch.setattr(probe,'BASELINE',{'lib/templatesimplifier.cpp':probe.digest(raw)})
+    monkeypatch.setattr(probe.index_mode,'BASELINE',{})
     def fail(*args,**kwargs):raise ValueError('anchor_mismatch')
     monkeypatch.setattr(probe.instrument,'instrument',fail)
     with pytest.raises(ValueError):probe.instrument_baseline('lib/templatesimplifier.cpp',raw)
@@ -65,7 +73,7 @@ def test_receipt_binds_every_instrumentation_input_and_excludes_optimizer():
     assert receipt['source_sha256']['lib/templatesimplifier.cpp']=='23930579ec1ce6837cc4c3de8499a81761afe220fa5f00d6965b6975c25565ba'
     assert receipt['grouping_applied'] is False and receipt['qualification_credit'] is False
     assert receipt['restored_source_sha256']==receipt['source_sha256']
-    assert receipt['header_sha256']==probe.digest(probe.instrument.HEADER.read_bytes())
+    assert receipt['header_sha256']==probe.digest(probe.index_mode.transform_header(probe.instrument.HEADER.read_bytes()))
     recipe=build.recipe('sha256:'+'1'*64)
     assert 'python3 /opt/cpp_template_probe.py --source' in recipe
     assert 'specialization_groups' not in recipe
@@ -108,6 +116,9 @@ def test_worst_width_projection_fits_existing_console_bound(capsys):
     for k in probe.COUNT_FIELDS:detailed[k]=2**64-1
     detailed.update({'pass':10,'active_bucket':4,'transition_saturated':1,'thread_clock_status':1,'interval_kind':5})
     detailed['last_interval_deltas']={k:2**64-1 for k in probe.DELTA_FIELDS}
+    detailed['replacement_index']={**{k:2**64-2 for k in probe.INDEX_COUNTS},
+        'state':'observed_prefix','scope':probe.INDEX_SCOPE,'lane':2**32-1,
+        'first_disable_reason':'identity_or_order_mutation'}
     for i in range(16):
         summary['records'].append(dict(context_index=i,exit_code=124,timed_out=True,output_truncated=False,
             duration_ms=90063,phases={v:{'state':'available','cpu_microseconds':540000000} for v in fresh.PHASES.values()},
@@ -171,6 +182,8 @@ def test_index_probe_counts_candidates_after_selection_and_restores_source(tmp_p
         b'        linearNext = nameTok->next();\n')
     raw=raw.replace(linear,indexed)
     monkeypatch.setattr(probe,'BASELINE',{name:probe.digest(raw)})
+    monkeypatch.setattr(probe.index_mode,'BASELINE',{})
+    monkeypatch.setattr(probe.index_mode,'AFTER',{})
     changed=probe.instrument_baseline(name,raw)
     assert probe.instrument.strip_instrumentation(changed)==raw
     marker=b'        NicoStage::templateBump(NicoStage::ReplacementVisits);'
@@ -180,7 +193,7 @@ def test_index_probe_counts_candidates_after_selection_and_restores_source(tmp_p
 
 
 def test_index_sources_are_bound_even_when_not_instrumented():
-    for name in ('lib/token.cpp','lib/tokenlist.cpp','lib/tokenlist.h'):
+    for name in ('lib/token.cpp','lib/tokenlist.h'):
         assert probe.BASELINE[name]==probe.AFTER[name]
         with pytest.raises(ValueError,match='template_probe_source_identity'):
             probe.instrument_baseline(name,b'unknown source')
