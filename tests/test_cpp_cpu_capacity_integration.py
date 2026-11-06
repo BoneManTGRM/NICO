@@ -23,12 +23,29 @@ def test_generated_reader_matches_reviewed_source_without_live_io():
     assert result['observation_scope']=='collector_thread' and result['affinity_count']==1
     assert result['effective_capacity_state']=='unknown'
     embedded={};exec(compiler.PROGRAM.rsplit('\nrun_project_compiler()',1)[0],embedded)
-    assert embedded['CPU_OBSERVATION_PROGRAM']==cpu.PROGRAM
+    assert embedded['observe_cpu_capacity'] is embedded['observe']
+    embedded_result=embedded['observe'](reader=lambda p,n:(_ for _ in ()).throw(OSError('PRIVATE')),
+        affinity=lambda:{1},cpu_count=lambda:128,workers=4)
+    assert embedded_result==result
+    tree=ast.parse(compiler.PROGRAM)
+    # No repeated module definitions can silently replace CPU/collector helpers.
+    symbols=[]
+    for node in tree.body:
+        if isinstance(node,(ast.FunctionDef,ast.ClassDef)):symbols.append(node.name)
+        elif isinstance(node,ast.Assign):
+            symbols.extend(target.id for target in node.targets if isinstance(target,ast.Name))
+    assert len(symbols)==len(set(symbols))
+    assert not any(isinstance(node,ast.Call) and isinstance(node.func,ast.Name)
+        and node.func.id in {'exec','eval','compile'} for node in ast.walk(tree))
+    embedded_functions={node.name:node for node in tree.body if isinstance(node,ast.FunctionDef)}
+    for node in ast.parse(cpu.PROGRAM).body:
+        if isinstance(node,ast.FunctionDef):assert ast.dump(embedded_functions[node.name])==ast.dump(node)
     assert 'pidfd' not in compiler.PROGRAM
 
 
 def test_observer_exception_only_yields_unavailable(monkeypatch):
-    monkeypatch.setattr(compiler,'CPU_OBSERVATION_PROGRAM',"raise RuntimeError('PRIVATE')")
+    def fail(**kwargs):raise RuntimeError('PRIVATE')
+    monkeypatch.setattr(compiler,'observe_cpu_capacity',fail)
     assert compiler._observe_cpu_capacity(4)==cpu.unavailable()
 
 

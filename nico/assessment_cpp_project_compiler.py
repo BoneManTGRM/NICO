@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from nico.assessment_cpp_compiler_evidence import _source_path, safe_compile_argv, _regular_bytes, _run
 from nico.assessment_cpp_generated_context import _project_option, _stable_bytes
-from nico.assessment_cpp_cpu_capacity import PROGRAM as CPU_OBSERVATION_PROGRAM
+from nico.assessment_cpp_cpu_capacity import PROGRAM as CPU_OBSERVATION_PROGRAM, observe as observe_cpu_capacity
 
 from nico.assessment_cpp_project_snapshot import PROJECT_HEADER_SUFFIXES, PROJECT_GENERATED_MAX_FILE_BYTES
 
@@ -221,10 +221,8 @@ def _verify_input(root, relative, digest, size=None, generated=False):
 
 def _observe_cpu_capacity(workers):
     # Observe this analyst collector thread, never the host or a compiler child.
-    namespace = {}
     try:
-        exec(CPU_OBSERVATION_PROGRAM, namespace)
-        return namespace['observe'](workers=workers)
+        return observe_cpu_capacity(workers=workers)
     except Exception:
         return {'state': 'unavailable', 'effective_capacity_state': 'unknown', 'qualification_credit': False}
 
@@ -402,7 +400,8 @@ def run_project_compiler():
 PROGRAM = ('import base64, hashlib, json, os, posixpath, re, shlex, stat, subprocess, time\n'
     'from pathlib import Path\nfrom concurrent.futures import ThreadPoolExecutor\n'
     + f'LIMITS={LIMITS!r}\nEXTENDED_LIMITS={EXTENDED_LIMITS!r}\nSTREAM_LIMIT={STREAM_LIMIT}\nREQUEST_LIMIT={REQUEST_LIMIT}\n'
-    + f'GENERATED_FILE_LIMIT={GENERATED_FILE_LIMIT}\nCPU_OBSERVATION_PROGRAM={CPU_OBSERVATION_PROGRAM!r}\n'
+    + f'GENERATED_FILE_LIMIT={GENERATED_FILE_LIMIT}\n'
+    + CPU_OBSERVATION_PROGRAM + '\nobserve_cpu_capacity = observe\n'
     + '\n'.join(inspect.getsource(f) for f in (_canonical, _digest, _compiler_limits, _compiler_evidence_schema, _source_path, safe_compile_argv,
         _regular_bytes, _run, _project_option, _stable_bytes, _extra_option, _syntax_argv,
         _dependency_populations, _verify_input, _observe_cpu_capacity, collect_project_compiler, run_project_compiler))
