@@ -41,6 +41,8 @@ COPY cppcheck /opt/tool-src
 COPY repair_cppcheck_placement_ast.py /opt/repair_cppcheck_placement_ast.py
 COPY repair_cppcheck_header_grammar.py /opt/repair_cppcheck_header_grammar.py
 COPY patch_cppcheck_header_evidence.py /opt/patch_cppcheck_header_evidence.py
+COPY repair_cppcheck_replacement_index.py /opt/repair_cppcheck_replacement_index.py
+COPY cppcheck-replacement-index /opt/cppcheck-replacement-index
 COPY cppcheck-header-evidence /opt/cppcheck-header-evidence
 COPY verify_cpp_runtime_toolchain.py /opt/verify_cpp_runtime_toolchain.py
 COPY cmake.whl /opt/cmake.whl
@@ -61,7 +63,13 @@ RUN cd /opt/project-dependency-inputs && sha256sum -c SHA256SUMS \
     && python3 /opt/repair_cppcheck_placement_ast.py /opt/tool-src/lib/tokenlist.cpp > /opt/nico-cppcheck-repair.json \
     && python3 /opt/repair_cppcheck_header_grammar.py /opt/tool-src > /opt/nico-cppcheck-header-grammar.json \
     && python3 /opt/patch_cppcheck_header_evidence.py /opt/tool-src /opt/cppcheck-header-evidence > /opt/nico-cppcheck-header-observer.json \
+    && python3 /opt/repair_cppcheck_replacement_index.py /opt/tool-src /opt/cppcheck-replacement-index > /opt/nico-cppcheck-replacement-index.json \
     && timeout 180s make -C /opt/tool-src -j2 MATCHCOMPILER=yes FILESDIR=/opt/cppcheck 'CXXFLAGS=-O2 -DNDEBUG' \
+    && cd /opt/tool-src \
+    && timeout 30s g++ -std=c++11 -O2 -Ilib -isystem externals/simplecpp -isystem externals/tinyxml2 /opt/cppcheck-replacement-index/native-controls.cpp build/*.o externals/simplecpp/simplecpp.o externals/tinyxml2/tinyxml2.o -pthread -o /opt/replacement-index-control \
+    && timeout 30s /opt/replacement-index-control > /opt/nico-cppcheck-replacement-index-control.txt \
+    && rm /opt/replacement-index-control \
+    && cd / \
     && cp /opt/tool-src/cppcheck /usr/local/bin/cppcheck \
     && mkdir -p /opt/cppcheck \
     && cp -R /opt/tool-src/cfg /opt/tool-src/platforms /opt/tool-src/COPYING /opt/cppcheck/ \
