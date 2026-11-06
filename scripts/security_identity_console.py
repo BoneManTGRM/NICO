@@ -288,7 +288,7 @@ def parse_findings(raw, summary_raw):
         report_check('REDACTED' in match, 'finding_match_redaction')
         for key in strings:
             if key in finding:
-                report_text(finding[key], 16384, REPORT_TEXT_CODES[key])
+                report_text(finding[key], LIMIT if key == 'Message' else 16384, REPORT_TEXT_CODES[key])
         if 'Entropy' in finding:
             entropy = finding['Entropy']
             report_check(type(entropy) in (int, float), 'finding_entropy_type')

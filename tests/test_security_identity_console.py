@@ -413,7 +413,7 @@ def test_each_summary_predicate_has_its_own_reason(field, value, reason):
     ('RuleID', 'finding_rule', 256), ('Fingerprint', 'finding_fingerprint', 8192),
     ('Match', 'finding_match', 65536), ('Description', 'finding_description', 16384),
     ('Author', 'finding_author', 16384), ('Email', 'finding_email', 16384),
-    ('Date', 'finding_date', 16384), ('Message', 'finding_message', 16384),
+    ('Date', 'finding_date', 16384), ('Message', 'finding_message', identity.LIMIT),
     ('SymlinkFile', 'finding_symlink_file', 16384), ('Link', 'finding_link', 16384),
 ])
 @pytest.mark.parametrize('failure', ['type', 'encoding', 'bytes'])
@@ -422,7 +422,8 @@ def test_text_check_codes_are_field_specific_without_echoing_values(field, prefi
     item[field] = None if failure == 'type' else '\ud800' if failure == 'encoding' else 'x' * (limit + 1)
     # JSON ASCII escapes carry the invalid surrogate to the existing UTF8 predicate.
     report = json.dumps([item], ensure_ascii=True).encode()
-    assert_report_reason(report, identity.canonical(report_summary()), prefix + '_' + failure)
+    reason = 'report_raw_size' if field == 'Message' and failure == 'bytes' else prefix + '_' + failure
+    assert_report_reason(report, identity.canonical(report_summary()), reason)
 
 
 @pytest.mark.parametrize('field,prefix', [
@@ -502,7 +503,7 @@ def test_tag_encoding_code_never_contains_element_or_index():
     assert_report_reason(json.dumps([item]).encode(), identity.canonical(report_summary()), 'finding_tag_encoding')
 
 
-@pytest.mark.parametrize('field', ['Description', 'Author', 'Email', 'Date', 'Message', 'SymlinkFile', 'Link'])
+@pytest.mark.parametrize('field', ['Description', 'Author', 'Email', 'Date', 'SymlinkFile', 'Link'])
 def test_optional_text_byte_boundary_is_unchanged(field):
     item = finding()
     item[field] = '\u00e9' * 8192  # Exactly16384 UTF8 bytes; character count is smaller.
@@ -561,4 +562,78 @@ def test_every_report_reason_has_an_actual_invalid_input(monkeypatch):
         for combination in itertools.product(*dimensions):
             arguments = {key: value for mapping in combination for key, value in mapping.items()}
             case(**arguments)
-    assert observed == identity.REPORT_REASONS
+    # Message's per-string bound cannot precede the stricter complete JSON byte cap.
+    assert observed == identity.REPORT_REASONS - {'finding_message_bytes'}
+
+
+@pytest.mark.parametrize('message', ['', 'x' * 16384, 'x' * 16385, '\u00e9' * 8193])
+def test_message_compatibility_preserves_identity_and_content(message):
+    item = finding()
+    summary = identity.canonical(report_summary())
+    before = identity.parse_findings(identity.canonical([item]), summary)[0]
+    item['Message'] = message
+    raw = identity.canonical([item])
+    after = identity.parse_findings(raw, summary)[0]
+    assert after['finding']['Message'] == message
+    assert after['fingerprint_sha256'] == before['fingerprint_sha256']
+    assert after['shape_hash'] == before['shape_hash']
+    assert identity.digest(raw) != identity.digest(identity.canonical([finding()]))
+
+
+def message_report_at_cap(records, unicode=False):
+    data = [finding(i) for i in range(records)]
+    for item in data:
+        item['Message'] = ''
+    available = identity.LIMIT - len(identity.canonical(data))
+    for index, item in enumerate(data):
+        budget = available // (records - index)
+        item['Message'] = ('\u00e9' * (budget // 2) + 'x' * (budget % 2)) if unicode else 'x' * budget
+        available -= budget
+    raw = identity.canonical(data)
+    assert len(raw) == identity.LIMIT
+    return data, raw
+
+
+@pytest.mark.parametrize('records', [1, 2, 3])
+@pytest.mark.parametrize('unicode', [False, True])
+def test_complete_report_cap_still_governs_all_messages(records, unicode):
+    data, raw = message_report_at_cap(records, unicode)
+    summary = identity.canonical(report_summary(records))
+    assert len(identity.parse_findings(raw, summary)) == records
+    data[-1]['Message'] += 'x'
+    overflow = identity.canonical(data)
+    assert len(overflow) == identity.LIMIT + 1
+    assert_report_reason(overflow, summary, 'report_raw_size')
+
+
+@pytest.mark.parametrize('message', [None, True, False, 1, 1.5, [], {}, ['owned']])
+def test_message_type_contract_remains_strict(message):
+    item = finding()
+    item['Message'] = message
+    assert_report_reason(identity.canonical([item]), identity.canonical(report_summary()), 'finding_message_type')
+
+
+def test_message_direct_text_bound_and_encoding_are_preserved():
+    codes = identity.REPORT_TEXT_CODES['Message']
+    assert len(identity.report_text('x' * identity.LIMIT, identity.LIMIT, codes)) == identity.LIMIT
+    with pytest.raises(identity.DiagnosticFailure) as error:
+        identity.report_text('x' * (identity.LIMIT + 1), identity.LIMIT, codes)
+    assert error.value.reason == 'finding_message_bytes'
+    item = finding()
+    item['Message'] = '\ud800'
+    assert_report_reason(json.dumps([item]).encode(), identity.canonical(report_summary()), 'finding_message_encoding')
+
+
+def test_long_message_fresh_synthetic_lifecycle_does_not_disclose_or_ignore_mutation(owned, capfd):
+    root, build = owned
+    item = finding()
+    item['Message'] = CANARY * 2000
+    build([item])
+    report = (root / identity.REPORT).read_bytes()
+    status, raw = emit_cli(root, capfd)
+    assert status == 0 and identity.validate_console(raw)
+    assert json.loads(raw.splitlines()[0])['report_sha256'] == identity.digest(report)
+    item['Message'] += 'x'
+    (root / identity.REPORT).write_bytes(identity.canonical([item]))
+    status, raw = emit_cli(root, capfd)
+    assert status == 1 and json.loads(raw)['reason'] == 'artifact_binding'
