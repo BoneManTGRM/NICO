@@ -322,10 +322,11 @@ def test_isolated_paths_do_not_disable_qualification_or_change_production_collec
     diagnostic=Path('.github/workflows/native-timeout-diagnostic.yml').read_text()
     assert 'cpp-full-project-integration-refs/pull/1722/merge' in diagnostic
     assert 'queue: max' in diagnostic and 'cancel-in-progress: false' in diagnostic
-    assert 'timeout-minutes: 55' in diagnostic and 'retention-days: 30' in diagnostic
-    assert diagnostic.index('Prove analyzer opt-in') < diagnostic.index('Retrieve the immutable failed evidence') < diagnostic.index('repository: bitcoin/bitcoin')
-    assert '--stage-runtime-binding-sha256' in diagnostic and '--original-image' in diagnostic
+    assert 'timeout-minutes: 55' in diagnostic
+    assert 'Retrieve the immutable failed evidence' not in diagnostic
+    assert 'stage-runtime-binding' not in diagnostic
     assert 'tests/test_native_stage_counters.py' in diagnostic
+    assert 'scripts.fresh_cpp_phase_diagnostic' in diagnostic
 
 
 def test_case_counter_retention_survives_outer_incomplete_json():

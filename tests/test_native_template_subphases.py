@@ -211,4 +211,5 @@ def test_native_contract_gate_precedes_tool_acquisition():
     gate = workflow.split('- name: Verify diagnostic contracts', 1)[1].split('- uses: actions/checkout@', 1)[0]
     assert 'tests/test_native_template_subphases.py' in gate
     assert '--junitxml=native-diagnostic-evidence/contracts.xml' in gate
+    assert 'tests/test_fresh_cpp_phase_diagnostic.py' in gate
     assert workflow.index('- name: Verify diagnostic contracts') < workflow.index('repository: cppcheck-opensource/cppcheck')

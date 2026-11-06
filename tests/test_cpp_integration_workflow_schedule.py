@@ -143,7 +143,11 @@ def test_native_queue_remains_serial_and_preserves_existing_execution_boundaries
     isolated = diagnostic["jobs"]["isolated-diagnostic"]
     assert isolated["timeout-minutes"] == 55
     assert "head.repo.full_name == github.repository" in isolated["if"]
-    guard = next(step for step in isolated["steps"] if step.get("id") == "need")
-    assert 'test "$status" = completed' in guard["run"]
-    assert "success) echo 'required=false'" in guard["run"]
-    assert "failure) echo 'required=true'" in guard["run"]
+    # Fresh source collection must not discover or retrieve a historical artifact.
+    assert "github.run_attempt == 1" in isolated["if"]
+    assert not any(step.get("id") == "need" for step in isolated["steps"])
+    commands = "\n".join(step.get("run", "") for step in isolated["steps"])
+    assert "scripts.fresh_cpp_phase_diagnostic" in commands
+    assert "gh api" not in commands and "download-artifact" not in commands
+    contracts = next(step for step in isolated["steps"] if step.get("name") == "Verify diagnostic contracts")
+    assert "if" not in contracts

@@ -254,18 +254,12 @@ def test_workflow_serializes_with_existing_native_run_and_has_no_write_permissio
     import re
     assert not re.search(r'^\s+[a-z-]+:\s*write\s*$',workflow,re.M) and 'secrets.' not in workflow
     assert 'timeout-minutes: 55' in workflow
-    assert '38380333159' in workflow and 'case "$conclusion"' in workflow
-    assert 'success)' in workflow and 'failure)' in workflow
-    assert '11811288494' in workflow
-    assert 'dbf890120e44a7d0f99133d69f316c9e8d7dce0210f3ae627e248ffa1c4e7e92' in workflow
-    assert '--mode current-primary-budget-v1' in workflow
-    assert '--mode current-primary\n' not in workflow
-    assert 'types: [synchronize]' in workflow and 'github.run_attempt == 1' in workflow
-    assert '--execution-policy-sha256' in workflow
-    assert 'owned_primary_control' in workflow
-    assert workflow.index('Exercise the owned static-only boundary first') < workflow.index('Measure only basic.cpp under the declared 360-second case policy')
-    assert '--test cluster_linearize_tests' not in workflow
     assert 'diagnostic/current-primary-38380333159' in workflow
+    assert 'scripts.fresh_cpp_phase_diagnostic' in workflow
+    assert '--archive' not in workflow and '11811288494' not in workflow
+    assert 'Retrieve the immutable failed evidence' not in workflow
+    assert 'github.run_attempt == 1' in workflow
+    assert workflow.index('Verify diagnostic contracts') < workflow.index('Provision exact tools')
 
 
 def _current_selection_fixture():
@@ -782,15 +776,14 @@ def test_workflow_budget_is_explicit_once_after_contracts_controls_and_policy():
     w=yaml.safe_load(Path('.github/workflows/native-timeout-diagnostic.yml').read_text())
     events=w.get('on',w.get(True));assert events['pull_request']['types']==['synchronize']
     job=w['jobs']['isolated-diagnostic'];assert 'github.run_attempt == 1' in job['if']
-    steps=job['steps'];run=[s for s in steps if '--mode current-primary-budget-v1' in s.get('run','')]
+    steps=job['steps'];run=[s for s in steps if 'scripts.fresh_cpp_phase_diagnostic' in s.get('run','')]
     assert len(run)==1
-    assert '--execution-policy ' in run[0]['run'] and '--execution-policy-sha256 ' in run[0]['run']
     contracts=next(n for n,s in enumerate(steps) if s.get('name')=='Verify diagnostic contracts')
-    control=next(n for n,s in enumerate(steps) if s.get('name')=='Prove analyzer opt-in and absence on owned source before acquisition')
-    policy=next(n for n,s in enumerate(steps) if s.get('name')=='Bind the explicit context-2 budget policy to fresh image identities')
-    assert contracts<control<policy<steps.index(run[0])
+    control=next(n for n,s in enumerate(steps) if s.get('name')=='Verify owned physical-header grammar on the same image')
+    source=next(n for n,s in enumerate(steps) if s.get('name')=='Acquire pinned public qualification source without execution')
+    assert contracts<control<source<steps.index(run[0])
     assert 'tests/test_no_production_unsafe_primitives.py' in steps[contracts]['run']
-    assert not any('--mode current-primary\n' in s.get('run','') for s in steps)
+    assert not any('--archive' in s.get('run','') for s in steps)
 
 
 def _budget_native_fixture(tmp_path):
