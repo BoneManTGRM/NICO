@@ -133,6 +133,7 @@ def failure_diagnostic(evidence, error):
     guards solely for a fixed diagnostic state; no names or raw text escape.
     Fixed keys and scalar bounds keep JSON below 4096 bytes.
     """
+    from nico.assessment_cpp_cpu_capacity import summarize as summarize_cpu_capacity
     probe = _mapping(_mapping(evidence).get('probe'))
     static = _mapping(probe.get('project_static'))
     fallback = _mapping(static.get('clang_fallback'))
@@ -150,6 +151,9 @@ def failure_diagnostic(evidence, error):
         'static_stage_error': _code(_mapping(probe.get('project_static_stage')).get('error')),
         'runtime_error': _code(_mapping(probe.get('runtime_evidence')).get('error')),
         'baseline_tests': _baseline_tests(probe),
+        'compiler_cpu_capacity': {
+            'requested_cpus': _count(probe.get('project_compiler_requested_cpus')),
+            'observation': summarize_cpu_capacity(probe.get('project_compiler_cpu_capacity'))},
         'sanitizer_failure': {
             key: _sanitizer_operation(runtime.get(key))
             for key in ('first_failure_operation', 'failure_operation')},
