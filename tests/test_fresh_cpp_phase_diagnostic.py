@@ -286,3 +286,30 @@ def test_fresh_workflow_has_no_archive_intake_and_preserves_owned_provisioning()
                                               '--archive','gh api','stage_runtime_binding'))
     assert 'scripts.fresh_cpp_phase_diagnostic' in text
     assert 'bb5296576e8f1a9fc11c19d9a25ba02ed4547e24' in text
+
+
+def test_fresh_workflow_owned_controls_have_complete_ephemeral_database_wiring():
+    from pathlib import Path
+    import yaml
+    root = Path(__file__).resolve().parents[1]
+    fresh = yaml.safe_load((root/'.github/workflows/native-timeout-diagnostic.yml').read_text())
+    production = yaml.safe_load((root/'.github/workflows/cpp-full-project-integration.yml').read_text())
+    job = fresh['jobs']['isolated-diagnostic']
+    owned = production['jobs']['owned-project-integration']
+    assert job['services'] == owned['services']
+    assert job['env'] == owned['env'] == {
+        'NICO_TEST_DATABASE_URL': 'postgresql://nico:nico@127.0.0.1:5432/nico'}
+    service = job['services']['postgres']
+    assert service['image'] == 'postgres:16-alpine'
+    assert service['ports'] == ['5432:5432']
+    assert service['env'] == {'POSTGRES_USER': 'nico', 'POSTGRES_PASSWORD': 'nico', 'POSTGRES_DB': 'nico'}
+    assert service['options'] == ('--health-cmd="pg_isready -U nico -d nico" '
+        '--health-interval=5s --health-timeout=5s --health-retries=12')
+    assert 'volumes' not in service and 'secrets.' not in json.dumps(job)
+    controls = [step for step in job['steps'] if any(command in step.get('run', '') for command in (
+        'scripts.qualify_cppcheck_worker_control', 'scripts.qualify_cpp_full_project_integration'))]
+    assert len(controls) == 2
+    for step in controls:
+        assert not step.get('continue-on-error') and 'if' not in step
+        assert 'NICO_TEST_DATABASE_URL' not in step.get('env', {})
+        assert '||' not in step['run']
