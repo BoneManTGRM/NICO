@@ -77,7 +77,7 @@ def test_recipe_preserves_original_analyzer_and_bound_build():
     assert 'timeout 180s make' in recipe and '-j2 MATCHCOMPILER=yes' in recipe
     assert 'cp /opt/phase-tool-src/cppcheck /usr/local/bin/cppcheck-phase-boundaries' in recipe
     assert 'cp /opt/phase-tool-src/cppcheck /usr/local/bin/cppcheck\n' not in recipe
-    for expected in ('cmp /opt/phase-repair.json','cmp /opt/phase-grammar.json','cmp /opt/phase-header.json','USER 1000:1000'):
+    for expected in ('cmp /opt/phase-repair.json','cmp /opt/phase-grammar.json','cmp /opt/phase-header.json','cmp /opt/phase-replacement-index.json','USER 1000:1000'):
         assert expected in recipe
 
 
@@ -192,3 +192,21 @@ def test_prepare_checks_upstream_before_copying_new_context(tmp_path,monkeypatch
         assert receipt['recipe_sha256']==build.digest((context/'Dockerfile').read_bytes())
         assert (context/'cpp_phase_boundaries.py').read_bytes()==Path(phase.__file__).read_bytes()
         with pytest.raises(ValueError):build.prepare(context,source,image)
+
+
+def test_replacement_index_reconstructed_after_observer_before_probe():
+    recipe=build.recipe(binding()['original_image'])
+    observer=recipe.index('python3 /opt/patch_cppcheck_header_evidence.py')
+    repair=recipe.index('python3 /opt/repair_cppcheck_replacement_index.py')
+    comparison=recipe.index('cmp /opt/phase-replacement-index.json /opt/nico-cppcheck-replacement-index.json')
+    probe=recipe.index('python3 /opt/cpp_template_probe.py --source')
+    assert observer < repair < comparison < probe
+    assert build.FILES['replacement_index_receipt']=='/opt/nico-cppcheck-replacement-index.json'
+    assert 'COPY cppcheck-replacement-index /opt/cppcheck-replacement-index' in recipe
+
+
+def test_replacement_receipt_missing_from_binding_rejected():
+    value=binding()
+    del value['files']['replacement_index_receipt']
+    with pytest.raises(ValueError,match='phase_binding_identity'):
+        build.validate_binding(value,value['image'])

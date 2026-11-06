@@ -42,7 +42,7 @@ def strip_instrumentation(raw: bytes) -> bytes:
     return raw
 
 
-def instrument(relative: str, raw: bytes) -> bytes:
+def instrument(relative: str, raw: bytes, *, replacement_index: bool = False) -> bytes:
     if relative not in SOURCE_SHA256 or digest(raw) != SOURCE_SHA256[relative]:
         raise ValueError('stage_source_identity_mismatch')
     original = raw
@@ -101,7 +101,8 @@ def instrument(relative: str, raw: bytes) -> bytes:
             ('bool TemplateSimplifier::simplifyTemplateInstantiations(', 'static bool matchTemplateParameters(', 1, [
                 ('    for (const TokenAndName &instantiation : mTemplateInstantiations) {\n', 'SelectionVisits')]),
             ('void TemplateSimplifier::replaceTemplateUsage(', 'static bool specMatch(', 4, [
-                ('    for (Token *nameTok = mTokenList.front(); nameTok; nameTok = nameTok->next()) {\n', 'ReplacementVisits'),
+                (('        linearNext = nameTok->next();\n' if replacement_index else
+                  '    for (Token *nameTok = mTokenList.front(); nameTok; nameTok = nameTok->next()) {\n'), 'ReplacementVisits'),
                 ('                for (auto ti = mTemplateInstantiations.cbegin(); ti != mTemplateInstantiations.cend();) {\n', 'ReplacementNestedVisits')]),
         ]
         for start, stop, bucket, visits in regions:

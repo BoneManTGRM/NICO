@@ -54,7 +54,7 @@ def test_source_guard_rejects_grouped_or_unknown_input_and_restores_module_state
     with pytest.raises(ValueError):probe.instrument_baseline('lib/templatesimplifier.cpp',b'grouped or unknown')
     assert probe.instrument.SOURCE_SHA256 is original
     raw=b'owned source';monkeypatch.setattr(probe,'BASELINE',{'lib/templatesimplifier.cpp':probe.digest(raw)})
-    def fail(*args):raise ValueError('anchor_mismatch')
+    def fail(*args,**kwargs):raise ValueError('anchor_mismatch')
     monkeypatch.setattr(probe.instrument,'instrument',fail)
     with pytest.raises(ValueError):probe.instrument_baseline('lib/templatesimplifier.cpp',raw)
     assert probe.instrument.SOURCE_SHA256 is original
@@ -62,7 +62,7 @@ def test_source_guard_rejects_grouped_or_unknown_input_and_restores_module_state
 
 def test_receipt_binds_every_instrumentation_input_and_excludes_optimizer():
     receipt=probe.expected_receipt()
-    assert receipt['source_sha256']['lib/templatesimplifier.cpp']=='61e6d1c8be0327fe8689c132b95ad519d95685e88d9766e8862e625b80e11d4f'
+    assert receipt['source_sha256']['lib/templatesimplifier.cpp']=='23930579ec1ce6837cc4c3de8499a81761afe220fa5f00d6965b6975c25565ba'
     assert receipt['grouping_applied'] is False and receipt['qualification_credit'] is False
     assert receipt['restored_source_sha256']==receipt['source_sha256']
     assert receipt['header_sha256']==probe.digest(probe.instrument.HEADER.read_bytes())
@@ -160,3 +160,37 @@ def test_shared_boundary_cap_across_translation_units(tmp_path,monkeypatch):
     subprocess.run(['g++','-std=c++11',str(a),str(b),'-o',str(binary)],check=True,capture_output=True,timeout=20)
     r=subprocess.run([str(binary)],capture_output=True,check=True,timeout=10)
     assert len(r.stderr.splitlines())==16
+
+
+def test_index_probe_counts_candidates_after_selection_and_restores_source(tmp_path,monkeypatch):
+    from tests.test_native_stage_counters import owned_template_source
+    _,name,raw=owned_template_source(tmp_path,monkeypatch)
+    linear=b'    for (Token *nameTok = mTokenList.front(); nameTok; nameTok = nameTok->next()) {\n'
+    indexed=(b'    for (;;) {\n'
+        b'        if (!nameTok) break;\n'
+        b'        linearNext = nameTok->next();\n')
+    raw=raw.replace(linear,indexed)
+    monkeypatch.setattr(probe,'BASELINE',{name:probe.digest(raw)})
+    changed=probe.instrument_baseline(name,raw)
+    assert probe.instrument.strip_instrumentation(changed)==raw
+    marker=b'        NicoStage::templateBump(NicoStage::ReplacementVisits);'
+    assert changed.count(marker)==1
+    assert b'        linearNext = nameTok->next();\n'+probe.instrument.BEGIN+marker in changed
+    assert probe.instrument.SOURCE_SHA256[name]!=probe.digest(raw)
+
+
+def test_index_sources_are_bound_even_when_not_instrumented():
+    for name in ('lib/token.cpp','lib/tokenlist.cpp','lib/tokenlist.h'):
+        assert probe.BASELINE[name]==probe.AFTER[name]
+        with pytest.raises(ValueError,match='template_probe_source_identity'):
+            probe.instrument_baseline(name,b'unknown source')
+    receipt=probe.expected_receipt()
+    assert receipt['production_replacement_index'] is True
+    assert receipt['replacement_visit_unit']==probe.REPLACEMENT_VISIT_UNIT
+
+
+def test_replacement_count_semantics_cannot_be_misrepresented():
+    value=summarize(sparse_record())
+    assert value['replacement_visit_unit']==probe.REPLACEMENT_VISIT_UNIT
+    value['replacement_visit_unit']='all_tokens_or_index_slots'
+    assert not probe.valid_summary(value)
