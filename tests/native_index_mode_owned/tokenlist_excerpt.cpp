@@ -79,4 +79,3 @@ void TokensFrontBack::insertedLessToken(Token* token)
         mLessDisabled = true;
     }
 }
-
