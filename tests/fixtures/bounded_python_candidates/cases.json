@@ -1,0 +1,53 @@
+{
+  "schema": "nico.local-paired-scanner.cases.v1",
+  "shadow_only": true,
+  "human_review_required": true,
+  "client_delivery_blocked": true,
+  "autonomy_qualified": false,
+  "cases": [
+    {
+      "id": "tls-literal",
+      "mutation_id": "tls-verification-disabled-literal-v1",
+      "rule": "B501",
+      "class": "TLS certificate verification disabled",
+      "clean_source": "import requests\n\ndef fetch(url):\n    return requests.get(url, verify=True, timeout=5)\n",
+      "before": "verify=True",
+      "after": "verify=False",
+      "line": 4,
+      "semantic_basis": "requests.get verify=True checks server certificates; replacing it with False disables certificate verification for caller-supplied URL. No request is executed."
+    },
+    {
+      "id": "tls-variable",
+      "mutation_id": "tls-verification-disabled-variable-v1",
+      "rule": "B501",
+      "class": "TLS certificate verification disabled",
+      "clean_source": "import requests\n\ndef fetch(url):\n    check_certificate = True\n    return requests.get(url, verify=check_certificate, timeout=5)\n",
+      "before": "check_certificate = True",
+      "after": "check_certificate = False",
+      "line": 5,
+      "semantic_basis": "The sole local assignment reaches verify without reassignment or branching; False disables certificate verification identically to the literal case. Mutation line 4, expected diagnostic sink line 5."
+    },
+    {
+      "id": "hash-direct",
+      "mutation_id": "security-digest-md5-direct-v1",
+      "rule": "B324",
+      "class": "Weak-hash candidate pattern (not confirmed vulnerability)",
+      "clean_source": "import hashlib\n\ndef security_digest(untrusted_document):\n    return hashlib.sha256(untrusted_document).hexdigest()\n",
+      "before": "hashlib.sha256",
+      "after": "hashlib.md5",
+      "line": 4,
+      "semantic_basis": "The constructor switches SHA-256 to collision-broken MD5, with default usedforsecurity=True. Expected label is a weak-hash discovery candidate only: a function name does not establish a security-sensitive application or actionable vulnerability. MD5 is not universally a security flaw."
+    },
+    {
+      "id": "hash-getattr",
+      "mutation_id": "security-digest-md5-getattr-v1",
+      "rule": "B324",
+      "class": "Weak-hash candidate pattern (not confirmed vulnerability)",
+      "clean_source": "import hashlib\n\ndef security_digest(untrusted_document):\n    return getattr(hashlib, 'sha256')(untrusted_document).hexdigest()\n",
+      "before": "'sha256'",
+      "after": "'md5'",
+      "line": 4,
+      "semantic_basis": "getattr on the imported hashlib module with constant md5 resolves the same constructor as hashlib.md5; no rebinding occurs. Default usedforsecurity remains enabled. Expected label is the same weak-hash discovery candidate, not a confirmed application vulnerability."
+    }
+  ]
+}

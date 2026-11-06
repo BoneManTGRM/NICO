@@ -42,12 +42,15 @@ _DRAIN_SECONDS = 1.0
 
 def _live_group(group: int) -> bool:
     """Linux: zombies cannot consume CPU or hold output descriptors open."""
+    # ESRCH proves this owned group is absent. Do not require unrelated /proc
+    # records to be readable once the kernel has established absence. Permission
+    # and other probe errors remain uncertainty and propagate to the cleanup latch.
+    try:
+        os.killpg(group, 0)
+    except ProcessLookupError:
+        return False
     if not Path('/proc/self/stat').is_file():
-        # Other POSIX systems can prove absence, but cannot classify zombies here.
-        try:
-            os.killpg(group, 0)
-        except ProcessLookupError:
-            return False
+        # Other POSIX systems cannot classify a present group's zombies here.
         return True
     deadline = time.monotonic() + 0.5
     with os.scandir('/proc') as entries:

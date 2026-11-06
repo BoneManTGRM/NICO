@@ -166,3 +166,16 @@ For a failed or blocked production run, preserve:
 - verification result
 
 This record is part of NICO's repair memory and should be sufficient for another operator to reproduce the failure without guessing.
+
+## Scanner resource boundaries
+
+The scanner-output and shared-suite bounds originally proposed in PR #1871 were
+integrated through merged PR #1877 (`71a21713`) and are present in the accepted
+`bf42c567` release. The original #1871 branch is reconciled with that approved
+source to preserve its history; this reconciliation adds documentation only.
+
+Scanner stdout/stderr retention and native-report reads are bounded, sequential
+tools share a suite deadline, and partial results, timeouts and uncertain cleanup
+remain explicit. These controls do not establish a whole-assessment wall-clock
+guarantee or an aggregate checkout/history/auxiliary-file disk quota. Existing
+evidence-completeness, human-review and client-delivery checks still apply.

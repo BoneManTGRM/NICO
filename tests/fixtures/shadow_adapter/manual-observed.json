@@ -1,0 +1,39 @@
+{
+  "cases": [
+    {
+      "case_id": "mixed",
+      "findings": [
+        {
+          "candidate_id": "confirmed",
+          "technical_triage_verdict": "confirmed"
+        },
+        {
+          "candidate_id": "unknown",
+          "technical_triage_verdict": "needs_review"
+        }
+      ],
+      "scope": {
+        "repository": "example.invalid/shadow",
+        "revision": "1111111111111111111111111111111111111111",
+        "source_id": "synthetic-mixed",
+        "source_schema": "nico.candidate-technical-triage.v2"
+      },
+      "status": "partial"
+    },
+    {
+      "case_id": "zero",
+      "findings": [],
+      "scope": {
+        "repository": "example.invalid/shadow",
+        "revision": "1111111111111111111111111111111111111111",
+        "source_id": "synthetic-zero",
+        "source_schema": "nico.candidate-technical-triage.v2"
+      },
+      "status": "partial"
+    }
+  ],
+  "corpus_id": "synthetic-adapter",
+  "corpus_version": "1",
+  "expected_sha256": "41e3317ae638f08fb755361e16bcc012d3642600947182a9c01ac17f83d80f65",
+  "schema": "nico.shadow-observed.v1"
+}

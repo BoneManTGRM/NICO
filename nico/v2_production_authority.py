@@ -391,6 +391,13 @@ def wrap_final_report_publication(
                     output["v2_production_authority"]["pdf_cap_diagnostic"] = diagnostic
             except Exception:
                 pass  # Diagnostics must never replace the original publication failure.
+            try:
+                from nico.spanish_translation_failure_diagnostic import translation_exception_context
+                translation_context = translation_exception_context(exc)
+                if translation_context is not None:
+                    output['v2_production_authority']['translation_context'] = translation_context
+            except Exception:
+                pass  # Preserve the original failure even if diagnostic inspection fails.
             return output
         render_elapsed = round(time.perf_counter() - render_started, 3)
         total_elapsed = round(time.perf_counter() - total_started, 3)
