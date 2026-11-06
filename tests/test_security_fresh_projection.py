@@ -22,6 +22,8 @@ def capture_root(tmp_path, monkeypatch):
     for tool in p.TOOLS:monkeypatch.setenv('SECURITY_PROJECTION_'+tool.upper()+'_FRESH','true')
     (tmp_path/'.github/workflows').mkdir(parents=True)
     (tmp_path/'.github/workflows/security-audit.yml').write_text('owned workflow')
+    (tmp_path/'owned').mkdir()
+    for name in ('input.py','other.py','rules.yml'):(tmp_path/'owned'/name).write_text('owned synthetic source')
     for args in (['init','-q'],['add','.'],['-c','user.name=Owned','-c','user.email=owned@example.invalid','commit','-qm','owned']):
         subprocess.run(['git',*args],cwd=tmp_path,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     monkeypatch.setattr(p.shutil,'which',lambda tool:None)
@@ -51,12 +53,12 @@ def test_real_git_lifecycle_combined_bounds(capture_root,count):
     output=complete(capture_root,[synthetic(i)for i in range(count)],
         {'results':[],'errors':[{'level':'warn','type':CANARY,'message':CANARY}for _ in range(26)]})
     assert p.validate_console(output)
-    assert len(output.splitlines())==count+17<=128
+    assert len(output.splitlines())==count+18<=128
     assert max(map(len,output.splitlines(keepends=True)))<=512
     assert len(output)<=65536 and CANARY.encode()not in output
     rows=records(output)
     assert rows[0]['finding_count']==count
-    assert next(r for r in rows if r.get('record')=='semgrep_categories')['unclassified_entries']==26
+    assert next(r for r in rows if r.get('record')=='semgrep_categories')['unknown']==26
     assert next(r for r in rows if r.get('record')=='execution' and r['tool']=='semgrep')['actual_exit']==7
 
 
@@ -197,7 +199,7 @@ def test_gitleaks_capture_limit_is_not_output_truncation(capture_root,count):
     with pytest.raises(p.Invalid,match='gitleaks_validation'):
         complete(capture_root,[synthetic(i)for i in range(count)])
 
-@pytest.mark.parametrize('field,record',[('unclassified_entries','semgrep_categories'),('reported_entries','semgrep_groups')])
+@pytest.mark.parametrize('field,record',[('recognized_entries','semgrep_categories'),('reported_entries','semgrep_groups')])
 def test_boolean_transport_counts_rejected(capture_root,field,record):
     raw=complete(capture_root,semgrep={'results':[],'errors':[{}]})
     rows=records(raw)[:-1]

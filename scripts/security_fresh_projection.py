@@ -1,10 +1,4 @@
-"""Fresh same-job bounded projection; no finding dispositions or scanner decisions.
-
-Semgrep's pinned upstream schema is unavailable locally. Machine categories,
-structural groups remain explicitly unavailable; only validated reported scanned
-entry counts and the
-existing gate's documented results/errors/level policy is summarized.
-"""
+"""Fresh bounded security projection with pinned Semgrep structural metadata."""
 from __future__ import annotations
 import argparse
 from collections import Counter
@@ -19,9 +13,11 @@ import tempfile
 try:
     from . import security_projection_common as common
     from . import security_source_dispositions as dispositions
+    from . import security_semgrep_projection as semgrep_schema
 except ImportError:
     import security_projection_common as common
     import security_source_dispositions as dispositions
+    import security_semgrep_projection as semgrep_schema
 
 TOOLS = ('gitleaks', 'semgrep')
 REPORTS = {'gitleaks':'gitleaks.json','semgrep':'semgrep.json'}
@@ -31,11 +27,11 @@ INVOCATIONS = {
     'semgrep':['semgrep','scan','--config','auto','--json','--output','semgrep.json'],
 }
 BINDING_KEYS = ('head','tree','run','attempt','refset','helper','common','gate','disposition_helper',
-                'approved_manifest','workflow','tool','invocation','requested_config')
+                'approved_manifest','workflow','semgrep_schema','tool','invocation','requested_config')
 PHASES = ('cli','prepare','capture','seal','emit')
 REASONS = ('arguments','root','freshness','tracked_output','context','binding','report',
            'summary','manifest','semgrep','gitleaks_validation','exact_matcher','output_bounds','unexpected')
-SCHEMA = 'nico.security-fresh-projection.v1'
+SCHEMA = 'nico.security-fresh-projection.v2'
 
 
 class Invalid(ValueError):
@@ -72,7 +68,8 @@ def bindings(root, tool):
     for key, path in [('helper',Path(__file__).absolute()),('common',Path(common.__file__).absolute()),
                       ('gate',Path(common.gate.__file__).absolute()),('disposition_helper',Path(dispositions.__file__).absolute()),
                       ('approved_manifest',dispositions.MANIFEST.absolute()),
-                      ('workflow',root/'.github/workflows/security-audit.yml')]:
+                      ('workflow',root/'.github/workflows/security-audit.yml'),
+                      ('semgrep_schema',Path(semgrep_schema.__file__).absolute())]:
         result[key]=common.digest(common.read(path))
     try:
         executable=shutil.which(tool)
@@ -150,7 +147,22 @@ def seal(root, tool):
     write_context(root,tool,value)
 
 
-def semgrep_projection(raw, manifest_record):
+def tracked_paths(root):
+    """Bounded exact HEAD regular-blob names; no report-selected file is opened."""
+    raw = common.git_bytes(root, ['ls-tree', '-r', '-z', 'HEAD'])
+    names = set()
+    for entry in raw.split(b'\0'):
+        if not entry:
+            continue
+        metadata, name = entry.split(b'\t', 1)
+        mode, kind, oid = metadata.split(b' ')
+        require(re.fullmatch(b'[0-9a-f]{40}', oid) is not None, 'binding')
+        if mode in (b'100644', b'100755') and kind == b'blob':
+            names.add(name.decode('utf-8'))
+    return frozenset(names)
+
+
+def semgrep_projection(raw, manifest_record, tracked_paths=frozenset()):
     value=common.decode(raw)
     require(type(value)is dict and type(value.get('results'))is list and type(value.get('errors'))is list,'semgrep')
     results, errors=value['results'],value['errors']
@@ -196,10 +208,9 @@ def semgrep_projection(raw, manifest_record):
          'malformed_diagnostics':malformed_errors,'result_entries':len(results),'malformed_results':len(results)-len(dictionary_results),
          'policy_blocking_results':blocking,'policy_review_results':len(dictionary_results)-blocking},
         {'record':'semgrep_levels','basis':'existing_gate_level_policy',**levels},
-        {'record':'semgrep_categories','mapping':'unavailable_pinned_schema','unclassified_entries':len(errors)},
+        *semgrep_schema.project(errors, version, tracked_paths),
         {'record':'semgrep_coverage','scanned':scanned,'skipped':'unavailable','targets':'unavailable','rules':'unavailable',
          'resolved_configuration':'unavailable','basis':'existing_nico_consumer' if type(scanned) is int else 'unavailable'},
-        {'record':'semgrep_groups','state':'unavailable_pinned_schema','reported_entries':len(errors),'semantic_deduplication':False},
         {'record':'semgrep_version','reported':'matches_pinned_1_170_0'if type(version)is str and version=='1.170.0'else'unavailable',
          'expected':'1.170.0','package_identity':'unavailable'},
     ]
@@ -251,7 +262,7 @@ def emit(root):
             'effective_config':'unavailable'})
     records.extend({'record':'finding','index':i,'fingerprint_sha256':row['fingerprint_sha256'],
                     'shape_hash':row['shape_hash'],'disposition':row['disposition']}for i,row in enumerate(rows))
-    records.extend(semgrep_projection(raw['semgrep'],manifest['tools']['semgrep']))
+    records.extend(semgrep_projection(raw['semgrep'],manifest['tools']['semgrep'], tracked_paths(root)))
     output=frame(records)
     require(validate_console(output),'output_bounds')
     return output
@@ -274,7 +285,7 @@ def validate_console(raw):
         header=rows[0];exact(header,('schema','state','finding_count','blocking_count','gate','manifest_sha256'))
         require(header['schema']==SCHEMA and header['state']=='observed'and header['gate']in ('passed','blocked')and common.sha(header['manifest_sha256']),'output_bounds')
         number(header['finding_count'],110);number(header['blocking_count'],header['finding_count'])
-        require(len(rows)==header['finding_count']+17,'output_bounds')
+        require(len(rows)>=header['finding_count']+18,'output_bounds')
         counts=rows[1];exact(counts,{'record','identity_scope'}|set(common.DISPOSITIONS))
         require(counts['record']=='gitleaks_counts'and counts['identity_scope']=='redacted_metadata','output_bounds')
         for key in common.DISPOSITIONS:number(counts[key])
@@ -316,17 +327,45 @@ def validate_console(raw):
         require(row['record']=='semgrep_levels'and row['basis']=='existing_gate_level_policy','output_bounds')
         for key in level_keys:number(row[key],2048)
         require(sum(row[key]for key in level_keys)==diagnostics,'output_bounds')
-        number(rows[position].get('unclassified_entries'),2048)
-        require(rows[position]=={'record':'semgrep_categories','mapping':'unavailable_pinned_schema','unclassified_entries':diagnostics},'output_bounds');position+=1
+        row=rows[position];position+=1
+        exact(row,{'record','mapping','schema_sha256','recognized_entries',*semgrep_schema.CATEGORIES})
+        require(row['record']=='semgrep_categories' and row['mapping']=='pinned_1_170_0' and row['schema_sha256']==semgrep_schema.SCHEMA_SHA256,'output_bounds')
+        for key in (*semgrep_schema.CATEGORIES,'recognized_entries'):number(row[key],diagnostics)
+        require(sum(row[key]for key in semgrep_schema.CATEGORIES)==diagnostics,'output_bounds')
+        require(diagnostics-row['unknown']<=row['recognized_entries'],'output_bounds')
+        category_counts=row
+        row=rows[position];position+=1
+        exact(row,{'record','basis',*semgrep_schema.SEVERITIES})
+        require(row['record']=='semgrep_severities' and row['basis']=='pinned_error_severity','output_bounds')
+        for key in semgrep_schema.SEVERITIES:number(row[key],diagnostics)
+        require(sum(row[key]for key in semgrep_schema.SEVERITIES)==diagnostics,'output_bounds')
+        severity_counts=row
+        row=rows[position];position+=1
+        exact(row,('record','state','reported_entries','grouped_entries','ungrouped_entries','group_count','semantic_deduplication','path_binding'))
+        require(row['record']=='semgrep_groups' and row['state']=='structural_metadata' and row['semantic_deduplication']is False and row['path_binding']=='head_regular_blob_membership','output_bounds')
+        for key in ('reported_entries','grouped_entries','ungrouped_entries','group_count'):number(row[key],diagnostics)
+        require(row['reported_entries']==diagnostics and row['grouped_entries']+row['ungrouped_entries']==diagnostics,'output_bounds')
+        require(row['grouped_entries']<=category_counts['recognized_entries'],'output_bounds')
+        require(len(rows)==header['finding_count']+18+row['group_count'],'output_bounds')
+        group_count=row['group_count'];grouped=row['grouped_entries'];total=0
+        group_categories=Counter();group_severities=Counter();last=''
+        for index in range(group_count):
+            row=rows[position];position+=1
+            exact(row,('record','index','shape_sha256','category','severity','occurrences'))
+            require(row['record']=='semgrep_group' and type(row['index'])is int and row['index']==index and common.sha(row['shape_sha256']) and row['shape_sha256']>last,'output_bounds')
+            require(row['category']in semgrep_schema.CATEGORIES and row['severity']in ('error','warning','info'),'output_bounds')
+            number(row['occurrences'],diagnostics);require(row['occurrences']>0,'output_bounds')
+            total+=row['occurrences'];group_categories[row['category']]+=row['occurrences'];group_severities[row['severity']]+=row['occurrences'];last=row['shape_sha256']
+        require(total==grouped and all(count<=category_counts[key]for key,count in group_categories.items()) and all(count<=severity_counts[key]for key,count in group_severities.items()),'output_bounds')
         coverage=rows[position];position+=1
         exact(coverage,('record','scanned','skipped','targets','rules','resolved_configuration','basis'))
         scanned=coverage['scanned']
         if scanned != 'unavailable':number(scanned,10000)
         require(coverage=={'record':'semgrep_coverage','scanned':scanned,'skipped':'unavailable','targets':'unavailable','rules':'unavailable','resolved_configuration':'unavailable','basis':'existing_nico_consumer' if type(scanned)is int else 'unavailable'},'output_bounds')
-        number(rows[position].get('reported_entries'),2048)
-        require(rows[position]=={'record':'semgrep_groups','state':'unavailable_pinned_schema','reported_entries':diagnostics,'semantic_deduplication':False},'output_bounds');position+=1
         row=rows[position];exact(row,('record','reported','expected','package_identity'))
         require(row['record']=='semgrep_version'and row['reported']in ('matches_pinned_1_170_0','unavailable')and row['expected']=='1.170.0'and row['package_identity']=='unavailable','output_bounds')
+        if row['reported']=='unavailable':
+            require(category_counts['recognized_entries']==0 and grouped==0 and all(severity_counts[key]==0 for key in ('error','warning','info')),'output_bounds')
         return True
     except Exception:return False
 
