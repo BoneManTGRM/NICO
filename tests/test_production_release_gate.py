@@ -260,3 +260,57 @@ def test_sha_matching_and_safe_origin_fail_closed():
     assert safe_origin("https://app.example.com/path?token=hidden") == "https://app.example.com"
     assert safe_origin("http://app.example.com") == ""
     assert safe_origin("https://user:pass@app.example.com") == ""
+
+
+def _warning_manifest(warnings, *, status="degraded", operational_ready=False):
+    backend = _backend()
+    backend.update(status=status, operational_ready=operational_ready, warnings=warnings)
+    return _manifest(backend_readiness=backend)
+
+
+def test_readiness_warning_diagnostics_remain_fail_closed():
+    manifest = _warning_manifest(["backup_restore_verified"])
+    assert manifest["backend"]["readiness_warnings"] == {
+        "ids": ["backup_restore_verified"], "omitted": False,
+    }
+    assert manifest["blockers"] == ["backend_semantic_readiness"]
+    assert manifest["release_ready"] is False
+    assert manifest["human_review_required"] is True
+    assert manifest["client_delivery_allowed"] is False
+
+
+def test_distinct_retained_warnings_change_evidence_hashes():
+    first = _warning_manifest(["backup_restore_verified"])
+    second = _warning_manifest(["scanner_recovery_queue_clear"])
+    assert first["release_identity_sha256"] != second["release_identity_sha256"]
+    assert first["manifest_sha256"] != second["manifest_sha256"]
+
+
+def test_warning_summary_never_copies_unknown_payloads():
+    import json
+
+    marker = "synthetic_private_payload"
+    manifest = _warning_manifest([marker, {"token": marker}, [marker], None, 1])
+    assert marker not in json.dumps(manifest)
+    assert manifest["backend"]["readiness_warnings"] == {"ids": [], "omitted": True}
+
+
+def test_warning_diagnostics_preserve_readiness_acceptance_semantics():
+    values = [None, {}, "", False, 1, ["backup_restore_verified"], ["unknown"], [{}]]
+    for status in ("ready", "blocked", "degraded", "missing"):
+        for operational_ready in (True, False, None, 1, "true"):
+            for warnings in values:
+                manifest = _warning_manifest(warnings, status=status, operational_ready=operational_ready)
+                expected = status == "ready" and operational_ready is True
+                assert manifest["release_ready"] is expected
+                assert ("backend_semantic_readiness" in manifest["blockers"]) is not expected
+
+
+def test_warning_summary_is_bounded_sorted_and_deduplicated():
+    manifest = _warning_manifest(["backup_restore_verified"] * 64 + ["scanner_recovery_queue_clear"])
+    assert manifest["backend"]["readiness_warnings"] == {
+        "ids": ["backup_restore_verified"], "omitted": True,
+    }
+    assert _warning_manifest(["operator_admin_configured", "backup_restore_verified"]) == _warning_manifest(
+        ["backup_restore_verified", "operator_admin_configured", "backup_restore_verified"]
+    )
