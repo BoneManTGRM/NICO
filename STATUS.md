@@ -2,10 +2,10 @@
 
 This file records verified transformation progress. A feature is not complete merely because code exists or a pull request merged.
 
-## Current baseline
+## Historical transformation baseline
 
 - Initial transformation baseline: `272f5ddde1e81e9f845eab0393f04a356b01d16f`
-- Current verified default-branch commit: `8c4cde4ebbc4f701c632534d513955a02ecb8222`
+- Historical default-branch commit recorded by this transformation snapshot: `8c4cde4ebbc4f701c632534d513955a02ecb8222`
 - Public product target: **NICO Comprehensive Technical Assessment**
 - Default branch: `main`
 - Production frontend: Vercel
@@ -13,6 +13,8 @@ This file records verified transformation progress. A feature is not complete me
 - Customer-facing assessment route: `/assessment`
 - Current release gate: exact deployment identity plus two consecutive live Comprehensive passes
 - Delivery boundary: expert approval required; client delivery blocked before approval
+
+This ledger preserves transformation-era observations and is not a live release-status feed. The historical commits below must not be treated as the current `main` or deployed revision. Determine current release status from exact-SHA CI, frontend/backend deployment identities, and retained production-acceptance evidence. Repository integration alone does not establish production behavior, recovery proof, or measured maturity.
 
 ## Transformation progress
 
@@ -39,7 +41,7 @@ This file records verified transformation progress. A feature is not complete me
 5. Continuing assurance, Company Queue, and controlled remediation require production-grade workflows and benchmark evidence.
 6. Automation percentages are targets until measured by the benchmark contract in `METRICS.md`.
 
-## Completed update
+## Historical completed update
 
 ### Exact-release Comprehensive production acceptance repair
 
@@ -52,7 +54,7 @@ This file records verified transformation progress. A feature is not complete me
 - Maturity effect: improves release-proof correctness and reduces false-negative operational failures; no automation percentage is claimed from this repair alone.
 - Remaining limitation: exact post-merge production acceptance must still pass on the merged SHA before the release is fully verified.
 
-## Current update
+## Historical transformation update
 
 ### Single-product transformation baseline
 
@@ -80,6 +82,7 @@ Maturity effect:
 
 - Establishes measurable denominators and governance; it does not by itself increase a runtime automation percentage.
 
-## Next dependency-ordered update
+## Transformation follow-up requirements
 
 Consolidate runtime product identity so the frontend, API contracts, report metadata, acceptance workflows, and persistence model expose one customer-facing Comprehensive product while preserving bounded internal compatibility aliases.
+

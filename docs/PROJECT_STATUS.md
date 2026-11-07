@@ -44,7 +44,7 @@ A release is deployable only when required repository CI, security analysis, fro
 
 Deployment success does not prove assessment correctness. Release-sensitive changes require exact deployment identity and retained production acceptance evidence, including two consecutive distinct Comprehensive run IDs, the expected immutable repository baseline, completed required stages, generated artifacts, passing cross-format verification, expert review required, and client delivery blocked before approval.
 
-The baseline used by the current transformation branch is `272f5ddde1e81e9f845eab0393f04a356b01d16f`.
+The historical baseline used to establish this transformation plan is `272f5ddde1e81e9f845eab0393f04a356b01d16f`.
 
 ## Claims NICO does not make
 
@@ -65,9 +65,9 @@ NICO does not claim:
 ### 0. Truth, governance, and measurement — in progress
 
 - [x] Establish one customer-facing product decision.
-- [x] Add repository-level transformation plan, status, decisions, metrics, and runbook documents on the transformation branch.
-- [x] Add a machine-readable product and maturity-target contract on the transformation branch.
-- [ ] Merge and verify the single-product baseline.
+- [x] Retain repository-level transformation plan, status, decisions, metrics, and runbook documents on the default branch.
+- [x] Establish a machine-readable product and maturity-target contract.
+- [ ] Verify runtime single-product consolidation against exact-release evidence; repository integration alone is not production proof.
 - [ ] Establish the complete versioned benchmark corpus and automatic metric output.
 
 ### 1. Production stability — in progress
@@ -148,7 +148,7 @@ NICO does not claim:
 
 ## Next execution order
 
-1. Merge and verify the single-product transformation baseline.
+1. Verify the integrated single-product transformation baseline against current runtime and exact-release evidence.
 2. Consolidate runtime product identity and bounded compatibility mappings.
 3. Complete canonical evidence and finding schemas.
 4. Implement Company Queue and exception-based human review.
@@ -157,3 +157,4 @@ NICO does not claim:
 7. Complete production recovery, tenancy, scale, external-pilot, and repeated benchmark proof.
 
 This document is authoritative for maturity state. `MASTER_PLAN.md` defines the dependency order, `STATUS.md` records verified progress, and `METRICS.md` defines how target claims are measured.
+
