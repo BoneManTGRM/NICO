@@ -1,0 +1,8 @@
+add_library(beta STATIC ../common.cpp local.cpp)
+set_target_properties(beta PROPERTIES EXPORT_COMPILE_COMMANDS OFF)
+target_compile_definitions(beta PRIVATE EXPECTED_MODE=7 EXPECTED_SOURCE=37)
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/beta.dir")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/beta.dir/options.rsp" "-DMODE=1 -UMODE -DMODE=7\n")
+target_compile_options(beta PRIVATE "@${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/beta.dir/options.rsp")
+set_source_files_properties(../common.cpp PROPERTIES COMPILE_DEFINITIONS SOURCE_SENTINEL=37 COMPILE_OPTIONS "-Wconversion")
+target_include_directories(beta PRIVATE "${PROJECT_BINARY_DIR}/generated" "${PROJECT_SOURCE_DIR}")

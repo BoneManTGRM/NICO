@@ -1,0 +1,42 @@
+{
+  "files": [
+    {
+      "path": "compile_commands.json",
+      "bytes": 431,
+      "sha256": "8ae81c1fc27a8d2fe2a50c60db73999183bfef62a6e6b908d3b311205f678dd1"
+    },
+    {
+      "path": "fileapi-capture.json",
+      "bytes": 11301,
+      "sha256": "eac2bb1dfcea499cc4e6483ff7478a95ced14d47aeaca51640a2cce7592404f9"
+    },
+    {
+      "path": "fixture.json",
+      "bytes": 2160,
+      "sha256": "c0700a69b35846daf65a8c9607737081815dc8c1755809dfe919715132120cbf"
+    },
+    {
+      "path": "native-capture.json",
+      "bytes": 35099,
+      "sha256": "8306a1e929a307f5270258670d6c72e4a5fc8669a7b8684ee45bba231891bdc9"
+    }
+  ],
+  "kind": "owned native generated artifacts; raw bytes preserved",
+  "toolchain": {
+    "cmake": {
+      "path": "/workspace/shared/nico-closeout-v14/v15-native-tooling/cmake-wheel/cmake/data/bin/cmake",
+      "sha256": "57452fa01ed0f69552c06d3e25edd0d9375347b982dfb709393526cb45396d6b",
+      "version_first_line": "cmake version 3.31.6"
+    },
+    "gcc": {
+      "path": "/usr/bin/x86_64-linux-gnu-gcc-14",
+      "sha256": "a23ecab8ff08f09ad8c80602c2c5df7f49e09c25905cb8975902e101bf72635f",
+      "version_first_line": "x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0"
+    },
+    "make": {
+      "path": "/usr/bin/make",
+      "sha256": "8a229baf64671988cfb5af43ba3070c6ce7214cf32bcf96155115559d1466fa7",
+      "version_first_line": "GNU Make 4.4.1"
+    }
+  }
+}

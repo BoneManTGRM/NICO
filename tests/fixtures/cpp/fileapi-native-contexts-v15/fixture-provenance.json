@@ -1,0 +1,24 @@
+{
+  "files": [
+    {
+      "path": "compile_commands.json",
+      "bytes": 1143,
+      "sha256": "85578e692d8e345e9299ec272ea67e8a4e07f7689a7a4167306278632c61eb1a"
+    },
+    {
+      "path": "fileapi-capture.json",
+      "bytes": 17780,
+      "sha256": "397982819a60e516bad05a2a47bc8a3df261af638d6a767226d20e0cdce6f404"
+    },
+    {
+      "path": "fixture.json",
+      "bytes": 3442,
+      "sha256": "2a3d6a29cc78b98a63e4ebdbf65b924e3a60ff27d4de386e9222a96fae54aaa9"
+    },
+    {
+      "path": "native-capture.json",
+      "bytes": 44474,
+      "sha256": "9950bf6a938a62b0b49bca3d87ffd9b259976ee46ee5afd02035474707dc137d"
+    }
+  ]
+}

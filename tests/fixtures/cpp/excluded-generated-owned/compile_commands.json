@@ -1,0 +1,8 @@
+[
+{
+  "directory": "/work/build",
+  "command": "/usr/local/bin/g++   -g -o CMakeFiles/visible.dir/main.cpp.o -c /work/source/main.cpp",
+  "file": "/work/source/main.cpp",
+  "output": "CMakeFiles/visible.dir/main.cpp.o"
+}
+]

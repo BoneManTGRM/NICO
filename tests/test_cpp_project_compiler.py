@@ -14,6 +14,51 @@ def digest(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
+@pytest.mark.parametrize('verification_finished', [599.0, 600.0, 601.0])
+def test_source_verification_cannot_dispatch_compiler_after_shared_deadline(monkeypatch, verification_finished):
+    import resource
+    from types import SimpleNamespace
+    from nico import assessment_cpp_project_compiler as compiler
+
+    class OwnedPath:
+        def __init__(self, *args): pass
+        def lstat(self): return SimpleNamespace(st_uid=1001, st_mode=0o700)
+        def resolve(self, **kwargs): return self
+        def __truediv__(self, child): return self
+        def mkdir(self, **kwargs): pass
+        def __str__(self): return '/owned-synthetic-no-files'
+
+    clock, calls = [0.0], []
+    context = {'index': 0, 'context_id': 'owned', 'invocation': ['owned-compiler'],
+               'analysis_file': 'owned.cpp', 'origin': 'original', 'path': 'owned.cpp'}
+    request = {'schema': 'nico.cpp-project-compiler-request.v2',
+               'limits': dict(compiler.EXTENDED_LIMITS), 'contexts': [context],
+               'generated_files': {}, 'targets': {'owned.cpp': 'a' * 64}}
+    monkeypatch.setattr(compiler, 'Path', OwnedPath)
+    monkeypatch.setattr(compiler.os, 'getuid', lambda: 1001)
+    monkeypatch.setattr(compiler.os, 'getgid', lambda: 1001)
+    monkeypatch.setattr(resource, 'setrlimit', lambda *args: None)
+    monkeypatch.setattr(compiler.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(compiler, '_syntax_argv', lambda *args: (context['invocation'], context['analysis_file']))
+    monkeypatch.setattr(compiler, '_verify_input', lambda *args: clock.__setitem__(0, verification_finished))
+
+    def run(argv, stem, deadline, environment):
+        calls.append((clock[0], deadline))
+        return {'exit_code': 124, 'timed_out': True, 'output_truncated': False}
+
+    monkeypatch.setattr(compiler, '_observe_cpu_capacity', lambda workers: {'state':'unavailable'})
+    monkeypatch.setattr(compiler, '_run', run)
+    result = compiler.collect_project_compiler(request)
+    record = result['records'][0]
+    if verification_finished >= 600:
+        assert calls == []
+        assert record['execution'] is None
+        assert record['error'] == 'worker_project_compiler_deadline'
+    else:
+        assert calls == [(599.0, 600.0)]
+        assert record['execution']['timed_out'] is True
+
+
 def capability(name):
     import importlib.util
     spec = importlib.util.find_spec('nico.assessment_cpp_project_compiler')
@@ -72,6 +117,32 @@ def test_observed_scalar_flags_are_preserved_without_broadening_legacy_parser(tm
     raw, targets, captured, _ = inputs(tmp_path, [flag])
     request=capability('project_compiler_request')(raw, targets, captured)
     assert all(flag in r['invocation'] for r in request['contexts'])
+
+
+@pytest.mark.parametrize('flag', ['-msse4.2', '-pedantic', '-mpclmul', '-Wcast-align=strict'])
+def test_native_scalar_flags_retain_order_and_distinct_project_contexts(tmp_path, flag):
+    extra = ['-DORDER=1', flag, '-UORDER', '-DORDER=2']
+    raw, targets, captured, original = inputs(tmp_path, extra)
+    request = capability('project_compiler_request')(raw, targets, captured)
+    assert [r['context_id'] for r in request['contexts']] == [
+        r['context_id'] for r in original['contexts']]
+    for context in request['contexts']:
+        at = context['invocation'].index('-DORDER=1')
+        assert context['invocation'][at:at + len(extra)] == extra
+    # This project-only correction does not alter historical compiler contracts.
+    from nico.assessment_cpp_compiler_evidence import safe_compile_argv
+    argv = ['/usr/local/bin/g++', flag, '-c', '/work/source/main.cpp', '-o', 'main.o']
+    with pytest.raises(ValueError, match='worker_compiler_option_unsupported'):
+        safe_compile_argv(argv, '/work/source/main.cpp', '/work/analysis/compiler-baseline/u0')
+
+
+@pytest.mark.parametrize('flag', ['-msse4.2=/work/source/helper',
+    '-pedantic=/work/source/helper', '-mpclmul=/work/source/helper',
+    '-Wcast-align=strict=/work/source/helper'])
+def test_native_scalar_flag_support_does_not_authorize_operands(tmp_path, flag):
+    raw, targets, captured, _ = inputs(tmp_path, [flag])
+    with pytest.raises(ValueError, match='worker_compiler_option_unsupported'):
+        capability('project_compiler_request')(raw, targets, captured)
 
 
 @pytest.mark.parametrize('flag', ['-fplugin=/work/source/helper.so','@/work/source/options',
@@ -226,14 +297,15 @@ def test_workflow_and_owned_control_require_actual_project_compiler_evidence():
     assert "['checked_contexts']" in control
 
 
-def test_actual_local_gcc_checks_captured_generated_source_and_retains_dependencies(tmp_path):
+@pytest.mark.parametrize('extra', [(), ('-msse4.2', '-pedantic', '-mpclmul', '-Wcast-align=strict')])
+def test_actual_local_gcc_checks_captured_generated_source_and_retains_dependencies(tmp_path, extra):
     """Owned compiler smoke test only; Docker/UID/cgroup proof is hosted."""
     import shutil
     import subprocess
     compiler=shutil.which('g++')
     if compiler is None:
         pytest.skip('native GCC is unavailable in this unit-test environment')
-    raw,targets,captured,_=inputs(tmp_path)
+    raw,targets,captured,_=inputs(tmp_path, extra)
     request=capability('project_compiler_request')(raw,targets,captured)
     original=tmp_path/'source'; original.mkdir()
     (original/'main.cpp').write_bytes(b'#include "config.h"\nint main(){return VALUE;}\n')

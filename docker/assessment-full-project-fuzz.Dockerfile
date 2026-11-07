@@ -19,12 +19,35 @@ RUN cd /opt/capnp-inputs && sha256sum -c SHA256SUMS \
     && mkdir /opt/nico-capnp-metadata \
     && cp lock.json receipt.json SHA256SUMS /opt/nico-capnp-metadata/
 
+# Build the trusted observer with SDK headers; retain only its small runtime artifact.
+FROM gcc:14.2.0-bookworm@sha256:82549aa8f90ada3236a8be70c74543132a76662ef33f0c3271ed802b81584a82 AS clang-header-builder
+COPY llvm /opt/llvm-inputs
+COPY clang-header-sdk /opt/clang-header-sdk
+COPY clang-header-evidence /opt/clang-header-evidence
+COPY build_cpp_clang_header_observer.py /opt/build_cpp_clang_header_observer.py
+RUN cd /opt/llvm-inputs && sha256sum -c SHA256SUMS \
+    && for package in *.deb; do dpkg-deb --extract "$package" /; done \
+    && cd /opt/clang-header-sdk && sha256sum -c SHA256SUMS \
+    && for package in *.deb; do dpkg-deb --extract "$package" /; done \
+    && timeout 180s python3 /opt/build_cpp_clang_header_observer.py \
+       --source /opt/clang-header-evidence --sdk /opt/clang-header-sdk \
+       --runtime /opt/llvm-inputs --output /opt/clang-header-built
+
 # Trusted pinned tools only. Assessed source enters the disposable runtime, never a layer.
 FROM gcc:14.2.0-bookworm@sha256:82549aa8f90ada3236a8be70c74543132a76662ef33f0c3271ed802b81584a82
 COPY project-dependencies /opt/project-dependency-inputs
 COPY llvm /opt/llvm-inputs
 COPY cppcheck /opt/tool-src
 COPY repair_cppcheck_placement_ast.py /opt/repair_cppcheck_placement_ast.py
+COPY repair_cppcheck_header_grammar.py /opt/repair_cppcheck_header_grammar.py
+COPY patch_cppcheck_header_evidence.py /opt/patch_cppcheck_header_evidence.py
+COPY repair_cppcheck_replacement_index.py /opt/repair_cppcheck_replacement_index.py
+COPY cppcheck-replacement-index /opt/cppcheck-replacement-index
+COPY repair_cppcheck_ctu_first_use.py /opt/repair_cppcheck_ctu_first_use.py
+COPY repair_cppcheck_replacement_rebuild.py /opt/repair_cppcheck_replacement_rebuild.py
+COPY cppcheck-ctu-first-use /opt/cppcheck-ctu-first-use
+COPY cppcheck-replacement-rebuild /opt/cppcheck-replacement-rebuild
+COPY cppcheck-header-evidence /opt/cppcheck-header-evidence
 COPY verify_cpp_runtime_toolchain.py /opt/verify_cpp_runtime_toolchain.py
 COPY cmake.whl /opt/cmake.whl
 COPY pycapnp.whl /opt/pycapnp.whl
@@ -42,7 +65,23 @@ RUN cd /opt/project-dependency-inputs && sha256sum -c SHA256SUMS \
     && cd / && rm -rf /opt/llvm-inputs \
     && test "$(g++ -dumpfullversion)" = 14.2.0 \
     && python3 /opt/repair_cppcheck_placement_ast.py /opt/tool-src/lib/tokenlist.cpp > /opt/nico-cppcheck-repair.json \
+    && python3 /opt/repair_cppcheck_header_grammar.py /opt/tool-src > /opt/nico-cppcheck-header-grammar.json \
+    && python3 /opt/patch_cppcheck_header_evidence.py /opt/tool-src /opt/cppcheck-header-evidence > /opt/nico-cppcheck-header-observer.json \
+    && python3 /opt/repair_cppcheck_replacement_index.py /opt/tool-src /opt/cppcheck-replacement-index > /opt/nico-cppcheck-replacement-index.json \
+    && python3 /opt/repair_cppcheck_ctu_first_use.py /opt/tool-src /opt/cppcheck-ctu-first-use > /opt/nico-cppcheck-ctu-first-use.json \
+    && python3 /opt/repair_cppcheck_replacement_rebuild.py /opt/tool-src /opt/cppcheck-replacement-rebuild > /opt/nico-cppcheck-replacement-rebuild.json \
     && timeout 180s make -C /opt/tool-src -j2 MATCHCOMPILER=yes FILESDIR=/opt/cppcheck 'CXXFLAGS=-O2 -DNDEBUG' \
+    && cd /opt/tool-src \
+    && timeout 30s g++ -std=c++11 -O2 -Ilib -isystem externals/simplecpp -isystem externals/tinyxml2 /opt/cppcheck-replacement-index/native-controls.cpp build/*.o externals/simplecpp/simplecpp.o externals/tinyxml2/tinyxml2.o -pthread -o /opt/replacement-index-control \
+    && timeout 30s /opt/replacement-index-control > /opt/nico-cppcheck-replacement-index-control.txt \
+    && rm /opt/replacement-index-control \
+    && timeout 30s g++ -std=c++11 -O2 -Ilib -isystem externals/simplecpp -isystem externals/tinyxml2 /opt/cppcheck-ctu-first-use/native-controls.cpp build/*.o externals/simplecpp/simplecpp.o externals/tinyxml2/tinyxml2.o -pthread -o /opt/ctu-first-use-control \
+    && timeout 30s /opt/ctu-first-use-control > /opt/nico-cppcheck-ctu-first-use-control.txt \
+    && rm /opt/ctu-first-use-control \
+    && timeout 30s g++ -std=c++11 -O2 -Ilib -isystem externals/simplecpp -isystem externals/tinyxml2 /opt/cppcheck-replacement-rebuild/native-controls.cpp build/*.o externals/simplecpp/simplecpp.o externals/tinyxml2/tinyxml2.o -pthread -o /opt/replacement-rebuild-control \
+    && timeout 30s /opt/replacement-rebuild-control > /opt/nico-cppcheck-replacement-rebuild-control.txt \
+    && rm /opt/replacement-rebuild-control \
+    && cd / \
     && cp /opt/tool-src/cppcheck /usr/local/bin/cppcheck \
     && mkdir -p /opt/cppcheck \
     && cp -R /opt/tool-src/cfg /opt/tool-src/platforms /opt/tool-src/COPYING /opt/cppcheck/ \
@@ -56,6 +95,12 @@ RUN cd /opt/project-dependency-inputs && sha256sum -c SHA256SUMS \
     && rm -rf /opt/tool-src /opt/cmake.whl /opt/pycapnp.whl
 COPY --from=capnp-builder /opt/capnp-install/usr/local/ /usr/local/
 COPY --from=capnp-builder /opt/nico-capnp-metadata/ /opt/nico-capnp/
+COPY --from=clang-header-builder /opt/clang-header-built/observer.so /opt/nico-clang-header-observer.so
+COPY --from=clang-header-builder /opt/clang-header-built/receipt.json /opt/nico-clang-header-observer.json
+COPY --from=clang-header-builder /opt/clang-header-built/startup-control.json /opt/nico-clang-header-startup/control.json
+COPY --from=clang-header-builder /opt/clang-header-built/probe.cpp /opt/nico-clang-header-startup/probe.cpp
+COPY --from=clang-header-builder /opt/clang-header-built/probe.header.json /opt/nico-clang-header-startup/probe.header.json
+COPY --from=clang-header-builder /opt/clang-header-built/probe.plist /opt/nico-clang-header-startup/probe.plist
 ENV PATH=/opt/cmake-wheel/cmake/data/bin:/usr/local/bin:/usr/bin:/bin
 ENV PYTHONPATH=/opt/pycapnp
 ENV PREVIOUS_RELEASES_DIR=/opt/nico-runtime/previous-releases
@@ -73,3 +118,5 @@ USER 1000:1000
 # that exact interpreter contract as the runtime user before publishing a layer.
 RUN python -I -S -c "import os, sys; assert sys.version_info.major == 3; assert sys.flags.isolated and sys.flags.no_site; assert (os.getuid(), os.getgid()) == (1000, 1000)"
 ENTRYPOINT ["sleep"]
+
+LABEL org.nico.cppcheck.header-grammar="physical-header-grammar-v1"
