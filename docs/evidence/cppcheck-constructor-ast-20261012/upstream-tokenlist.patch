@@ -1,0 +1,27 @@
+diff --git a/lib/tokenlist.cpp b/lib/tokenlist.cpp
+index b9c3ab0..39f33db 100644
+--- a/lib/tokenlist.cpp
++++ b/lib/tokenlist.cpp
+@@ -968,0 +969,6 @@ static void compilePrecedence2(Token *&tok, AST_state& state)
++            // A placement argument list precedes the allocated type.
++            // Keep its braced initializer on the new-expression path;
++            // compileTerm would otherwise consume the outer scope node.
++            if (Token::simpleMatch(tok, ")") && tok->link() &&
++                Token::simpleMatch(tok->link()->previous(), "new ("))
++                return false;
+@@ -1576 +1582,12 @@ static Token *skipMethodDeclEnding(Token *tok)
+-    if (tok2 && tok->next() != tok2)
++    if (tok2 && tok->next() != tok2) {
++        // A requires-clause scan can reach a constructor body past its
++        // initializer list. Let ordinary AST construction handle that list.
++        for (Token *scan = tok->next(); precedes(scan, tok2); scan = scan->next()) {
++            if (scan->str() == ":")
++                return nullptr;
++            if (Token::Match(scan, "<|[|(|{")) {
++                if (!scan->link())
++                    return tok2;
++                scan = scan->link();
++            }
++        }
+@@ -1577,0 +1595 @@ static Token *skipMethodDeclEnding(Token *tok)
++    }

@@ -1,0 +1,25 @@
+{
+  "name": "fixed-upstream-tests",
+  "cwd": "/workspace/cppcheck-composed-runtime",
+  "command": [
+    "timeout",
+    "180s",
+    "./testrunner",
+    "TestTokenizer",
+    "TestVarID",
+    "TestTokenList",
+    "TestToken",
+    "TestPreprocessor",
+    "TestCppcheck",
+    "TestSimplifyTemplate",
+    "TestSimplifyTypedef"
+  ],
+  "start_utc": "2026-10-12T14:31:40.797390+00:00",
+  "end_utc": "2026-10-12T14:31:57.094724+00:00",
+  "elapsed_seconds": 16.297,
+  "exit_code": 0,
+  "user_cpu_seconds": 16.260862,
+  "system_cpu_seconds": 0.030986,
+  "max_child_rss_kib": 22316,
+  "inherited_child_rss_kib": 896
+}

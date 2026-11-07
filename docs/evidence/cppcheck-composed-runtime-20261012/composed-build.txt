@@ -1,0 +1,237 @@
+g++   -O0 -pipe -std=c++11 -w -c -o externals/simplecpp/simplecpp.o externals/simplecpp/simplecpp.cpp
+g++   -O0 -pipe -std=c++11 -w -D_LARGEFILE_SOURCE -c -o externals/tinyxml2/tinyxml2.o externals/tinyxml2/tinyxml2.cpp
+g++ -Ilib -Icli -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o test/fixture.o test/fixture.cpp
+g++ -Ilib -Icli -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o test/helpers.o test/helpers.cpp
+g++ -Ilib -Icli -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o test/main.o test/main.cpp
+g++ -Ilib -Icli -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o test/options.o test/options.cpp
+g++ -Ilib -Icli -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o test/testtokenize.o test/testtokenize.cpp
+g++ -Ilib -Icli -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o test/testvarid.o test/testvarid.cpp
+g++ -Ilib -Icli -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o test/testtokenlist.o test/testtokenlist.cpp
+g++ -Ilib -Icli -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o test/testtoken.o test/testtoken.cpp
+g++ -Ilib -Icli -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o test/testpreprocessor.o test/testpreprocessor.cpp
+g++ -Ilib -Icli -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o test/testcppcheck.o test/testcppcheck.cpp
+g++ -Ilib -Icli -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o test/testsimplifytemplate.o test/testsimplifytemplate.cpp
+g++ -Ilib -Icli -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o test/testsimplifytypedef.o test/testsimplifytypedef.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/valueflow.o lib/valueflow.cpp
+In file included from lib/valueflow.cpp:82:
+lib/calculate.h:89:10: warning: multi-character character constant [-Wmultichar]
+   89 |     case '<<':
+      |          ^~~~
+lib/calculate.h:96:10: warning: multi-character character constant [-Wmultichar]
+   96 |     case '>>':
+      |          ^~~~
+lib/calculate.h:103:10: warning: multi-character character constant [-Wmultichar]
+  103 |     case '&&':
+      |          ^~~~
+lib/calculate.h:105:10: warning: multi-character character constant [-Wmultichar]
+  105 |     case '||':
+      |          ^~~~
+lib/calculate.h:107:10: warning: multi-character character constant [-Wmultichar]
+  107 |     case '==':
+      |          ^~~~
+lib/calculate.h:109:10: warning: multi-character character constant [-Wmultichar]
+  109 |     case '!=':
+      |          ^~~~
+lib/calculate.h:111:10: warning: multi-character character constant [-Wmultichar]
+  111 |     case '>=':
+      |          ^~~~
+lib/calculate.h:113:10: warning: multi-character character constant [-Wmultichar]
+  113 |     case '<=':
+      |          ^~~~
+lib/calculate.h:115:10: warning: multi-character character constant [-Wmultichar]
+  115 |     case '<=>':
+      |          ^~~~~
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/tokenize.o lib/tokenize.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/symboldatabase.o lib/symboldatabase.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/addoninfo.o lib/addoninfo.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/analyzerinfo.o lib/analyzerinfo.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/astutils.o lib/astutils.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/check.o lib/check.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/check64bit.o lib/check64bit.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkassert.o lib/checkassert.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkautovariables.o lib/checkautovariables.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkbool.o lib/checkbool.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkbufferoverrun.o lib/checkbufferoverrun.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkclass.o lib/checkclass.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkcondition.o lib/checkcondition.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkers.o lib/checkers.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkersidmapping.o lib/checkersidmapping.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkersreport.o lib/checkersreport.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkexceptionsafety.o lib/checkexceptionsafety.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkfunctions.o lib/checkfunctions.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkinternal.o lib/checkinternal.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkio.o lib/checkio.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkleakautovar.o lib/checkleakautovar.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkmemoryleak.o lib/checkmemoryleak.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checknullpointer.o lib/checknullpointer.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkother.o lib/checkother.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkpostfixoperator.o lib/checkpostfixoperator.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checksizeof.o lib/checksizeof.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkstl.o lib/checkstl.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkstring.o lib/checkstring.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checktype.o lib/checktype.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkuninitvar.o lib/checkuninitvar.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkunusedfunctions.o lib/checkunusedfunctions.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkunusedvar.o lib/checkunusedvar.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/checkvaarg.o lib/checkvaarg.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/clangimport.o lib/clangimport.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/color.o lib/color.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/cppcheck.o lib/cppcheck.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/ctu.o lib/ctu.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/errorlogger.o lib/errorlogger.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/errortypes.o lib/errortypes.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/findtoken.o lib/findtoken.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/forwardanalyzer.o lib/forwardanalyzer.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/fwdanalysis.o lib/fwdanalysis.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/importproject.o lib/importproject.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/infer.o lib/infer.cpp
+In file included from lib/infer.cpp:21:
+lib/calculate.h:89:10: warning: multi-character character constant [-Wmultichar]
+   89 |     case '<<':
+      |          ^~~~
+lib/calculate.h:96:10: warning: multi-character character constant [-Wmultichar]
+   96 |     case '>>':
+      |          ^~~~
+lib/calculate.h:103:10: warning: multi-character character constant [-Wmultichar]
+  103 |     case '&&':
+      |          ^~~~
+lib/calculate.h:105:10: warning: multi-character character constant [-Wmultichar]
+  105 |     case '||':
+      |          ^~~~
+lib/calculate.h:107:10: warning: multi-character character constant [-Wmultichar]
+  107 |     case '==':
+      |          ^~~~
+lib/calculate.h:109:10: warning: multi-character character constant [-Wmultichar]
+  109 |     case '!=':
+      |          ^~~~
+lib/calculate.h:111:10: warning: multi-character character constant [-Wmultichar]
+  111 |     case '>=':
+      |          ^~~~
+lib/calculate.h:113:10: warning: multi-character character constant [-Wmultichar]
+  113 |     case '<=':
+      |          ^~~~
+lib/calculate.h:115:10: warning: multi-character character constant [-Wmultichar]
+  115 |     case '<=>':
+      |          ^~~~~
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/keywords.o lib/keywords.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/library.o lib/library.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/mathlib.o lib/mathlib.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/path.o lib/path.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/pathanalysis.o lib/pathanalysis.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/pathmatch.o lib/pathmatch.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/platform.o lib/platform.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/preprocessor.o lib/preprocessor.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/programmemory.o lib/programmemory.cpp
+In file included from lib/programmemory.cpp:22:
+lib/calculate.h:89:10: warning: multi-character character constant [-Wmultichar]
+   89 |     case '<<':
+      |          ^~~~
+lib/calculate.h:96:10: warning: multi-character character constant [-Wmultichar]
+   96 |     case '>>':
+      |          ^~~~
+lib/calculate.h:103:10: warning: multi-character character constant [-Wmultichar]
+  103 |     case '&&':
+      |          ^~~~
+lib/calculate.h:105:10: warning: multi-character character constant [-Wmultichar]
+  105 |     case '||':
+      |          ^~~~
+lib/calculate.h:107:10: warning: multi-character character constant [-Wmultichar]
+  107 |     case '==':
+      |          ^~~~
+lib/calculate.h:109:10: warning: multi-character character constant [-Wmultichar]
+  109 |     case '!=':
+      |          ^~~~
+lib/calculate.h:111:10: warning: multi-character character constant [-Wmultichar]
+  111 |     case '>=':
+      |          ^~~~
+lib/calculate.h:113:10: warning: multi-character character constant [-Wmultichar]
+  113 |     case '<=':
+      |          ^~~~
+lib/calculate.h:115:10: warning: multi-character character constant [-Wmultichar]
+  115 |     case '<=>':
+      |          ^~~~~
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/reverseanalyzer.o lib/reverseanalyzer.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/settings.o lib/settings.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/standards.o lib/standards.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/summaries.o lib/summaries.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/suppressions.o lib/suppressions.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/templatesimplifier.o lib/templatesimplifier.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/timer.o lib/timer.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/token.o lib/token.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/tokenlist.o lib/tokenlist.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/utils.o lib/utils.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/vf_analyzers.o lib/vf_analyzers.cpp
+In file included from lib/vf_analyzers.cpp:23:
+lib/calculate.h:89:10: warning: multi-character character constant [-Wmultichar]
+   89 |     case '<<':
+      |          ^~~~
+lib/calculate.h:96:10: warning: multi-character character constant [-Wmultichar]
+   96 |     case '>>':
+      |          ^~~~
+lib/calculate.h:103:10: warning: multi-character character constant [-Wmultichar]
+  103 |     case '&&':
+      |          ^~~~
+lib/calculate.h:105:10: warning: multi-character character constant [-Wmultichar]
+  105 |     case '||':
+      |          ^~~~
+lib/calculate.h:107:10: warning: multi-character character constant [-Wmultichar]
+  107 |     case '==':
+      |          ^~~~
+lib/calculate.h:109:10: warning: multi-character character constant [-Wmultichar]
+  109 |     case '!=':
+      |          ^~~~
+lib/calculate.h:111:10: warning: multi-character character constant [-Wmultichar]
+  111 |     case '>=':
+      |          ^~~~
+lib/calculate.h:113:10: warning: multi-character character constant [-Wmultichar]
+  113 |     case '<=':
+      |          ^~~~
+lib/calculate.h:115:10: warning: multi-character character constant [-Wmultichar]
+  115 |     case '<=>':
+      |          ^~~~~
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/vf_common.o lib/vf_common.cpp
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/vf_settokenvalue.o lib/vf_settokenvalue.cpp
+In file included from lib/vf_settokenvalue.cpp:22:
+lib/calculate.h:89:10: warning: multi-character character constant [-Wmultichar]
+   89 |     case '<<':
+      |          ^~~~
+lib/calculate.h:96:10: warning: multi-character character constant [-Wmultichar]
+   96 |     case '>>':
+      |          ^~~~
+lib/calculate.h:103:10: warning: multi-character character constant [-Wmultichar]
+  103 |     case '&&':
+      |          ^~~~
+lib/calculate.h:105:10: warning: multi-character character constant [-Wmultichar]
+  105 |     case '||':
+      |          ^~~~
+lib/calculate.h:107:10: warning: multi-character character constant [-Wmultichar]
+  107 |     case '==':
+      |          ^~~~
+lib/calculate.h:109:10: warning: multi-character character constant [-Wmultichar]
+  109 |     case '!=':
+      |          ^~~~
+lib/calculate.h:111:10: warning: multi-character character constant [-Wmultichar]
+  111 |     case '>=':
+      |          ^~~~
+lib/calculate.h:113:10: warning: multi-character character constant [-Wmultichar]
+  113 |     case '<=':
+      |          ^~~~
+lib/calculate.h:115:10: warning: multi-character character constant [-Wmultichar]
+  115 |     case '<=>':
+      |          ^~~~~
+g++ -Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o lib/vfvalue.o lib/vfvalue.cpp
+g++ -Ilib -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o cli/cmdlineparser.o cli/cmdlineparser.cpp
+g++ -Ilib -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o cli/cppcheckexecutor.o cli/cppcheckexecutor.cpp
+g++ -Ilib -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o cli/executor.o cli/executor.cpp
+g++ -Ilib -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o cli/filelister.o cli/filelister.cpp
+cli/filelister.cpp: In function ‘std::string addFiles2(std::__cxx11::list<FileWithDetails>&, const std::string&, const std::set<std::__cxx11::basic_string<char> >&, bool, const PathMatch&)’:
+cli/filelister.cpp:208:45: warning: ignoring attributes on template argument ‘int (*)(DIR*)’ [-Wignored-attributes]
+  208 |     std::unique_ptr<DIR, decltype(&closedir)> dir_deleter(dir, closedir);
+      |                                             ^
+g++ -Ilib -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o cli/processexecutor.o cli/processexecutor.cpp
+g++ -Ilib -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o cli/sehwrapper.o cli/sehwrapper.cpp
+g++ -Ilib -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o cli/signalhandler.o cli/signalhandler.cpp
+g++ -Ilib -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o cli/singleexecutor.o cli/singleexecutor.cpp
+g++ -Ilib -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o cli/stacktrace.o cli/stacktrace.cpp
+g++ -Ilib -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2  -O0 -pipe -std=c++11 -c -o cli/threadexecutor.o cli/threadexecutor.cpp
+g++  -O0 -pipe -std=c++11 -o testrunner externals/simplecpp/simplecpp.o externals/tinyxml2/tinyxml2.o test/fixture.o test/helpers.o test/main.o test/options.o test/testtokenize.o test/testvarid.o test/testtokenlist.o test/testtoken.o test/testpreprocessor.o test/testcppcheck.o test/testsimplifytemplate.o test/testsimplifytypedef.o lib/valueflow.o lib/tokenize.o lib/symboldatabase.o lib/addoninfo.o lib/analyzerinfo.o lib/astutils.o lib/check.o lib/check64bit.o lib/checkassert.o lib/checkautovariables.o lib/checkbool.o lib/checkbufferoverrun.o lib/checkclass.o lib/checkcondition.o lib/checkers.o lib/checkersidmapping.o lib/checkersreport.o lib/checkexceptionsafety.o lib/checkfunctions.o lib/checkinternal.o lib/checkio.o lib/checkleakautovar.o lib/checkmemoryleak.o lib/checknullpointer.o lib/checkother.o lib/checkpostfixoperator.o lib/checksizeof.o lib/checkstl.o lib/checkstring.o lib/checktype.o lib/checkuninitvar.o lib/checkunusedfunctions.o lib/checkunusedvar.o lib/checkvaarg.o lib/clangimport.o lib/color.o lib/cppcheck.o lib/ctu.o lib/errorlogger.o lib/errortypes.o lib/findtoken.o lib/forwardanalyzer.o lib/fwdanalysis.o lib/importproject.o lib/infer.o lib/keywords.o lib/library.o lib/mathlib.o lib/path.o lib/pathanalysis.o lib/pathmatch.o lib/platform.o lib/preprocessor.o lib/programmemory.o lib/reverseanalyzer.o lib/settings.o lib/standards.o lib/summaries.o lib/suppressions.o lib/templatesimplifier.o lib/timer.o lib/token.o lib/tokenlist.o lib/utils.o lib/vf_analyzers.o lib/vf_common.o lib/vf_settokenvalue.o lib/vfvalue.o cli/cmdlineparser.o cli/cppcheckexecutor.o cli/executor.o cli/filelister.o cli/processexecutor.o cli/sehwrapper.o cli/signalhandler.o cli/singleexecutor.o cli/stacktrace.o cli/threadexecutor.o  -pthread -rdynamic

@@ -54,6 +54,7 @@ def test_exact_upstream_and_placement_output_identity_required(relative):
 def test_grammar_changes_do_not_modify_observer_or_target_sources():
     assert set(repair.PATCHES) == {'lib/token.cpp','lib/tokenize.cpp','lib/tokenlist.cpp'}
     docker=Path('docker/assessment-full-project-fuzz.Dockerfile').read_text()
+    assert f'org.nico.cppcheck.header-grammar="{repair.REPAIR_ID}"' in docker
     assert docker.index('python3 /opt/repair_cppcheck_placement_ast.py') < docker.index('python3 /opt/repair_cppcheck_header_grammar.py') < docker.index('python3 /opt/patch_cppcheck_header_evidence.py')
 
 

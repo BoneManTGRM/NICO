@@ -1,0 +1,31 @@
+{
+  "name": "fixed-project-tests",
+  "cwd": "/workspace/NICO-ast-runtime-fix",
+  "command": [
+    "timeout",
+    "180s",
+    "/workspace/nico-venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "tests/test_cpp_constructor_ast_boundary.py",
+    "tests/test_cpp_placement_tool_repair.py",
+    "tests/test_cpp_header_grammar_repair.py",
+    "tests/test_cpp_tool_patch_composition.py",
+    "tests/test_cppcheck_execution.py",
+    "tests/test_cpp_integration_workflow_schedule.py",
+    "tests/test_cpp_worker_image_handoff.py",
+    "tests/test_cpp_header_transport.py",
+    "tests/test_cpp_physical_header_inputs.py",
+    "tests/test_cpp_header_evidence.py",
+    "tests/test_cpp_header_incomplete_fallback.py"
+  ],
+  "start_utc": "2026-10-12T14:31:42.136604+00:00",
+  "end_utc": "2026-10-12T14:31:50.720088+00:00",
+  "elapsed_seconds": 8.583,
+  "exit_code": 0,
+  "user_cpu_seconds": 7.969862,
+  "system_cpu_seconds": 0.618109,
+  "max_child_rss_kib": 125140,
+  "inherited_child_rss_kib": 896
+}

@@ -17,7 +17,7 @@ try:
 except ImportError:  # Standalone image-build invocation.
     from repair_cppcheck_placement_ast import _read, git_blob, UPSTREAM_COMMIT
 
-REPAIR_ID = 'physical-header-grammar-v2'
+REPAIR_ID = 'physical-header-grammar-v3'
 PATCHES = {
     'lib/tokenize.cpp': (
         'f1fd9b0b1616e6ee3bfd2351f11ecede9353ed59',
@@ -38,23 +38,29 @@ PATCHES = {
         b'                                        closing->findClosingBracket() &&\n'
         b'                                        Token::simpleMatch(closing->findClosingBracket()->next(), "("))) : true))\n',
     ),
-    # Exact output of the existing pinned placement-new repair.
+    # Exact output of the pinned placement-new and constructor-boundary repair.
     'lib/tokenlist.cpp': (
-        'f6e28dfb9bb4358d93fa6ab5ac227346164880a3',
+        '39f33db14a8d4cd359c1f1c8ae5a4eacb534acfa',
         b'            tok = findCppTypeInitPar(tok);\n'
         b'            state.op.push(tok);\n'
         b'            tok = tok->tokAt(2);\n',
         b'            Token *const par = findCppTypeInitPar(tok);\n'
-        b'            Token *argument = par->next();\n'
-        b'            AST_state argumentState(state.cpp);\n'
-        b'            argumentState.depth = state.depth + 1;\n'
-        b'            if (argumentState.depth > AST_MAX_DEPTH)\n'
-        b'                throw InternalError(argument, "maximum AST depth exceeded", InternalError::AST);\n'
-        b'            compileExpression(argument, argumentState);\n'
-        b'            if (!argumentState.op.empty())\n'
-        b'                par->astOperand1(argumentState.op.top());\n'
-        b'            state.op.push(par);\n'
-        b'            tok = par->link()->next();\n',
+        b'            // A parenthesized function declarator is not a type conversion.\n'
+        b'            if (Token::Match(par, "( %name% ) (")) {\n'
+        b'                state.op.push(par);\n'
+        b'                tok = par->tokAt(2);\n'
+        b'            } else {\n'
+        b'                Token *argument = par->next();\n'
+        b'                AST_state argumentState(state.cpp);\n'
+        b'                argumentState.depth = state.depth + 1;\n'
+        b'                if (argumentState.depth > AST_MAX_DEPTH)\n'
+        b'                    throw InternalError(argument, "maximum AST depth exceeded", InternalError::AST);\n'
+        b'                compileExpression(argument, argumentState);\n'
+        b'                if (!argumentState.op.empty())\n'
+        b'                    par->astOperand1(argumentState.op.top());\n'
+        b'                state.op.push(par);\n'
+        b'                tok = par->link()->next();\n'
+        b'            }\n',
     ),
 }
 EXTRA_REPLACEMENTS = {'lib/tokenize.cpp': (

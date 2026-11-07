@@ -1,0 +1,21 @@
+{
+  "name": "fixed-build",
+  "cwd": "/workspace/cppcheck-composed-runtime",
+  "command": [
+    "timeout",
+    "180s",
+    "make",
+    "-j2",
+    "testrunner",
+    "TESTOBJ=test/fixture.o test/helpers.o test/main.o test/options.o test/testtokenize.o test/testvarid.o test/testtokenlist.o test/testtoken.o test/testpreprocessor.o test/testcppcheck.o test/testsimplifytemplate.o test/testsimplifytypedef.o",
+    "CXXFLAGS=-O0"
+  ],
+  "start_utc": "2026-10-12T14:30:57.477165+00:00",
+  "end_utc": "2026-10-12T14:30:59.437126+00:00",
+  "elapsed_seconds": 1.96,
+  "exit_code": 0,
+  "user_cpu_seconds": 1.6997900000000001,
+  "system_cpu_seconds": 0.308406,
+  "max_child_rss_kib": 174116,
+  "inherited_child_rss_kib": 0
+}

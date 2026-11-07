@@ -1,0 +1,56 @@
+[
+  {
+    "source": "externals/simplecpp/simplecpp.cpp",
+    "prior_ast_only_sha256": "044d31111933ea3fd1e007fdd44c3368fd58ec5f85fb60b2986747ce85cdf6bd",
+    "composed_sha256": "7f92c920b66ad9a0ba82fa460f25be2721e28ded51e0d66992976e3c11a9e8a5",
+    "equal": false
+  },
+  {
+    "source": "externals/simplecpp/simplecpp.h",
+    "prior_ast_only_sha256": "faa67c5ae3f4390d72d024301416ad09f2580a92c71750193f023e1aa9b99f72",
+    "composed_sha256": "900f3608d157b4553566abc4f43cc6249005e9cc489707661984a52b32292633",
+    "equal": false
+  },
+  {
+    "source": "lib/cppcheck.cpp",
+    "prior_ast_only_sha256": "91cd23157b688e189487ca5225808ac0949bbecbad5fb9980ad9af50100252fc",
+    "composed_sha256": "377cde381b0f6b3b4ea55ec8beeea4691992628f18589e8238f344e49ba078bd",
+    "equal": false
+  },
+  {
+    "source": "lib/cppcheck.h",
+    "prior_ast_only_sha256": "aa054301036d90fc8b4caabbebca3929de7afae75ab4f8bc7ee28a7c185e1dc5",
+    "composed_sha256": "c298b694faf230b2b66233d02b1a1a3351c03e10ceeb46a5ba1f53f616b801c0",
+    "equal": false
+  },
+  {
+    "source": "lib/preprocessor.cpp",
+    "prior_ast_only_sha256": "803156d4ab3601b9aaf05b1fb7639c8e7aa91917f64fe4b7202d970d95a466b3",
+    "composed_sha256": "acf71bb200123151ae978f7d9611d010ade2e2ec5b21508505638d522e214852",
+    "equal": false
+  },
+  {
+    "source": "lib/preprocessor.h",
+    "prior_ast_only_sha256": "1d413d35661f8d0429c1fbbb8ac3ea5c90da1ec411ebe8e2121e06c72e9a1c57",
+    "composed_sha256": "c255dbb80348c3699dbf3d5c46e771b28adeb50b93ce20778388b173a269633c",
+    "equal": false
+  },
+  {
+    "source": "lib/token.cpp",
+    "prior_ast_only_sha256": "62dbcb64718ee7759c55c4ac5a7e8be56f2c38e45ea63ed7fb7100ee86d8762b",
+    "composed_sha256": "f4e7b9234f1af3cd37dfd1b0dee6d17732c36abd830ae1c5200b118220795e1a",
+    "equal": false
+  },
+  {
+    "source": "lib/tokenize.cpp",
+    "prior_ast_only_sha256": "74dfe0b90ea7915e95a32ff2721a8a69be258a7293fcd273deb1afe6be5429ce",
+    "composed_sha256": "76beaa920046dbe057c5b20b09c043802351692657e2b3f269cf4612984eac88",
+    "equal": false
+  },
+  {
+    "source": "lib/tokenlist.cpp",
+    "prior_ast_only_sha256": "357fa22ad927318f39488aeaa7f61577f3b1eeb41cea4ca5dbbe31b5305db0cb",
+    "composed_sha256": "6ea87610386687f5d71bcd5057d46e7eeccf20ee3e3e98365cbd6949a53dd5f5",
+    "equal": false
+  }
+]
