@@ -8,6 +8,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+try:
+    from .security_source_dispositions import approved_indices_from_files
+except ImportError:  # Standalone workflow invocation.
+    from security_source_dispositions import approved_indices_from_files
+
 VERSION = "nico.security_audit_gate.v2"
 SEMGREP_BLOCKING_RULES = {
     "yaml.github-actions.security.run-shell-injection.run-shell-injection",
@@ -356,7 +361,8 @@ def _gitleaks(root: Path) -> dict[str, Any]:
     approved_public_signing_fingerprints = 0
     approved_public_source_hashes = 0
     triage: list[dict[str, Any]] = []
-    for finding in data:
+    reviewed_source_indices = approved_indices_from_files(root, data, summary)
+    for finding_index, finding in enumerate(data):
         if not isinstance(finding, dict):
             blocking += 1
             continue
@@ -388,7 +394,8 @@ def _gitleaks(root: Path) -> dict[str, Any]:
             disposition = "approved_public_signing_fingerprint"
         elif (_known_public_cppcheck_source_blob(finding)
               or _known_public_cppcheck_source_digest(finding)
-              or _known_reviewed_native_source_hash(finding)):
+              or _known_reviewed_native_source_hash(finding)
+              or finding_index in reviewed_source_indices):
             approved_public_source_hashes += 1
             disposition = "approved_public_source_hash"
         else:
