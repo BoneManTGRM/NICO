@@ -105,10 +105,13 @@ def test_next_execution_order_contains_only_unfinished_transformation_work() -> 
     source = _source()
     remaining = source.split("## Next execution order", 1)[1]
 
-    assert "Merge and verify the single-product transformation baseline." in remaining
+    assert "Verify the integrated single-product transformation baseline against current runtime and exact-release evidence." in remaining
+    assert "Merge and verify the single-product transformation baseline." not in remaining
+    assert "- [ ] Verify runtime single-product consolidation against exact-release evidence; repository integration alone is not production proof." in source
     assert "Consolidate runtime product identity" in remaining
     assert "Complete canonical evidence and finding schemas." in remaining
     assert "Implement Company Queue" in remaining
     assert "Implement controlled remediation and continuing assurance." in remaining
     assert "production recovery, tenancy, scale, external-pilot, and repeated benchmark proof" in remaining
     assert "unified Express, Mid, and Full" not in remaining
+

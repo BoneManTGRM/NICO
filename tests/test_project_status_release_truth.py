@@ -34,6 +34,8 @@ def test_release_truth_records_a_concrete_transformation_baseline_without_claimi
     matches = re.findall(r"`([0-9a-f]{40})`", release_truth)
 
     assert matches == ["272f5ddde1e81e9f845eab0393f04a356b01d16f"]
-    assert "baseline used by the current transformation branch" in release_truth
+    assert "historical baseline used to establish this transformation plan" in release_truth
+    assert "baseline used by the current transformation branch" not in release_truth
     assert "mature" not in release_truth.lower()
     assert "certified" not in release_truth.lower()
+
