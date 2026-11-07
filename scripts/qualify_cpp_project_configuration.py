@@ -331,15 +331,20 @@ def validate_qualification_runtime(raw, targets, options, scope, probe, plan):
         raise
 
 
-def qualify_configuration_checkout(args):
+def qualify_configuration_checkout(args, *, command=None, diagnostic_primary_only=False):
     """Prepare the next frozen execution contract using real isolated configure."""
     evidence={'schema':'nico.cpp-configuration-qualification.v1','status':'UNPROVEN',
         'stage':'source_inventory','source':None,'probe':None,
         'production_dispatch_exercised':False,'production_qualified':False,
         'compiled':False,'tests_executed':False}
     diagnostic_context = {}
+    if (type(diagnostic_primary_only) is not bool
+            or diagnostic_primary_only and command is None):
+        raise ValueError('qualification_diagnostic_command_required')
     try:
-        return _qualify_configuration_checkout(args, evidence, diagnostic_context)
+        return _qualify_configuration_checkout(args, evidence, diagnostic_context,
+            **({'command': command, 'diagnostic_primary_only': diagnostic_primary_only}
+               if command is not None else {}))
     except (Exception, KeyboardInterrupt) as exc:
         try:
             summary = failure_diagnostic(evidence, exc)
@@ -356,7 +361,8 @@ def qualify_configuration_checkout(args):
         raise
 
 
-def _qualify_configuration_checkout(args, evidence, diagnostic_context):
+def _qualify_configuration_checkout(args, evidence, diagnostic_context, *, command=None,
+                                    diagnostic_primary_only=False):
     from nico.assessment_cpp_full_project import _json
     from nico.assessment_cpp_configuration_probe import probe_project_configuration
     args.output.mkdir(parents=True, exist_ok=True)
@@ -450,8 +456,10 @@ def _qualify_configuration_checkout(args, evidence, diagnostic_context):
                 evidence.update(stage='isolated_baseline' if execution_contract is not None else 'isolated_configuration',
                     probe=qualification_probe_receipt(value), compiled=value['compiled'], tests_executed=value['tests_executed']); retain()
             result=probe_project_configuration(root,evidence['source']['targets'],args.image,
+                command=command,
                 project_options=manifest['project_options'],retain=save_probe,
-                baseline_execution=execution_contract, unit_test_data=unit_test_data, runtime_plan=runtime_plan,
+                baseline_execution=execution_contract, unit_test_data=unit_test_data,
+                runtime_plan=None if diagnostic_primary_only else runtime_plan,
                 capture_generated_context=getattr(args, 'capture_generated_context', False),
                 project_compiler_evidence=getattr(args, 'project_compiler_evidence', False),
                 project_static_analysis=getattr(args, 'project_static_analysis', False),
