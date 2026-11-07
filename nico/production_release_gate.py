@@ -34,6 +34,30 @@ def _list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
 
+# Diagnostic identifiers only. Never copy free-form readiness payloads into evidence.
+_READINESS_WARNING_IDS = frozenset({
+    "operator_admin_configured",
+    "scanner_recovery_queue_clear",
+    "project_commands_disabled",
+    "backup_restore_verified",
+})
+
+
+def _readiness_warning_summary(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"ids": [], "omitted": False}
+    if not isinstance(value, list):
+        return {"ids": [], "omitted": True}
+    ids: set[str] = set()
+    omitted = len(value) > 64
+    for item in value[:64]:
+        if isinstance(item, str) and item in _READINESS_WARNING_IDS:
+            ids.add(item)
+        else:
+            omitted = True
+    return {"ids": sorted(ids), "omitted": omitted}
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -194,6 +218,7 @@ def build_production_release_manifest(
     main_head = normalize_sha(main_head_sha)
     backend = _dict(backend_readiness)
     frontend = _dict(frontend_deployment)
+    readiness_warnings = _readiness_warning_summary(backend.get("warnings"))
     backend_origin = safe_origin(backend_url)
     frontend_origin = safe_origin(frontend_url)
     workflows = workflow_summary(workflow_runs)
@@ -291,9 +316,9 @@ def build_production_release_manifest(
                 "backend_semantic_readiness",
                 "Backend semantic readiness",
                 backend.get("status") == "ready" and backend.get("operational_ready") is True,
-                {"status": backend.get("status") or "missing", "operational_ready": backend.get("operational_ready")},
+                {"status": backend.get("status") or "missing", "operational_ready": backend.get("operational_ready"), "warnings": readiness_warnings},
                 {"status": "ready", "operational_ready": True},
-                "Resolve every backend operations-readiness blocker before promotion.",
+                "Resolve every backend operations-readiness blocker and warning before promotion.",
             ),
             _check(
                 "backend_release_sha",
@@ -370,6 +395,7 @@ def build_production_release_manifest(
             "status": backend.get("status") or "missing",
             "operational_ready": backend.get("operational_ready") is True,
             "blockers": list(backend.get("blockers") or []) if isinstance(backend.get("blockers"), list) else [],
+            "warnings": readiness_warnings,
         },
         "check_results": {item["id"]: bool(item["passed"]) for item in checks},
         "release_status": release_status,
@@ -389,6 +415,7 @@ def build_production_release_manifest(
             "commit": backend_commit or "missing",
             "readiness_status": backend.get("status") or "missing",
             "readiness_blockers": list(backend.get("blockers") or []) if isinstance(backend.get("blockers"), list) else [],
+            "readiness_warnings": readiness_warnings,
         },
         "frontend": {
             "origin": frontend_origin,
