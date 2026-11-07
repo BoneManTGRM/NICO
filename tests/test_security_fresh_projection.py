@@ -70,6 +70,24 @@ def test_exact_matches_and_same_fingerprint_distinct_columns(capture_root,monkey
     assert records(output)[2]['matched_occurrences']==23
     assert records(output)[0]['blocking_count']==0
 
+
+def test_extended_exact_manifest_34_roundtrip_and_overclaim_rejected(capture_root,monkeypatch):
+    findings=[synthetic(i)for i in range(34)]
+    monkeypatch.setattr(p.dispositions,'_approved_bindings',lambda:frozenset(independent_pair(f)for f in findings))
+    output=complete(capture_root,findings)
+    assert p.validate_console(output)
+    rows=records(output)
+    assert rows[2]['approved_shapes']==34
+    assert rows[2]['matched_occurrences']==34
+    assert rows[0]['blocking_count']==0
+    for key in ('approved_shapes','matched_occurrences'):
+        changed=records(output)
+        changed[2][key]=35
+        lines=[p.common.canonical(row)+b'\n'for row in changed[:-1]]
+        trailer={'record':'end','records':len(lines),'output_sha256':p.common.digest(b''.join(lines))}
+        invalid=b''.join(lines)+p.common.canonical(trailer)+b'\n'
+        assert not p.validate_console(invalid)
+
 @pytest.mark.parametrize('paths,expected',[(None,'unavailable'),({},'unavailable'),({'scanned':[]},0),
     ({'scanned':[CANARY,CANARY]},2),({'scanned':[False]},'unavailable'),({'scanned':CANARY},'unavailable')])
 def test_reported_scanned_entries_not_unique_or_complete_coverage(capture_root,paths,expected):

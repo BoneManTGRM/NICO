@@ -18,7 +18,7 @@ import re
 LIMIT = 4 * 1024 * 1024
 MAX_FINDINGS = 110  # Reviewed identity capture bound; legacy triage stays unchanged.
 MANIFEST = Path(__file__).with_name('security_source_dispositions') / 'reviewed-occurrences-v1.json'
-MANIFEST_SHA256 = '197f042e3e93dce2cdb37e4c82fc666a5b2740a2c9a74a4d7944844a9c864b10'
+MANIFEST_SHA256 = '9fdc037c83855c25f162de7da554ea6649248767be9bf880ab489ce05120768c'
 REQUIRED = frozenset({'Commit', 'File', 'RuleID', 'StartLine', 'EndLine',
                       'StartColumn', 'EndColumn', 'Fingerprint', 'Match', 'Secret'})
 OPTIONAL_TEXT = frozenset({'Description', 'Author', 'Email', 'Date', 'Message', 'SymlinkFile', 'Link'})
@@ -115,7 +115,7 @@ def _approved_bindings():
     value = _decode(raw)
     _require(value['schema'] == 'nico.review-only-source-disposition-proposal.v1')
     entries = value['entries']
-    _require(type(entries) is list and len(entries) == 23)
+    _require(type(entries) is list and len(entries) == 34)
     identities = set()
     for entry in entries:
         _require(entry['classification'] == 'recomputed_analyzer_source_digest'
@@ -124,7 +124,7 @@ def _approved_bindings():
         _require(all(type(part) is str and re.fullmatch('[0-9a-f]{64}', part) for part in pair))
         _require(pair not in identities)
         identities.add(pair)
-    _require(len({pair[0] for pair in identities}) == 22)
+    _require(len({pair[0] for pair in identities}) == 32)
     return frozenset(identities)
 
 

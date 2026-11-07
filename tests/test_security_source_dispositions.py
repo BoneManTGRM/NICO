@@ -57,10 +57,10 @@ def write_capture(root,data):
     return raw
 
 
-def test_real_manifest_is_exact_pinned_hash_only_23_shapes_22_fingerprints():
+def test_real_manifest_is_exact_pinned_hash_only_34_shapes_32_fingerprints():
     assert hashlib.sha256(subject.MANIFEST.read_bytes()).hexdigest()==subject.MANIFEST_SHA256
     pairs=subject._approved_bindings()
-    assert len(pairs)==23 and len({p[0]for p in pairs})==22
+    assert len(pairs)==34 and len({p[0]for p in pairs})==32
     entries=json.loads(subject.MANIFEST.read_bytes())['entries']
     assert all(set(entry)=={'classification','current_disposition','fingerprint_sha256',
         'immutable_location_blob_sha256','proposed_disposition','provenance_group','shape_sha256'}for entry in entries)
@@ -211,7 +211,7 @@ def test_manifest_mutation_is_rejected_by_actual_pinned_loader(tmp_path,monkeypa
     raw=subject.MANIFEST.read_bytes()
     path=tmp_path/'manifest.json';path.write_bytes(raw)
     monkeypatch.setattr(subject,'MANIFEST',path)
-    assert len(subject._approved_bindings())==23
+    assert len(subject._approved_bindings())==34
     value=json.loads(raw);value['entries'][0]['immutable_location_blob_sha256']='0'*64
     path.write_bytes(subject._canonical(value))
     with pytest.raises(ValueError,match='invalid_source_disposition_capture'):

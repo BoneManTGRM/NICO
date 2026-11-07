@@ -246,7 +246,7 @@ def emit(root):
     records=[{'schema':SCHEMA,'state':'observed','finding_count':len(rows),'blocking_count':counts['blocking'],
               'gate':manifest['security_gate']['status'],'manifest_sha256':common.digest(manifest_raw)},
              {'record':'gitleaks_counts',**counts,'identity_scope':'redacted_metadata'},
-             {'record':'exact_manifest','validation':'valid','matched_occurrences':exact,'approved_shapes':23,
+             {'record':'exact_manifest','validation':'valid','matched_occurrences':exact,'approved_shapes':34,
               'sha256':dispositions.MANIFEST_SHA256,'hidden_value_authentication':False}]
     ordered_keys=[key for key in BINDING_KEYS if key in common_keys]
     for offset in range(0,len(ordered_keys),4):
@@ -291,8 +291,8 @@ def validate_console(raw):
         for key in common.DISPOSITIONS:number(counts[key])
         require(sum(counts[key]for key in common.DISPOSITIONS)==header['finding_count']and counts['blocking']==header['blocking_count'],'output_bounds')
         matcher=rows[2];exact(matcher,('record','validation','matched_occurrences','approved_shapes','sha256','hidden_value_authentication'))
-        require(matcher['record']=='exact_manifest'and matcher['validation']=='valid'and type(matcher['approved_shapes'])is int and matcher['approved_shapes']==23 and matcher['sha256']==dispositions.MANIFEST_SHA256 and matcher['hidden_value_authentication']is False,'output_bounds')
-        number(matcher['matched_occurrences'],min(23,header['finding_count']))
+        require(matcher['record']=='exact_manifest'and matcher['validation']=='valid'and type(matcher['approved_shapes'])is int and matcher['approved_shapes']==34 and matcher['sha256']==dispositions.MANIFEST_SHA256 and matcher['hidden_value_authentication']is False,'output_bounds')
+        number(matcher['matched_occurrences'],min(34,header['finding_count']))
         require(matcher['matched_occurrences']<=counts['approved_public_source_hash'],'output_bounds')
         common_keys=[key for key in BINDING_KEYS if key not in ('tool','invocation','requested_config')]
         position=3

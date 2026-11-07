@@ -1,4 +1,5 @@
 {
+  "additional_eleven_evidence_sha256": "7b5f4666ab26c3ca415965ac9bd27096026c515f67fae387e149bd720efeb5f6",
   "entries": [
     {
       "classification": "recomputed_analyzer_source_digest",
@@ -206,6 +207,105 @@
       "proposed_disposition": "approved_public_source_hash",
       "provenance_group": "retained_18",
       "shape_sha256": "43293f5b855e6ac774a33df31a9088788b310eb63a663eca148fe99d0e19faff"
+    },
+    {
+      "classification": "recomputed_analyzer_source_digest",
+      "current_disposition": "blocking",
+      "fingerprint_sha256": "6c76c87729a86bf6cc583d0d30e52097fb64f4b3b9d5722c3b915aec8f4e1e69",
+      "immutable_location_blob_sha256": "a55bd01424f6c17e99913101bd07615961f5742e9a2577907bfd4c294ea56a5b",
+      "proposed_disposition": "approved_public_source_hash",
+      "provenance_group": "reviewed_additional_11",
+      "shape_sha256": "6ea150d0bed4906db7feba164ff04cb04a06184d9c24c222059a14003356b618"
+    },
+    {
+      "classification": "recomputed_analyzer_source_digest",
+      "current_disposition": "blocking",
+      "fingerprint_sha256": "733848a6e670af9252e1c3ed8a8ee0ca35e0133c61292f2e338a436a990ccaf0",
+      "immutable_location_blob_sha256": "1875508aa0df492c136783fdf3c3ac535fd43fa5948e4a9e78166764dec81d79",
+      "proposed_disposition": "approved_public_source_hash",
+      "provenance_group": "reviewed_additional_11",
+      "shape_sha256": "96c5c585e117978087b3cb6f60b0a60698b702ced647fff0500b4a149bcb7572"
+    },
+    {
+      "classification": "recomputed_analyzer_source_digest",
+      "current_disposition": "blocking",
+      "fingerprint_sha256": "6d1cde6647bbde99c983c18ae4172575105e29f93b336671b06a1cd99aa880ff",
+      "immutable_location_blob_sha256": "1875508aa0df492c136783fdf3c3ac535fd43fa5948e4a9e78166764dec81d79",
+      "proposed_disposition": "approved_public_source_hash",
+      "provenance_group": "reviewed_additional_11",
+      "shape_sha256": "db155d50785aabe4329dbc90953e0fe05cfd484326dc32de17370150d5abb135"
+    },
+    {
+      "classification": "recomputed_analyzer_source_digest",
+      "current_disposition": "blocking",
+      "fingerprint_sha256": "3b2437158dd523b9191b09a755b89ff2b0812e498a5ceaf2ce7f4220661344a0",
+      "immutable_location_blob_sha256": "81b18307fe7bef96e8f9fa1678cb2346cb93cec7998da0fd98208444942398ab",
+      "proposed_disposition": "approved_public_source_hash",
+      "provenance_group": "reviewed_additional_11",
+      "shape_sha256": "d2e7ab490f97eef099f389c5b4883091603e4e64cd888ae5599ea307fe361e0d"
+    },
+    {
+      "classification": "recomputed_analyzer_source_digest",
+      "current_disposition": "blocking",
+      "fingerprint_sha256": "c9c1d176e3da5c13988b593c46887b37ce939c5a2d83aad28ae428e8826b0181",
+      "immutable_location_blob_sha256": "81b18307fe7bef96e8f9fa1678cb2346cb93cec7998da0fd98208444942398ab",
+      "proposed_disposition": "approved_public_source_hash",
+      "provenance_group": "reviewed_additional_11",
+      "shape_sha256": "332f8ed016ad5743d438d08021a298ce9ea74d0925cfdc9999fef143e32924e3"
+    },
+    {
+      "classification": "recomputed_analyzer_source_digest",
+      "current_disposition": "blocking",
+      "fingerprint_sha256": "88ef76f82c014295c6897556ce1a3472c4cae86583fd000625b0cdd8a588bf77",
+      "immutable_location_blob_sha256": "81b18307fe7bef96e8f9fa1678cb2346cb93cec7998da0fd98208444942398ab",
+      "proposed_disposition": "approved_public_source_hash",
+      "provenance_group": "reviewed_additional_11",
+      "shape_sha256": "1e76ea63eb06958c9b84d54e16dc9dc3a67bf946b6096e01984c85a89598310f"
+    },
+    {
+      "classification": "recomputed_analyzer_source_digest",
+      "current_disposition": "blocking",
+      "fingerprint_sha256": "a456d076ea376da9e6a02a88e407e347a82479af05c7916e3d7d7cfeb27f6175",
+      "immutable_location_blob_sha256": "81b18307fe7bef96e8f9fa1678cb2346cb93cec7998da0fd98208444942398ab",
+      "proposed_disposition": "approved_public_source_hash",
+      "provenance_group": "reviewed_additional_11",
+      "shape_sha256": "4e345ed18f50cebb66e37952cc0f6879ff8c65869ba1a6681d44c6563bff6a72"
+    },
+    {
+      "classification": "recomputed_analyzer_source_digest",
+      "current_disposition": "blocking",
+      "fingerprint_sha256": "db876a79efd5429a9c004167d5a06a44f6f411f3071c61e509e3436e0bc21b0b",
+      "immutable_location_blob_sha256": "1875508aa0df492c136783fdf3c3ac535fd43fa5948e4a9e78166764dec81d79",
+      "proposed_disposition": "approved_public_source_hash",
+      "provenance_group": "reviewed_additional_11",
+      "shape_sha256": "dcd5606d71a9cb57be15696a9ff21ddbabf0244b40029c48b9c4432684b6afea"
+    },
+    {
+      "classification": "recomputed_analyzer_source_digest",
+      "current_disposition": "blocking",
+      "fingerprint_sha256": "108a4fd58e23a91c9e872138c9895eddcc6a8118af0051e9d8ab66858c138d72",
+      "immutable_location_blob_sha256": "1875508aa0df492c136783fdf3c3ac535fd43fa5948e4a9e78166764dec81d79",
+      "proposed_disposition": "approved_public_source_hash",
+      "provenance_group": "reviewed_additional_11",
+      "shape_sha256": "f27de05430b4862357fd991f3b251676d3cee5fccbb7ee6f07b007b1a9c9c22c"
+    },
+    {
+      "classification": "recomputed_analyzer_source_digest",
+      "current_disposition": "blocking",
+      "fingerprint_sha256": "02010b8cf9884c46d7c97c71b729ed91a6ca3c5a1e6e4a1357a0a2ce91b79486",
+      "immutable_location_blob_sha256": "a55bd01424f6c17e99913101bd07615961f5742e9a2577907bfd4c294ea56a5b",
+      "proposed_disposition": "approved_public_source_hash",
+      "provenance_group": "reviewed_additional_11",
+      "shape_sha256": "bcd811611c09f226e4f46046f474b0fb1aecdb062ef564116a1738e72cf1d246"
+    },
+    {
+      "classification": "recomputed_analyzer_source_digest",
+      "current_disposition": "blocking",
+      "fingerprint_sha256": "02010b8cf9884c46d7c97c71b729ed91a6ca3c5a1e6e4a1357a0a2ce91b79486",
+      "immutable_location_blob_sha256": "a55bd01424f6c17e99913101bd07615961f5742e9a2577907bfd4c294ea56a5b",
+      "proposed_disposition": "approved_public_source_hash",
+      "provenance_group": "reviewed_additional_11",
+      "shape_sha256": "f5780643f1a5d94d1cbc7c5462c144aa11adc5b0abfb7bee48f03f77e466a4ff"
     }
   ],
   "fresh_hosted_run": 42297734552,
