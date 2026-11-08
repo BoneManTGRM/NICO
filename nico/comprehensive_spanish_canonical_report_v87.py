@@ -2847,6 +2847,10 @@ def _translate_presentation(value: Any) -> str:
             if segment != ""
         )
     stripped = text.strip()
+    from nico.monetary_report_presentation import generated_cost_spanish
+    cost = generated_cost_spanish(stripped)
+    if cost is not None:
+        return text.replace(stripped, cost, 1)
     from nico.comprehensive_spanish_function_measurement_copy_v1 import translate_function_measurement_copy
     measurement = translate_function_measurement_copy(stripped)
     if measurement is not None:
