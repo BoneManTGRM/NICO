@@ -196,7 +196,15 @@ def _build_cost(
     )
     hourly_rate = float(inputs.blended_engineering_cost_per_hour or 0)
     delay_rate = float(inputs.release_delay_cost_per_day or 0)
-    monetary = bool(hourly_rate or delay_rate or direct_low or direct_base or direct_high)
+    # Zero is a supplied monetary value, not missing evidence. Match the input
+    # validator's presence check without promoting an absent value to a claim.
+    monetary = any(value is not None for value in (
+        inputs.blended_engineering_cost_per_hour,
+        inputs.release_delay_cost_per_day,
+        estimate.direct_cost_low,
+        estimate.direct_cost_base,
+        estimate.direct_cost_high,
+    ))
     amounts = (
         direct_low + hours_low * hourly_rate + delay_low * delay_rate,
         direct_base + hours_base * hourly_rate + delay_base * delay_rate,
