@@ -2,7 +2,9 @@
 import re
 
 _NUMBER = r"(?:[0-9][0-9,]*(?:\.[0-9]+)?|\?)"
-_PREFIX = re.compile(r"(?P<amounts>No monetary total calculated|(?:low|base|high) [A-Z]{3} " + _NUMBER + r"(?:, (?:low|base|high) [A-Z]{3} " + _NUMBER + r")*) over (?P<days>[0-9]+) days\.(?: Engineering exposure: (?P<low>" + _NUMBER + r")–(?P<high>" + _NUMBER + r") hours\.)? (?P<tail>.+)", re.DOTALL)
+# Engineering hours use Python float text, including finite exponent notation.
+_HOURS_NUMBER = r"(?:[0-9]+(?:\.[0-9]+)?(?:e[+-]?[0-9]+)?|\?)"
+_PREFIX = re.compile(r"(?P<amounts>No monetary total calculated|(?:low|base|high) [A-Z]{3} " + _NUMBER + r"(?:, (?:low|base|high) [A-Z]{3} " + _NUMBER + r")*) over (?P<days>[0-9]+) days\.(?: Engineering exposure: (?P<low>" + _HOURS_NUMBER + r")–(?P<high>" + _HOURS_NUMBER + r") hours\.)? (?P<tail>.+)", re.DOTALL)
 
 _GENERATED_COPY = {
     "The unresolved condition can create engineering rework and release delay.": "La condición no resuelta puede generar retrabajo de ingeniería y retrasos en la entrega.",
