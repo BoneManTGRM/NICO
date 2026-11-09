@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -21,6 +22,11 @@ from nico.public_delivery_boundary import (
 
 @pytest.fixture(autouse=True)
 def isolated_boundary(monkeypatch):
+    # Freeze only this consumer's wall clock, not TestClient/event-loop timers.
+    clock = SimpleNamespace(epoch=120.0)
+    monkeypatch.setattr(boundary, "time", SimpleNamespace(
+        time=lambda: clock.epoch, monotonic=boundary.time.monotonic,
+    ))
     monkeypatch.setattr(boundary, "_database_url", lambda: "")
     monkeypatch.setenv("NICO_DELIVERY_RATE_LIMIT_SECRET", "test-rate-secret")
     monkeypatch.setenv("NICO_DELIVERY_RATE_LIMIT_WINDOW_SECONDS", "60")
@@ -35,7 +41,7 @@ def isolated_boundary(monkeypatch):
     with boundary._SCHEMA_LOCK:
         boundary._SCHEMA_READY_URL = ""
         boundary._SCHEMA_RETRY_AT = 0.0
-    yield
+    yield clock
     with boundary._MEMORY_LOCK:
         boundary._MEMORY_BUCKETS.clear()
         boundary._LAST_CLEANUP = 0
@@ -180,3 +186,28 @@ def test_docker_enables_proxy_headers_on_production_entrypoint():
     dockerfile = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text(encoding="utf-8")
     assert "ENV NICO_TRUST_PROXY_HEADERS=true" in dockerfile
     assert "uvicorn nico.api.production_bootstrap:app" in dockerfile
+
+
+def test_public_endpoint_limit_resets_at_next_fixed_window(monkeypatch, isolated_boundary):
+    monkeypatch.setenv("NICO_DELIVERY_INSPECT_RATE_LIMIT", "1")
+    client = TestClient(_app(cors=True))
+    headers = {"Origin": "https://app.nicoaudit.com"}
+    isolated_boundary.epoch = 179.9
+    first = client.post("/delivery/approved/inspect", json={"token": "one"}, headers=headers)
+    blocked = client.post("/delivery/approved/inspect", json={"token": "two"}, headers=headers)
+    assert first.status_code == 200
+    assert blocked.status_code == 429
+    assert blocked.json()["code"] == "public_delivery_rate_limited"
+    assert blocked.headers["retry-after"] == "1"
+    isolated_boundary.epoch = 180.0
+    reset = client.post("/delivery/approved/inspect", json={"token": "three"}, headers=headers)
+    assert reset.status_code == 200
+    assert reset.headers["x-ratelimit-remaining"] == "0"
+    blocked_again = client.post("/delivery/approved/inspect", json={"token": "four"}, headers=headers)
+    assert blocked_again.status_code == 429
+    assert blocked_again.headers["retry-after"] == "60"
+    for response in (first, blocked, reset, blocked_again):
+        assert response.headers["cache-control"] == "no-store, private, max-age=0"
+        assert response.headers["referrer-policy"] == "no-referrer"
+        assert response.headers["x-ratelimit-limit"] == "1"
+        assert response.headers["access-control-allow-origin"] == "https://app.nicoaudit.com"
