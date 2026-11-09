@@ -4,7 +4,7 @@ import re
 _NUMBER = r"(?:[0-9][0-9,]*(?:\.[0-9]+)?|\?)"
 # Engineering hours use Python float text, including finite exponent notation.
 _HOURS_NUMBER = r"(?:[0-9]+(?:\.[0-9]+)?(?:e[+-]?[0-9]+)?|\?)"
-_PREFIX = re.compile(r"(?P<amounts>No monetary total calculated|(?:low|base|high) [A-Z]{3} " + _NUMBER + r"(?:, (?:low|base|high) [A-Z]{3} " + _NUMBER + r")*) over (?P<days>[0-9]+) days\.(?: Engineering exposure: (?P<low>" + _HOURS_NUMBER + r")–(?P<high>" + _HOURS_NUMBER + r") hours\.)? (?P<tail>.+)", re.DOTALL)
+_PREFIX = re.compile(r"(?P<amounts>No monetary total calculated|(?:low|base|high) [A-Za-z]{3} " + _NUMBER + r"(?:, (?:low|base|high) [A-Za-z]{3} " + _NUMBER + r")*) over (?P<days>[0-9]+) days\.(?: Engineering exposure: (?P<low>" + _HOURS_NUMBER + r")–(?P<high>" + _HOURS_NUMBER + r") hours\.)? (?P<tail>.+)", re.DOTALL)
 
 _GENERATED_COPY = {
     "The unresolved condition can create engineering rework and release delay.": "La condición no resuelta puede generar retrabajo de ingeniería y retrasos en la entrega.",
@@ -29,7 +29,7 @@ def generated_cost_spanish(text):
     if amounts == 'No monetary total calculated':
         amounts = 'No se calculó un total monetario'
     else:
-        amounts = re.sub(r'\b(low|base|high)\b', lambda m: {'low':'bajo','base':'base','high':'alto'}[m[0]], amounts)
+        amounts = re.sub(r'(^|, )(low|base|high) ', lambda m: m[1] + {'low':'bajo','base':'base','high':'alto'}[m[2]] + ' ', amounts)
     tail = match['tail']
     for source, target in _GENERATED_COPY.items():
         tail = tail.replace(source, target)
