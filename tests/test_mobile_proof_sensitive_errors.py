@@ -146,8 +146,12 @@ def test_actions_mask_registration_escapes_command_data(monkeypatch, capsys):
     monkeypatch.setenv('NICO_PROOF_MASK_FD', '9')
     import stat
     writes = []
-    monkeypatch.setattr(auth.os, 'fstat', lambda fd: SimpleNamespace(st_mode=stat.S_IFIFO))
-    monkeypatch.setattr(auth.os, 'write', lambda fd, data: writes.append((fd, data)) or len(data))
+    # Keep the shared os module intact for pytest's file-descriptor capture.
+    monkeypatch.setattr(auth, 'os', SimpleNamespace(
+        getenv=auth.os.getenv,
+        fstat=lambda fd: SimpleNamespace(st_mode=stat.S_IFIFO),
+        write=lambda fd, data: writes.append((fd, data)) or len(data),
+    ))
     auth._register_proof_secret('synthetic%value\r\n::warning::synthetic')
     assert writes == [(9, b'::add-mask::synthetic%25value%0D%0A::warning::synthetic\n')]
     captured = capsys.readouterr()
