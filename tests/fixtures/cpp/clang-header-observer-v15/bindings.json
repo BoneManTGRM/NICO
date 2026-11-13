@@ -1,0 +1,535 @@
+{
+  "schema": "nico.owned-clang-header-observer-fixture.v1",
+  "plugin_sha256": "4258e8ca31a1009cd0ca663e8818cae4da729595e7f8dcb84bb41e63150f3da3",
+  "manifest_sha256": "b867ac83a8bd89180cb03f6eb74dd9ef3fd4c36fad6ffa9cc292d995721219e8",
+  "actual_uid": 1000,
+  "worker_image_qualified": false,
+  "scope": "Owned local actual Clang17 trace bytes only; final worker/image/production proof open",
+  "records": [
+    {
+      "fixture": "v15-owned-clang-header-03-0.json",
+      "sha256": "45022af83d3c233181e9a3cae4741d888e50668f16a6a6d844f00147e52305df",
+      "document": {
+        "clang_version": "17.0.6",
+        "context_id": "ef21e1974ca5b77e11f745cc1c423d4259a43498ff5fd46f79b57745a12136ea",
+        "diagnostic_errors": false,
+        "files": [
+          {
+            "ast_body_callbacks": 1,
+            "ast_decl_nodes": 1,
+            "ast_stmt_nodes": 3,
+            "entered": 1,
+            "initially_system": false,
+            "path": "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/active_a.h",
+            "system_header_pragma_observed": false
+          },
+          {
+            "ast_body_callbacks": 0,
+            "ast_decl_nodes": 0,
+            "ast_stmt_nodes": 1,
+            "entered": 1,
+            "initially_system": false,
+            "path": "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/macro_only.h",
+            "system_header_pragma_observed": false
+          },
+          {
+            "ast_body_callbacks": 1,
+            "ast_decl_nodes": 1,
+            "ast_stmt_nodes": 11,
+            "entered": 1,
+            "initially_system": false,
+            "path": "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/main.cpp",
+            "system_header_pragma_observed": false
+          },
+          {
+            "ast_body_callbacks": 1,
+            "ast_decl_nodes": 1,
+            "ast_stmt_nodes": 3,
+            "entered": 1,
+            "initially_system": false,
+            "path": "/workspace/shared/nico-closeout-v14/v15-owned-header-contexts-01/build/generated/generated.h",
+            "system_header_pragma_observed": false
+          }
+        ],
+        "observation_overflow": false,
+        "schema": "nico.clang-header-observer.v1",
+        "source": "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/main.cpp",
+        "standard": "gnu++17",
+        "translation_unit_ended": true,
+        "translation_unit_started": true
+      },
+      "scope": "owned_configured",
+      "native_operation": "v15-owned-clang-header-03",
+      "native_exit_code": 0,
+      "native_result_sha256": "b797732d9b6a2da938fa0abac06c10337a3e85cbf6f7bd887fdce07b3bf31759",
+      "locations": {
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/CMakeLists.txt": [
+          "original",
+          "CMakeLists.txt",
+          "2a5dd93a786bfbc93d4b8d21804f8fb225d7d3fe8e2bca8e658f1b54d2f307b5"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/active_a.h": [
+          "original",
+          "active_a.h",
+          "c59af526db45a2834b9660b229828678ad7a66485231f4ed66d13dde864aa2a5"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/active_b.h": [
+          "original",
+          "active_b.h",
+          "080a512faf4ceee8b1c83e676e27806b6fa628ac0c961a13220e0d2e68532b53"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/alias.cpp": [
+          "original",
+          "alias.cpp",
+          "0e8558691723d5f3edb3bec3e5acddc1320235465be63af8b498fb238e3a1a7f"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/generated.h.in": [
+          "original",
+          "generated.h.in",
+          "2e75f68deab06caf30ccdbb47b2004881e162d636f23c03c5f0872fc9ba7f5f9"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/macro_only.h": [
+          "original",
+          "macro_only.h",
+          "4f2f8331f7d860226ea31419b7c1f5f03e23e98445817e347a91f3ae8dd31929"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/main.cpp": [
+          "original",
+          "main.cpp",
+          "f13d593b02b8e397cbb4f849fd47109600c415baf1a7731748ebca8c54116ed0"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/unvisited.h": [
+          "original",
+          "unvisited.h",
+          "4d16c250f373873ea9b59af0aa379668aa96ae7d0a33834a218a2b6468accda7"
+        ],
+        "/workspace/shared/nico-closeout-v14/v15-owned-header-contexts-01/build/generated/generated.h": [
+          "generated",
+          "generated/generated.h",
+          "2e75f68deab06caf30ccdbb47b2004881e162d636f23c03c5f0872fc9ba7f5f9"
+        ]
+      }
+    },
+    {
+      "fixture": "v15-owned-clang-header-03-1.json",
+      "sha256": "8ce6a30fedec79d19dc187479395880668e5e08bb43cff01d99202d57b13c960",
+      "document": {
+        "clang_version": "17.0.6",
+        "context_id": "3212c33aa5eccdedd9a3a100e75d34391f13d1adea9a4aa156288b3bf107b1f4",
+        "diagnostic_errors": false,
+        "files": [
+          {
+            "ast_body_callbacks": 1,
+            "ast_decl_nodes": 1,
+            "ast_stmt_nodes": 3,
+            "entered": 1,
+            "initially_system": false,
+            "path": "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/active_b.h",
+            "system_header_pragma_observed": false
+          },
+          {
+            "ast_body_callbacks": 0,
+            "ast_decl_nodes": 0,
+            "ast_stmt_nodes": 1,
+            "entered": 1,
+            "initially_system": false,
+            "path": "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/macro_only.h",
+            "system_header_pragma_observed": false
+          },
+          {
+            "ast_body_callbacks": 1,
+            "ast_decl_nodes": 1,
+            "ast_stmt_nodes": 11,
+            "entered": 1,
+            "initially_system": false,
+            "path": "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/main.cpp",
+            "system_header_pragma_observed": false
+          },
+          {
+            "ast_body_callbacks": 1,
+            "ast_decl_nodes": 1,
+            "ast_stmt_nodes": 3,
+            "entered": 1,
+            "initially_system": false,
+            "path": "/workspace/shared/nico-closeout-v14/v15-owned-header-contexts-01/build/generated/generated.h",
+            "system_header_pragma_observed": false
+          }
+        ],
+        "observation_overflow": false,
+        "schema": "nico.clang-header-observer.v1",
+        "source": "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/main.cpp",
+        "standard": "gnu++17",
+        "translation_unit_ended": true,
+        "translation_unit_started": true
+      },
+      "scope": "owned_configured",
+      "native_operation": "v15-owned-clang-header-03",
+      "native_exit_code": 0,
+      "native_result_sha256": "b797732d9b6a2da938fa0abac06c10337a3e85cbf6f7bd887fdce07b3bf31759",
+      "locations": {
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/CMakeLists.txt": [
+          "original",
+          "CMakeLists.txt",
+          "2a5dd93a786bfbc93d4b8d21804f8fb225d7d3fe8e2bca8e658f1b54d2f307b5"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/active_a.h": [
+          "original",
+          "active_a.h",
+          "c59af526db45a2834b9660b229828678ad7a66485231f4ed66d13dde864aa2a5"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/active_b.h": [
+          "original",
+          "active_b.h",
+          "080a512faf4ceee8b1c83e676e27806b6fa628ac0c961a13220e0d2e68532b53"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/alias.cpp": [
+          "original",
+          "alias.cpp",
+          "0e8558691723d5f3edb3bec3e5acddc1320235465be63af8b498fb238e3a1a7f"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/generated.h.in": [
+          "original",
+          "generated.h.in",
+          "2e75f68deab06caf30ccdbb47b2004881e162d636f23c03c5f0872fc9ba7f5f9"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/macro_only.h": [
+          "original",
+          "macro_only.h",
+          "4f2f8331f7d860226ea31419b7c1f5f03e23e98445817e347a91f3ae8dd31929"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/main.cpp": [
+          "original",
+          "main.cpp",
+          "f13d593b02b8e397cbb4f849fd47109600c415baf1a7731748ebca8c54116ed0"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/unvisited.h": [
+          "original",
+          "unvisited.h",
+          "4d16c250f373873ea9b59af0aa379668aa96ae7d0a33834a218a2b6468accda7"
+        ],
+        "/workspace/shared/nico-closeout-v14/v15-owned-header-contexts-01/build/generated/generated.h": [
+          "generated",
+          "generated/generated.h",
+          "2e75f68deab06caf30ccdbb47b2004881e162d636f23c03c5f0872fc9ba7f5f9"
+        ]
+      }
+    },
+    {
+      "fixture": "v15-owned-clang-header-03-2.json",
+      "sha256": "fd66b5b10215e65728a7bf29fd17209691e81e2bdcd757c47c1a1cd6f85d7135",
+      "document": {
+        "clang_version": "17.0.6",
+        "context_id": "69e0ee22f63c94bf354f38e760b3e4a8f24b9f9bbc53baa9b336890e5976fc63",
+        "diagnostic_errors": false,
+        "files": [
+          {
+            "ast_body_callbacks": 1,
+            "ast_decl_nodes": 1,
+            "ast_stmt_nodes": 3,
+            "entered": 1,
+            "initially_system": false,
+            "path": "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/alias.cpp",
+            "system_header_pragma_observed": false
+          },
+          {
+            "ast_body_callbacks": 0,
+            "ast_decl_nodes": 0,
+            "ast_stmt_nodes": 1,
+            "entered": 1,
+            "initially_system": false,
+            "path": "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/macro_only.h",
+            "system_header_pragma_observed": false
+          }
+        ],
+        "observation_overflow": false,
+        "schema": "nico.clang-header-observer.v1",
+        "source": "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/alias.cpp",
+        "standard": "gnu++17",
+        "translation_unit_ended": true,
+        "translation_unit_started": true
+      },
+      "scope": "owned_configured",
+      "native_operation": "v15-owned-clang-header-03",
+      "native_exit_code": 0,
+      "native_result_sha256": "b797732d9b6a2da938fa0abac06c10337a3e85cbf6f7bd887fdce07b3bf31759",
+      "locations": {
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/CMakeLists.txt": [
+          "original",
+          "CMakeLists.txt",
+          "2a5dd93a786bfbc93d4b8d21804f8fb225d7d3fe8e2bca8e658f1b54d2f307b5"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/active_a.h": [
+          "original",
+          "active_a.h",
+          "c59af526db45a2834b9660b229828678ad7a66485231f4ed66d13dde864aa2a5"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/active_b.h": [
+          "original",
+          "active_b.h",
+          "080a512faf4ceee8b1c83e676e27806b6fa628ac0c961a13220e0d2e68532b53"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/alias.cpp": [
+          "original",
+          "alias.cpp",
+          "0e8558691723d5f3edb3bec3e5acddc1320235465be63af8b498fb238e3a1a7f"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/generated.h.in": [
+          "original",
+          "generated.h.in",
+          "2e75f68deab06caf30ccdbb47b2004881e162d636f23c03c5f0872fc9ba7f5f9"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/macro_only.h": [
+          "original",
+          "macro_only.h",
+          "4f2f8331f7d860226ea31419b7c1f5f03e23e98445817e347a91f3ae8dd31929"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/main.cpp": [
+          "original",
+          "main.cpp",
+          "f13d593b02b8e397cbb4f849fd47109600c415baf1a7731748ebca8c54116ed0"
+        ],
+        "/workspace/nico-v15/tests/fixtures/cpp/header-token-owned-control/source/unvisited.h": [
+          "original",
+          "unvisited.h",
+          "4d16c250f373873ea9b59af0aa379668aa96ae7d0a33834a218a2b6468accda7"
+        ],
+        "/workspace/shared/nico-closeout-v14/v15-owned-header-contexts-01/build/generated/generated.h": [
+          "generated",
+          "generated/generated.h",
+          "2e75f68deab06caf30ccdbb47b2004881e162d636f23c03c5f0872fc9ba7f5f9"
+        ]
+      }
+    },
+    {
+      "fixture": "v15-owned-clang-header-negative-corrected-0.json",
+      "sha256": "50e9971b735f6d14e5526dfaab6d6a249d753cfdf799ff2c0cd93b5d23ead673",
+      "document": {
+        "clang_version": "17.0.6",
+        "context_id": "2620504f9dda2b2454baaa9eae15d79dc3c5310228c2cbfb4a8571245b841984",
+        "diagnostic_errors": false,
+        "files": [
+          {
+            "ast_body_callbacks": 1,
+            "ast_decl_nodes": 0,
+            "ast_stmt_nodes": 3,
+            "entered": 1,
+            "initially_system": false,
+            "path": "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/body.h",
+            "system_header_pragma_observed": false
+          },
+          {
+            "ast_body_callbacks": 0,
+            "ast_decl_nodes": 1,
+            "ast_stmt_nodes": 0,
+            "entered": 1,
+            "initially_system": false,
+            "path": "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/main.cpp",
+            "system_header_pragma_observed": false
+          }
+        ],
+        "observation_overflow": false,
+        "schema": "nico.clang-header-observer.v1",
+        "source": "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/main.cpp",
+        "standard": "c++17",
+        "translation_unit_ended": true,
+        "translation_unit_started": true
+      },
+      "scope": "owned_negative_boundary",
+      "native_operation": "v15-owned-clang-header-negative-corrected",
+      "native_exit_code": 0,
+      "native_result_sha256": "92ee7f77e301d303767bd026eb5637872ea593b694ed86b1b1aa569f55b5250c",
+      "locations": {
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/main.cpp": [
+          "original",
+          "main.cpp",
+          "2620504f9dda2b2454baaa9eae15d79dc3c5310228c2cbfb4a8571245b841984"
+        ],
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/body.h": [
+          "original",
+          "body.h",
+          "0e8b6dca7b11cd7373cf6ecaf511f1e3d5f42bd5866a06fdea08a365050c9245"
+        ],
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/error.cpp": [
+          "original",
+          "error.cpp",
+          "349cb7f9ebe453ad1bc78b349a4b84a7f401277dcbe3c9c879b147ebdb9721da"
+        ],
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/pragma.cpp": [
+          "original",
+          "pragma.cpp",
+          "0ea2c60d7b757066eadb2ba4bcfe8039a694b75bff00a5c0fc273fb408b4acb0"
+        ],
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/pragma.h": [
+          "original",
+          "pragma.h",
+          "3a00778f2545482936b6e8ff32c60c135b52cb47132a175a5d4fdaa16612d951"
+        ]
+      }
+    },
+    {
+      "fixture": "v15-owned-clang-header-negative-corrected-1.json",
+      "sha256": "5da549fcf1251b75f3b8537cbabfd45206e430def0e40a51ca4193bad4633707",
+      "document": {
+        "clang_version": "17.0.6",
+        "context_id": "349cb7f9ebe453ad1bc78b349a4b84a7f401277dcbe3c9c879b147ebdb9721da",
+        "diagnostic_errors": true,
+        "files": [
+          {
+            "ast_body_callbacks": 0,
+            "ast_decl_nodes": 0,
+            "ast_stmt_nodes": 0,
+            "entered": 1,
+            "initially_system": false,
+            "path": "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/error.cpp",
+            "system_header_pragma_observed": false
+          }
+        ],
+        "observation_overflow": false,
+        "schema": "nico.clang-header-observer.v1",
+        "source": "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/error.cpp",
+        "standard": "c++17",
+        "translation_unit_ended": false,
+        "translation_unit_started": false
+      },
+      "scope": "owned_negative_boundary",
+      "native_operation": "v15-owned-clang-header-negative-corrected",
+      "native_exit_code": 1,
+      "native_result_sha256": "92ee7f77e301d303767bd026eb5637872ea593b694ed86b1b1aa569f55b5250c",
+      "locations": {
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/main.cpp": [
+          "original",
+          "main.cpp",
+          "2620504f9dda2b2454baaa9eae15d79dc3c5310228c2cbfb4a8571245b841984"
+        ],
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/body.h": [
+          "original",
+          "body.h",
+          "0e8b6dca7b11cd7373cf6ecaf511f1e3d5f42bd5866a06fdea08a365050c9245"
+        ],
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/error.cpp": [
+          "original",
+          "error.cpp",
+          "349cb7f9ebe453ad1bc78b349a4b84a7f401277dcbe3c9c879b147ebdb9721da"
+        ],
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/pragma.cpp": [
+          "original",
+          "pragma.cpp",
+          "0ea2c60d7b757066eadb2ba4bcfe8039a694b75bff00a5c0fc273fb408b4acb0"
+        ],
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/pragma.h": [
+          "original",
+          "pragma.h",
+          "3a00778f2545482936b6e8ff32c60c135b52cb47132a175a5d4fdaa16612d951"
+        ]
+      }
+    },
+    {
+      "fixture": "v15-owned-clang-header-negative-corrected-2.json",
+      "sha256": "0a3adce54f014f1dbd948941745e16a1375d5f50c6b06c9b368a71d4c33d4b7b",
+      "document": {
+        "clang_version": "17.0.6",
+        "context_id": "0ea2c60d7b757066eadb2ba4bcfe8039a694b75bff00a5c0fc273fb408b4acb0",
+        "diagnostic_errors": false,
+        "files": [
+          {
+            "ast_body_callbacks": 1,
+            "ast_decl_nodes": 1,
+            "ast_stmt_nodes": 5,
+            "entered": 1,
+            "initially_system": false,
+            "path": "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/pragma.cpp",
+            "system_header_pragma_observed": false
+          },
+          {
+            "ast_body_callbacks": 0,
+            "ast_decl_nodes": 1,
+            "ast_stmt_nodes": 3,
+            "entered": 1,
+            "initially_system": false,
+            "path": "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/pragma.h",
+            "system_header_pragma_observed": true
+          }
+        ],
+        "observation_overflow": false,
+        "schema": "nico.clang-header-observer.v1",
+        "source": "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/pragma.cpp",
+        "standard": "c++17",
+        "translation_unit_ended": true,
+        "translation_unit_started": true
+      },
+      "scope": "owned_negative_boundary",
+      "native_operation": "v15-owned-clang-header-negative-corrected",
+      "native_exit_code": 0,
+      "native_result_sha256": "92ee7f77e301d303767bd026eb5637872ea593b694ed86b1b1aa569f55b5250c",
+      "locations": {
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/main.cpp": [
+          "original",
+          "main.cpp",
+          "2620504f9dda2b2454baaa9eae15d79dc3c5310228c2cbfb4a8571245b841984"
+        ],
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/body.h": [
+          "original",
+          "body.h",
+          "0e8b6dca7b11cd7373cf6ecaf511f1e3d5f42bd5866a06fdea08a365050c9245"
+        ],
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/error.cpp": [
+          "original",
+          "error.cpp",
+          "349cb7f9ebe453ad1bc78b349a4b84a7f401277dcbe3c9c879b147ebdb9721da"
+        ],
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/pragma.cpp": [
+          "original",
+          "pragma.cpp",
+          "0ea2c60d7b757066eadb2ba4bcfe8039a694b75bff00a5c0fc273fb408b4acb0"
+        ],
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-header-negative-original/source/pragma.h": [
+          "original",
+          "pragma.h",
+          "3a00778f2545482936b6e8ff32c60c135b52cb47132a175a5d4fdaa16612d951"
+        ]
+      }
+    },
+    {
+      "fixture": "include_only.trace.json",
+      "sha256": "7dfe593f451c04afd9bc9301b4479f7e27aec18fbcd38a93f615f950764608fb",
+      "locations": {
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-current-controls-01/source/include_only.cpp": [
+          "original",
+          "include_only.cpp",
+          "ab9e8daf57fce87d38a702e159186502247676a4cf76ddc1f51aba0439126da0"
+        ],
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-current-controls-01/source/active.h": [
+          "original",
+          "active.h",
+          "5aa8341ab45ecd83aa068d8df38586efe2876595e447f8bebd6745d5b628c28b"
+        ],
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-current-controls-01/source/empty.cpp": [
+          "original",
+          "empty.cpp",
+          "e5c8281ce4b37780aecb2b45e7a0203a0bb43920058bcb5e66b4524672cf6a00"
+        ]
+      }
+    },
+    {
+      "fixture": "empty.trace.json",
+      "sha256": "1fc754c655d43ea2ecd43cdfb4a4263b2e5728815ab30cb628c7325eb14aefd0",
+      "locations": {
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-current-controls-01/source/include_only.cpp": [
+          "original",
+          "include_only.cpp",
+          "ab9e8daf57fce87d38a702e159186502247676a4cf76ddc1f51aba0439126da0"
+        ],
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-current-controls-01/source/active.h": [
+          "original",
+          "active.h",
+          "5aa8341ab45ecd83aa068d8df38586efe2876595e447f8bebd6745d5b628c28b"
+        ],
+        "/workspace/shared/nico-closeout-v14/v15-owned-clang-current-controls-01/source/empty.cpp": [
+          "original",
+          "empty.cpp",
+          "e5c8281ce4b37780aecb2b45e7a0203a0bb43920058bcb5e66b4524672cf6a00"
+        ]
+      }
+    }
+  ]
+}

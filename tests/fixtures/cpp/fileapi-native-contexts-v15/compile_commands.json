@@ -1,0 +1,14 @@
+[
+{
+  "directory": "/workspace/shared/nico-closeout-v14/v15-owned-native-contexts-01/build/alpha",
+  "command": "/usr/bin/x86_64-linux-gnu-g++-14 -DEXPECTED_MODE=2 -DEXPECTED_SOURCE=31 -DSOURCE_SENTINEL=31 @CMakeFiles/alpha.dir/includes_CXX.rsp -g -std=gnu++17 -DMODE=1 -UMODE -DMODE=2 -Wextra -o CMakeFiles/alpha.dir/__/common.cpp.o -c /workspace/nico-v15/tests/fixtures/cpp/native-contexts-owned-control/source/common.cpp",
+  "file": "/workspace/nico-v15/tests/fixtures/cpp/native-contexts-owned-control/source/common.cpp",
+  "output": "alpha/CMakeFiles/alpha.dir/__/common.cpp.o"
+},
+{
+  "directory": "/workspace/shared/nico-closeout-v14/v15-owned-native-contexts-01/build/alpha",
+  "command": "/usr/bin/x86_64-linux-gnu-g++-14 -DEXPECTED_MODE=2 -DEXPECTED_SOURCE=31 @CMakeFiles/alpha.dir/includes_CXX.rsp -g -std=gnu++17 -DMODE=1 -UMODE -DMODE=2 -o CMakeFiles/alpha.dir/local.cpp.o -c /workspace/nico-v15/tests/fixtures/cpp/native-contexts-owned-control/source/alpha/local.cpp",
+  "file": "/workspace/nico-v15/tests/fixtures/cpp/native-contexts-owned-control/source/alpha/local.cpp",
+  "output": "alpha/CMakeFiles/alpha.dir/local.cpp.o"
+}
+]

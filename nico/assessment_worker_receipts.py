@@ -88,7 +88,8 @@ def validate_contract(contract: dict) -> dict:
     if configure_first:
         from nico.assessment_cpp_configure_first_contract import validate_configuration
         validate_configuration(contract['configuration'])
-        runtime = contract['configuration'].get('schema') == 'nico.cpp-configure-first-contract.v3'
+        from nico.assessment_cpp_configure_first_contract import runtime_required
+        runtime = runtime_required(contract['configuration'])
         maximum_wall = 9000 if runtime else 2420
         if (not isinstance(contract['limits'], dict) or type(contract['limits'].get('wall_seconds')) is not int
                 or not 1 <= contract['limits']['wall_seconds'] <= maximum_wall
@@ -299,9 +300,116 @@ def validate_receipt(identity: JobIdentity, contract: dict, lease: str, worker: 
     return encoded, record, binding
 
 
+def _validate_configure_first_collection_summary(value, native, kind):
+    """Validate a bounded projection; raw proof reconstruction remains required."""
+    if value is None:
+        return
+    fields={'schema','collection_complete','proof_sha256','native_evidence_sha256',
+            'secondary_native_evidence_sha256'}
+    populations=('required_contexts','attempted_contexts','completed_contexts',
+                 'failed_contexts','unparsed_contexts')
+    fields |= {name+suffix for name in populations for suffix in ('_count','_sha256')}
+    error='worker_configure_first_native_invalid'
+    if (not isinstance(value,dict) or set(value)!=fields
+            or value['schema']!='nico.cpp-project-'+kind+'-collection.v1'
+            or type(value['collection_complete']) is not bool
+            or any(type(value[name+'_count']) is not int or not 0<=value[name+'_count']<=20000
+                   for name in populations)
+            or any(not isinstance(value[name],str) or re.fullmatch(r'[0-9a-f]{64}',value[name]) is None
+                   for name in ('proof_sha256','native_evidence_sha256',
+                                *(p+'_sha256' for p in populations)))):
+        raise ValueError(error)
+    refs=native.get('artifacts') or {}
+    primary=refs.get('project-'+kind+'-evidence') or {}
+    secondary=refs.get('project-static-clang-fallback') or {}
+    expected_secondary=secondary.get('sha256') if kind=='static' else None
+    if (value['native_evidence_sha256']!=primary.get('sha256')
+            or value['secondary_native_evidence_sha256']!=expected_secondary
+            or expected_secondary is not None and (not isinstance(expected_secondary,str)
+                or re.fullmatch(r'[0-9a-f]{64}',expected_secondary) is None)):
+        raise ValueError(error)
+    required=value['required_contexts_count']
+    completed=value['completed_contexts_count']
+    failed=value['failed_contexts_count']
+    prefix='project_'+kind
+    completed_prefix=prefix+('_checked' if kind=='compiler' else '_analyzed')
+    if (required<1 or required!=value['attempted_contexts_count'] or required!=completed+failed
+            or value['required_contexts_sha256']!=value['attempted_contexts_sha256']
+            or failed!=value['unparsed_contexts_count']
+            or value['failed_contexts_sha256']!=value['unparsed_contexts_sha256']
+            or required!=native[prefix+'_required_count']
+            or value['required_contexts_sha256']!=native[prefix+'_required_sha256']
+            or completed!=native[completed_prefix+'_count']
+            or value['completed_contexts_sha256']!=native[completed_prefix+'_sha256']
+            or native[prefix+'_complete'] is not (failed==0)
+            or not failed and value['completed_contexts_sha256']!=value['required_contexts_sha256']
+            or any(value[p+'_count']==0 and value[p+'_sha256']!=_digest([]) for p in populations)):
+        raise ValueError(error)
+
+
+def _validate_configure_first_collection(native, *, runtime_contract=False):
+    """Current envelope checks cannot themselves grant canonical completion."""
+    error='worker_configure_first_native_invalid'
+    if (type(native.get('collection_complete')) is not bool
+            or native.get('independent_collection_error') is not None and (
+                not isinstance(native['independent_collection_error'],str)
+                or re.fullmatch(r'worker_configuration_probe_[a-z_]{1,80}',
+                                native['independent_collection_error']) is None)):
+        raise ValueError(error)
+    compiler=native['project_compiler_collection']
+    static=native['project_static_collection']
+    _validate_configure_first_collection_summary(compiler,native,'compiler')
+    _validate_configure_first_collection_summary(static,native,'static')
+    if compiler is not None and static is not None:
+        for population in ('required_contexts','failed_contexts','unparsed_contexts'):
+            if any(compiler[population+suffix]!=static[population+suffix] for suffix in ('_count','_sha256')):
+                raise ValueError(error)
+    if compiler is not None and compiler['failed_contexts_count'] and (
+            native['complete_execution'] is not False or native['header_context_evidence_complete'] is not False
+            or native['header_population_complete'] is not False
+            or native['status']!='UNPROVEN'
+            or native['error']!='worker_configuration_probe_compiler_incomplete'):
+        raise ValueError(error)
+    if not native['collection_complete']:
+        return
+    required={'project-compilation-database','project-generated-context','project-compiler-evidence',
+        'project-static-environment','project-static-evidence','project-baseline-evidence',
+        'project-enabled-targets','project-native-commands','project-native-commands-post-build',
+        'project-enabled-targets-post-build','project-generation-evidence'}
+    if runtime_contract:
+        required.add('project-runtime-evidence')
+    if static is not None and static['failed_contexts_count']:
+        required.add('project-static-clang-fallback')
+    discovered=native['tests_discovered_count']
+    passed=native['tests_passed_count']
+    if (compiler is None or static is None
+            or compiler['collection_complete'] is not True or static['collection_complete'] is not True
+            or native['independent_collection_error'] is not None
+            or native['error'] not in (None,'worker_configuration_probe_compiler_incomplete',
+                                      'worker_configuration_probe_runtime_incomplete')
+            or not required<=set(native['artifacts'])
+            or any(native.get(k) is not True for k in ('compiled','tests_executed','generated_context_verified',
+                'boundary_verified','cleanup_verified','scratch_capacity_verified',
+                'enabled_target_membership_verified','context_argv_binding_verified','generated_input_materialization_complete'))
+            or any(native.get(k) is None for k in ('native_command_capture_sha256','native_command_post_capture_sha256',
+                'native_command_freeze_sha256','native_command_plan_sha256','analysis_compilation_database_sha256'))
+            or native['analysis_invocations']!=compiler['required_contexts_count']
+            or discovered<1 or native['tests_executed_count']!=discovered
+            or native['tests_executed_sha256']!=native['tests_discovered_sha256']
+            or native['tests_skipped_count']!=0 or native['tests_skipped_sha256']!=_digest([])
+            or passed>discovered or native['tests_passed'] is not (passed==discovered)
+            or passed==discovered and native['tests_passed_sha256']!=native['tests_discovered_sha256']):
+        raise ValueError(error)
+
+
 def _configure_first_record(identity, contract, receipt, encoded):
     native=receipt['native']; config=contract['configuration']
-    runtime_contract=config.get('schema')=='nico.cpp-configure-first-contract.v3'
+    from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required, native_commands_required, generation_required, compiler_collection_required
+    runtime_contract=runtime_required(config)
+    membership_contract=membership_required(config)
+    native_command_contract=native_commands_required(config)
+    generation_contract=generation_required(config)
+    collection_contract=compiler_collection_required(config)
     required={'schema','status','complete_execution','error','source_population_sha256',
         'source_count','compilation_database_sha256','configured_invocations','baseline_execution_frozen','compiled',
         'tests_executed','tests_passed','tests_discovered_count','tests_discovered_sha256','tests_executed_count',
@@ -318,7 +426,28 @@ def _configure_first_record(identity, contract, receipt, encoded):
         'canonical_findings_projected','project_option_policy','project_options','project_options_sha256'}
     if runtime_contract:
         required |= {'runtime_complete','runtime_plan_sha256','runtime_summary_sha256','runtime_duration_ms'}
-    expected_schema='nico.cpp-configure-first-native.v2' if runtime_contract else 'nico.cpp-configure-first-native.v1'
+    if membership_contract:
+        required |= {'enabled_target_capture_sha256','enabled_target_membership_verified',
+            'enabled_target_contexts_count','enabled_target_contexts_sha256',
+            'missing_database_contexts_count','missing_database_contexts_sha256',
+            'database_source_membership_complete','context_argv_binding_verified'}
+    if native_command_contract:
+        required |= {'native_command_capture_sha256','native_command_post_capture_sha256',
+            'native_command_freeze_sha256','native_command_plan_sha256',
+            'native_contexts_count','native_contexts_sha256','analysis_compilation_database_sha256','analysis_invocations'}
+        required |= {'header_context_evidence_count','header_context_evidence_sha256','header_population_count',
+            'header_population_sha256','header_unvisited_files_count','header_unvisited_files_sha256',
+            'header_context_evidence_complete','header_population_complete','header_tool_manifest_sha256'}
+    if generation_contract:
+        required |= {'generated_input_materialization_complete','generation_evidence_sha256','generation_selected_targets_count'}
+    if collection_contract:
+        required |= {'project_compiler_collection','project_static_collection','collection_complete','independent_collection_error'}
+    expected_schema=(('nico.cpp-configure-first-native.v8' if runtime_contract else 'nico.cpp-configure-first-native.v7')
+        if generation_contract else ('nico.cpp-configure-first-native.v6' if runtime_contract else 'nico.cpp-configure-first-native.v5')
+        if native_command_contract else ('nico.cpp-configure-first-native.v4' if runtime_contract else 'nico.cpp-configure-first-native.v3')
+        if membership_contract else ('nico.cpp-configure-first-native.v2' if runtime_contract else 'nico.cpp-configure-first-native.v1'))
+    if collection_contract:
+        expected_schema='nico.cpp-configure-first-native.v10' if runtime_contract else 'nico.cpp-configure-first-native.v9'
     if (not isinstance(native,dict) or set(native)!=required or native.get('schema')!=expected_schema
             or native.get('status') not in {'UNPROVEN','BASELINE_EXECUTED'}
             or (native.get('error') is not None
@@ -355,6 +484,65 @@ def _configure_first_record(identity, contract, receipt, encoded):
                 or any(not isinstance(native.get(key),str) or re.fullmatch(r'[0-9a-f]{64}',native[key]) is None
                     for key in ('runtime_plan_sha256','runtime_summary_sha256'))):
             raise ValueError('worker_configure_first_native_invalid')
+    if membership_contract:
+        if (any(type(native.get(k)) is not bool for k in ('enabled_target_membership_verified',
+                'database_source_membership_complete','context_argv_binding_verified'))
+                or not native_command_contract and native.get('context_argv_binding_verified') is not False
+                or not native_command_contract and native.get('complete_execution') is not False
+                or any(type(native.get(k)) is not int or native[k] < 0
+                       for k in ('enabled_target_contexts_count','missing_database_contexts_count'))
+                or any(not isinstance(native.get(k),str) or re.fullmatch(r'[0-9a-f]{64}',native[k]) is None
+                       for k in ('enabled_target_contexts_sha256','missing_database_contexts_sha256'))):
+            raise ValueError('worker_configure_first_native_invalid')
+    if membership_contract:
+        capture_sha=native.get('enabled_target_capture_sha256')
+        ref=(native.get('artifacts') or {}).get('project-enabled-targets') or {}
+        if (capture_sha != ref.get('sha256')
+                or (capture_sha is not None and (not isinstance(capture_sha,str) or re.fullmatch(r'[0-9a-f]{64}',capture_sha) is None))
+                or (native['enabled_target_membership_verified'] and capture_sha is None)):
+            raise ValueError('worker_configure_first_native_invalid')
+    if native_command_contract:
+        from nico.assessment_cpp_header_evidence import HEADER_TOOL_MANIFEST_SHA256
+        for key in ('header_context_evidence','header_population','header_unvisited_files'):
+            if (type(native.get(key+'_count')) is not int or native[key+'_count']<0
+                    or not isinstance(native.get(key+'_sha256'),str)
+                    or re.fullmatch(r'[0-9a-f]{64}',native[key+'_sha256']) is None):
+                raise ValueError('worker_configure_first_native_invalid')
+        if (type(native.get('header_context_evidence_complete')) is not bool
+                or type(native.get('header_population_complete')) is not bool
+                or native.get('header_tool_manifest_sha256') not in (None,HEADER_TOOL_MANIFEST_SHA256)
+                or native['header_context_evidence_complete'] and (
+                    native['header_context_evidence_count']!=native['project_static_required_count']
+                    or native['header_context_evidence_count']<1
+                    or native['header_tool_manifest_sha256']!=HEADER_TOOL_MANIFEST_SHA256)
+                or native['header_population_complete'] and (not native['header_context_evidence_complete']
+                    or native['header_unvisited_files_count']!=0)
+                or native['complete_execution'] and not native['header_context_evidence_complete']):
+            raise ValueError('worker_configure_first_native_invalid')
+        if (any(type(native.get(k)) is not int or native[k]<0 for k in ('native_contexts_count','analysis_invocations'))
+            or not isinstance(native.get('native_contexts_sha256'),str)
+            or re.fullmatch(r'[0-9a-f]{64}',native['native_contexts_sha256']) is None):
+            raise ValueError('worker_configure_first_native_invalid')
+        for key in ('native_command_capture_sha256','native_command_plan_sha256','analysis_compilation_database_sha256'):
+            value=native.get(key)
+            if (value is not None and (not isinstance(value,str) or re.fullmatch(r'[0-9a-f]{64}',value) is None)
+                or native['context_argv_binding_verified'] and value is None):
+                raise ValueError('worker_configure_first_native_invalid')
+        for key in ('native_command_post_capture_sha256','native_command_freeze_sha256'):
+            value=native.get(key)
+            if (value is not None and (not isinstance(value,str) or re.fullmatch(r'[0-9a-f]{64}',value) is None)
+                or native['complete_execution'] and value is None):
+                raise ValueError('worker_configure_first_native_invalid')
+        if native['native_command_post_capture_sha256']!=(native['artifacts'].get('project-native-commands-post-build') or {}).get('sha256'):
+            raise ValueError('worker_configure_first_native_invalid')
+        if (native['native_command_capture_sha256']!=(native['artifacts'].get('project-native-commands') or {}).get('sha256')
+            or native['context_argv_binding_verified'] and (native['native_contexts_count']<1
+                or native['native_contexts_count']!=native['analysis_invocations']
+                or native['native_contexts_count']!=native['enabled_target_contexts_count'])
+            or native['complete_execution'] and (not native['context_argv_binding_verified']
+                or native['analysis_invocations']!=native['project_compiler_required_count']
+                or native['analysis_invocations']!=native['project_static_required_count'])):
+            raise ValueError('worker_configure_first_native_invalid')
     for key in ('source_count','configured_invocations','tests_discovered_count','tests_executed_count','tests_passed_count',
                 'tests_skipped_count','project_compiler_required_count','project_compiler_checked_count',
                 'project_static_required_count','project_static_analyzed_count','project_static_findings_count',
@@ -376,6 +564,18 @@ def _configure_first_record(identity, contract, receipt, encoded):
         'project-static-environment','project-static-evidence','project-baseline-evidence'}
     if runtime_contract:
         required_refs.add('project-runtime-evidence')
+    if native_command_contract:
+        required_refs |= {'project-native-commands','project-native-commands-post-build','project-enabled-targets-post-build'}
+    if generation_contract:
+        required_refs.add('project-generation-evidence')
+        ref=(native.get('artifacts') or {}).get('project-generation-evidence')
+        if (type(native['generated_input_materialization_complete']) is not bool
+                or type(native['generation_selected_targets_count']) is not int
+                or not 0<=native['generation_selected_targets_count']<=128
+                or (ref is None and native['generation_evidence_sha256'] is not None)
+                or (ref is not None and native['generation_evidence_sha256']!=ref.get('sha256'))
+                or native['complete_execution'] is True and native['generated_input_materialization_complete'] is not True):
+            raise ValueError('worker_configure_first_native_invalid')
     if (not isinstance(refs,dict) or 'project-compilation-database' not in refs
             or (native.get('complete_execution') is True and not required_refs <= set(refs))):
         raise ValueError('worker_configure_first_native_invalid')
@@ -384,6 +584,8 @@ def _configure_first_record(identity, contract, receipt, encoded):
                 or not isinstance(value.get('artifact_id'),str) or not value['artifact_id'].startswith('scanartifact_')
                 or not isinstance(value.get('sha256'),str) or re.fullmatch(r'[0-9a-f]{64}',value['sha256']) is None):
             raise ValueError('worker_configure_first_native_invalid')
+    if collection_contract:
+        _validate_configure_first_collection(native,runtime_contract=runtime_contract)
     receipt_sha=hashlib.sha256(encoded).hexdigest()
     binding={'run_id':identity.run_id,'scan_id':identity.scan_id,'customer_id':identity.customer_id,
         'project_id':identity.project_id,'repository':identity.repository_id,'commit_sha':identity.revision,
@@ -399,6 +601,9 @@ def _configure_first_record(identity, contract, receipt, encoded):
         'applicable':True,'evidence_required':True,
         'reason':('Configure-first execution completed; canonical findings projection from retained native artifacts is pending.'
                   if execution_complete else
+                  'Enabled target inventory was collected; exact source-target compiler command mapping remains unproven. '
+                  'Source membership cannot receive whole-project execution or header coverage credit.'
+                  if membership_contract and native['enabled_target_membership_verified'] and not native['context_argv_binding_verified'] else
                   'Generated-file capture exceeded its bounded capacity. The retained build/test fields describe earlier execution; '
                   'compiler, static and later runtime analysis are incomplete and receive no completion credit.'
                   if native['error']=='worker_configuration_probe_snapshot_capacity_exceeded' else
@@ -415,8 +620,9 @@ def _configure_first_record(identity, contract, receipt, encoded):
             'limitations_count':native['project_static_limitations_count'],
             'limitations_sha256':native['project_static_limitations_sha256'],
             'population_sha256':native['source_population_sha256'],'configuration_aware':True,
-            'header_context_verified':True,'repository_build_executed':native['compiled'],
-            'all_repository_configurations_analyzed':native['project_static_complete']},
+            'header_context_verified':(native['header_context_evidence_complete'] if native_command_contract else True),
+            'repository_build_executed':native['compiled'],
+            'all_repository_configurations_analyzed':native['project_static_complete'] and not membership_contract},
         'cpp_build_evidence':{'profile':contract['profile'],'compiled':native['compiled'],'tests_executed':native['tests_executed'],
             'tests_passed':native['tests_passed'],'configured_invocations':native['configured_invocations'],
             'tests_discovered_count':native['tests_discovered_count'],
@@ -428,6 +634,12 @@ def _configure_first_record(identity, contract, receipt, encoded):
             'project_option_policy':native['project_option_policy'],
             'project_options':deepcopy(native['project_options']),
             'project_options_sha256':native['project_options_sha256'],
+            **({'collection_complete':False,
+                'collection_claimed_complete':native['collection_complete'],
+                'project_compiler_collection':deepcopy(native['project_compiler_collection']),
+                'project_static_collection':deepcopy(native['project_static_collection']),
+                'independent_collection_error':native['independent_collection_error']}
+               if collection_contract else {}),
             **({'runtime_complete':native['runtime_complete'],
                 'runtime_plan_sha256':native['runtime_plan_sha256'],
                 'runtime_summary_sha256':native['runtime_summary_sha256'],
@@ -489,8 +701,15 @@ def publish_receipt(jobs: WorkerJobs, identity: JobIdentity, lease: str, worker:
         native=receipt["native"]
         required={"project-compilation-database","project-generated-context","project-compiler-evidence",
                   "project-static-environment","project-static-evidence"}
-        if job["contract"]["configuration"].get("schema") == "nico.cpp-configure-first-contract.v3":
+        from nico.assessment_cpp_configure_first_contract import runtime_required, membership_required, native_commands_required, generation_required
+        if runtime_required(job['contract']['configuration']):
             required.add("project-runtime-evidence")
+        if membership_required(job['contract']['configuration']):
+            required.add('project-enabled-targets')
+        if native_commands_required(job['contract']['configuration']):
+            required |= {'project-native-commands','project-native-commands-post-build','project-enabled-targets-post-build'}
+        if generation_required(job['contract']['configuration']):
+            required.add('project-generation-evidence')
         # Complete retained populations are reconstructed before publication.
         # A bounded incomplete producer result may legitimately stop before a
         # later artifact exists; retain that truthful failure record without

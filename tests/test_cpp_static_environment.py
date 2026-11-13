@@ -45,7 +45,8 @@ def evidence(request):
         queries[key] = {'invocation': argv, 'predefines': observed(macros.encode()),
             'search_invocation': env.search_arguments(argv),
             'search': observed(b'#include <...> search starts here:\n /usr/local/include\n /usr/include\nEnd of search list.\n')}
-    return {'schema': 'nico.cpp-static-environment.v1',
+    return {**({'physical_header_inputs': True} if request.get('physical_header_inputs') is True else {}),
+            'schema': 'nico.cpp-static-environment.v1',
             'request_sha256': hashlib.sha256(_canonical(request)).hexdigest(),
             'image_config_digest': request['image_config_digest'], 'analyst_uid': 1001,
             'compiler_versions': {path: observed(b'14.2.0\n') for path in sorted({v['invocation'][0] for v in queries.values()})},
@@ -69,6 +70,17 @@ def test_compiler_query_retains_semantics_but_never_reads_a_target_or_output(tmp
     altered = [*context['invocation'][:-1], '-mavx2', '-pthread', '-DVALUE=7', '-UOLD', context['invocation'][-1]]
     args = api().predefine_arguments(altered, context['analysis_file'])
     assert all(value in args for value in ('-mavx2', '-pthread', '-DVALUE=7', '-UOLD'))
+
+
+@pytest.mark.parametrize('language,macro,standard',[('c++',b'__cplusplus 201703L','c++17'),
+    ('c++',b'__cplusplus 202002L','c++20'),('c',b'__STDC_VERSION__ 201710L','c17')])
+def test_observed_compiler_dialect_is_distinct_from_analyzer_default(language,macro,standard):
+    raw=b'#define __GNUC__ 14\n#define __GNUC_MINOR__ 2\n#define '+macro+b'\n'
+    argv=['/usr/local/bin/g++' if language=='c++' else '/usr/local/bin/gcc','-dM','-E','-x',language,'/dev/null']
+    assert api()._predefined_standard(raw,argv)==standard
+    definition=macro.split(b' ')[0].decode()
+    altered=[argv[0],'-D'+definition+'='+macro.split(b' ')[1].decode(),*argv[1:]]
+    assert api()._predefined_standard(raw,altered) is None
 
 
 @pytest.mark.parametrize('flag', ['-fplugin=/tmp/payload.so', '@/tmp/options', '-include', '-imacros'])
