@@ -223,6 +223,34 @@ def _pdf_text(encoded: str) -> str:
     return "\n".join(page.extract_text() or "" for page in reader.pages)
 
 
+_GENERATED_ROLLBACK = (
+    "Revert the isolated remediation change if targeted or full verification fails; "
+    "retain the failed evidence and keep client delivery blocked."
+)
+
+
+def _rollback_scan_projection(canonical: Mapping[str, Any]) -> tuple[dict[str, Any], bool]:
+    # Exact fallback emitted by client_finding_remediation_register_v1. This
+    # validation-only copy never changes technical evidence or artifact hashes.
+    projected = deepcopy(dict(canonical))
+    containers = [projected.get(key) for key in (
+        "canonical_findings", "findings_register", "executive_risk_register",
+        "priority_findings", "findings", "decision_grade_findings_register",
+    )]
+    register = projected.get("client_finding_remediation_register")
+    if isinstance(register, Mapping):
+        containers.append(register.get("code_findings"))
+    recognized = False
+    for items in containers:
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if isinstance(item, dict) and item.get("rollback") == _GENERATED_ROLLBACK:
+                item["rollback"] = ""
+                recognized = True
+    return projected, recognized
+
+
 def assert_approved_lifecycle_consistency(package: Mapping[str, Any]) -> None:
     canonical = package.get("json")
     if not isinstance(canonical, Mapping) or not canonical:
@@ -234,9 +262,19 @@ def assert_approved_lifecycle_consistency(package: Mapping[str, Any]) -> None:
         "pdf": _pdf_text(str(package.get("pdf_base64") or "")),
     }
     canonical_labels = _canonical_text(canonical)
+    rollback_projection, has_generated_rollback = _rollback_scan_projection(canonical)
     for surface, text in surfaces.items():
         for pattern in _FORBIDDEN_APPROVED_PATTERNS:
             candidate = text
+            if pattern == r"\bclient delivery blocked\b" and has_generated_rollback:
+                if surface == "json":
+                    candidate = json.dumps(rollback_projection, sort_keys=True, ensure_ascii=False, default=str)
+                else:
+                    # Only the complete canonical-bound sentence is technical
+                    # guidance; extra/current-state prose remains fully checked.
+                    # PDF extraction may wrap spaces into line breaks.
+                    sentence = r"\s+".join(map(re.escape, _GENERATED_ROLLBACK.split()))
+                    candidate = re.sub(r"(?<!\w)" + sentence + r"(?!\w)", "", candidate)
             if r"\s*:\s*" in pattern:
                 pattern = _label_pattern(pattern)
                 if surface == "json":
