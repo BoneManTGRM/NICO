@@ -42,6 +42,9 @@ nico-api = "nico.api_runner:main"
 [tool.setuptools.packages.find]
 include = ["nico*"]
 
+[tool.setuptools.package-data]
+nico = ["semgrep_rules_v1.yml"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
