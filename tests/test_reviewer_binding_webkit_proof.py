@@ -45,7 +45,10 @@ def test_workflow_reuses_existing_job_with_fixed_bounds_and_no_dispatch():
  browser=steps['Verify synthetic reviewer lexical binding in hosted WebKit']
  artifact=steps['Retain synthetic reviewer layout evidence']
  assert build['timeout-minutes']==8 and browser['timeout-minutes']==4 and artifact['timeout-minutes']==2
- assert '${{ github.sha }}' in browser['run']
+ assert browser['env']['NICO_BOUND_GITHUB_SHA']=='${{ github.sha }}'
+ assert browser['env']['NICO_BOUND_GITHUB_EVENT_PULL_REQUEST_HEAD_SHA']=='${{ github.event.pull_request.head.sha }}'
+ assert '--expected-sha "${NICO_BOUND_GITHUB_SHA}"' in browser['run']
+ assert '--reviewed-head "${NICO_BOUND_GITHUB_EVENT_PULL_REQUEST_HEAD_SHA}"' in browser['run']
  assert artifact['with']['retention-days']==1
  assert 'secrets' not in str([build,browser,artifact])
  assert 'workflow_dispatch' not in (ROOT/'.github/workflows/ios-webkit-paint-proof.yml').read_text().split('jobs:')[0]
