@@ -209,16 +209,20 @@ jobs:
           exit 1
 
       - name: Wait for proof completion
+        env:
+          NICO_BOUND_STEPS_PROOF_OUTPUTS_RUN_ID: ${{ steps.proof.outputs.run_id }}
         run: |
-          gh run watch "${{ steps.proof.outputs.run_id }}" \
+          gh run watch "${NICO_BOUND_STEPS_PROOF_OUTPUTS_RUN_ID}" \
             --repo "$GITHUB_REPOSITORY" \
             --exit-status \
             --interval 30
 
       - name: Download final proof artifacts
         if: always() && steps.proof.outputs.run_id != ''
+        env:
+          NICO_BOUND_STEPS_PROOF_OUTPUTS_RUN_ID: ${{ steps.proof.outputs.run_id }}
         run: |
-          gh run download "${{ steps.proof.outputs.run_id }}" \
+          gh run download "${NICO_BOUND_STEPS_PROOF_OUTPUTS_RUN_ID}" \
             --repo "$GITHUB_REPOSITORY" \
             --dir dispatched-proof
           python - <<'PY'

@@ -36,7 +36,7 @@ jobs:
         run: |
           python -m venv "$RUNNER_TEMP/nico-semgrep"
           "$RUNNER_TEMP/nico-semgrep/bin/python" -m pip install --upgrade pip
-          "$RUNNER_TEMP/nico-semgrep/bin/pip" install semgrep==1.170.0
+          "$RUNNER_TEMP/nico-semgrep/bin/pip" install semgrep==1.185.0
           mkdir -p "$RUNNER_TEMP/nico-tools-bin"
           ln -s "$RUNNER_TEMP/nico-semgrep/bin/semgrep" "$RUNNER_TEMP/nico-tools-bin/semgrep"
           echo "$RUNNER_TEMP/nico-tools-bin" >> "$GITHUB_PATH"
