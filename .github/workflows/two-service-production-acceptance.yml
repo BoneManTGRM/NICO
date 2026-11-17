@@ -447,10 +447,13 @@ jobs:
 
       - name: Require passing live evidence contract
         if: always()
+        env:
+          NICO_BOUND_STEPS_ACCEPTANCE_OUTCOME: ${{ steps.acceptance.outcome }}
+          NICO_BOUND_STEPS_PHASE1_AUDIT_OUTCOME: ${{ steps.phase1_audit.outcome }}
         run: |
           set -euo pipefail
-          test "${{ steps.acceptance.outcome }}" = "success"
-          test "${{ steps.phase1_audit.outcome }}" = "success"
+          test "${NICO_BOUND_STEPS_ACCEPTANCE_OUTCOME}" = "success"
+          test "${NICO_BOUND_STEPS_PHASE1_AUDIT_OUTCOME}" = "success"
           python - <<'PY'
           import json
           from pathlib import Path

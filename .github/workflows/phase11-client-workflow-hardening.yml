@@ -41,11 +41,13 @@ jobs:
 
       - name: Verify exact revision and compile
         shell: bash
+        env:
+          NICO_BOUND_GITHUB_EVENT_PULL_REQUEST_HEAD_SHA_GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           mkdir -p artifacts/phase11
           ACTUAL="$(git rev-parse HEAD)"
-          EXPECTED="${{ github.event.pull_request.head.sha || github.sha }}"
+          EXPECTED="${NICO_BOUND_GITHUB_EVENT_PULL_REQUEST_HEAD_SHA_GITHUB_SHA}"
           test "$ACTUAL" = "$EXPECTED"
           printf '%s\n' "$ACTUAL" > artifacts/phase11/exact-revision.txt
           python -m py_compile nico/phase11_client_workflow_v1.py

@@ -29,11 +29,13 @@ jobs:
 
       - name: Record exact revision
         shell: bash
+        env:
+          NICO_BOUND_GITHUB_EVENT_PULL_REQUEST_HEAD_SHA_GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           mkdir -p artifacts/phase10
           ACTUAL_SHA="$(git rev-parse HEAD)"
-          EXPECTED_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
+          EXPECTED_SHA="${NICO_BOUND_GITHUB_EVENT_PULL_REQUEST_HEAD_SHA_GITHUB_SHA}"
           test "$ACTUAL_SHA" = "$EXPECTED_SHA"
           printf '%s\n' "$ACTUAL_SHA" > artifacts/phase10/exact-revision.txt
 

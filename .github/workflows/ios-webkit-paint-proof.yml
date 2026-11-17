@@ -161,10 +161,13 @@ jobs:
       - name: Verify synthetic reviewer lexical binding in hosted WebKit
         if: github.event_name == 'pull_request'
         timeout-minutes: 4
+        env:
+          NICO_BOUND_GITHUB_SHA: ${{ github.sha }}
+          NICO_BOUND_GITHUB_EVENT_PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           python scripts/reviewer_binding_webkit_proof.py \
-            --expected-sha "${{ github.sha }}" \
-            --reviewed-head "${{ github.event.pull_request.head.sha }}" \
+            --expected-sha "${NICO_BOUND_GITHUB_SHA}" \
+            --reviewed-head "${NICO_BOUND_GITHUB_EVENT_PULL_REQUEST_HEAD_SHA}" \
             --output reviewer-binding-webkit-proof
 
       - name: Validate and stage bounded reviewer evidence

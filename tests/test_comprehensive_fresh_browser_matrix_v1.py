@@ -122,6 +122,7 @@ def test_matrix_is_a_required_push_producer_step_with_unchanged_auth_scope():
     workflow = Path(".github/workflows/spanish-comprehensive-production-proof.yml").read_text()
     assert "python -m playwright install --with-deps chromium webkit" in workflow
     assert "id: fresh_browser_matrix\n        if: steps.exclusion_proof.outcome == 'success'" in workflow
-    assert 'test "${{ steps.fresh_browser_matrix.outcome }}" = "success"' in workflow
+    assert "NICO_BOUND_STEPS_FRESH_BROWSER_MATRIX_OUTCOME: ${{ steps.fresh_browser_matrix.outcome }}" in workflow
+    assert 'test "${NICO_BOUND_STEPS_FRESH_BROWSER_MATRIX_OUTCOME}" = "success"' in workflow
     assert "audit-results/fresh-browser-matrix/**" in workflow
     assert "contents: read\n  statuses: write\n  id-token: write" in workflow
