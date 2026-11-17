@@ -1,17 +1,64 @@
 from pathlib import Path
+import json
+import tomllib
+
+import pytest
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_shared_requirements_include_core_python_scanners_without_semgrep_runtime_conflict():
-    requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
-    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+def assert_shared_dependencies_exclude_semgrep(requirements: str, pyproject: str) -> None:
+    shared = [
+        Requirement(line.split(" #", 1)[0].strip())
+        for line in requirements.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    names = {canonicalize_name(item.name) for item in shared}
+    assert {"pip-audit", "bandit"} <= names
+    document = tomllib.loads(pyproject)
+    project = document.get("project", {})
+    entries = list(project.get("dependencies", []))
+    for group in project.get("optional-dependencies", {}).values():
+        entries.extend(group)
+    entries.extend(document.get("build-system", {}).get("requires", []))
+    names.update(canonicalize_name(Requirement(entry).name) for entry in entries)
+    assert "semgrep" not in names, "Semgrep must remain isolated from shared dependencies"
 
-    assert "pip-audit" in requirements
-    assert "bandit" in requirements
-    assert "semgrep" not in requirements.lower()
-    assert '"semgrep' not in pyproject.lower()
+
+def test_shared_requirements_include_core_python_scanners_without_semgrep_runtime_conflict():
+    assert_shared_dependencies_exclude_semgrep(
+        (ROOT / "requirements.txt").read_text(encoding="utf-8"),
+        (ROOT / "pyproject.toml").read_text(encoding="utf-8"),
+    )
+
+
+def test_semgrep_package_resource_is_not_a_dependency():
+    assert_shared_dependencies_exclude_semgrep(
+        "pip-audit==2.10.1\nbandit==1.9.4\n",
+        '[project]\ndependencies = []\n'
+        '[tool.setuptools.package-data]\nnico = ["semgrep_rules_v1.yml"]\n',
+    )
+
+
+@pytest.mark.parametrize("location", ["requirements", "runtime", "optional", "build"])
+@pytest.mark.parametrize("dependency", ["semgrep==1.185.0", "Semgrep[extra]>=1; python_version < '3.0'"])
+def test_real_semgrep_dependency_is_rejected(location, dependency):
+    requirements = "pip-audit==2.10.1\nbandit==1.9.4\n"
+    document = '[tool.setuptools.package-data]\nnico = ["semgrep_rules_v1.yml"]\n'
+    if location == "requirements":
+        requirements += dependency + "\n"
+    else:
+        section, key = {
+            "runtime": ("project", "dependencies"),
+            "optional": ("project.optional-dependencies", "scanners"),
+            "build": ("build-system", "requires"),
+        }[location]
+        document += f"[{section}]\n{key} = [{json.dumps(dependency)}]\n"
+    with pytest.raises(AssertionError, match="Semgrep must remain isolated"):
+        assert_shared_dependencies_exclude_semgrep(requirements, document)
 
 
 def test_dockerfile_installs_worker_runtime_dependencies_and_isolates_semgrep():

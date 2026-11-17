@@ -9,7 +9,7 @@ from nico.local_store import LocalStore
 
 
 class LocalVerificationStore(Protocol):
-    def latest_scan(self) -> dict[str, Any]: ...
+    def latest_scan(self, *, preserve_row_identity: bool = False) -> dict[str, Any]: ...
 
     def payloads(self, table: str) -> list[dict[str, Any]]: ...
 
@@ -27,18 +27,35 @@ def verify_latest(
     store: LocalVerificationStore | None = None,
     id_factory: Callable[[str], str] = new_id,
     clock: Callable[[], str] = now,
+    scan_scoped: bool = False,
+    persist: bool = True,
+    require_row_identity: bool = False,
 ) -> dict[str, Any]:
     active_store = store if store is not None else LocalStore(DB_PATH)
-    scan = active_store.latest_scan()
-    findings = active_store.payloads("findings")
-    repairs = active_store.payloads("repairs")
+    scan = active_store.latest_scan(preserve_row_identity=True) if require_row_identity else active_store.latest_scan()
+    identity_valid = not require_row_identity or scan.get("_row_identity_valid") is True
+    snapshot_valid = True
+    if scan_scoped:
+        # save_scan retains the findings snapshot in the same scan payload.
+        snapshot = scan.get("findings")
+        snapshot_valid = isinstance(snapshot, list) and all(
+            isinstance(item, dict) and isinstance(item.get("id"), str) and bool(item["id"].strip())
+            for item in snapshot
+        )
+        findings = snapshot if snapshot_valid else []
+        ids = {item["id"] for item in findings}
+        snapshot_valid = snapshot_valid and len(ids) == len(findings)
+        repairs = [item for item in active_store.payloads("repairs") if item.get("finding_id") in ids]
+    else:
+        findings = active_store.payloads("findings")
+        repairs = active_store.payloads("repairs")
     masked = all("FAKE_TEST_ONLY_SECRET_123456" not in str(finding) for finding in findings)
     result = {
         "id": id_factory("verify"),
         "created_at": clock(),
         "scan_id": scan.get("id"),
         "repair_id": None,
-        "passed": bool(scan) and masked,
+        "passed": bool(scan) and masked and snapshot_valid and identity_valid,
         "status": "verification_observed",
         "checks": [
             "scan_available" if scan else "scan_missing",
@@ -51,16 +68,21 @@ def verify_latest(
         "repair_count": len(repairs),
         "baseline_update_allowed": False,
     }
-    active_store.save_verification(result)
-    active_store.save_memory(
-        {
-            "id": result["id"],
-            "type": "verification",
-            "created_at": result["created_at"],
-            "result": result,
-        }
-    )
-    active_store.audit("verification.latest", result)
+    if scan_scoped:
+        result["checks"].append("scan_findings_available" if snapshot_valid else "scan_findings_invalid")
+    if require_row_identity:
+        result["checks"].append("scan_row_identity_matches_payload" if identity_valid else "scan_row_identity_mismatch")
+    if persist:
+        active_store.save_verification(result)
+        active_store.save_memory(
+            {
+                "id": result["id"],
+                "type": "verification",
+                "created_at": result["created_at"],
+                "result": result,
+            }
+        )
+        active_store.audit("verification.latest", result)
     return result
 
 

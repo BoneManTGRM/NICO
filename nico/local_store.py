@@ -179,14 +179,30 @@ class LocalStore:
     def payloads(self, table: str) -> list[dict[str, Any]]:
         return [json.loads(row["payload"]) for row in self.rows(table) if row.get("payload")]
 
-    def latest_scan(self) -> dict[str, Any]:
+    def latest_scan(self, *, preserve_row_identity: bool = False) -> dict[str, Any]:
         with self.db() as db:
             row = db.execute("SELECT * FROM scans ORDER BY created_at DESC LIMIT 1").fetchone()
         if not row:
             return {}
         data = dict(row)
-        data["payload"] = json.loads(data["payload"])
-        data.update(data["payload"])
+        payload = json.loads(data["payload"])
+        if preserve_row_identity:
+            row_id = data["id"]
+            identity_valid = (
+                isinstance(row_id, str)
+                and bool(row_id.strip())
+                and isinstance(payload, dict)
+                and payload.get("id") == row_id
+            )
+            data["payload"] = payload
+            if isinstance(payload, dict):
+                data.update(payload)
+            # Set these after merging: JSON must not replace or attest its own ID.
+            data["id"] = row_id
+            data["_row_identity_valid"] = identity_valid
+        else:
+            data["payload"] = payload
+            data.update(payload)
         return data
 
     def latest_verification(self) -> dict[str, Any]:

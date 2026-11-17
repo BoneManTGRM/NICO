@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import hashlib
 import json
 import os
 import re
@@ -12,6 +13,7 @@ import stat
 import tarfile
 import tempfile
 import zipfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -19,7 +21,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from nico.cli import REPORT_DIR, Store, mask_text, new_id, now, run_scan, scanner_availability, verify_latest
+from nico.cli import REPORT_DIR, Store, mask_text, new_id, now, run_scan, scanner_availability
 
 
 SAFE_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -538,6 +540,7 @@ def build_report(target_type: str, target: str, root: Path | None, scan_result: 
 
     report = {
         "assessment_id": new_id("no_server_assessment"),
+        "scan_id": scan.get("id"),
         "created_at": utc_now(),
         "status": "completed",
         "mode": "no-server-local-first",
@@ -649,7 +652,73 @@ def html_report(markdown: str) -> str:
     return f"<!doctype html><html lang='en'><head><meta charset='utf-8'><title>NICO No-Server Assessment</title><style>body{{font-family:Arial,sans-serif;max-width:980px;margin:40px auto;padding:0 20px;line-height:1.55;color:#111827}}pre{{white-space:pre-wrap;background:#f8fafc;border:1px solid #e5e7eb;border-radius:16px;padding:24px}}</style></head><body><pre>{safe}</pre></body></html>"
 
 
+@contextmanager
+def _report_publication_lock(*, exclusive: bool):
+    # Never remove the stable lock file or silently fall back to unlocked access.
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    with (REPORT_DIR / ".no_server_publication.lock").open("a+b") as lock:
+        if os.name == "nt":
+            import msvcrt
+
+            # Windows uses one exclusive byte region for readers and writers.
+            # locking() permits a region beyond EOF; no racy initialization write.
+            lock.seek(0)
+            msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+            try:
+                yield
+            finally:
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+        elif os.name == "posix":
+            import fcntl
+
+            mode = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+            fcntl.flock(lock.fileno(), mode | fcntl.LOCK_NB)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+        else:
+            raise OSError("Report publication locking is unsupported on this platform.")
+
+
+def _publication_check(report: dict[str, Any], *, artifacts: dict[str, bytes] | None = None) -> str:
+    """Check persisted bytes while the caller holds the publication lock."""
+    try:
+        proof = json.loads((REPORT_DIR / "no_server_latest.manifest.json").read_bytes())
+        if not isinstance(proof, dict) or proof.get("version") != 1:
+            return "assessment_artifact_proof_invalid"
+        if (
+            not isinstance(report.get("assessment_id"), str)
+            or not report["assessment_id"].strip()
+            or proof.get("assessment_id") != report.get("assessment_id")
+            or proof.get("scan_id") != report.get("scan_id")
+        ):
+            return "assessment_artifact_identity_mismatch"
+        hashes = proof.get("sha256")
+        if not isinstance(hashes, dict) or set(hashes) != {"json", "markdown", "html"}:
+            return "assessment_artifact_proof_invalid"
+        validated = {}
+        for fmt, suffix in (("json", "json"), ("markdown", "md"), ("html", "html")):
+            data = (REPORT_DIR / f"no_server_latest.{suffix}").read_bytes()
+            if hashlib.sha256(data).hexdigest() != hashes[fmt]:
+                return "assessment_artifact_hash_mismatch"
+            if fmt == "json" and json.loads(data) != report:
+                return "assessment_artifact_identity_mismatch"
+            validated[fmt] = data
+        if artifacts is not None:
+            artifacts.update(validated)
+    except (OSError, ValueError, UnicodeError):
+        return "assessment_artifact_proof_or_file_missing_or_invalid"
+    return "assessment_artifacts_verified"
+
+
 def write_latest_reports(report: dict[str, Any]) -> dict[str, str]:
+    with _report_publication_lock(exclusive=True):
+        return _write_latest_reports_locked(report)
+
+
+def _write_latest_reports_locked(report: dict[str, Any]) -> dict[str, str]:
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     safe_report = sanitize_output(report)
     if not isinstance(safe_report, dict):
@@ -662,32 +731,79 @@ def write_latest_reports(report: dict[str, Any]) -> dict[str, str]:
         "html": str(REPORT_DIR / "no_server_latest.html"),
     }
     serialized_report = json.dumps(safe_report, indent=2, sort_keys=True)
-    Path(paths["json"]).write_text(serialized_report, encoding="utf-8")
-    Path(paths["markdown"]).write_text(markdown, encoding="utf-8")
-    Path(paths["html"]).write_text(html_body, encoding="utf-8")
+    proof_path = REPORT_DIR / "no_server_latest.manifest.json"
+    # Invalidate the previous commit marker before modifying any artifact.
+    proof_path.unlink(missing_ok=True)
+    Path(paths["json"]).write_bytes(serialized_report.encode("utf-8"))
+    Path(paths["markdown"]).write_bytes(markdown.encode("utf-8"))
+    Path(paths["html"]).write_bytes(html_body.encode("utf-8"))
     store = Store()
     for fmt, path in paths.items():
         store.save_report(f"no-server-latest-{fmt}", fmt, path)
+    contents = {"json": serialized_report, "markdown": markdown, "html": html_body}
+    proof = {
+        "version": 1,
+        "assessment_id": safe_report.get("assessment_id"),
+        "scan_id": safe_report.get("scan_id"),
+        "sha256": {fmt: hashlib.sha256(text.encode("utf-8")).hexdigest() for fmt, text in contents.items()},
+    }
+    # Only the completion marker is atomically replaced. The bundle is protected
+    # by the lock and validated hashes, not by pretending three writes are atomic.
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="wb", dir=REPORT_DIR, prefix=".no_server_manifest_", delete=False) as output:
+            temporary = Path(output.name)
+            output.write(json.dumps(proof, sort_keys=True).encode("utf-8"))
+        os.replace(temporary, proof_path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     return paths
 
 
-def latest_report() -> dict[str, Any]:
+def _read_latest_report_unchecked() -> dict[str, Any]:
     path = REPORT_DIR / "no_server_latest.json"
     if not path.exists():
         return {"status": "empty", "message": "No no-server assessment has been run yet."}
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+class ReportIntegrityError(RuntimeError):
+    """Persisted report artifacts are incomplete or lack valid publication proof."""
+
+
+def _read_committed_report_locked() -> tuple[dict[str, Any], dict[str, bytes]] | None:
+    names = ("no_server_latest.json", "no_server_latest.md", "no_server_latest.html", "no_server_latest.manifest.json")
+    if not any((REPORT_DIR / name).exists() for name in names):
+        return None
+    try:
+        report = _read_latest_report_unchecked()
+        if not isinstance(report, dict):
+            raise ReportIntegrityError("Report JSON must be a mapping.")
+        artifacts: dict[str, bytes] = {}
+        check = _publication_check(report, artifacts=artifacts)
+        if check != "assessment_artifacts_verified":
+            raise ReportIntegrityError(check)
+        return report, artifacts
+    except (OSError, ValueError, UnicodeError) as exc:
+        raise ReportIntegrityError("Report artifacts could not be validated.") from exc
+
+
+def latest_report() -> dict[str, Any]:
+    with _report_publication_lock(exclusive=False):
+        report = _read_committed_report_locked()
+        if report is None:
+            return {"status": "empty", "message": "No no-server assessment has been run yet."}
+        return report[0]
+
+
 def report_text(fmt: str) -> str:
-    mapping = {
-        "json": REPORT_DIR / "no_server_latest.json",
-        "markdown": REPORT_DIR / "no_server_latest.md",
-        "html": REPORT_DIR / "no_server_latest.html",
-    }
-    path = mapping.get(fmt, mapping["markdown"])
-    if not path.exists():
-        return "No no-server assessment report exists yet."
-    return path.read_text(encoding="utf-8")
+    with _report_publication_lock(exclusive=False):
+        bundle = _read_committed_report_locked()
+        if bundle is None:
+            return "No no-server assessment report exists yet."
+        selected = fmt if fmt in {"json", "markdown", "html"} else "markdown"
+        return bundle[1][selected].decode("utf-8")
 
 
 def run_local_assessment(path: str, authorized: bool) -> dict[str, Any]:
@@ -762,21 +878,53 @@ def run_url_assessment(url: str, authorized: bool, passive_only: bool) -> dict[s
     return build_report("url", url, None, None, passive, "User confirmed ownership or explicit authorization for passive-only local/staging URL review. NICO made no exploit, brute-force, fuzzing, crawling, auth-bypass, or destructive requests.")
 
 
+def verify_latest() -> dict[str, Any]:
+    """Observe only the selected scan; persist the outer decision after all checks."""
+    from nico.local_verification_service import verify_latest as verify_scan
+
+    return verify_scan(store=Store(), id_factory=new_id, clock=now, scan_scoped=True, persist=False, require_row_identity=True)
+
+
 def verify_latest_assessment() -> dict[str, Any]:
-    report = latest_report()
+    with _report_publication_lock(exclusive=False):
+        return _verify_latest_assessment_locked()
+
+
+def _verify_latest_assessment_locked() -> dict[str, Any]:
+    report = _read_latest_report_unchecked()
     verification = verify_latest()
-    return {
-        "status": "verified" if report.get("status") == "completed" else "no_assessment_report",
+    artifact_check = _publication_check(report)
+    report_available = report.get("status") == "completed"
+    scan_id = report.get("scan_id")
+    scan_matches = (
+        isinstance(scan_id, str)
+        and bool(scan_id.strip())
+        and scan_id == verification.get("scan_id")
+    )
+    if not report_available:
+        status = "no_assessment_report"
+    elif verification.get("passed") is True and scan_matches and artifact_check == "assessment_artifacts_verified":
+        status = "verified"
+    else:
+        status = "verification_failed"
+    result = {
+        "status": status,
         "assessment_id": report.get("assessment_id"),
-        "report_available": report.get("status") == "completed",
+        "scan_id": scan_id,
+        "report_available": report_available,
         "nico_verification": verification,
         "checks": [
             "no_server_report_available" if report.get("status") == "completed" else "no_server_report_missing",
             "raw_secret_masking_checked",
             "authorization_scope_recorded" if report.get("authorization_scope") else "authorization_scope_missing",
             "evidence_log_present" if report.get("evidence_log") else "evidence_log_missing",
+            "assessment_scan_matches_verification" if scan_matches else "assessment_scan_missing_or_mismatched",
+            artifact_check,
         ],
     }
+
+    Store().audit("assessment.no_server.verification", sanitize_output(result))
+    return result
 
 
 def print_json(payload: Any) -> None:
@@ -840,14 +988,17 @@ def main(argv: list[str] | None = None) -> None:
         if args.action == "verify":
             if args.which != "latest":
                 raise ValueError("Only verify latest is supported in no-server mode.")
-            print_json(verify_latest_assessment())
+            verification = verify_latest_assessment()
+            print_json(verification)
+            if verification["status"] != "verified":
+                raise SystemExit(1) from None
             return
     except AuthorizationError as exc:
         print_json({"status": "blocked", "error": str(exc)})
-        return
+        raise SystemExit(1) from None
     except Exception as exc:
         print_json({"status": "error", "error": "Assessment failed.", "error_type": type(exc).__name__})
-        return
+        raise SystemExit(1) from None
 
     parser.print_help()
 
