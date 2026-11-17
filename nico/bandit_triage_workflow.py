@@ -46,9 +46,8 @@ def _append_unique(items: list[Any], value: str) -> None:
 def _clear_prior_bandit_triage_lines(section: dict[str, Any]) -> None:
     for key in ("evidence", "findings", "unavailable"):
         values = section.get(key) or []
-        if not isinstance(values, list):
-            values = [values]
-        section[key] = [item for item in values if not str(item).startswith("Bandit triage") and "finding_key=bandit_" not in str(item)]
+        normalized_values = values if isinstance(values, list) else [values]
+        section[key] = [item for item in normalized_values if not str(item).startswith("Bandit triage") and "finding_key=bandit_" not in str(item)]
 
 
 def _attach_lines(result: dict[str, Any], triage: dict[str, Any]) -> None:
@@ -58,11 +57,11 @@ def _attach_lines(result: dict[str, Any], triage: dict[str, Any]) -> None:
     _clear_prior_bandit_triage_lines(section)
     lines = bandit_triage_report_lines(triage)
     for key in ("evidence", "findings"):
-        section.setdefault(key, [])
-        if not isinstance(section[key], list):
-            section[key] = [section[key]]
+        existing_values = section.setdefault(key, [])
+        normalized_values = existing_values if isinstance(existing_values, list) else [existing_values]
+        section[key] = normalized_values
         for line in lines.get(key, []):
-            _append_unique(section[key], line)
+            _append_unique(normalized_values, line)
 
 
 def attach_bandit_triage_to_report(result: dict[str, Any]) -> dict[str, Any]:
