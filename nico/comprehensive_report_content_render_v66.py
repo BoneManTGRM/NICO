@@ -237,6 +237,19 @@ def _ci_operational_stage(canonical: Mapping[str, Any], renderer: Any) -> dict[s
     )
 
 
+def _unique_criteria_lines(values: Any, seen: set[str]) -> list[str]:
+    if isinstance(values, str):
+        values = [values]
+    lines: list[str] = []
+    for raw in values:
+        value = _text(raw)
+        key = value.casefold()
+        if value and key not in seen:
+            seen.add(key)
+            lines.append(value)
+    return lines
+
+
 def _rich_detailed_findings(findings: list[Mapping[str, Any]], *, spanish: bool) -> str:
     heading = "## Hallazgos canónicos detallados" if spanish else "## Detailed Canonical Findings"
     lines = [heading, ""]
@@ -275,31 +288,13 @@ def _rich_detailed_findings(findings: list[Mapping[str, Any]], *, spanish: bool)
             f"- Disposition: {_text(item.get('disposition')) or 'PROPOSED · EXACT SOURCE REVIEW AND HUMAN APPROVAL REQUIRED'}",
         ]
 
-        verification_values = item.get("verification") or []
-        if isinstance(verification_values, str):
-            verification_values = [verification_values]
-        verification = []
         seen: set[str] = set()
-        for raw in verification_values:
-            value = _text(raw)
-            key = value.casefold()
-            if value and key not in seen:
-                seen.add(key)
-                verification.append(value)
+        verification = _unique_criteria_lines(item.get("verification") or [], seen)
         if verification:
             lines.append("- Required verification / planned acceptance criteria (outcome not verified):")
             lines.extend(f"  - {value}" for value in verification)
 
-        criteria_values = item.get("acceptance_criteria") or []
-        if isinstance(criteria_values, str):
-            criteria_values = [criteria_values]
-        criteria: list[str] = []
-        for raw in criteria_values:
-            value = _text(raw)
-            key = value.casefold()
-            if value and key not in seen:
-                seen.add(key)
-                criteria.append(value)
+        criteria = _unique_criteria_lines(item.get("acceptance_criteria") or [], seen)
         if criteria:
             lines.append("- Acceptance / exit criteria:")
             lines.extend(f"  - {value}" for value in criteria)
@@ -308,16 +303,7 @@ def _rich_detailed_findings(findings: list[Mapping[str, Any]], *, spanish: bool)
         if rollback:
             lines.append(f"- Rollback: {rollback}")
 
-        exit_values = item.get("exit_criteria") or []
-        if isinstance(exit_values, str):
-            exit_values = [exit_values]
-        exits: list[str] = []
-        for raw in exit_values:
-            value = _text(raw)
-            key = value.casefold()
-            if value and key not in seen:
-                seen.add(key)
-                exits.append(value)
+        exits = _unique_criteria_lines(item.get("exit_criteria") or [], seen)
         if exits:
             lines.append("- Final exit criteria:")
             lines.extend(f"  - {value}" for value in exits)
