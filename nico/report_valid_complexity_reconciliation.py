@@ -48,11 +48,10 @@ def _remove_stale_invalid_lines(section: dict[str, Any]) -> None:
     lowered = tuple(fragment.lower() for fragment in STALE_INVALID_COMPLEXITY_FRAGMENTS)
     for key in ("evidence", "findings", "unavailable", "verified_claims", "unverified_claims"):
         values = section.get(key) or []
-        if not isinstance(values, list):
-            values = [values]
+        normalized_values = values if isinstance(values, list) else [values]
         section[key] = [
             item
-            for item in values
+            for item in normalized_values
             if not any(fragment in str(item).lower() for fragment in lowered)
         ]
 

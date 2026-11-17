@@ -169,12 +169,10 @@ def _repair_client_criteria(canonical: dict[str, Any]) -> None:
             continue
         item = deepcopy(dict(raw))
         values = item.get("acceptance_criteria")
-        if isinstance(values, str):
-            values = [values]
-        if not isinstance(values, list):
-            values = []
+        normalized_values = [values] if isinstance(values, str) else values
+        criteria = normalized_values if isinstance(normalized_values, list) else []
         selected: dict[str, str] = {}
-        for value in values:
+        for value in criteria:
             cleaned = _clean_criterion(value)
             key = cleaned.casefold()
             if cleaned and key not in selected:
