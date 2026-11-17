@@ -141,3 +141,38 @@ def test_final_gate_lifts_static_after_signed_bandit_triage_approval():
     assert sections["static_analysis"]["score"] >= 88
     assert result["report_quality_guards"]["verified_scanner_score_lifts"]["status"] == "applied"
     assert result["export_truth_gate"]["status"] == "passed"
+
+
+def test_prior_lines_normalization_preserves_scalar_and_sequence_semantics():
+    from copy import deepcopy
+    from nico.bandit_triage_workflow import _clear_prior_bandit_triage_lines
+
+    cases = [(None, []), (False, []), (0, []), ("", []), ("keep", ["keep"]),
+             ("Bandit triage old", []), ("x finding_key=bandit_old", []),
+             (["keep", "Bandit triage old", "x finding_key=bandit_old", 3], ["keep", 3]),
+             (("keep", "another"), [("keep", "another")]),
+             ({"keep": "value"}, [{"keep": "value"}])]
+    for value, expected_items in cases:
+        section = {key: deepcopy(value) for key in ("evidence", "findings", "unavailable")}
+        expected = {key: deepcopy(expected_items) for key in ("evidence", "findings", "unavailable")}
+        _clear_prior_bandit_triage_lines(section)
+        assert section == expected
+
+
+def test_attach_lines_preserves_unique_content_and_other_fields(monkeypatch):
+    import nico.bandit_triage_workflow as module
+
+    monkeypatch.setattr(module, "bandit_triage_report_lines", lambda _: {
+        "evidence": ["new", "new", "keep"], "findings": ["finding", "finding"],
+    })
+    section = {"id": "static_analysis", "evidence": "keep", "findings": None,
+               "unavailable": ["untouched"], "score": 42}
+    result = {"sections": [section]}
+    module._attach_lines(result, {})
+    assert section["evidence"] == ["keep", "new"]
+    assert section["findings"] == ["finding"]
+    assert section["unavailable"] == ["untouched"]
+    assert section["score"] == 42
+    module._attach_lines(result, {})
+    assert section["evidence"] == ["keep", "new"]
+    assert section["findings"] == ["finding"]
