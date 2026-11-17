@@ -27,7 +27,7 @@ def _semver_core(version: str) -> tuple[int, int, int]:
 
 def test_security_workflow_uses_pinned_isolated_scanners_and_no_latest_installs() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
-    assert "semgrep==1.170.0" in source
+    assert "semgrep==1.185.0" in source
     assert "scripts/install_hosted_scanner_binaries.py" in source
     assert 'NICO_SCANNER_INSTALL_STRICT: "true"' in source
     assert "@latest" not in source

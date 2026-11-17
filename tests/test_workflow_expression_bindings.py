@@ -81,6 +81,29 @@ BINDINGS = [('.github/workflows/branch-cleanup-issue-control.yml',
    'NICO_BOUND_STEPS_PHASE1_AUDIT_OUTCOME': '${{ steps.phase1_audit.outcome }}'})]
 
 
+BINDINGS += [('.github/workflows/ios-webkit-paint-proof.yml',
+  'Require passing iOS evidence contract',
+  {'NICO_BOUND_STEPS_IOS_PROOF_OUTCOME': '${{ steps.ios_proof.outcome }}'}),
+ ('.github/workflows/mobile-restart-production-proof.yml',
+  'Require passing mobile restart evidence',
+  {'NICO_BOUND_STEPS_RESTART_PROOF_OUTCOME': '${{ steps.restart_proof.outcome }}'}),
+ ('.github/workflows/one-shot-express-diagnostic.yml',
+  'Preserve diagnostic result',
+  {'NICO_BOUND_STEPS_DIAGNOSTIC_OUTCOME': '${{ steps.diagnostic.outcome }}'}),
+ ('.github/workflows/phase6-proof-dispatch.yml',
+  'Download final proof artifacts',
+  {'NICO_BOUND_STEPS_PROOF_OUTPUTS_RUN_ID': '${{ steps.proof.outputs.run_id }}'}),
+ ('.github/workflows/phase6-proof-dispatch.yml',
+  'Wait for proof completion',
+  {'NICO_BOUND_STEPS_PROOF_OUTPUTS_RUN_ID': '${{ steps.proof.outputs.run_id }}'}),
+ ('.github/workflows/production-assessment-smoke.yml',
+  'Require passing combined browser and API proof',
+  {'NICO_BOUND_STEPS_SMOKE_OUTCOME': '${{ steps.smoke.outcome }}'}),
+ ('.github/workflows/two-service-production-acceptance.yml',
+  'Audit Phase 1 structured candidate artifacts',
+  {'NICO_BOUND_STEPS_ACCEPTANCE_OUTCOME': '${{ steps.acceptance.outcome }}'})]
+
+
 def test_workflow_binding_contracts():
     for path, step, bindings in BINDINGS:
         source = (ROOT / path).read_text()

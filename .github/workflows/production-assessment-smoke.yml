@@ -145,9 +145,11 @@ jobs:
 
       - name: Require passing combined browser and API proof
         if: always()
+        env:
+          NICO_BOUND_STEPS_SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
         run: |
           set -euo pipefail
-          test "${{ steps.smoke.outcome }}" = "success"
+          test "${NICO_BOUND_STEPS_SMOKE_OUTCOME}" = "success"
           python - <<'PY'
           import json
           from pathlib import Path

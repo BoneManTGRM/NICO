@@ -421,9 +421,11 @@ jobs:
         id: phase1_audit
         if: always()
         continue-on-error: true
+        env:
+          NICO_BOUND_STEPS_ACCEPTANCE_OUTCOME: ${{ steps.acceptance.outcome }}
         run: |
           set -euo pipefail
-          test "${{ steps.acceptance.outcome }}" = "success"
+          test "${NICO_BOUND_STEPS_ACCEPTANCE_OUTCOME}" = "success"
           ASSESSED_COMMIT_SHA="$(jq -r '.assessed_commit_sha' audit-results/comprehensive-run-handoff.json)"
           python scripts/phase1_structured_artifact_audit_v1.py \
             --canonical-json audit-results/two-service-live-artifacts/pass-2-comprehensive.json \

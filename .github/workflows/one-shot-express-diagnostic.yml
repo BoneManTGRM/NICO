@@ -218,4 +218,7 @@ jobs:
 
       - name: Preserve diagnostic result
         if: always()
-        run: test "${{ steps.diagnostic.outcome }}" = "success"
+        env:
+          NICO_BOUND_STEPS_DIAGNOSTIC_OUTCOME: ${{ steps.diagnostic.outcome }}
+        run: |
+          test "${NICO_BOUND_STEPS_DIAGNOSTIC_OUTCOME}" = "success"

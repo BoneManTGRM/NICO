@@ -321,9 +321,11 @@ jobs:
 
       - name: Require passing mobile restart evidence
         if: always()
+        env:
+          NICO_BOUND_STEPS_RESTART_PROOF_OUTCOME: ${{ steps.restart_proof.outcome }}
         run: |
           set -euo pipefail
-          test "${{ steps.restart_proof.outcome }}" = "success"
+          test "${NICO_BOUND_STEPS_RESTART_PROOF_OUTCOME}" = "success"
           python - <<'PY'
           import json
           from pathlib import Path
