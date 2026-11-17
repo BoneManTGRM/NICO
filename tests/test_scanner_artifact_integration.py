@@ -126,3 +126,52 @@ def test_hosted_gate_uses_current_run_scanner_artifact_before_trust_caps():
     assert sections["dependency_health"]["status"] == "green"
     assert sections["static_analysis"]["status"] == "green"
     assert result["export_truth_gate"]["status"] == "passed"
+
+
+def test_scanner_note_normalization_preserves_legacy_values_and_idempotence():
+    from copy import deepcopy
+    from nico.scanner_artifact_integration import (
+        SECTION_TOOL_PREFIXES,
+        _attach_section_notes,
+        _remove_stale_scanner_lines,
+    )
+
+    cases = [None, False, 0, "", "retained", ("retained",), {"retained": True},
+             ["retained", "Scanner-worker static tools stale"]]
+    for section_id, prefix in SECTION_TOOL_PREFIXES.items():
+        for value in cases:
+            original = {"id": section_id, "score": 31, "status": "gray",
+                        **{key: deepcopy(value) for key in ("evidence", "findings", "unavailable")}}
+            expected = deepcopy(original)
+            for key in ("evidence", "findings", "unavailable"):
+                values = expected.get(key) or []
+                if not isinstance(values, list):
+                    values = [values]
+                expected[key] = [item for item in values if not str(item).startswith(prefix)]
+            actual = deepcopy(original)
+            _remove_stale_scanner_lines(actual, section_id)
+            assert actual == expected
+
+            notes = {key: [f"{prefix} current", f"{prefix} current", "unrelated"]
+                     for key in ("evidence", "findings", "unavailable")}
+            for key in notes:
+                if f"{prefix} current" not in expected[key]:
+                    expected[key].append(f"{prefix} current")
+            result = {"sections": [deepcopy(original), {"id": "unrelated", "score": 77}]}
+            _attach_section_notes(result, notes)
+            assert result["sections"] == [expected, {"id": "unrelated", "score": 77}]
+            once = deepcopy(result)
+            _attach_section_notes(result, notes)
+            assert result == once
+
+
+def test_scanner_note_normalization_handles_missing_keys_and_unknown_sections():
+    from nico.scanner_artifact_integration import _remove_stale_scanner_lines, _attach_section_notes
+
+    unknown = {"evidence": "retained"}
+    _remove_stale_scanner_lines(unknown, "unknown")
+    assert unknown == {"evidence": "retained"}
+    result = {"sections": [{"id": "static_analysis", "score": 12}]}
+    _attach_section_notes(result, {"evidence": [], "findings": [], "unavailable": []})
+    assert result == {"sections": [{"id": "static_analysis", "score": 12,
+                                   "evidence": [], "findings": [], "unavailable": []}]}
