@@ -160,10 +160,9 @@ def _remove_stale_complexity_lines(section: dict[str, Any]) -> None:
     )
     for key in ("evidence", "findings", "unavailable", "verified_claims", "unverified_claims"):
         values = section.get(key) or []
-        if not isinstance(values, list):
-            values = [values]
+        normalized_values = values if isinstance(values, list) else [values]
         section[key] = [
-            item for item in values
+            item for item in normalized_values
             if not any(fragment in str(item or "").lower() for fragment in fragments)
         ]
 

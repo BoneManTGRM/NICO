@@ -150,9 +150,8 @@ def _section_entries(result: dict[str, Any], report_run_id: str) -> list[dict[st
             continue
         for source in ("evidence", "findings", "unavailable"):
             values = section.get(source) or []
-            if not isinstance(values, list):
-                values = [values]
-            for line in values:
+            normalized_values = values if isinstance(values, list) else [values]
+            for line in normalized_values:
                 entry = _entry_from_line(
                     report_run_id=report_run_id,
                     section=section,

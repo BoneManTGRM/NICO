@@ -91,9 +91,8 @@ def _clear_stale_complexity_lines(section: dict[str, Any]) -> None:
     lowered = tuple(item.lower() for item in fragments)
     for key in ("evidence", "findings", "unavailable"):
         values = section.get(key) or []
-        if not isinstance(values, list):
-            values = [values]
-        section[key] = [line for line in values if not any(fragment in str(line).lower() for fragment in lowered)]
+        normalized_values = values if isinstance(values, list) else [values]
+        section[key] = [line for line in normalized_values if not any(fragment in str(line).lower() for fragment in lowered)]
 
 
 def _positive_int(value: Any) -> int:
