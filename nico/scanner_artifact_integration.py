@@ -56,9 +56,8 @@ def _remove_stale_scanner_lines(section: dict[str, Any], section_id: str) -> Non
         return
     for key in ("evidence", "findings", "unavailable"):
         values = section.get(key) or []
-        if not isinstance(values, list):
-            values = [values]
-        section[key] = [item for item in values if not str(item).startswith(prefix)]
+        normalized_values = values if isinstance(values, list) else [values]
+        section[key] = [item for item in normalized_values if not str(item).startswith(prefix)]
 
 
 def _note_for_section(section_id: str, notes: dict[str, list[str]]) -> dict[str, list[str]]:
@@ -77,11 +76,11 @@ def _attach_section_notes(result: dict[str, Any], notes: dict[str, list[str]]) -
         _remove_stale_scanner_lines(section, section_id)
         section_notes = _note_for_section(section_id, notes)
         for key in ("evidence", "findings", "unavailable"):
-            section.setdefault(key, [])
-            if not isinstance(section[key], list):
-                section[key] = [section[key]]
+            existing_values = section.setdefault(key, [])
+            normalized_values = existing_values if isinstance(existing_values, list) else [existing_values]
+            section[key] = normalized_values
             for item in section_notes[key]:
-                _append_unique(section[key], item)
+                _append_unique(normalized_values, item)
 
 
 def _current_run_summary(normalized: dict[str, Any]) -> dict[str, Any]:

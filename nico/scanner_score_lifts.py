@@ -34,9 +34,8 @@ def _remove_lines(section: dict[str, Any], fragments: tuple[str, ...]) -> None:
     lowered = tuple(fragment.lower() for fragment in fragments)
     for key in ("findings", "unavailable"):
         values = section.get(key) or []
-        if not isinstance(values, list):
-            values = [values]
-        section[key] = [item for item in values if not any(fragment in str(item).lower() for fragment in lowered)]
+        normalized_values = values if isinstance(values, list) else [values]
+        section[key] = [item for item in normalized_values if not any(fragment in str(item).lower() for fragment in lowered)]
 
 
 def _artifact(result: dict[str, Any]) -> dict[str, Any]:
