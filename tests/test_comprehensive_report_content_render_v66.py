@@ -132,3 +132,37 @@ def test_ci_operational_context_is_separate_and_unscored() -> None:
     assert any("Successful workflow runs: 83" in line for line in operational["evidence"])
     assert any("Non-success workflow runs: 12" in line for line in operational["evidence"])
     assert any("no technical-score effect" in line for line in operational["evidence"])
+
+
+def test_finding_criteria_use_first_casefolded_occurrence_per_finding() -> None:
+    from nico import v2_premium_report_renderer as renderer
+
+    install_comprehensive_report_content_render_v66()
+    markdown = renderer._detailed_findings_markdown(
+        [
+            {
+                "title": "First finding",
+                "verification": ("  Rerun   CI ", "rerun ci", None, "Straße"),
+                "acceptance_criteria": ["STRASSE", "Verify scope", "VERIFY scope"],
+                "rollback": "Revert on failure",
+                "exit_criteria": "Exit criteria remain pending",
+            },
+            {
+                "title": "Second finding",
+                "verification": "rerun ci",
+                "acceptance_criteria": ("RERUN CI", "", "Check evidence"),
+                "exit_criteria": ["CHECK EVIDENCE", "Check retention", "check retention"],
+            },
+        ],
+        spanish=True,
+    )
+    assert markdown.splitlines()[0] == "## Hallazgos canónicos detallados"
+    first, second = markdown.split("### P2 - Second finding")
+    assert "  - Rerun CI\n  - Straße\n- Acceptance / exit criteria:\n  - Verify scope" in first
+    assert first.index("- Rollback:") < first.index("- Final exit criteria:")
+    assert "  - Exit criteria remain pending" in first
+    assert "  - STRASSE" not in first
+    assert "  - rerun ci\n- Acceptance / exit criteria:\n  - Check evidence" in second
+    assert "  - RERUN CI" not in second
+    assert second.count("  - Check retention") == 1
+    assert "  - CHECK EVIDENCE" not in second
