@@ -246,7 +246,8 @@ def test_two_service_acceptance_requires_structured_phase1_audit() -> None:
     assert "scripts/phase1_structured_artifact_audit_v1.py" in source
     assert "pass-2-comprehensive.json" in source
     assert "audit-results/phase1-structured-artifact-audit.json" in source
-    assert 'test "${{ steps.phase1_audit.outcome }}" = "success"' in source
+    assert "NICO_BOUND_STEPS_PHASE1_AUDIT_OUTCOME: ${{ steps.phase1_audit.outcome }}" in source
+    assert 'test "${NICO_BOUND_STEPS_PHASE1_AUDIT_OUTCOME}" = "success"' in source
     assert 'audit["candidate_register_sha256_expected"] == audit["candidate_register_sha256_observed"]' in source
     assert 'audit["candidate_count"] > 0 or audit["zero_candidate_register_verified"] is True' in source
     assert 'audit["client_delivery_allowed"] is False' in source

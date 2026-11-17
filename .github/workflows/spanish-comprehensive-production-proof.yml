@@ -396,13 +396,18 @@ jobs:
       # Legacy contract locator: Require passing Spanish final-report evidence
       - name: Require passing authenticated Spanish final-report evidence
         if: always()
+        env:
+          NICO_BOUND_STEPS_SPANISH_PROOF_OUTCOME: ${{ steps.spanish_proof.outcome }}
+          NICO_BOUND_STEPS_SPANISH_RECOVERY_OUTCOME: ${{ steps.spanish_recovery.outcome }}
+          NICO_BOUND_STEPS_EXCLUSION_PROOF_OUTCOME: ${{ steps.exclusion_proof.outcome }}
+          NICO_BOUND_STEPS_FRESH_BROWSER_MATRIX_OUTCOME: ${{ steps.fresh_browser_matrix.outcome }}
         run: |
           set -euo pipefail
-          SOURCE_PROOF_OUTCOME="${{ steps.spanish_proof.outcome }}"
-          RECOVERY_OUTCOME="${{ steps.spanish_recovery.outcome }}"
-          EXCLUSION_PROOF_OUTCOME="${{ steps.exclusion_proof.outcome }}"
+          SOURCE_PROOF_OUTCOME="${NICO_BOUND_STEPS_SPANISH_PROOF_OUTCOME}"
+          RECOVERY_OUTCOME="${NICO_BOUND_STEPS_SPANISH_RECOVERY_OUTCOME}"
+          EXCLUSION_PROOF_OUTCOME="${NICO_BOUND_STEPS_EXCLUSION_PROOF_OUTCOME}"
           test "${EXCLUSION_PROOF_OUTCOME}" = "success"
-          test "${{ steps.fresh_browser_matrix.outcome }}" = "success"
+          test "${NICO_BOUND_STEPS_FRESH_BROWSER_MATRIX_OUTCOME}" = "success"
           if [ "${SOURCE_PROOF_OUTCOME}" = "success" ]; then
             test "${RECOVERY_OUTCOME}" = "skipped"
             export NICO_SPANISH_PROOF_MODE="fresh"

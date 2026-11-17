@@ -239,6 +239,13 @@ jobs:
           PY
 
       - name: Bind Phase 1 and Phase 2 completion truth into the existing Comprehensive report
+        env:
+          NICO_BOUND_STEPS_CURRENT_HEAD_OUTPUTS_MOBILE_RUN_ID: ${{ steps.current_head.outputs.mobile_run_id }}
+          NICO_BOUND_STEPS_CURRENT_HEAD_OUTPUTS_IOS_RUN_ID: ${{ steps.current_head.outputs.ios_run_id }}
+          NICO_BOUND_STEPS_CURRENT_HEAD_OUTPUTS_ARTIFACT_ID: ${{ steps.current_head.outputs.artifact_id }}
+          NICO_BOUND_STEPS_CURRENT_HEAD_OUTPUTS_ARTIFACT_NAME: ${{ steps.current_head.outputs.artifact_name }}
+          NICO_BOUND_STEPS_CURRENT_HEAD_OUTPUTS_ARTIFACT_DIGEST: ${{ steps.current_head.outputs.artifact_digest }}
+          NICO_BOUND_GITHUB_EVENT_WORKFLOW_RUN_UPDATED_AT: ${{ github.event.workflow_run.updated_at }}
         run: |
           set -euo pipefail
           python scripts/phase1_completion_report_binder_v1.py \
@@ -250,12 +257,12 @@ jobs:
             --status-json bound-report/current-head-status.json \
             --expected-sha "${RELEASE_SHA}" \
             --workflow-run-id "${SOURCE_RUN_ID}" \
-            --mobile-run-id "${{ steps.current_head.outputs.mobile_run_id }}" \
-            --ios-run-id "${{ steps.current_head.outputs.ios_run_id }}" \
-            --artifact-id "${{ steps.current_head.outputs.artifact_id }}" \
-            --artifact-name "${{ steps.current_head.outputs.artifact_name }}" \
-            --artifact-digest "${{ steps.current_head.outputs.artifact_digest }}" \
-            --acceptance-completed-at "${{ github.event.workflow_run.updated_at }}" \
+            --mobile-run-id "${NICO_BOUND_STEPS_CURRENT_HEAD_OUTPUTS_MOBILE_RUN_ID}" \
+            --ios-run-id "${NICO_BOUND_STEPS_CURRENT_HEAD_OUTPUTS_IOS_RUN_ID}" \
+            --artifact-id "${NICO_BOUND_STEPS_CURRENT_HEAD_OUTPUTS_ARTIFACT_ID}" \
+            --artifact-name "${NICO_BOUND_STEPS_CURRENT_HEAD_OUTPUTS_ARTIFACT_NAME}" \
+            --artifact-digest "${NICO_BOUND_STEPS_CURRENT_HEAD_OUTPUTS_ARTIFACT_DIGEST}" \
+            --acceptance-completed-at "${NICO_BOUND_GITHUB_EVENT_WORKFLOW_RUN_UPDATED_AT}" \
             --output-pdf bound-report/NICO-COMPREHENSIVE-PHASE-1-COMPLETE.pdf \
             --output-manifest bound-report/NICO-COMPREHENSIVE-PHASE-1-COMPLETE.manifest.json
 
@@ -318,6 +325,9 @@ jobs:
           PY
 
       - name: Extend the same Comprehensive report with Phase 3 and Phase 4 Engineering closure
+        env:
+          NICO_BOUND_STEPS_CURRENT_HEAD_OUTPUTS_SPANISH_RUN_ID: ${{ steps.current_head.outputs.spanish_run_id }}
+          NICO_BOUND_STEPS_CURRENT_HEAD_OUTPUTS_GREEN_WATCH_RUN_ID: ${{ steps.current_head.outputs.green_watch_run_id }}
         run: |
           set -euo pipefail
           python scripts/four_phase_completion_report_extender_v1.py \
@@ -327,8 +337,8 @@ jobs:
             --phase4-json docs/phase4-controlled-pilot-readiness-observation.json \
             --status-json bound-report/current-head-status.json \
             --expected-sha "${RELEASE_SHA}" \
-            --spanish-run-id "${{ steps.current_head.outputs.spanish_run_id }}" \
-            --green-watch-run-id "${{ steps.current_head.outputs.green_watch_run_id }}" \
+            --spanish-run-id "${NICO_BOUND_STEPS_CURRENT_HEAD_OUTPUTS_SPANISH_RUN_ID}" \
+            --green-watch-run-id "${NICO_BOUND_STEPS_CURRENT_HEAD_OUTPUTS_GREEN_WATCH_RUN_ID}" \
             --output-pdf bound-report/NICO-COMPREHENSIVE-FOUR-PHASE-ENGINEERING-COMPLETE.pdf \
             --output-manifest bound-report/NICO-COMPREHENSIVE-FOUR-PHASE-ENGINEERING-COMPLETE.manifest.json
 
