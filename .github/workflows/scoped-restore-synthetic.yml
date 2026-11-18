@@ -1,0 +1,37 @@
+name: Scoped Restore Synthetic PostgreSQL
+on:
+  push:
+    branches: [test/scoped-restore-synthetic-20261118]
+  pull_request:
+    paths:
+      - scripts/scoped_restore_fixture/**
+      - .github/workflows/scoped-restore-synthetic.yml
+permissions:
+  contents: read
+jobs:
+  synthetic-postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Materialize only the source-pinned offline validation modules
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, pathlib, shutil
+          root = pathlib.Path('scripts/scoped_restore_fixture')
+          manifest = json.loads((root/'source-manifest.json').read_text())
+          (root/'source').mkdir()
+          for relative, expected in manifest['files'].items():
+              dest = root/relative
+              source = pathlib.Path('nico')/dest.name
+              assert hashlib.sha256(source.read_bytes()).hexdigest() == expected
+              shutil.copyfile(source, dest)
+          PY
+      - name: Run offline candidate regressions without installation
+        working-directory: scripts/scoped_restore_fixture
+        run: python3 -m unittest discover -p 'test_*.py' -v
+      - name: Qualify on private temporary Unix-socket PostgreSQL with synthetic rows only
+        working-directory: scripts/scoped_restore_fixture
+        run: timeout --kill-after=5s 120s python3 qualify_postgres.py
