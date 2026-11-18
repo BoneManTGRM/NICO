@@ -21,6 +21,8 @@ import fixed_phase_adapter as phases
 import no_child_design
 import offline_read_runner
 import psql_pipe_adapter
+import psql_owned_factory
+import fixed_psql_design
 import transport_bridge as bridge
 import verify
 from test_binding import base, NOW
@@ -130,28 +132,35 @@ def qualify():
                        '-c search_path=pg_catalog -c max_parallel_workers_per_gather=0 -c jit=off')
             children = []
 
-            def opener(digest, deadline):
+            def spawn_fixed(deadline):
+                # Only this harness knows the newly created private socket.
+                # A returned child is immediately adopted or cleaned by factory.
                 child = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                          stderr=subprocess.DEVNULL, env=env, close_fds=True)
                 children.append(child)
-                for stream in (child.stdin, child.stdout):
-                    os.set_blocking(stream.fileno(), False)
-                def close_input():
-                    child.stdin.close()
-                    return child.stdin.closed
-                def wait_exit(end):
-                    return child.wait(timeout=max(0.01, end-time.monotonic()))
-                def abort(end):
-                    if child.poll() is None:
-                        child.kill()
-                    wait_exit(end)
-                    return child.returncode is not None
-                def dispose():
-                    child.stdin.close()
-                    child.stdout.close()
-                    return child.stdin.closed and child.stdout.closed
-                return bridge.OwnedFixture(child.stdin.fileno(), child.stdout.fileno(), digest,
-                                           close_input, wait_exit, abort, dispose)
+                return child
+
+            def opener(digest, deadline):
+                return psql_owned_factory.adopt_synthetic_fixed_child(spawn_fixed, digest, deadline)
+
+            # Fail acquisition on the second pipe: bridge never receives ownership.
+            pipe_calls = []
+            def fail_second_pipe(fd, blocking):
+                pipe_calls.append(fd)
+                if len(pipe_calls) == 2:
+                    raise ValueError('synthetic_pipe_setup_failure')
+                os.set_blocking(fd, blocking)
+            try:
+                psql_owned_factory.adopt_synthetic_fixed_child(
+                    spawn_fixed, 'a'*64, time.monotonic()+5,
+                    configure_nonblocking=fail_second_pipe)
+                raise AssertionError('partial_acquisition_accepted')
+            except ValueError as exc:
+                assert str(exc) == 'offline_fixed_factory_rejected'
+            assert len(pipe_calls) == 2
+            assert children[-1].poll() is not None
+            assert children[-1].stdin.closed and children[-1].stdout.closed
+            checks['native_partial_acquisition_reaped_and_pipes_closed'] = True
 
             def exercise(*, rejected=False):
                 plan, observed = base()
@@ -193,7 +202,7 @@ def qualify():
             sql("UPDATE public.nico_comprehensive_runs SET integrity_sha256='wrong' WHERE customer_id='synthetic';")
             exercise(rejected=True)
             checks['corrupt_record_rejected_and_session_closed'] = True
-            for module in (no_child_design, offline_read_runner, phases, psql_pipe_adapter, bridge):
+            for module in (no_child_design, offline_read_runner, phases, psql_pipe_adapter, bridge, psql_owned_factory, fixed_psql_design):
                 try:
                     module.dispatch()
                     raise AssertionError('disabled_guard_changed')
