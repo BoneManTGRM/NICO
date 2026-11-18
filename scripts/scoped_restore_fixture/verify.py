@@ -34,8 +34,31 @@ def selected(name, names, namespace):
         if node_name in names:
             nodes.append(node); found.add(node_name)
     require(found == set(names), 'source_symbol_missing')
-    # Exact original AST nodes, including function bodies and decorators.
-    exec(compile(ast.Module(body=nodes, type_ignores=[]), name, 'exec'), namespace)
+    # Static checked-in definitions must exactly match the pinned source AST.
+    static_path = ROOT / f'selected_{name}.py'
+    static_tree = ast.parse(static_path.read_text())
+    static_nodes = [node for node in static_tree.body
+                    if not isinstance(node, (ast.Import, ast.ImportFrom))
+                    and not (isinstance(node, ast.Expr) and
+                             isinstance(node.value, ast.Constant) and
+                             isinstance(node.value.value, str))]
+    require(ast.dump(ast.Module(body=nodes, type_ignores=[])) ==
+            ast.dump(ast.Module(body=static_nodes, type_ignores=[])),
+            'static_source_mismatch')
+    # Closed explicit import table, never executable source strings.
+    if name == 'comprehensive_orchestration_contract':
+        import selected_comprehensive_orchestration_contract as module
+    elif name == 'decision_grade_human_evidence_v1':
+        import selected_decision_grade_human_evidence_v1 as module
+    elif name == 'strategic_human_evidence_v1':
+        import selected_strategic_human_evidence_v1 as module
+    elif name == 'comprehensive_run_record':
+        import selected_comprehensive_run_record as module
+    elif name == 'comprehensive_run_store':
+        import selected_comprehensive_run_store as module
+    else:
+        raise ValueError('source_symbol_missing')
+    namespace.update({symbol: getattr(module, symbol) for symbol in names})
 
 @lru_cache(maxsize=1)
 def _load_code():
