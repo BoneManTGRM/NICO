@@ -1,7 +1,8 @@
 {
   "git": {
     "deploymentEnabled": {
-      "main": true
+      "main": true,
+      "test/scoped-restore-synthetic-20261118": false
     }
   }
 }

@@ -1,0 +1,133 @@
+{
+  "version": "2026.09.08.1",
+  "tables": {
+    "approval_queue_items": [
+      "approval_id",
+      "customer_id",
+      "project_id",
+      "status",
+      "payload",
+      "created_at",
+      "updated_at"
+    ],
+    "assessment_runs": [
+      "run_id",
+      "customer_id",
+      "project_id",
+      "workflow",
+      "status",
+      "payload",
+      "risk_trend",
+      "dependency_trend",
+      "ci_reliability_trend",
+      "qa_readiness_trend",
+      "backlog_health_trend",
+      "created_at"
+    ],
+    "audit_log": [
+      "audit_id",
+      "customer_id",
+      "project_id",
+      "action",
+      "payload",
+      "created_at"
+    ],
+    "authorized_repositories": [
+      "repository_id",
+      "customer_id",
+      "project_id",
+      "repository",
+      "authorization_scope",
+      "created_at"
+    ],
+    "client_job_exports": [
+      "export_id",
+      "job_id",
+      "customer_id",
+      "project_id",
+      "format",
+      "payload",
+      "created_at"
+    ],
+    "client_jobs": [
+      "job_id",
+      "customer_id",
+      "project_id",
+      "status",
+      "payload",
+      "created_at",
+      "updated_at"
+    ],
+    "customers": [
+      "customer_id",
+      "name",
+      "created_at"
+    ],
+    "draft_pr_records": [
+      "draft_pr_id",
+      "customer_id",
+      "project_id",
+      "approval_id",
+      "status",
+      "payload",
+      "created_at"
+    ],
+    "evidence_items": [
+      "evidence_id",
+      "customer_id",
+      "project_id",
+      "run_id",
+      "filename",
+      "content_type",
+      "size_bytes",
+      "metadata",
+      "created_at"
+    ],
+    "nico_schema_migrations": [
+      "version",
+      "contract_sha256",
+      "applied_at",
+      "verified_at"
+    ],
+    "projects": [
+      "project_id",
+      "customer_id",
+      "name",
+      "created_at"
+    ],
+    "reports": [
+      "report_id",
+      "customer_id",
+      "project_id",
+      "run_id",
+      "format",
+      "payload",
+      "created_at"
+    ],
+    "scanner_raw_artifacts": [
+      "artifact_id",
+      "run_id",
+      "scan_id",
+      "customer_id",
+      "project_id",
+      "repository",
+      "commit_sha",
+      "scanner_name",
+      "raw_sha256",
+      "gzip_sha256",
+      "gzip_blob",
+      "created_at"
+    ],
+    "scanner_runs": [
+      "scan_id",
+      "customer_id",
+      "project_id",
+      "status",
+      "payload",
+      "created_at",
+      "updated_at"
+    ]
+  },
+  "migration_table": "nico_schema_migrations",
+  "contract_sha256": "8ab54b42689aa75fdb3bd40ca4582491eaf585ac6a7c73117cb7d9d200d5e534"
+}

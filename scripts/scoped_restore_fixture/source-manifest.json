@@ -1,0 +1,16 @@
+{
+  "release": "5eb768b5776f88bae86e972c76267915cc874c85",
+  "files": {
+    "source/comprehensive_orchestration_contract.py": "58264e8756fc272adb92cbb8a63c829ef296f5b4914ff6f0c3d9725e6d3ff2ae",
+    "source/comprehensive_run_record.py": "26643181c1d89d531f2cd6f8b5dbbd7c00b93515b4dcaa53da93a1af34e6b990",
+    "source/comprehensive_run_storage_chunks_v1.py": "9fcf5efefe0b485cd539d9ce9828430ab201c96f3060de9123d0b0c99db9dab5",
+    "source/comprehensive_run_storage_codec_v1.py": "c573ae5c4ba595337e254327e3c4d9cf53400c72e57d37088744552de786b9ef",
+    "source/comprehensive_run_storage_dedup_v1.py": "a2ca1818507bd949a1cd1153aa2c6b34dfc6168407b54f5c64ade5b4f98fc2f3",
+    "source/comprehensive_run_store.py": "caa9543e737a967021fabe7c8052d1fcef5e1f9789d6c07e512918237e52fb93",
+    "source/decision_grade_human_evidence_v1.py": "393bf9510b87ce294ef3e6e91129beff04e58b98e8f994f29e8051880e903eaf",
+    "source/report_delivery_timing_v1.py": "38710128f3d854ff83d5c7adc6a66f4a5415c8b947f004cb8eff303c3ad65ff9",
+    "source/review_pdf_admission_observability_v1.py": "ff3fe1d504d29668c16913edb47587cda68e23d08baf06ebe060741afc012f93",
+    "source/storage_schema_contract_v1.py": "0f1c69c7d0ef1467e8f9c355689471d8860b18e077a1a70520f63f4eee2b0a38",
+    "source/strategic_human_evidence_v1.py": "3600f6e0c3def5ed344e3fa2d6301ecf0784f7ca317e484e6dce8d9cb9775f37"
+  }
+}
