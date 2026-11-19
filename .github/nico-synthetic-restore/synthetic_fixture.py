@@ -12,8 +12,8 @@ def connect(db, *, reader=False):
     if os.environ.get('NICO_SYNTHETIC_JOB')!='pg18-native-v1' or db not in ('nico_fixture','nico_fixture_recovered'):
         raise ValueError('synthetic_job_required')
     # All options explicit; environment is scrubbed by launcher.
-    return psycopg.connect(host=str(ROOT/'socket'),hostaddr='',port=6543,user='fixture_reader' if reader else 'postgres',dbname=db,
-        password='',passfile='/dev/null',service='',connect_timeout=5,autocommit=True,
+    return psycopg.connect(host=str(ROOT/'socket'),port=6543,user='fixture_reader' if reader else 'postgres',dbname=db,
+        passfile='/dev/null',require_auth='none',connect_timeout=5,autocommit=True,
         options='-c statement_timeout=3000 -c lock_timeout=1000')
 def record(run_id):
     return create_comprehensive_run_record(run_id=run_id,repository='fixture/synthetic',commit_sha='a'*40,
@@ -72,7 +72,24 @@ def main():
                 state = value
                 break
             cause = cause.__cause__
+        reason = None
+        if isinstance(exc, psycopg.OperationalError):
+            # Classify known libpq failures; never emit the raw exception.
+            message = str(exc).lower()
+            for label, marker in (
+                ('service-definition', 'definition of service'),
+                ('peer-auth', 'peer authentication failed'),
+                ('socket-absent', 'no such file or directory'),
+                ('socket-denied', 'permission denied'),
+                ('socket-refused', 'connection refused'),
+                ('auth-required', 'require_auth'),
+                ('invalid-connection-option', 'invalid connection option'),
+            ):
+                if marker in message:
+                    reason = label
+                    break
         print(json.dumps({"synthetic_fixture_failed":stage,"exception_type":type(exc).__name__,
+                          "connection_reason":reason,
                           "sqlstate":state,"gate_eligible":False},sort_keys=True))
         return 1
 if __name__=='__main__':raise SystemExit(main())
