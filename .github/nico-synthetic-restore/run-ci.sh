@@ -36,6 +36,7 @@ PY
 # Build-only, official hash-pinned wheels; never in the running rehearsal.
 python3 -m pip --isolated download --index-url https://pypi.org/simple \
     --no-deps --no-cache-dir --require-hashes --only-binary=:all: \
+    --platform manylinux_2_28_x86_64 --platform manylinux_2_27_x86_64 \
     --platform manylinux2014_x86_64 --implementation cp --python-version 3.13 \
     --abi cp313 -r "$root/requirements.lock" -d "$root/wheels"
 

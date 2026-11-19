@@ -6,7 +6,7 @@ COPY wheels/ /wheelhouse/
 COPY requirements.lock /tmp/requirements.lock
 RUN --network=none python3 -m pip --isolated install --no-index --no-deps \
     --only-binary=:all: --require-hashes --no-compile --find-links=/wheelhouse \
-    -r /tmp/requirements.lock
+    -r /tmp/requirements.lock && python3 -m pip --isolated check
 
 FROM ${POSTGRES_IMAGE}
 COPY --from=python_runtime /usr/local/ /opt/nico-python/
