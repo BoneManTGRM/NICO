@@ -2,7 +2,7 @@ name: NICO fake-data native restore rehearsal
 on:
   push:
     branches: [atlas-synthetic-restore-20261119]
-    paths: [.github/workflows/atlas-synthetic-restore.yml]
+    paths: [.github/workflows/atlas-synthetic-restore.yml, .github/nico-synthetic-restore/**]
 permissions:
   contents: read
 jobs:

@@ -39,13 +39,9 @@ python3 -m pip --isolated download --index-url https://pypi.org/simple \
     --platform manylinux2014_x86_64 --implementation cp --python-version 3.13 \
     --abi cp313 -r "$root/requirements.lock" -d "$root/wheels"
 
-pin() {
-  [[ $1 = docker.io/library/python:3.13.18-slim-bookworm || $1 = docker.io/library/postgres:18.6-bookworm ]]
-  docker buildx imagetools inspect --raw "$1" |
-   python3 -c 'import json,re,sys; d=json.load(sys.stdin); a=[m["digest"] for m in d["manifests"] if m.get("platform",{}).get("os")=="linux" and m.get("platform",{}).get("architecture")=="amd64"]; assert len(a)==1 and re.fullmatch(r"sha256:[a-f0-9]{64}",a[0]); print(sys.argv[1]+"@"+a[0])' "$1"
-}
-py=$(pin docker.io/library/python:3.13.18-slim-bookworm)
-pg=$(pin docker.io/library/postgres:18.6-bookworm)
+# Immutable linux/amd64 digests resolved and recorded by the first run.
+py=docker.io/library/python:3.13.18-slim-bookworm@sha256:f3dac913ab53b78c64f26d5518fcd7043d5a1a46522d6a493b598c3ed12f62a6
+pg=docker.io/library/postgres:18.6-bookworm@sha256:02fb3245e038f33536cf13bc6c4e59f21d07b0cea3c1fe1c07c6e8aa8f083bcc
 printf 'SYNTHETIC_BASE_IMAGES %s %s\n' "$py" "$pg"
 docker build --platform linux/amd64 --network none --build-arg PYTHON_IMAGE="$py" \
   --build-arg POSTGRES_IMAGE="$pg" --tag nico-github-restore-fixture:local "$root"
