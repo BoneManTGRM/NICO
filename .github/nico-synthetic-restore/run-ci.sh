@@ -13,7 +13,8 @@ from pathlib import Path
 source, build = map(Path, sys.argv[1:])
 for name in ("Dockerfile", "qualify.py", "runner.sh", "requirements.lock",
              "native_import_probe.py", "native_reader.py",
-             "native_pg18_driver.py", "synthetic_fixture.py"):
+             "native_pg18_driver.py", "synthetic_fixture.py",
+             "stream_frame.sh", "stream_replay.py", "stream_restore.py"):
     shutil.copyfile(source / name, build / name)
 manifest = json.loads((source / "native-source-manifest.json").read_text())
 if manifest["revision"] != "5eb768b5776f88bae86e972c76267915cc874c85" or len(manifest["files"]) != 39:

@@ -12,7 +12,7 @@ FROM ${POSTGRES_IMAGE}
 COPY --from=python_runtime /usr/local/ /opt/nico-python/
 COPY native-source/ /opt/nico-reader/native-source/
 COPY native-source-manifest.json native_reader.py native_pg18_driver.py native_import_probe.py synthetic_fixture.py /opt/nico-reader/
-COPY runner.sh qualify.py /opt/nico-reader/
+COPY runner.sh qualify.py stream_frame.sh stream_replay.py stream_restore.py /opt/nico-reader/
 # The context is local-0700; publish read-only code to the fixture users in
 # this image only. The seed and read processes must not run as root.
 RUN --network=none find /opt/nico-reader -type d -exec chmod 0555 {} + && \

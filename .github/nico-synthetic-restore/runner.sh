@@ -40,14 +40,29 @@ py() { local os_user=postgres; if test "$1" = read; then os_user=nobody; fi; env
 boot source
 pg createdb nico_fixture
 py seed
-pg pg_dump -w --no-owner --no-acl -Fc -f "$root/fixture.dump" nico_fixture
-h=$(sha256sum "$root/fixture.dump"|cut -d ' ' -f1)
+pg psql -X -w -v ON_ERROR_STOP=1 -qAt -d nico_fixture <<'SQL'
+CREATE TABLE nico_synthetic_padding AS SELECT i, md5(i::text) AS payload FROM generate_series(1,120000) AS g(i);
+SQL
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=NICO synthetic CI only' \
+  -keyout "$root/recv.key" -out "$root/recv.cert" >/dev/null 2>&1
+openssl genpkey -algorithm ED25519 -out "$root/sender.key" >/dev/null 2>&1
+openssl pkey -in "$root/sender.key" -pubout -out "$root/sender.pub" >/dev/null 2>&1
+pg pg_dump -w --no-owner --no-acl -Fc nico_fixture |
+  env -i PATH=/usr/bin:/bin NICO_FRAME_TEST_ONLY=fixed-local-synthetic \
+    /bin/bash /opt/nico-reader/stream_frame.sh "$root/recv.cert" "$root/sender.key" "$root/sealed" 418a577fea014da581954380304aaaaa
+test -f "$root/sealed/part-0001.cms"
 py after-backup
 pg pg_ctl -D "$root/source" -m fast -w -t 12 stop >/dev/null
 boot target
+stream() { env -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/tmp PYTHONDONTWRITEBYTECODE=1 NICO_CI_FIXTURE_MODE=github-synthetic-no-network PYTHONHOME=/opt/nico-python LD_LIBRARY_PATH=/opt/nico-python/lib /opt/nico-python/bin/python3 /opt/nico-reader/stream_restore.py "$@"; }
 pg createdb nico_fixture_recovered
-printf '%s  %s\n' "$h" "$root/fixture.dump" | sha256sum -c --status -
-pg pg_restore -w --exit-on-error --single-transaction --no-owner --no-acl -d nico_fixture_recovered "$root/fixture.dump"
+stream pass
+test "$(pg psql -X -w -qAt -d nico_fixture_recovered -c 'SELECT count(*) FROM nico_synthetic_padding')" = 120000
+pg createdb nico_fixture_failed
+stream mutate
+test "$(pg psql -X -w -qAt -d nico_fixture_failed -c "SELECT to_regclass('public.nico_synthetic_padding') IS NULL")" = t
+pg dropdb -w nico_fixture_failed
+echo SYNTHETIC_FAILED_TARGET_DISCARDED
 pg psql -X -w -v ON_ERROR_STOP=1 -qAt -d nico_fixture_recovered <<'SQL'
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 REVOKE ALL ON DATABASE nico_fixture_recovered FROM PUBLIC;
@@ -58,4 +73,5 @@ GRANT SELECT ON public.nico_comprehensive_runs,public.nico_comprehensive_review_
 SQL
 test "$(pg psql -X -w -qAt -d nico_fixture_recovered -c "SELECT count(*) FROM public.nico_comprehensive_runs WHERE run_id='comprun_after_backup'")" = 0
 py read
-echo "SYNTHETIC_DUMP_RESTORED sha256=$h gate_eligible=false"
+test ! -e "$root/fixture.dump"
+echo "SYNTHETIC_NO_PLAINTEXT_ARCHIVE_FILE"
