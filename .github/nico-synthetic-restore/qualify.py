@@ -48,6 +48,6 @@ if (psycopg.pq.__impl__ != "binary"
     raise SystemExit("psycopg provenance")
 pg = subprocess.run(["/usr/lib/postgresql/18/bin/postgres", "--version"],
                     check=True, capture_output=True, timeout=8).stdout.split()
-if len(pg) < 3 or pg[2] != b"18.6":
-    raise SystemExit("expected PostgreSQL 18.6")
+if len(pg) < 3 or pg[2] != b"18.7":
+    raise SystemExit("expected PostgreSQL 18.7")
 print("SYNTHETIC_BUILD_IMPORT_CHECK_PASSED gate_eligible=false")
