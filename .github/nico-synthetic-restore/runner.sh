@@ -34,7 +34,7 @@ boot() {
     chown postgres:postgres "$root/target/pg_ident.conf" "$root/target/pg_hba.conf"
   fi
   pg pg_ctl -D "$root/$1" -o "-c listen_addresses= -k $root/socket -p 6543" -l "$root/$1.log" -w -t 18 start >/dev/null
-  test "$(pg psql -X -w -qAt -c 'SHOW server_version_num')" = 180006
+  test "$(pg psql -X -w -qAt -c 'SHOW server_version_num')" = 180007
 }
 py() { local os_user=postgres; if test "$1" = read; then os_user=nobody; fi; env -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/tmp PYTHONDONTWRITEBYTECODE=1 NICO_SYNTHETIC_JOB=pg18-native-v1 PYTHONHOME=/opt/nico-python LD_LIBRARY_PATH=/opt/nico-python/lib gosu "$os_user" /opt/nico-python/bin/python3 /opt/nico-reader/synthetic_fixture.py "$@"; }
 boot source

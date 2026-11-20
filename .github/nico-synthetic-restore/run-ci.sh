@@ -43,7 +43,7 @@ python3 -m pip --isolated download --index-url https://pypi.org/simple \
 
 # Immutable linux/amd64 digests resolved and recorded by the first run.
 py=docker.io/library/python:3.13.18-slim-bookworm@sha256:f3dac913ab53b78c64f26d5518fcd7043d5a1a46522d6a493b598c3ed12f62a6
-pg=docker.io/library/postgres:18.6-bookworm@sha256:02fb3245e038f33536cf13bc6c4e59f21d07b0cea3c1fe1c07c6e8aa8f083bcc
+pg=docker.io/library/postgres:18.7-bookworm@sha256:1cb81a9168d2cbd336f29a4a363d121929e32d5d448dd5cab596bf6253372e86
 printf 'SYNTHETIC_BASE_IMAGES %s %s\n' "$py" "$pg"
 docker build --platform linux/amd64 --network none --build-arg PYTHON_IMAGE="$py" \
   --build-arg POSTGRES_IMAGE="$pg" --tag nico-github-restore-fixture:local "$root"
