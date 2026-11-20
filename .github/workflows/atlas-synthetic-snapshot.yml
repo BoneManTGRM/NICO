@@ -1,0 +1,33 @@
+name: NICO fake-only PostgreSQL snapshot binding
+on:
+  push:
+    branches: [atlas-synthetic-restore-20261119]
+    paths:
+      - .github/workflows/atlas-synthetic-snapshot.yml
+      - .github/nico-snapshot-rehearsal/qualify.sh
+permissions:
+  contents: read
+jobs:
+  fake-snapshot:
+    if: github.repository == 'BoneManTGRM/NICO' && github.ref == 'refs/heads/atlas-synthetic-restore-20261119'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify script and run offline fake snapshot checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ARCH" = X64
+          file="$GITHUB_WORKSPACE/.github/nico-snapshot-rehearsal/qualify.sh"
+          test -f "$file" && test ! -L "$file"
+          printf '%s  %s\n' 1aab0a6da72c0897a6c2f1fcc714de980e7974685a1d73a6145af4476e153589 "$file" | sha256sum -c -
+          bash -n "$file"
+          docker run --rm --platform linux/amd64 --network none --cpus 1 --memory 1g --pids-limit 128 \
+            --read-only --tmpfs /tmp:rw,nosuid,nodev,size=128m,mode=1777 \
+            --mount "type=bind,source=$file,target=/nico-fake-qualify.sh,readonly" \
+            -e NICO_CI_FIXTURE_MODE=github-synthetic-no-network --entrypoint /bin/bash \
+            docker.io/library/postgres:18.6-bookworm@sha256:02fb3245e038f33536cf13bc6c4e59f21d07b0cea3c1fe1c07c6e8aa8f083bcc \
+            /nico-fake-qualify.sh --approved-synthetic-only
