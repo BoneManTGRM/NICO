@@ -66,6 +66,32 @@ def enrich_scanner_stage(canonical, stage):
             summaries.append('Ejecución del proyecto C/C++: compilación ' + ('completada.' if built else 'no verificada.'))
         else:
             summaries.append('C/C++ project execution: build ' + ('completed.' if built else 'not verified.'))
+        if build.get('collection_complete') is True:
+            for kind in ('compiler','static'):
+                collection=build.get('project_'+kind+'_collection')
+                if not isinstance(collection,Mapping) or collection.get('schema')!='nico.cpp-project-'+kind+'-collection.v1':
+                    continue
+                counts=[collection.get(k+'_count') for k in ('required_contexts','attempted_contexts',
+                    'completed_contexts','failed_contexts','unparsed_contexts')]
+                if (collection.get('collection_complete') is not True
+                        or not all(type(n) is int and n>=0 for n in counts)
+                        or counts[0]!=counts[1] or counts[0]!=counts[2]+counts[3] or counts[3]!=counts[4]):
+                    continue
+                required,attempted,completed,failed,unparsed=counts
+                if kind=='compiler':
+                    line=(f'Contextos del compilador: intentados={attempted}/{required}; sintaxis verificada={completed}/{required}; '
+                        f'fallidos={failed}; sin analizar={unparsed}.' if es else
+                        f'Compiler contexts: attempted={attempted}/{required}; verified syntax={completed}/{required}; '
+                        f'failed={failed}; unparsed={unparsed}.')
+                else:
+                    line=(f'Contextos del analizador: intentados={attempted}/{required}; pase normal completado={completed}/{required}; '
+                        f'fallidos={failed}; sin analizar={unparsed}.' if es else
+                        f'Analyzer contexts: attempted={attempted}/{required}; normal pass completed={completed}/{required}; '
+                        f'failed={failed}; unparsed={unparsed}.')
+                summaries.append(line);evidence.append(line)
+                if failed:
+                    gaps.append('Se conservaron fallas de preprocesamiento en archivos generados vinculados al código; esos contextos permanecen sin analizar.' if es else
+                        'Source-bound generated preprocessing failures were retained; those contexts remain unparsed.')
         if profile == 'cpp-configure-first-v2' and build.get('tests_executed') is True:
             required = build.get('tests_discovered_count')
             executed = build.get('tests_executed_count')
@@ -78,6 +104,30 @@ def enrich_scanner_stage(canonical, stage):
                         else ' An assessed-target test failure was retained.')
                 summaries.append(line)
                 evidence.append(line)
+        header=build.get('header_evidence')
+        if isinstance(header,Mapping) and isinstance(header.get('population'),Mapping):
+            population=header['population']; required=len(population)
+            counts={name:sum(isinstance(value,Mapping) and bool(value.get(name)) for value in population.values())
+                for name in ('included_contexts','parsed_contexts','analyzed_contexts')}
+            unvisited=sum(isinstance(value,Mapping) and not value.get('included_contexts') for value in population.values())
+            clang=[row for row in header.get('contexts',[]) if isinstance(row,Mapping)
+                and row.get('analysis_method')=='clang_static_analyzer_tu_ast_observer']
+            parsed_label=('archivos procesados' if clang else 'con tokens analizados') if es else ('parsed files' if clang else 'parsed token files')
+            line=(f'Encabezados originales y generados: inventariados={required}; incluidos={counts["included_contexts"]}/{required}; '
+                  f'{parsed_label}={counts["parsed_contexts"]}/{required}; en pases normales completados={counts["analyzed_contexts"]}/{required}; no visitados={unvisited}.' if es
+                else f'Original and generated headers: inventoried={required}; included={counts["included_contexts"]}/{required}; '
+                  f'{parsed_label}={counts["parsed_contexts"]}/{required}; completed normal-pass files={counts["analyzed_contexts"]}/{required}; unvisited={unvisited}.')
+            summaries.append(line);evidence.append(line)
+            evidence.append('La visita de archivos no demuestra cobertura de líneas o ramas, ni ejecución de cada verificador.' if es
+                else 'File visitation does not establish line or branch coverage or execution of every checker.')
+            if clang:
+                parsed={path for row in clang for path in row.get('parsed_ast_files',[]) if path in population}
+                bodies={path for row in clang for path in row.get('syntax_body_callback_files',[]) if path in population}
+                evidence.append((f'Clang: encabezados en el AST procesado={len(parsed)}; con eventos de revisión de cuerpos={len(bodies)}.' if es
+                    else f'Clang: parsed AST header files={len(parsed)}; header files with body-check callbacks={len(bodies)}.'))
+            if header.get('population_complete') is not True:
+                gaps.append('La población completa de encabezados aún no tiene evidencia de análisis verificada.' if es
+                    else 'The complete header population does not yet have verified analyzer evidence.')
         for row in rows:
             key = str(row.get('id') or '')
             # Preserve machine identity separately; do not translate source/test identifiers.

@@ -15,6 +15,7 @@ from pathlib import PurePosixPath
 from xml.etree import ElementTree as ET
 
 from nico.assessment_cpp_configuration import CHECKS, COMPILER_VERSION, decode_stream
+from nico.native_xml import parse_native_xml
 
 PROFILE = 'cpp-full-project-v1'
 MAX_SOURCE_BYTES = 64 * 1024 * 1024
@@ -389,7 +390,7 @@ def _discovery(raw):
 def _junit(raw, expected):
     if b'<!DOCTYPE' in raw.upper() or b'<!ENTITY' in raw.upper():
         raise ValueError('worker_full_project_xml_invalid')
-    root = ET.fromstring(raw)
+    root = parse_native_xml(raw, declaration_error='worker_full_project_xml_invalid')
     if root.tag != 'testsuite': raise ValueError('worker_full_project_xml_invalid')
     cases = list(root.findall('testcase'))
     names = [row.get('name') for row in cases]

@@ -1,0 +1,410 @@
+{
+  "archive_exclusion": "No object files, binaries, libraries, dependency files, build Makefiles, environments or credentials.",
+  "files": [
+    {
+      "bytes": 18640,
+      "expected_sha256": "3963e39fa783f169c94781ea6ba96023b331246ff49f6f6456da81e201e15c21",
+      "name": "input/run_fileapi_control.py",
+      "required": true,
+      "sha256": "3963e39fa783f169c94781ea6ba96023b331246ff49f6f6456da81e201e15c21",
+      "source_path": "/home/runner/work/NICO/NICO/tests/fixtures/cpp/fileapi-export-off-owned-control/run_fileapi_control.py",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 730,
+      "expected_sha256": "833f2ef9c9aacb357d1c1fc846b2c3441f4c28824b8db0cc2e738a51afc25761",
+      "name": "input/source/CMakeLists.txt",
+      "required": true,
+      "sha256": "833f2ef9c9aacb357d1c1fc846b2c3441f4c28824b8db0cc2e738a51afc25761",
+      "source_path": "/home/runner/work/NICO/NICO/tests/fixtures/cpp/fileapi-export-off-owned-control/source/CMakeLists.txt",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 42,
+      "expected_sha256": "58e2516abedf3eb89a38b7650972f629a77e6fb446824175995441b5fa387dd3",
+      "name": "input/source/config.h.in",
+      "required": true,
+      "sha256": "58e2516abedf3eb89a38b7650972f629a77e6fb446824175995441b5fa387dd3",
+      "source_path": "/home/runner/work/NICO/NICO/tests/fixtures/cpp/fileapi-export-off-owned-control/source/config.h.in",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 308,
+      "expected_sha256": "6763e8385724114002682a1aba35fa42174424604ee26d35d30c9cba8402f73e",
+      "name": "input/source/hidden.c",
+      "required": true,
+      "sha256": "6763e8385724114002682a1aba35fa42174424604ee26d35d30c9cba8402f73e",
+      "source_path": "/home/runner/work/NICO/NICO/tests/fixtures/cpp/fileapi-export-off-owned-control/source/hidden.c",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 90,
+      "expected_sha256": "2ee290092717e13b516897337a6a14770bb44a441ef70f8ddf1d37584f082fcd",
+      "name": "input/source/include/active.h",
+      "required": true,
+      "sha256": "2ee290092717e13b516897337a6a14770bb44a441ef70f8ddf1d37584f082fcd",
+      "source_path": "/home/runner/work/NICO/NICO/tests/fixtures/cpp/fileapi-export-off-owned-control/source/include/active.h",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 80,
+      "expected_sha256": "7091567002ce7a66f59621651d398d1d9e47bfd018594f068312230b30783e78",
+      "name": "input/source/main.c",
+      "required": true,
+      "sha256": "7091567002ce7a66f59621651d398d1d9e47bfd018594f068312230b30783e78",
+      "source_path": "/home/runner/work/NICO/NICO/tests/fixtures/cpp/fileapi-export-off-owned-control/source/main.c",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 23479,
+      "name": "input/pytest-adapter.py",
+      "required": true,
+      "sha256": "95e8d770f4f8c513d5c2868b392bc3a09a59b35c952635c4b71a30659d440361",
+      "source_path": "/home/runner/work/NICO/NICO/tests/test_cpp_fileapi_export_off_mechanism_control.py",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 1161,
+      "name": "operation-before.json",
+      "required": true,
+      "sha256": "ea95aa263b238bab1015b821263f180571d5464b3d5ef97568330f42b827e253",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 273,
+      "name": "outer.stdout",
+      "required": true,
+      "sha256": "3bdafd10b8659c9ac91f62e3c837119e16a04089110041b1b5e7d1b82a7e09dd",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 0,
+      "name": "outer.stderr",
+      "required": true,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 3184,
+      "name": "outer-receipt.json",
+      "required": true,
+      "sha256": "d218f0f8991301e0bcf992f9bb8d3532f8780f494803e5c44a203ae02aed95d2",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 12929,
+      "name": "native/result.json",
+      "required": true,
+      "sha256": "9fc91b286dfd8886801bf1316512d5b45b7538db302b7b1d14dc0a16c70e83c3",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/result.json",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 91,
+      "expected_sha256": "f6e81c2559f3ce00c5fdad01d7b226c301f5d6b07ee04f65db6dbfdc1cc5970b",
+      "name": "native/cmake-version.stdout",
+      "required": true,
+      "sha256": "f6e81c2559f3ce00c5fdad01d7b226c301f5d6b07ee04f65db6dbfdc1cc5970b",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/cmake-version.stdout",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 0,
+      "expected_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "name": "native/cmake-version.stderr",
+      "required": true,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/cmake-version.stderr",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 266,
+      "expected_sha256": "ae487f55927d605284a32711e4ecf6bc3be2bcd5a9de414ace0936264b741f85",
+      "name": "native/gcc-version.stdout",
+      "required": true,
+      "sha256": "ae487f55927d605284a32711e4ecf6bc3be2bcd5a9de414ace0936264b741f85",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/gcc-version.stdout",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 0,
+      "expected_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "name": "native/gcc-version.stderr",
+      "required": true,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/gcc-version.stderr",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 297,
+      "expected_sha256": "8ee498ee2fc27e8dcdf99191b454077df95e3840d841ec94321748b6d7f36819",
+      "name": "native/make-version.stdout",
+      "required": true,
+      "sha256": "8ee498ee2fc27e8dcdf99191b454077df95e3840d841ec94321748b6d7f36819",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/make-version.stdout",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 0,
+      "expected_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "name": "native/make-version.stderr",
+      "required": true,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/make-version.stderr",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 453,
+      "expected_sha256": "78b2775bf4cde3c2b02904055e576c10f6674d9c557e5953da95efe6ada81a6b",
+      "name": "native/configure.stdout",
+      "required": true,
+      "sha256": "78b2775bf4cde3c2b02904055e576c10f6674d9c557e5953da95efe6ada81a6b",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/configure.stdout",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 0,
+      "expected_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "name": "native/configure.stderr",
+      "required": true,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/configure.stderr",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 5517,
+      "expected_sha256": "21180a123adcd3fdf4036f6410e5e740eba16da225172b064e65deb493df6479",
+      "name": "native/build.stdout",
+      "required": true,
+      "sha256": "21180a123adcd3fdf4036f6410e5e740eba16da225172b064e65deb493df6479",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build.stdout",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 0,
+      "expected_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "name": "native/build.stderr",
+      "required": true,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build.stderr",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 505,
+      "expected_sha256": "e651ec09bb94d59c6f33269f92c9b37cf603663c933e0c8e5d850b12907c8d2c",
+      "name": "native/compile-commands-before.json",
+      "required": true,
+      "sha256": "e651ec09bb94d59c6f33269f92c9b37cf603663c933e0c8e5d850b12907c8d2c",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/compile-commands-before.json",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 505,
+      "expected_sha256": "e651ec09bb94d59c6f33269f92c9b37cf603663c933e0c8e5d850b12907c8d2c",
+      "name": "native/compile-commands-after.json",
+      "required": true,
+      "sha256": "e651ec09bb94d59c6f33269f92c9b37cf603663c933e0c8e5d850b12907c8d2c",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/compile-commands-after.json",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 505,
+      "expected_sha256": "e651ec09bb94d59c6f33269f92c9b37cf603663c933e0c8e5d850b12907c8d2c",
+      "name": "native/build/compile_commands.json",
+      "required": true,
+      "sha256": "e651ec09bb94d59c6f33269f92c9b37cf603663c933e0c8e5d850b12907c8d2c",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build/compile_commands.json",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 27,
+      "expected_sha256": "8f490862327343c2ba48acaf841b7f8e21f30492e3a7290f3392d575814a38c4",
+      "name": "native/build/generated/config.h",
+      "required": true,
+      "sha256": "8f490862327343c2ba48acaf841b7f8e21f30492e3a7290f3392d575814a38c4",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build/generated/config.h",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 0,
+      "expected_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "name": "native/build/.cmake/api/v1/query/client-nico-export-control/codemodel-v2",
+      "required": true,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build/.cmake/api/v1/query/client-nico-export-control/codemodel-v2",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 0,
+      "expected_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "name": "native/build/.cmake/api/v1/query/client-nico-export-control/toolchains-v1",
+      "required": true,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build/.cmake/api/v1/query/client-nico-export-control/toolchains-v1",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 1289,
+      "expected_sha256": "c0bd2ad5466bf19603dddc70f1d0ed83a554e7491a2301bc6bed3ce6f614eba7",
+      "name": "native/build/.cmake/api/v1/reply/codemodel-v2-8bd92428fe7a325cdc7b.json",
+      "required": true,
+      "sha256": "c0bd2ad5466bf19603dddc70f1d0ed83a554e7491a2301bc6bed3ce6f614eba7",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build/.cmake/api/v1/reply/codemodel-v2-8bd92428fe7a325cdc7b.json",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 154,
+      "name": "native/build/.cmake/api/v1/reply/directory-.-Debug-f5ebdc15457944623624.json",
+      "required": true,
+      "sha256": "86e7a30b8b63ba3392582621985aeef407bddffc28967e4e9f1ebcf80cb8b8a0",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build/.cmake/api/v1/reply/directory-.-Debug-f5ebdc15457944623624.json",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 1162,
+      "expected_sha256": "7354f048ca1dc7b56231a0ffe1caaa5f5d49b1800f11d9e6f3a8e9d92a251b5f",
+      "name": "native/build/.cmake/api/v1/reply/index-2026-10-05T05-02-51-0893.json",
+      "required": true,
+      "sha256": "7354f048ca1dc7b56231a0ffe1caaa5f5d49b1800f11d9e6f3a8e9d92a251b5f",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build/.cmake/api/v1/reply/index-2026-10-05T05-02-51-0893.json",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 1933,
+      "expected_sha256": "3c1a288e777dd96c2a93305d2b29c369b81537257b108e559b81947ca942851c",
+      "name": "native/build/.cmake/api/v1/reply/target-hidden-Debug-182cd0e271ac79672591.json",
+      "required": true,
+      "sha256": "3c1a288e777dd96c2a93305d2b29c369b81537257b108e559b81947ca942851c",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build/.cmake/api/v1/reply/target-hidden-Debug-182cd0e271ac79672591.json",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 1458,
+      "name": "native/build/.cmake/api/v1/reply/target-visible-Debug-2273dd468c2b97fea897.json",
+      "required": true,
+      "sha256": "11a5b44b864f37e51d672ea5e97ab5b57ed1161ce1e73271e92577d4ee46c454",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build/.cmake/api/v1/reply/target-visible-Debug-2273dd468c2b97fea897.json",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 841,
+      "expected_sha256": "56952267f26bc90f9eaf9f6a8382150fdf9172ac1bbe15f2c6792878daf5c75b",
+      "name": "native/build/.cmake/api/v1/reply/toolchains-v1-1ecb8a96b9ca9ede68d5.json",
+      "required": true,
+      "sha256": "56952267f26bc90f9eaf9f6a8382150fdf9172ac1bbe15f2c6792878daf5c75b",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build/.cmake/api/v1/reply/toolchains-v1-1ecb8a96b9ca9ede68d5.json",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 730,
+      "expected_sha256": "833f2ef9c9aacb357d1c1fc846b2c3441f4c28824b8db0cc2e738a51afc25761",
+      "name": "negative/tampered-source/CMakeLists.txt",
+      "required": true,
+      "sha256": "833f2ef9c9aacb357d1c1fc846b2c3441f4c28824b8db0cc2e738a51afc25761",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/controls/tampered-source/CMakeLists.txt",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 42,
+      "expected_sha256": "58e2516abedf3eb89a38b7650972f629a77e6fb446824175995441b5fa387dd3",
+      "name": "negative/tampered-source/config.h.in",
+      "required": true,
+      "sha256": "58e2516abedf3eb89a38b7650972f629a77e6fb446824175995441b5fa387dd3",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/controls/tampered-source/config.h.in",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 309,
+      "expected_sha256": "654c6463bc2a9af78e0245e63846c296a361eeb653be5eca7c1b6c2b52c40744",
+      "name": "negative/tampered-source/hidden.c",
+      "required": true,
+      "sha256": "654c6463bc2a9af78e0245e63846c296a361eeb653be5eca7c1b6c2b52c40744",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/controls/tampered-source/hidden.c",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 90,
+      "expected_sha256": "2ee290092717e13b516897337a6a14770bb44a441ef70f8ddf1d37584f082fcd",
+      "name": "negative/tampered-source/include/active.h",
+      "required": true,
+      "sha256": "2ee290092717e13b516897337a6a14770bb44a441ef70f8ddf1d37584f082fcd",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/controls/tampered-source/include/active.h",
+      "status": "CAPTURED"
+    },
+    {
+      "bytes": 80,
+      "expected_sha256": "7091567002ce7a66f59621651d398d1d9e47bfd018594f068312230b30783e78",
+      "name": "negative/tampered-source/main.c",
+      "required": true,
+      "sha256": "7091567002ce7a66f59621651d398d1d9e47bfd018594f068312230b30783e78",
+      "source_path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/controls/tampered-source/main.c",
+      "status": "CAPTURED"
+    }
+  ],
+  "schema": "nico.fileapi-owned-primary-manifest.v1",
+  "summary": {
+    "actual_operation_id": "50de449f-e3fe-4aee-959b-4ec1e335d9f2",
+    "actual_outer_exit": 0,
+    "faults": [],
+    "general_argv_or_header_qualification_credit": false,
+    "native_local_preflight_reused_as_success": false,
+    "native_status": "VERIFIED_OWNED_MECHANISM_ONLY",
+    "negative_outcomes": [
+      {
+        "case": "wrong_source_digest",
+        "reason": "owned_source_digest",
+        "rejected": true
+      },
+      {
+        "case": "wrong_generated_bytes",
+        "reason": "generated_exact_bytes",
+        "rejected": true
+      },
+      {
+        "case": "escaped_reply_reference",
+        "reason": "reply_reference_path",
+        "rejected": true
+      },
+      {
+        "case": "wrong_target_context_identity",
+        "reason": "target_context_identity",
+        "rejected": true
+      },
+      {
+        "case": "wrong_source_context_path",
+        "reason": "hidden_source_membership",
+        "rejected": true
+      }
+    ],
+    "primary_bytes": 77170,
+    "primary_file_count": 39,
+    "required_evidence_complete": true,
+    "runner_sha256": "3963e39fa783f169c94781ea6ba96023b331246ff49f6f6456da81e201e15c21",
+    "schema": "nico.fileapi-owned-ci-adapter.v1",
+    "source_shas": {
+      "CMakeLists.txt": "833f2ef9c9aacb357d1c1fc846b2c3441f4c28824b8db0cc2e738a51afc25761",
+      "config.h.in": "58e2516abedf3eb89a38b7650972f629a77e6fb446824175995441b5fa387dd3",
+      "hidden.c": "6763e8385724114002682a1aba35fa42174424604ee26d35d30c9cba8402f73e",
+      "include/active.h": "2ee290092717e13b516897337a6a14770bb44a441ef70f8ddf1d37584f082fcd",
+      "main.c": "7091567002ce7a66f59621651d398d1d9e47bfd018594f068312230b30783e78"
+    },
+    "status": "VERIFIED_OWNED_TRIAL_ONLY",
+    "tool_identities": {
+      "cmake": {
+        "path": "/usr/local/bin/cmake",
+        "sha256": "c4b3b237dc7a013590db9e90f70fca2dfdedde09521e920d3339569ea364230a",
+        "version_first_line": "cmake version 3.31.6"
+      },
+      "gcc": {
+        "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+        "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+        "version_first_line": "x86_64-linux-gnu-gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
+      },
+      "make": {
+        "path": "/usr/bin/make",
+        "sha256": "d78b8f1d099fbcfb6f2f49ab87223b9b68fb3956642f92d6ec6de812e8afa965",
+        "version_first_line": "GNU Make 4.3"
+      }
+    }
+  }
+}

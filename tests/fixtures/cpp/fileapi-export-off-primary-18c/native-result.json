@@ -1,0 +1,344 @@
+{
+  "schema": "nico.fileapi-owned-control.v1",
+  "operation_id": "50de449f-e3fe-4aee-959b-4ec1e335d9f2",
+  "started_at_utc": "2026-10-05T05:02:49.832995+00:00",
+  "status": "VERIFIED_OWNED_MECHANISM_ONLY",
+  "source": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/trusted-input/source",
+  "output": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native",
+  "scope": "Trusted owned native control only; no qualification toolchain parity or mandatory-header gate credit.",
+  "limits": {
+    "wall_seconds": 120,
+    "cpu_affinity_max": 2,
+    "per_process_AS_bytes": 1073741824,
+    "sampled_group_rss_bytes": 2147483648,
+    "combined_raw_bytes": 1048576
+  },
+  "receipts": [
+    {
+      "label": "cmake-version",
+      "argv": [
+        "/usr/local/bin/cmake",
+        "--version"
+      ],
+      "cwd": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native",
+      "started_at_utc": "2026-10-05T05:02:50.212113+00:00",
+      "ended_at_utc": "2026-10-05T05:02:50.268650+00:00",
+      "elapsed_seconds": 0.05653763700001946,
+      "exit_code": 0,
+      "pid": 2727,
+      "sampled_group_rss_peak_bytes": 8757248,
+      "runner_error": null,
+      "complete_capture": true,
+      "stdout": {
+        "path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/cmake-version.stdout",
+        "bytes": 91,
+        "sha256": "f6e81c2559f3ce00c5fdad01d7b226c301f5d6b07ee04f65db6dbfdc1cc5970b"
+      },
+      "stderr": {
+        "path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/cmake-version.stderr",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "label": "gcc-version",
+      "argv": [
+        "/usr/bin/x86_64-linux-gnu-gcc-13",
+        "--version"
+      ],
+      "cwd": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native",
+      "started_at_utc": "2026-10-05T05:02:50.268869+00:00",
+      "ended_at_utc": "2026-10-05T05:02:50.284995+00:00",
+      "elapsed_seconds": 0.016134689000011804,
+      "exit_code": 0,
+      "pid": 2728,
+      "sampled_group_rss_peak_bytes": 2322432,
+      "runner_error": null,
+      "complete_capture": true,
+      "stdout": {
+        "path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/gcc-version.stdout",
+        "bytes": 266,
+        "sha256": "ae487f55927d605284a32711e4ecf6bc3be2bcd5a9de414ace0936264b741f85"
+      },
+      "stderr": {
+        "path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/gcc-version.stderr",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "label": "make-version",
+      "argv": [
+        "/usr/bin/make",
+        "--version"
+      ],
+      "cwd": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native",
+      "started_at_utc": "2026-10-05T05:02:50.285200+00:00",
+      "ended_at_utc": "2026-10-05T05:02:50.298824+00:00",
+      "elapsed_seconds": 0.013633263999963674,
+      "exit_code": 0,
+      "pid": 2729,
+      "sampled_group_rss_peak_bytes": 0,
+      "runner_error": null,
+      "complete_capture": true,
+      "stdout": {
+        "path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/make-version.stdout",
+        "bytes": 297,
+        "sha256": "8ee498ee2fc27e8dcdf99191b454077df95e3840d841ec94321748b6d7f36819"
+      },
+      "stderr": {
+        "path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/make-version.stderr",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "label": "configure",
+      "argv": [
+        "/usr/local/bin/cmake",
+        "-S",
+        "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/trusted-input/source",
+        "-B",
+        "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build",
+        "-G",
+        "Unix Makefiles",
+        "-DCMAKE_BUILD_TYPE=Debug",
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+        "-DCMAKE_C_COMPILER=/usr/bin/x86_64-linux-gnu-gcc-13",
+        "-DCMAKE_MAKE_PROGRAM=/usr/bin/make"
+      ],
+      "cwd": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native",
+      "started_at_utc": "2026-10-05T05:02:50.299745+00:00",
+      "ended_at_utc": "2026-10-05T05:02:51.900902+00:00",
+      "elapsed_seconds": 1.6011635059999776,
+      "exit_code": 0,
+      "pid": 2730,
+      "sampled_group_rss_peak_bytes": 58327040,
+      "runner_error": null,
+      "complete_capture": true,
+      "stdout": {
+        "path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/configure.stdout",
+        "bytes": 453,
+        "sha256": "78b2775bf4cde3c2b02904055e576c10f6674d9c557e5953da95efe6ada81a6b"
+      },
+      "stderr": {
+        "path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/configure.stderr",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "label": "build",
+      "argv": [
+        "/usr/local/bin/cmake",
+        "--build",
+        "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build",
+        "--parallel",
+        "2",
+        "--verbose"
+      ],
+      "cwd": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native",
+      "started_at_utc": "2026-10-05T05:02:51.904177+00:00",
+      "ended_at_utc": "2026-10-05T05:02:59.239627+00:00",
+      "elapsed_seconds": 7.335456394000005,
+      "exit_code": 0,
+      "pid": 2759,
+      "sampled_group_rss_peak_bytes": 182575104,
+      "runner_error": null,
+      "complete_capture": true,
+      "stdout": {
+        "path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build.stdout",
+        "bytes": 5517,
+        "sha256": "21180a123adcd3fdf4036f6410e5e740eba16da225172b064e65deb493df6479"
+      },
+      "stderr": {
+        "path": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build.stderr",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ],
+  "HOME_present": false,
+  "fixture_executable_run": false,
+  "FileAPI_exact_argv_oracle": false,
+  "source_binding_before": {
+    "CMakeLists.txt": {
+      "bytes": 730,
+      "sha256": "833f2ef9c9aacb357d1c1fc846b2c3441f4c28824b8db0cc2e738a51afc25761"
+    },
+    "config.h.in": {
+      "bytes": 42,
+      "sha256": "58e2516abedf3eb89a38b7650972f629a77e6fb446824175995441b5fa387dd3"
+    },
+    "hidden.c": {
+      "bytes": 308,
+      "sha256": "6763e8385724114002682a1aba35fa42174424604ee26d35d30c9cba8402f73e"
+    },
+    "include/active.h": {
+      "bytes": 90,
+      "sha256": "2ee290092717e13b516897337a6a14770bb44a441ef70f8ddf1d37584f082fcd"
+    },
+    "main.c": {
+      "bytes": 80,
+      "sha256": "7091567002ce7a66f59621651d398d1d9e47bfd018594f068312230b30783e78"
+    }
+  },
+  "tools": {
+    "cmake": {
+      "path": "/usr/local/bin/cmake",
+      "sha256": "c4b3b237dc7a013590db9e90f70fca2dfdedde09521e920d3339569ea364230a",
+      "version_first_line": "cmake version 3.31.6"
+    },
+    "gcc": {
+      "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+      "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+      "version_first_line": "x86_64-linux-gnu-gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
+    },
+    "make": {
+      "path": "/usr/bin/make",
+      "sha256": "d78b8f1d099fbcfb6f2f49ab87223b9b68fb3956642f92d6ec6de812e8afa965",
+      "version_first_line": "GNU Make 4.3"
+    }
+  },
+  "query_binding": {
+    "codemodel-v2": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "toolchains-v1": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "original_DB_before_sha256": "e651ec09bb94d59c6f33269f92c9b37cf603663c933e0c8e5d850b12907c8d2c",
+  "generated_binding": {
+    "bytes": 27,
+    "sha256": "8f490862327343c2ba48acaf841b7f8e21f30492e3a7290f3392d575814a38c4"
+  },
+  "negative_controls": [
+    {
+      "case": "wrong_source_digest",
+      "rejected": true,
+      "reason": "owned_source_digest"
+    },
+    {
+      "case": "wrong_generated_bytes",
+      "rejected": true,
+      "reason": "generated_exact_bytes"
+    },
+    {
+      "case": "escaped_reply_reference",
+      "rejected": true,
+      "reason": "reply_reference_path"
+    },
+    {
+      "case": "wrong_target_context_identity",
+      "rejected": true,
+      "reason": "target_context_identity"
+    },
+    {
+      "case": "wrong_source_context_path",
+      "rejected": true,
+      "reason": "hidden_source_membership"
+    }
+  ],
+  "native_hidden_argv": [
+    "/usr/bin/x86_64-linux-gnu-gcc-13",
+    "-DTARGET_SENTINEL=17",
+    "-DSOURCE_SENTINEL=19",
+    "-I/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/trusted-input/source/include",
+    "-I/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build/generated",
+    "-g",
+    "-std=gnu11",
+    "-Wextra",
+    "-MD",
+    "-MT",
+    "CMakeFiles/hidden.dir/hidden.c.o",
+    "-MF",
+    "CMakeFiles/hidden.dir/hidden.c.o.d",
+    "-o",
+    "CMakeFiles/hidden.dir/hidden.c.o",
+    "-c",
+    "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/trusted-input/source/hidden.c"
+  ],
+  "native_compile_commands": [
+    [
+      "/usr/bin/x86_64-linux-gnu-gcc-13",
+      "-DTARGET_SENTINEL=17",
+      "-DSOURCE_SENTINEL=19",
+      "-I/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/trusted-input/source/include",
+      "-I/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build/generated",
+      "-g",
+      "-std=gnu11",
+      "-Wextra",
+      "-MD",
+      "-MT",
+      "CMakeFiles/hidden.dir/hidden.c.o",
+      "-MF",
+      "CMakeFiles/hidden.dir/hidden.c.o.d",
+      "-o",
+      "CMakeFiles/hidden.dir/hidden.c.o",
+      "-c",
+      "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/trusted-input/source/hidden.c"
+    ],
+    [
+      "/usr/bin/x86_64-linux-gnu-gcc-13",
+      "-g",
+      "-std=gnu11",
+      "-MD",
+      "-MT",
+      "CMakeFiles/visible.dir/main.c.o",
+      "-MF",
+      "CMakeFiles/visible.dir/main.c.o.d",
+      "-o",
+      "CMakeFiles/visible.dir/main.c.o",
+      "-c",
+      "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/trusted-input/source/main.c"
+    ]
+  ],
+  "FileAPI_hidden_settings": {
+    "source": "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/trusted-input/source/hidden.c",
+    "defines": [
+      "SOURCE_SENTINEL=19",
+      "TARGET_SENTINEL=17"
+    ],
+    "includes": [
+      "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/trusted-input/source/include",
+      "/tmp/pytest-of-runner/pytest-7/test_owned_export_off_fileapi_0/fileapi-owned-trial/native/build/generated"
+    ],
+    "flags": [
+      "-g",
+      "-std=gnu11",
+      "-Wextra"
+    ],
+    "target_id": "hidden::@6890427a1f51a3e7e1df",
+    "source_index": 0,
+    "compile_group_index": 0
+  },
+  "native_flag_order": [
+    "-g",
+    "-std=gnu11",
+    "-Wextra"
+  ],
+  "FileAPI_flag_order_matches_native": true,
+  "flags_comparison_scope": "Exact population of three independent owned flags; ordering preserved separately, no general argv reconstruction claim.",
+  "reply_bindings": {
+    "index-2026-10-05T05-02-51-0893.json": {
+      "bytes": 1162,
+      "sha256": "7354f048ca1dc7b56231a0ffe1caaa5f5d49b1800f11d9e6f3a8e9d92a251b5f"
+    },
+    "codemodel-v2-8bd92428fe7a325cdc7b.json": {
+      "bytes": 1289,
+      "sha256": "c0bd2ad5466bf19603dddc70f1d0ed83a554e7491a2301bc6bed3ce6f614eba7"
+    },
+    "toolchains-v1-1ecb8a96b9ca9ede68d5.json": {
+      "bytes": 841,
+      "sha256": "56952267f26bc90f9eaf9f6a8382150fdf9172ac1bbe15f2c6792878daf5c75b"
+    },
+    "target-hidden-Debug-182cd0e271ac79672591.json": {
+      "bytes": 1933,
+      "sha256": "3c1a288e777dd96c2a93305d2b29c369b81537257b108e559b81947ca942851c"
+    }
+  },
+  "original_DB_after_sha256": "e651ec09bb94d59c6f33269f92c9b37cf603663c933e0c8e5d850b12907c8d2c",
+  "original_DB_bytes_unchanged": true,
+  "gate_promoted": false,
+  "ended_at_utc": "2026-10-05T05:02:59.246879+00:00",
+  "elapsed_seconds": 9.413874531000033,
+  "combined_native_and_FileAPI_raw_bytes": 11849,
+  "native_raw_output_bytes": 6624
+}

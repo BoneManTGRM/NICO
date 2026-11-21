@@ -38,16 +38,27 @@ def test_unknown_architecture_does_not_become_ci_only_forty():
     assert score is None
 
 
+@pytest.mark.parametrize('provider', [v2, v3, v4, v5])
 @pytest.mark.parametrize('field', ['run_id', 'repository', 'snapshot_commit_sha', 'commit_sha', 'evidence_ledger_id', 'customer_id', 'project_id'])
-def test_mismatched_score_evidence_not_scored(monkeypatch, field):
+def test_mismatched_score_evidence_not_scored(monkeypatch, field, provider):
+    from nico.comprehensive_candidate_volume_assurance_v2 import install_candidate_volume_assurance_v2
+    install_candidate_volume_assurance_v2()
     context = _context()
     evidence = {**context, 'snapshot_commit_sha': context['commit_sha'], 'evidence_id': 'complexity-test', 'complexity_score': 78}
     evidence[field] = 'wrong'
     monkeypatch.setattr(legacy, '_repo', lambda _: _repo())
     monkeypatch.setattr(legacy, '_scan', lambda _: _scan())
     monkeypatch.setattr(legacy, '_complexity', lambda _: evidence)
-    sections = v5.canonical_scoring_provider(context)['assessment']['sections']
-    assert next(s for s in sections if s['id']=='architecture_debt')['score'] is None
+    result = provider.canonical_scoring_provider(context)
+    if provider in (v4, v5) and field in ('repository', 'snapshot_commit_sha', 'commit_sha'):
+        # The retained-source guard rejects explicit source contradictions
+        # before any score is returned; this is stronger than section exclusion.
+        assert result['status'] == 'blocked'
+        assert result['reason'] == 'scoring_evidence_identity_mismatch'
+        assert 'assessment' not in result
+    else:
+        sections = result['assessment']['sections']
+        assert next(s for s in sections if s['id']=='architecture_debt')['score'] is None
 
 
 def test_actual_collector_evidence_is_not_an_architecture_score(monkeypatch):

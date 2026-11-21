@@ -1,0 +1,1 @@
+Owned CMake3.31.6/GCC14.2 captured data, rebased explicitly to /work for a substituted Docker transport. Default all excludes hidden generated source; hidden_inputs is its declared utility target. Source, compiler and CMake paths/cache and capsule digests are adapted. These adapter bytes are not worker/image/production qualification evidence. Runtime receipts remain private.

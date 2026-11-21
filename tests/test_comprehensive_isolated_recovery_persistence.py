@@ -53,6 +53,16 @@ def test_local_deadline_retains_recovery_phase(tmp_path, monkeypatch, fault_at):
     assert store.load_final_report_job(first)['status'] == 'blocked'
 
 
+def _assert_replacement_after_fault(replacement, fault_seen, workers):
+    # Recovery may launch on another thread before the injecting callback exits.
+    # Keep the existing completion/join bounds and check the fault after quiescence.
+    assert replacement.wait(3), 'isolated supervisor abandoned retained recovery'
+    for worker in workers:
+        worker.join(timeout=2)
+        assert not worker.is_alive()
+    assert fault_seen.is_set(), 'replacement completed without the injected fault'
+
+
 @pytest.mark.parametrize(('origin', 'fault_at'), [
     (origin, fault)
     for origin in ['local', 'watchdog', 'watchdog_local_race']
@@ -184,7 +194,8 @@ def test_isolated_supervisor_retries_after_renderer_exit(tmp_path, monkeypatch, 
                     coordinator.advance(claimed, lambda _: None, context)
             finally:
                 advance_finished.set()
-        assert fault_seen.wait(1)
+        if fault_at in {'cleanup', 'termination'}:
+            assert fault_seen.wait(1)  # These cases require a pre-release handshake.
         if fault_at == 'cleanup':
             background.reset_final_report_publication_tasks_for_tests()
             for key in ['invoke_thread', 'watchdog_thread', 'heartbeat_thread']:
@@ -199,10 +210,10 @@ def test_isolated_supervisor_retries_after_renderer_exit(tmp_path, monkeypatch, 
         if fault_at == 'termination':
             assert not replacement.is_set() and len(launched) == 1
             permit_exit.set()
-        assert replacement.wait(3), 'isolated supervisor abandoned retained recovery'
-        for key in ['invoke_thread', 'watchdog_thread', 'heartbeat_thread']:
-            states[0][key].join(timeout=2)
-            assert not states[0][key].is_alive()
+        _assert_replacement_after_fault(
+            replacement, fault_seen,
+            [states[0][key] for key in ['invoke_thread', 'watchdog_thread', 'heartbeat_thread']],
+        )
         current = store.load(context['run_id'])
         assert background._marker_lease(current) == launched[1]
         assert len(current['recovery_history']) == 1
@@ -243,3 +254,88 @@ def test_isolated_supervisor_retries_after_renderer_exit(tmp_path, monkeypatch, 
         for state in states:
             for key in ['invoke_thread', 'watchdog_thread', 'heartbeat_thread']:
                 state[key].join(timeout=2)
+
+
+def test_fault_observation_uses_existing_completion_bound():
+    import threading
+
+    fault_seen = threading.Event()
+    waits = []
+
+    class RecoveryCompletion:
+        def wait(self, seconds):
+            waits.append(seconds)
+            assert not fault_seen.is_set()
+            return True
+
+    class InjectingWorker:
+        def join(self, timeout):
+            waits.append(timeout)
+            assert not fault_seen.is_set()
+            fault_seen.set()
+
+        def is_alive(self):
+            return False
+
+    _assert_replacement_after_fault(RecoveryCompletion(), fault_seen, [InjectingWorker()])
+    assert waits == [3, 2]
+
+
+@pytest.mark.parametrize('completed,fault_injected', [(True, False), (False, True)])
+def test_completion_checkpoint_rejects_missing_fault_or_recovery(completed, fault_injected):
+    import threading
+
+    fault_seen = threading.Event()
+    if fault_injected:
+        fault_seen.set()
+
+    class RecoveryCompletion:
+        def wait(self, seconds):
+            assert seconds == 3
+            return completed
+
+    with pytest.raises(AssertionError, match='without the injected fault' if completed else 'abandoned retained recovery'):
+        _assert_replacement_after_fault(RecoveryCompletion(), fault_seen, [])
+
+
+def test_after_publication_fault_can_arrive_at_recovery_wait(tmp_path, monkeypatch):
+    """Gate a real durable save; still exercise the full fault/recovery proof."""
+    import sys
+    import threading
+
+    module = sys.modules[__name__]
+    entered, release = threading.Event(), threading.Event()
+    real_store = _store
+    real_checkpoint = _assert_replacement_after_fault
+    saves_gated = []
+
+    def gated_store(path):
+        store = real_store(path)
+        real_save = store.save
+
+        def save(candidate, **kwargs):
+            if candidate.get('terminal') is True and not candidate.get('recovery_history') and not saves_gated:
+                saves_gated.append(candidate['revision'])
+                entered.set()
+                assert release.wait(5), 'test must release the owned persistence gate'
+            return real_save(candidate, **kwargs)
+
+        monkeypatch.setattr(store, 'save', save)
+        return store
+
+    def checkpoint(replacement, fault_seen, workers):
+        assert not fault_seen.is_set(), 'fault cannot precede the gated durable save'
+        assert not replacement.is_set(), 'recovery cannot precede persistence'
+        release.set()
+        real_checkpoint(replacement, fault_seen, workers)
+        assert entered.is_set(), 'the real after-publication save must be reached'
+
+    monkeypatch.setattr(module, '_store', gated_store)
+    monkeypatch.setattr(module, '_assert_replacement_after_fault', checkpoint)
+    try:
+        test_isolated_supervisor_retries_after_renderer_exit(
+            tmp_path, monkeypatch, 'watchdog_local_race', 'after_publication',
+        )
+        assert len(saves_gated) == 1
+    finally:
+        release.set()

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import hashlib
+from copy import deepcopy
+from functools import wraps
 from typing import Any, Callable
 
 from fastapi import FastAPI
@@ -118,8 +120,47 @@ def _scan_id(context: dict[str, Any]) -> str:
 
 
 def _scan(context: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(context, _ScoringContext):
+        return deepcopy(context.scan_snapshot)
     scan_id = _scan_id(context)
     return get_scan(scan_id) if scan_id else {}
+
+
+class _ScoringContext(dict):
+    """Private invocation state; public context keys cannot supply a snapshot."""
+
+    def __init__(self, context: dict[str, Any], scan: dict[str, Any]):
+        super().__init__(deepcopy(context))
+        self.scan_snapshot = deepcopy(scan)
+
+
+def _source_bound_scoring(delegate: Provider) -> Provider:
+    """Validate one retained snapshot before any version of scoring consumes it.
+
+    Explicit source claims must match. Missing legacy identities retain their
+    existing completeness checks; this guard does not invent source evidence.
+    """
+    @wraps(delegate)
+    def wrapped(context: dict[str, Any]) -> dict[str, Any]:
+        if isinstance(context, _ScoringContext):
+            return delegate(context)
+        frozen = _ScoringContext(context, _scan(context))
+        expected = {"repository": frozen.get("repository"), **{
+            key: frozen.get("commit_sha") for key in
+            ("commit_sha", "actual_commit_sha", "snapshot_commit_sha", "target_commit_sha")
+        }}
+        scan = frozen.scan_snapshot
+        records = scan.get("scanner_results") or []
+        evidence = (_repo(frozen), _complexity(frozen), scan,
+                    scan.get("scanner_execution_source_identity") or {},
+                    *(record for record in records if isinstance(record, dict)))
+        if scan.get("scanner_execution_identity_conflict") is True or any(
+            key in item and item[key] != value
+            for item in evidence for key, value in expected.items()
+        ):
+            return _result(frozen, "blocked", reason="scoring_evidence_identity_mismatch")
+        return delegate(frozen)
+    return wrapped
 
 
 def _counts(scan: dict[str, Any]) -> dict[str, int]:

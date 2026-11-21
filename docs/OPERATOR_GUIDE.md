@@ -179,3 +179,33 @@ tools share a suite deadline, and partial results, timeouts and uncertain cleanu
 remain explicit. These controls do not establish a whole-assessment wall-clock
 guarantee or an aggregate checkout/history/auxiliary-file disk quota. Existing
 evidence-completeness, human-review and client-delivery checks still apply.
+
+
+### C++ compiler CPU observations
+
+New compiler-collector evidence may include optional `cpu_capacity` diagnostics.
+The observation runs inside the UID-1001 analyst collector, before context
+dispatch, and consumes its existing shared time budget. It describes that
+collector thread, not compiler children. Existing historical evidence without
+this field remains valid evidence of its original execution; missing CPU data
+means unavailable, never an inferred four-CPU measurement.
+
+Failure diagnostics separate requested container CPUs, configured compiler
+workers, calling-thread affinity count, visible cgroup quota ratios, and
+`os.cpu_count()`. The last value may describe a broader host view and is never
+used as a capacity substitute. Visible v1/v2 ancestor quotas are inspected only
+through bounded reads of the collector's own namespace. Hidden or unreadable
+parents remain unknown. A legitimate v2 root may omit `cpu.max`; absence is not
+an invalid resource configuration.
+
+The reported visible ceiling is derived from sequential, unverified
+observations, not an atomic enforcement snapshot or measured CPU delivery.
+Effective capacity always remains unknown and qualification credit is always
+false. Observation failures, malformed diagnostics, and missing data cannot
+change compiler acceptance, coverage, scheduling, resource limits, or native
+UNPROVEN results. Only fixed statuses and bounded numeric values reach the
+console; raw cgroup paths, environment values and error text are excluded.
+
+The observation consumes the existing time and retained-output budgets. Its
+additional work and bytes may affect completion near those limits; unchanged
+acceptance predicates do not mean zero operational effect. No budget is raised.

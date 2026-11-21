@@ -48,7 +48,8 @@ def test_volatile_storage_is_not_accepted_as_durable():
         WorkerJobs(MemoryAdapter())
 
 
-def test_configure_first_native_artifact_is_lease_bound_hash_verified_and_idempotent(monkeypatch):
+@pytest.mark.parametrize('key', ['project-compiler-evidence', 'project-enabled-targets'])
+def test_configure_first_native_artifact_is_lease_bound_hash_verified_and_idempotent(monkeypatch, key):
     import base64
     import gzip
     import hashlib
@@ -75,7 +76,7 @@ def test_configure_first_native_artifact_is_lease_bound_hash_verified_and_idempo
     raw = b'{"native":"synthetic large-project evidence"}' * 100
     compressed = gzip.compress(raw, mtime=0)
     artifact = {
-        'key': 'project-compiler-evidence',
+        'key': key,
         'raw_sha256': hashlib.sha256(raw).hexdigest(), 'raw_bytes': len(raw),
         'gzip_sha256': hashlib.sha256(compressed).hexdigest(), 'gzip_bytes': len(compressed),
         'compressed': base64.b64encode(compressed).decode('ascii'),
@@ -83,8 +84,8 @@ def test_configure_first_native_artifact_is_lease_bound_hash_verified_and_idempo
     result = jobs.put_artifact(identity(), 'e' * 32, 'github:1:2:3', artifact)
     assert result['artifact_id'].startswith('scanartifact_')
     assert result['sha256'] == artifact['raw_sha256']
-    assert payload['native_artifacts']['project-compiler-evidence'] == result
-    assert stored[0][0]['scanner_name'] == 'cppcheck:project-compiler-evidence'
+    assert payload['native_artifacts'][key] == result
+    assert stored[0][0]['scanner_name'] == 'cppcheck:' + key
     assert jobs.put_artifact(identity(), 'e' * 32, 'github:1:2:3', artifact) == result
 
     changed = {**artifact, 'raw_sha256': '0' * 64}

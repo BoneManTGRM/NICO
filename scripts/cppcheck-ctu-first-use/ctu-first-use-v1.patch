@@ -1,0 +1,90 @@
+diff --git a/lib/ctu.cpp b/lib/ctu.cpp
+--- a/lib/ctu.cpp
++++ b/lib/ctu.cpp
+@@ -33,6 +33,9 @@
+ #include <cstdint>
+ #include <cstring>
+ #include <iterator>  // back_inserter
++#include <memory>
++#include <new>
++#include <map>
+ #include <sstream>
+ #include <utility>
+ 
+@@ -279,12 +282,11 @@
+     return ret;
+ }
+ 
+-static int isCallFunction(const Scope *scope, int argnr, const Token *&tok)
+-{
+-    const Variable * const argvar = scope->function->getArgumentVar(argnr);
++static int isCallFunction(const Scope *scope, const Variable *argvar, const Token *start, const Token *&tok)
++{
+     if (!argvar->isPointer())
+         return -1;
+-    for (const Token *tok2 = scope->bodyStart; tok2 != scope->bodyEnd; tok2 = tok2->next()) {
++    for (const Token *tok2 = start; tok2 != scope->bodyEnd; tok2 = tok2->next()) {
+         if (tok2->variable() != argvar)
+             continue;
+         if (!Token::Match(tok2->previous(), "[(,] %var% [,)]"))
+@@ -321,8 +323,36 @@
+             continue;
+         const Function *const scopeFunction = scope.function;
+ 
++        // The source-call pass below does not mutate tokens or argument metadata.
++        // Cache only first pointer-argument uses during that existing traversal.
++        // Small functions keep the linear path; the cap bounds optional storage.
++        using FirstUses = std::map<const Variable *, const Token *>;
++        std::unique_ptr<FirstUses> firstUses;
++        if (scopeFunction->argCount() >= 8 && scopeFunction->argCount() <= 4096) {
++            try {
++                for (const Variable &arg : scopeFunction->argumentList) {
++                    if (arg.isPointer()) {
++                        if (!firstUses)
++                            firstUses.reset(new FirstUses);
++                        firstUses->emplace(&arg, scope.bodyEnd);
++                    }
++                }
++            } catch (const std::bad_alloc &) {
++                // Optional bookkeeping must not introduce an allocation failure.
++                firstUses.reset();
++            }
++        }
++        std::size_t remainingFirstUses = firstUses ? firstUses->size() : 0;
++
+         // source function calls
+         for (const Token *tok = scope.bodyStart; tok != scope.bodyEnd; tok = tok->next()) {
++            if (remainingFirstUses && tok->variable()) {
++                const auto first = firstUses->find(tok->variable());
++                if (first != firstUses->end() && first->second == scope.bodyEnd) {
++                    first->second = tok;
++                    --remainingFirstUses;
++                }
++            }
+             if (tok->str() != "(" || !tok->astOperand1() || !tok->astOperand2())
+                 continue;
+             const Function* tokFunction = tok->astOperand1()->function();
+@@ -426,12 +456,20 @@
+         }
+ 
+         // Nested function calls
+-        for (int argnr = 0; argnr < scopeFunction->argCount(); ++argnr) {
++        int argnr = 0;
++        for (const Variable &arg : scopeFunction->argumentList) {
++            ++argnr;
++            const Token *start = scope.bodyStart;
++            if (firstUses && arg.isPointer()) {
++                const auto first = firstUses->find(&arg);
++                if (first != firstUses->end())
++                    start = first->second;
++            }
+             const Token *tok;
+-            const int argnr2 = isCallFunction(&scope, argnr, tok);
++            const int argnr2 = isCallFunction(&scope, &arg, start, tok);
+             if (argnr2 > 0) {
+                 FileInfo::NestedCall nestedCall(tokenizer, scopeFunction, tok);
+-                nestedCall.myArgNr = argnr + 1;
++                nestedCall.myArgNr = argnr;
+                 nestedCall.callArgNr = argnr2;
+                 fileInfo->nestedCalls.push_back(std::move(nestedCall));
+             }

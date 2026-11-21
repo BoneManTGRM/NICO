@@ -23,15 +23,37 @@ def retained(tmp_path, kind='undefined', image='sha256:'+'a'*64):
     return root, kwargs, decision
 
 
+def current_retained(tmp_path, kind, image):
+    # Use current raw producer evidence; the legacy helper above remains a
+    # downgrade control and must not satisfy the strict export contract.
+    from tests.test_cpp_completed_collection_projection import qualification_bundle
+    receipt, read, kwargs, _ = qualification_bundle(
+        tmp_path, failing=False, image=image, runtime_kind=kind)
+    root = tmp_path / 'qualification-artifacts'
+    (root / 'receipt.json').write_text(json.dumps(receipt))
+    for name, key in zip(handoff.CONTRACTS, ('manifest_raw', 'baseline_raw', 'scope_raw')):
+        (root / name).write_bytes(kwargs[key])
+    decision = validate_project_collection(receipt, read, **kwargs)
+    (root / 'collection-acceptance.json').write_text(json.dumps(decision))
+    assert decision['collection_complete'] is True
+    assert decision['target_tests_passed'] is (kind is None)
+    assert decision['runtime']['summary']['complete'] is (kind is None)
+    if kind:
+        sanitizer = next(row for row in decision['runtime']['summary']['sanitizers']
+                         if row['kind'] == kind)
+        assert sanitizer['state'] == 'failed' and sanitizer['passed'] == []
+    return root, kwargs, decision
+
+
 @pytest.mark.parametrize('kind', [None, 'undefined'])
 @pytest.mark.parametrize('fault', [None, 'owned_image', 'changed_collection'])
-def test_composed_v3_export_binds_image_and_preserves_target_outcome(tmp_path, kind, fault):
+def test_composed_v5_export_binds_image_and_preserves_target_outcome(tmp_path, kind, fault):
     # Only native execution and Docker image saving are fixtures. The real
-    # collection producer/validators, archive verifier and v3 export compose.
+    # collection producer/validators, archive verifier and v5 export compose.
     from tests.test_cpp_worker_image_handoff import inputs, digest
     proof, metadata, recipe, output, save_image, calls = inputs.__wrapped__(tmp_path)
     image = metadata[0]['Id']
-    root, kwargs, decision = retained(tmp_path, kind, image)
+    root, kwargs, decision = current_retained(tmp_path, kind, image)
     original_files = {path.relative_to(root): path.read_bytes()
                       for path in root.rglob('*') if path.is_file()}
     proof['source_sha'] = kwargs['producer_source_sha']
@@ -62,7 +84,7 @@ def test_composed_v3_export_binds_image_and_preserves_target_outcome(tmp_path, k
     result = handoff.export(root, proof, metadata, recipe, output,
                             source_sha=kwargs['producer_source_sha'], exporter=exporter)
     assert calls == [image]
-    assert result['schema'] == 'nico.qualified-image-handoff.v3'
+    assert result['schema'] == 'nico.qualified-image-handoff.v5'
     assert result['image_config_id'] == image
     assert result['production_qualified'] is False
     assert result['registry_published'] is False
@@ -77,9 +99,9 @@ def test_composed_v3_export_binds_image_and_preserves_target_outcome(tmp_path, k
 def test_native_collection_revalidated_and_target_failures_preserved(tmp_path, kind):
     root, kwargs, decision = retained(tmp_path, kind)
     copy = tmp_path / 'copy'
-    digest = handoff.validate_collection(root, source_sha=kwargs['producer_source_sha'], image=kwargs['image'], retain=copy)
+    digest = handoff.validate_collection(root, source_sha=kwargs['producer_source_sha'], image=kwargs['image'], retain=copy, enabled_targets_required=False, collect_completed_compiler_failures=False)
     assert digest == hashlib.sha256(handoff._canonical(decision)).hexdigest()
-    assert handoff.validate_collection(copy, source_sha=kwargs['producer_source_sha'], image=kwargs['image']) == digest
+    assert handoff.validate_collection(copy, source_sha=kwargs['producer_source_sha'], image=kwargs['image'], enabled_targets_required=False, collect_completed_compiler_failures=False) == digest
     assert json.loads((copy / 'collection-acceptance.json').read_text())['target_tests_passed'] is (kind is None)
 
 
@@ -96,7 +118,14 @@ def test_collection_tampering_rejected(tmp_path, fault):
         target = root / 'receipt.json'; moved = tmp_path / 'moved.json'
         target.rename(moved); target.symlink_to(moved)
     with pytest.raises((ValueError, OSError)):
-        handoff.validate_collection(root, source_sha=source, image=image)
+        handoff.validate_collection(root, source_sha=source, image=image, enabled_targets_required=False, collect_completed_compiler_failures=False)
+
+
+def test_current_handoff_cannot_downgrade_to_legacy_complete_collection(tmp_path):
+    root, kwargs, decision = retained(tmp_path, kind=None)
+    assert decision['collection_complete'] is True
+    with pytest.raises(ValueError, match='qualification_collection_invalid'):
+        handoff.validate_collection(root, source_sha=kwargs['producer_source_sha'], image=kwargs['image'])
 
 
 @pytest.fixture
@@ -168,8 +197,9 @@ def test_push_release_identity_rejects_missing_or_malformed_event(
         release.identity('publish')
 
 
-def test_legacy_handoff_cannot_publish_from_new_controller(trusted, tmp_path):
-    (tmp_path / 'handoff.json').write_text(json.dumps({'source_sha':'a'*40,'schema':'nico.qualified-image-handoff.v1'}))
+@pytest.mark.parametrize('version',[1,2,3,4])
+def test_legacy_handoff_cannot_publish_from_new_controller(trusted, tmp_path,version):
+    (tmp_path / 'handoff.json').write_text(json.dumps({'source_sha':'a'*40,'schema':'nico.qualified-image-handoff.v'+str(version)}))
     with pytest.raises(ValueError, match='source_mismatch'):
         release.publish(tmp_path, 'unused', tmp_path/'out', command=lambda *a,**k: pytest.fail('Docker reached'))
 
@@ -212,11 +242,12 @@ from tests.test_cpp_worker_image_promotion import package, publish
 
 
 @pytest.mark.parametrize('corrupt', [False, True])
-def test_v3_promotion_requires_reconstructed_collection_before_docker(package, tmp_path, monkeypatch, corrupt):
+@pytest.mark.parametrize('version',[3,4,5])
+def test_v3_promotion_requires_reconstructed_collection_before_docker(package, tmp_path, monkeypatch, corrupt,version):
     directory, _, recipe, image = package
     manifest_path = directory / 'handoff.json'
     manifest = json.loads(manifest_path.read_bytes())
-    manifest.update(schema='nico.qualified-image-handoff.v3', full_project_collection_sha256='c'*64)
+    manifest.update(schema='nico.qualified-image-handoff.v'+str(version), full_project_collection_sha256='c'*64)
     manifest_path.write_bytes(handoff._canonical(manifest))
     checked = []
     def revalidate(root, *, source_sha, image):
@@ -237,6 +268,17 @@ def test_v3_promotion_requires_reconstructed_collection_before_docker(package, t
         assert result['production_qualified'] is False
         assert calls
     assert checked == [True]
+
+
+def test_current_collection_workflow_and_cli_require_the_same_explicit_policy():
+    for path in ('.github/workflows/cpp-full-project-integration.yml','.github/workflows/cpp-full-project-release.yml'):
+        workflow=yaml.safe_load(Path(path).read_bytes())
+        commands=[s.get('run','') for j in workflow['jobs'].values() for s in j['steps']]
+        baseline=[c for c in commands if 'scripts.qualify_cpp_project_configuration ' in c
+            and '--baseline-execution-contract' in c]
+        assert len(baseline)==1
+        assert '--collect-completed-compiler-failures' in baseline[0]
+        assert '--accept-completed-collection' in baseline[0] and '--materialize-generated-inputs' in baseline[0]
 
 from tests.test_cpp_worker_image_release import receipt
 

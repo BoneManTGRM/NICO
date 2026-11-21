@@ -1,5 +1,6 @@
 """Bind collection claims to the complete retained controller transport."""
 import ast
+from nico.assessment_cpp_fileapi_membership import runtime_cmake_path
 import base64
 import hashlib
 
@@ -14,7 +15,7 @@ from nico.assessment_cpp_project_snapshot import PROJECT_SNAPSHOT_PROGRAM, PROJE
 from nico.assessment_cpp_project_compiler import PROGRAM as COMPILER_PROGRAM
 from nico.assessment_cpp_static_environment import ENV_PROGRAM
 from nico.assessment_cpp_project_static import PROGRAM as STATIC_PROGRAM, STAGE_WALL_SECONDS
-from nico.assessment_cpp_clang_fallback import PROGRAM as FALLBACK_PROGRAM, _DROP_EXACT
+from nico.assessment_cpp_clang_fallback import PROGRAM as FALLBACK_PROGRAM, _DROP_EXACT, LOW_CONTENTION_LIMITS
 from nico.assessment_worker_capacity_v1 import BASELINE_QUALIFICATION_PROFILE, docker_resource_args, resources_for
 
 
@@ -90,6 +91,12 @@ def validate_transport(probe, operations, targets, *, snapshot=None, runtime_pla
                       'project-static-evidence': probe['analysis']['artifact']}
         if probe['analysis'].get('fallback_artifact') is not None:
             specs['project-static-clang-fallback'] = private(FALLBACK_PROGRAM, True)
+            fallback_native = _json(operations['project-static-clang-fallback'][1])
+            if 'wall_budget_ms' in fallback_native:
+                allocated = fallback_native['wall_budget_ms']
+                require(type(allocated) is int
+                    and 0 < allocated <= LOW_CONTENTION_LIMITS['wall_seconds'] * 1000)
+                specs['project-static-clang-fallback'].append(str(allocated))
             references['project-static-clang-fallback'] = probe['analysis']['fallback_artifact']
         require(_json(operations['static-restore'][1]) == {
             'file_population_sha256': snapshot['file_population_sha256'],
@@ -115,6 +122,75 @@ def validate_transport(probe, operations, targets, *, snapshot=None, runtime_pla
         else:
             references = {'project-generated-context': probe['generated_context']['artifact'],
                           'project-compiler-evidence': probe['project_compiler']['artifact']}
+        if 'fileapi_client' in probe:
+            from nico.assessment_cpp_fileapi_membership import QUERY_PROGRAM, CAPTURE_PROGRAM, EMPTY_SHA, QUERY_NAMES, configured_target_membership
+            from nico.assessment_worker_receipts import canonical_bytes
+            client=probe['fileapi_client']
+            specs['fileapi-query']=[*program(QUERY_PROGRAM),'/work/build',client]
+            specs['project-enabled-targets']=['docker','exec','--interactive',name,'python3','-I','-S','-c',CAPTURE_PROGRAM]
+            references['project-enabled-targets']=probe['enabled_target_capture']
+            require(_json(operations['fileapi-query'][1])=={'client':client,'query':{q:EMPTY_SHA for q in QUERY_NAMES}})
+            db=base64.b64decode(probe['compilation_database'],validate=True)
+            membership=configured_target_membership(operations['project-enabled-targets'][1],db,targets,
+                source_root='/work/source',build_root='/work/build',client=client,
+                cache_sha256=probe['configuration_cache_sha256'],
+                compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
+                compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},
+                cmake_path=runtime_cmake_path('native_command_capture' in probe))
+            require(membership['execution_authorized'] is False and membership['context_argv_binding_verified'] is False)
+            if probe.get('native_command_capture') is not None:
+                from nico.assessment_cpp_native_commands import (CAPTURE_PROGRAM as NATIVE_CAPTURE_PROGRAM,
+                    configured_native_commands, native_capture_request)
+                native_argv=['docker','exec','--interactive',name,'python3','-I','-S','-c',NATIVE_CAPTURE_PROGRAM]
+                specs['project-native-commands']=native_argv
+                specs['project-native-commands-post-build']=native_argv
+                specs['project-enabled-targets-post-build']=specs['project-enabled-targets']
+                references['project-native-commands']=probe['native_command_capture']
+                for key in ('project-native-commands-post-build','project-enabled-targets-post-build'):
+                    references[key]=operations[key][0]['output_artifact']
+                request=native_capture_request(operations['project-enabled-targets'][1],membership)
+                expected_input=hashlib.sha256(canonical_bytes(request)).hexdigest()
+                for key in ('project-native-commands','project-native-commands-post-build'):
+                    require(operations[key][0].get('input_sha256')==expected_input)
+                fileapi_request={'source_root':'/work/source','build_root':'/work/build','client':client,
+                    'source_targets':targets,'database_sha256':hashlib.sha256(db).hexdigest(),
+                    'cache_sha256':probe['configuration_cache_sha256']}
+                require(operations['project-enabled-targets-post-build'][0].get('input_sha256')
+                    ==hashlib.sha256(canonical_bytes(fileapi_request)).hexdigest())
+                require(operations['project-enabled-targets-post-build'][1]==operations['project-enabled-targets'][1])
+                from nico.assessment_cpp_native_commands import validate_native_plan_freeze
+                freeze=validate_native_plan_freeze(operations['project-native-commands'][1],
+                    operations['project-native-commands-post-build'][1],operations['project-enabled-targets'][1],db,targets,
+                    source_root='/work/source',build_root='/work/build',client=client,
+                    cache_sha256=probe['configuration_cache_sha256'],
+                    compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
+                    compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},
+                cmake_path=runtime_cmake_path('native_command_capture' in probe))
+                require(probe.get('native_command_freeze')==freeze)
+                plan=configured_native_commands(operations['project-native-commands'][1],operations['project-enabled-targets'][1],db,targets,
+                    source_root='/work/source',build_root='/work/build',client=client,
+                    cache_sha256=probe['configuration_cache_sha256'],
+                    compiler_versions={'C':COMPILER_VERSION,'CXX':COMPILER_VERSION},
+                    compiler_paths={'C':'/usr/local/bin/gcc','CXX':'/usr/local/bin/g++'},
+                cmake_path=runtime_cmake_path('native_command_capture' in probe))
+                require(probe['analysis_compilation_database_sha256']==plan['analysis_database_sha256']
+                    and probe['analysis_invocations']==plan['context_count'])
+                if 'generated_input_materialization' in probe:
+                    from nico.assessment_cpp_generated_inputs import OBSERVE_PROGRAM, validate_generation_evidence
+                    from nico.assessment_cpp_project_snapshot import project_snapshot_request
+                    from nico.assessment_cpp_full_project import _database
+                    contexts=_database(base64.b64decode(plan['analysis_database'],validate=True),None,
+                        '/work/build',nested=True,source_targets=targets)
+                    materialization=probe['generated_input_materialization']
+                    require(isinstance(materialization,dict))
+                    generation=validate_generation_evidence(canonical_bytes({k:v for k,v in materialization.items() if k!='artifact'}),
+                        operations['project-native-commands'][1],operations['project-enabled-targets'][1],membership,
+                        plan,project_snapshot_request(contexts),operations,image,probe['baseline_execution'])
+                    specs['generation-inputs-before']=private(OBSERVE_PROGRAM,True)
+                    specs['generation-inputs-after']=private(OBSERVE_PROGRAM,True)
+                    for i,target in enumerate(generation['plan']['selected_targets']):
+                        specs['generation-target-'+str(i).zfill(3)]=[*prefix,'cmake','--build','/work/build',
+                            '--target',target['target_name'],'--parallel',str(probe['baseline_execution']['parallel'])]
         if probe.get('unit_test_data') is not None:
             argv = operations['unit-test-data'][0]['invocation']
             require(isinstance(argv[-1], str) and argv[-1].isdigit() and 0 < int(argv[-1]) <= 128*1024*1024)
@@ -143,8 +219,12 @@ def validate_transport(probe, operations, targets, *, snapshot=None, runtime_pla
     require(set(operations) == population)
     for key, expected in specs.items():
         actual = operations[key][0]['invocation']
+        program_index = actual.index('-c') + 1 if key == 'project-static-clang-fallback' and '-c' in actual else -1
         require(actual == expected or (key == 'project-static-clang-fallback'
-            and actual[:-1] == expected[:-1] and _fallback_program_equal(actual[-1], expected[-1])))
+            and len(actual) == len(expected) and program_index == expected.index('-c') + 1
+            and actual[:program_index] == expected[:program_index]
+            and actual[program_index + 1:] == expected[program_index + 1:]
+            and _fallback_program_equal(actual[program_index], expected[program_index])))
     for key, reference in references.items():
         require(operations[key][0].get('output_artifact') == reference)
     require(_json(operations[source_key][1]) == targets)

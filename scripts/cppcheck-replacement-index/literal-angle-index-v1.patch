@@ -1,0 +1,256 @@
+diff --git a/lib/templatesimplifier.cpp b/lib/templatesimplifier.cpp
+--- a/lib/templatesimplifier.cpp
++++ b/lib/templatesimplifier.cpp
+@@ -3375,7 +3375,25 @@
+     const std::string &newName)
+ {
+     std::list<std::pair<Token *, Token *>> removeTokens;
+-    for (Token *nameTok = mTokenList.front(); nameTok; nameTok = nameTok->next()) {
++    const std::vector<Token*>* lessTokens = mTokenList.lessTokens();
++    std::size_t lessCursor = 0;
++    Token* linearNext = mTokenList.front();
++    for (;;) {
++        Token* nameTok;
++        if (lessTokens && mTokenList.lessTokensValid()) {
++            while (lessCursor < lessTokens->size() && !(*lessTokens)[lessCursor])
++                ++lessCursor;
++            if (lessCursor == lessTokens->size())
++                break;
++            nameTok = (*lessTokens)[lessCursor++]->previous();
++            if (!nameTok)
++                continue;
++        } else {
++            nameTok = linearNext;
++            if (!nameTok)
++                break;
++        }
++        linearNext = nameTok->next();
+         if (!Token::Match(nameTok, "%name% <") ||
+             Token::Match(nameTok, "template|const_cast|dynamic_cast|reinterpret_cast|static_cast"))
+             continue;
+@@ -3412,6 +3430,13 @@
+         // matching template usage => replace tokens..
+         // Foo < int >  =>  Foo<int>
+         for (const Token *tok = nameTok1->next(); tok != tok2; tok = tok->next()) {
++            // The original outer loop skips all arguments of an accepted usage.
++            if (lessTokens && mTokenList.lessTokensValid()) {
++                while (lessCursor < lessTokens->size() && !(*lessTokens)[lessCursor])
++                    ++lessCursor;
++                if (lessCursor < lessTokens->size() && (*lessTokens)[lessCursor] == tok)
++                    ++lessCursor;
++            }
+             if (tok->isName() && tok->templateSimplifierPointers() && !tok->templateSimplifierPointers()->empty()) {
+                 for (auto ti = mTemplateInstantiations.cbegin(); ti != mTemplateInstantiations.cend();) {
+                     if (ti->token() == tok) {
+@@ -3427,7 +3452,7 @@
+             mTemplateNamePos.erase(nameTok->previous());
+         removeTokens.emplace_back(nameTok, tok2->next());
+ 
+-        nameTok = tok2;
++        linearNext = tok2->next();
+     }
+     while (!removeTokens.empty()) {
+         eraseTokens(removeTokens.back().first, removeTokens.back().second);
+diff --git a/lib/token.cpp b/lib/token.cpp
+--- a/lib/token.cpp
++++ b/lib/token.cpp
+@@ -77,6 +77,7 @@
+ 
+ Token::~Token()
+ {
++    mTokensFrontBack.removedLessToken(this);
+     delete mImpl;
+ }
+ 
+@@ -107,6 +108,7 @@
+ 
+ void Token::update_property_info()
+ {
++    mTokensFrontBack.changedLessToken(this);
+     setFlag(fIsControlFlowKeyword, controlFlowKeywords.find(mStr) != controlFlowKeywords.end());
+     isStandardType(false);
+ 
+@@ -289,6 +291,7 @@
+ 
+ void Token::swapWithNext()
+ {
++    mTokensFrontBack.invalidateLessTokens();
+     if (mNext) {
+         std::swap(mStr, mNext->mStr);
+         std::swap(mTokType, mNext->mTokType);
+@@ -315,6 +318,7 @@
+ 
+ void Token::takeData(Token *fromToken)
+ {
++    mTokensFrontBack.invalidateLessTokens();
+     mStr = fromToken->mStr;
+     tokType(fromToken->mTokType);
+     mFlags = fromToken->mFlags;
+@@ -350,6 +354,9 @@
+ 
+ void Token::replace(Token *replaceThis, Token *start, Token *end)
+ {
++    replaceThis->mTokensFrontBack.invalidateLessTokens();
++    start->mTokensFrontBack.invalidateLessTokens();
++    end->mTokensFrontBack.invalidateLessTokens();
+     // Fix the whole in the old location of start and end
+     if (start->previous())
+         start->previous()->next(end->next());
+@@ -769,6 +776,9 @@
+ 
+ void Token::move(Token *srcStart, Token *srcEnd, Token *newLocation)
+ {
++    srcStart->mTokensFrontBack.invalidateLessTokens();
++    srcEnd->mTokensFrontBack.invalidateLessTokens();
++    newLocation->mTokensFrontBack.invalidateLessTokens();
+     /**[newLocation] -> b -> c -> [srcStart] -> [srcEnd] -> f */
+ 
+     // Fix the gap, which tokens to be moved will leave
+@@ -1077,6 +1087,8 @@
+             this->next(newToken);
+             newToken->previous(this);
+         }
++
++        mTokensFrontBack.insertedLessToken(newToken);
+ 
+         if (mImpl->mScopeInfo) {
+             // If the brace is immediately closed there is no point opening a new scope for it
+diff --git a/lib/tokenlist.cpp b/lib/tokenlist.cpp
+--- a/lib/tokenlist.cpp
++++ b/lib/tokenlist.cpp
+@@ -31,6 +31,7 @@
+ #include "standards.h"
+ #include "token.h"
+ 
++#include <new>
+ #include <cctype>
+ #include <cstdint>
+ #include <exception>
+@@ -64,6 +65,86 @@
+ {
+     if (mSettings && (mSettings->enforcedLang != Standards::Language::None)) {
+         mLang = mSettings->enforcedLang;
++    }
++}
++
++const std::vector<Token*>* TokensFrontBack::lessTokens()
++{
++    if (mLessDisabled)
++        return nullptr;
++    if (!mLessValid) {
++        try {
++            std::vector<Token*> tokens;
++            std::unordered_map<Token*, std::size_t> slots;
++            for (Token* token = front; token; token = token->next()) {
++                if (token->str() == "<") {
++                    slots.emplace(token, tokens.size());
++                    tokens.push_back(token);
++                }
++            }
++            mLessTokens.swap(tokens);
++            mLessSlots.swap(slots);
++            mLessValid = true;
++        } catch (const std::bad_alloc&) {
++            invalidateLessTokens();
++            mLessDisabled = true;
++            return nullptr;
++        }
++    }
++    return &mLessTokens;
++}
++
++void TokensFrontBack::invalidateLessTokens()
++{
++    // Unsupported mutations permanently restore linear traversal for this list.
++    mLessDisabled = mLessDisabled || mLessValid;
++    mLessValid = false;
++    mLessTokens.clear();
++    mLessSlots.clear();
++}
++
++void TokensFrontBack::removedLessToken(Token* token)
++{
++    if (!mLessValid)
++        return;
++    const auto it = mLessSlots.find(token);
++    if (it != mLessSlots.end()) {
++        mLessTokens[it->second] = nullptr;
++        mLessSlots.erase(it);
++        // Bound tombstone traversal by twice the live candidate population.
++        if (mLessTokens.size() - mLessSlots.size() > mLessSlots.size())
++            invalidateLessTokens();
++    }
++}
++
++void TokensFrontBack::changedLessToken(Token* token)
++{
++    if (!mLessValid)
++        return;
++    if (token->str() != "<") {
++        removedLessToken(token);
++    } else if ((token == front || token->previous() || token->next()) &&
++               mLessSlots.find(token) == mLessSlots.end()) {
++        // An existing token became '<'. Its lexical position is not cached.
++        invalidateLessTokens();
++    }
++}
++
++void TokensFrontBack::insertedLessToken(Token* token)
++{
++    if (!mLessValid || token->str() != "<")
++        return;
++    if (token != back) {
++        invalidateLessTokens();
++        return;
++    }
++    try {
++        mLessSlots.emplace(token, mLessTokens.size());
++        mLessTokens.push_back(token);
++    } catch (const std::bad_alloc&) {
++        // Index allocation must not turn a successful token edit into failure.
++        invalidateLessTokens();
++        mLessDisabled = true;
+     }
+ }
+ 
+diff --git a/lib/tokenlist.h b/lib/tokenlist.h
+--- a/lib/tokenlist.h
++++ b/lib/tokenlist.h
+@@ -27,6 +27,7 @@
+ #include <cstddef>
+ #include <iosfwd>
+ #include <string>
++#include <unordered_map>
+ #include <vector>
+ 
+ class Token;
+@@ -48,6 +49,19 @@
+     Token *front{};
+     Token* back{};
+     const TokenList& list;
++
++    // Optional lexical index of literal '<' tokens. Names and metadata are read live.
++    const std::vector<Token*>* lessTokens();
++    void invalidateLessTokens();
++    bool lessTokensValid() const { return mLessValid; }
++    void changedLessToken(Token* token);
++    void insertedLessToken(Token* token);
++    void removedLessToken(Token* token);
++private:
++    bool mLessValid = false;
++    bool mLessDisabled = false;
++    std::vector<Token*> mLessTokens;
++    std::unordered_map<Token*, std::size_t> mLessSlots;
+ };
+ 
+ class CPPCHECKLIB TokenList {
+@@ -58,6 +72,9 @@
+ 
+     TokenList(const TokenList &) = delete;
+     TokenList &operator=(const TokenList &) = delete;
++
++    const std::vector<Token*>* lessTokens() { return mTokensFrontBack.lessTokens(); }
++    bool lessTokensValid() const { return mTokensFrontBack.lessTokensValid(); }
+ 
+     /** @return the source file path. e.g. "file.cpp" */
+     const std::string& getSourceFilePath() const;

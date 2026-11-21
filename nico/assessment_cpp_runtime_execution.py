@@ -321,8 +321,9 @@ def _completed_sanitizer_test_failure(operation, summary, junit_raw):
     if b'<!DOCTYPE' in junit_raw.upper() or b'<!ENTITY' in junit_raw.upper():
         return False
     try:
-        root = ET.fromstring(junit_raw)
-    except ET.ParseError:
+        from nico.native_xml import parse_native_xml
+        root = parse_native_xml(junit_raw, declaration_error='worker_full_project_xml_invalid')
+    except (ET.ParseError, ValueError):
         return False
     failed = set(summary['required']) - set(summary['passed'])
     failures = []

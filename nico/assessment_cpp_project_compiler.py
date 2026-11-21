@@ -21,6 +21,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from nico.assessment_cpp_compiler_evidence import _source_path, safe_compile_argv, _regular_bytes, _run
 from nico.assessment_cpp_generated_context import _project_option, _stable_bytes
+from nico.assessment_cpp_cpu_capacity import PROGRAM as CPU_OBSERVATION_PROGRAM, observe as observe_cpu_capacity
+
 from nico.assessment_cpp_project_snapshot import PROJECT_HEADER_SUFFIXES, PROJECT_GENERATED_MAX_FILE_BYTES
 
 GENERATED_FILE_LIMIT = PROJECT_GENERATED_MAX_FILE_BYTES
@@ -64,8 +66,9 @@ def _extra_option(arg):
     if _project_option(arg) or arg in {
             '-ftrapv', '-fno-extended-identifiers', '-fcf-protection=full',
             '-fcf-protection=branch', '-fcf-protection=return', '-fcf-protection=none',
-            '-Wbidi-chars=any', '-Wbidi-chars=unpaired',
-            '-mavx', '-mavx2', '-msha', '-msse4', '-msse4.1'}:
+            '-Wbidi-chars=any', '-Wbidi-chars=unpaired', '-Wcast-align=strict',
+            '-mavx', '-mavx2', '-msha', '-msse4', '-msse4.1', '-msse4.2',
+            '-mpclmul', '-pedantic'}:
         return True
     # This option rewrites macro strings, not filesystem access. Only bounded
     # original-source prefixes and a canonical relative replacement are allowed.
@@ -172,7 +175,14 @@ def _dependency_populations(raw, request):
     text = raw.decode('utf-8').replace('\\\n', ' ').strip()
     if not text.startswith('nico_unit:'):
         raise ValueError('worker_project_compiler_dependencies_invalid')
-    paths = shlex.split(text[len('nico_unit:'):], comments=False, posix=True)
+    body = text[len('nico_unit:'):]
+    # Simple ASCII lists have no shell quoting or escape semantics. Keep the
+    # original lexer for every other input, including non-ASCII whitespace.
+    if (not any(c in body for c in ("'", '"', '\\'))
+            and re.fullmatch(r'[\t\r\n\x20-\x7e]*', body) is not None):
+        paths = body.split()
+    else:
+        paths = shlex.split(body, comments=False, posix=True)
     if not paths or len(paths) > 20000:
         raise ValueError('worker_project_compiler_dependencies_invalid')
     originals, generated, system = {}, {}, set()
@@ -209,6 +219,14 @@ def _verify_input(root, relative, digest, size=None, generated=False):
         raise ValueError('worker_project_compiler_input_mismatch')
 
 
+def _observe_cpu_capacity(workers):
+    # Observe this analyst collector thread, never the host or a compiler child.
+    try:
+        return observe_cpu_capacity(workers=workers)
+    except Exception:
+        return {'state': 'unavailable', 'effective_capacity_state': 'unknown', 'qualification_credit': False}
+
+
 def collect_project_compiler(request):
     """Trusted stdin only, after snapshot/controller validation, inside UID 1001."""
     import resource
@@ -237,6 +255,7 @@ def collect_project_compiler(request):
         'HOME': str(directory), 'TMPDIR': str(directory), 'LD_LIBRARY_PATH': '/usr/local/lib64:/usr/local/lib'}
     start = time.monotonic()
     deadline = start + limits['wall_seconds']
+    cpu_capacity = _observe_cpu_capacity(limits['parallel'])
     def one(context):
         record = {'context_id': context['context_id'], 'invocation': context['invocation'],
             'execution': None, 'dependency_bytes': '', 'dependency_sha256': None,
@@ -246,6 +265,10 @@ def collect_project_compiler(request):
                 raise ValueError('worker_project_compiler_deadline')
             if context['origin'] == 'original':
                 _verify_input('/work/source', context['path'], request['targets'][context['path']])
+            # Source verification consumes the same shared allocation. Never
+            # start a compiler after that work has exhausted the deadline.
+            if time.monotonic() >= deadline:
+                raise ValueError('worker_project_compiler_deadline')
             stem = str(directory / ('u' + str(context['index'])))
             record['execution'] = _run(context['invocation'], stem,
                 min(deadline, time.monotonic() + limits['case_seconds']), environment)
@@ -273,7 +296,7 @@ def collect_project_compiler(request):
     with ThreadPoolExecutor(max_workers=limits['parallel']) as pool:
         records = list(pool.map(one, request['contexts']))
     result = {'schema': _compiler_evidence_schema(request), 'request_sha256': _digest(_canonical(request)),
-        'analyst_uid': os.getuid(), 'records': records, 'duration_ms': int((time.monotonic()-start)*1000)}
+        'analyst_uid': os.getuid(), 'records': records, 'cpu_capacity': cpu_capacity, 'duration_ms': int((time.monotonic()-start)*1000)}
     if len(_canonical(result)) > STREAM_LIMIT:
         raise ValueError('worker_project_compiler_output_limit')
     return result
@@ -287,7 +310,8 @@ def validate_project_compiler(raw, request):
         raise ValueError('worker_project_compiler_output_limit')
     limits = _compiler_limits(request)
     evidence = _json(raw)
-    if (not isinstance(evidence, dict) or set(evidence) != {'schema','request_sha256','analyst_uid','records','duration_ms'}
+    if (not isinstance(evidence, dict) or set(evidence) not in ({'schema','request_sha256','analyst_uid','records','duration_ms'},
+                {'schema','request_sha256','analyst_uid','records','duration_ms','cpu_capacity'})
             or evidence['schema'] != _compiler_evidence_schema(request)
             or evidence['request_sha256'] != _digest(_canonical(request))
             or type(evidence['analyst_uid']) is not int or evidence['analyst_uid'] != 1001
@@ -377,7 +401,8 @@ PROGRAM = ('import base64, hashlib, json, os, posixpath, re, shlex, stat, subpro
     'from pathlib import Path\nfrom concurrent.futures import ThreadPoolExecutor\n'
     + f'LIMITS={LIMITS!r}\nEXTENDED_LIMITS={EXTENDED_LIMITS!r}\nSTREAM_LIMIT={STREAM_LIMIT}\nREQUEST_LIMIT={REQUEST_LIMIT}\n'
     + f'GENERATED_FILE_LIMIT={GENERATED_FILE_LIMIT}\n'
+    + CPU_OBSERVATION_PROGRAM + '\nobserve_cpu_capacity = observe\n'
     + '\n'.join(inspect.getsource(f) for f in (_canonical, _digest, _compiler_limits, _compiler_evidence_schema, _source_path, safe_compile_argv,
         _regular_bytes, _run, _project_option, _stable_bytes, _extra_option, _syntax_argv,
-        _dependency_populations, _verify_input, collect_project_compiler, run_project_compiler))
+        _dependency_populations, _verify_input, _observe_cpu_capacity, collect_project_compiler, run_project_compiler))
     + '\nrun_project_compiler()\n')
