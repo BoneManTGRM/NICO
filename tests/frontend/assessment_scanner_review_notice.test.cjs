@@ -42,3 +42,25 @@ test('valid unknown state still warns; generic review copy does not claim analys
   assert.doesNotMatch(copyFor('en').comprehensiveReview, /technical analysis .* complete/i);
   assert.doesNotMatch(copyFor('es-MX').comprehensiveReview, /análisis técnico .* completos/i);
 });
+test('absent run or malformed same-value SHA cannot verify completion', () => {
+  const complete = {status:'complete', completed_count:9, percent:100};
+  for (const identity of [{run_id:undefined}, {run_id:' '}, {commit_sha:''}, {commit_sha:'abc123'}]) {
+    const candidate = {...result({...complete,...identity}), ...identity};
+    assert.equal(scannerExecutionSummaryFor(candidate), null);
+    assert.match(draftScannerReviewNoticeFor(candidate, 'en'), /not verified/);
+  }
+});
+test('complete coverage requires a proven partition but allows zero required analyzers', () => {
+  const complete = {status:'complete', completed_count:9, percent:100};
+  for (const patch of [{applicable_count:8}, {applicable_count:8, applicability_unproven_count:1}]) {
+    assert.equal(scannerExecutionSummaryFor(result({...complete,...patch})), null);
+  }
+  const zeroRequired = result({status:'complete', percent:null, completed_count:0,
+    execution_required_count:0, applicable_count:0, applicability_unproven_count:0});
+  zeroRequired.human_review_required = true;
+  zeroRequired.client_delivery_allowed = false;
+  const before = JSON.stringify(zeroRequired);
+  assert.equal(scannerExecutionSummaryFor(zeroRequired)?.status, 'complete');
+  assert.equal(draftScannerReviewNoticeFor(zeroRequired, 'en'), null);
+  assert.equal(JSON.stringify(zeroRequired), before);
+});
