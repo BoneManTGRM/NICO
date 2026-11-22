@@ -1,0 +1,57 @@
+name: Synthetic pinned PostgreSQL 18 runtime proof
+on:
+  push:
+    branches: [atlas-synthetic-restore-20261119]
+    paths: [.github/workflows/atlas-pg18-runtime-capability.yml]
+permissions: {}
+jobs:
+  synthetic-runtime:
+    if: github.repository == 'BoneManTGRM/NICO'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify and probe exact official image in an isolated fresh container
+        shell: bash
+        run: |
+          set -euo pipefail
+          image=docker.io/library/postgres@sha256:1cb81a9168d2cbd336f29a4a363d121929e32d5d448dd5cab596bf6253372e86
+          name=nico-fake-runtime-proof
+          trap 'docker rm -f "$name" >/dev/null 2>&1 || true' EXIT
+          timeout --kill-after=5s 140s docker pull --platform=linux/amd64 "$image"
+          test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$image")" = linux/amd64
+          timeout --kill-after=5s 75s docker run --rm --name "$name" --pull=never \
+            --platform=linux/amd64 --entrypoint=/bin/sh --network=none --read-only \
+            --cap-drop=ALL --security-opt=no-new-privileges --pids-limit=64 \
+            --memory=256m --cpus=1 --user=postgres \
+            --tmpfs /tmp:rw,nosuid,nodev,size=128m,mode=1777 "$image" -eu -c '
+              bin=/usr/lib/postgresql/18/bin
+              export LC_ALL=C
+              for p in postgres initdb psql pg_controldata; do
+                test -x "$bin/$p"
+                "$bin/$p" --version
+              done
+              if test -x /usr/bin/openssl; then /usr/bin/openssl version; else echo openssl=absent; fi
+              if test -x /usr/bin/python3; then /usr/bin/python3 -I -B --version; else echo python3=absent; fi
+              root=$(mktemp -d /tmp/nico-fake.XXXXXX)
+              data="$root/data"; sock="$root/socket"
+              mkdir -m 700 "$sock"
+              "$bin/initdb" -D "$data" --username=postgres --auth-local=peer --auth-host=reject --no-locale --encoding=UTF8 >"$root/init"
+              "$bin/postgres" -D "$data" -c listen_addresses= -c "unix_socket_directories=$sock" \
+                -c unix_socket_permissions=0700 -c port=5447 -c archive_mode=off \
+                -c ssl=off -c shared_buffers=32MB -c max_connections=8 >"$root/pg" 2>&1 &
+              pg=$!
+              trap "kill -INT $pg 2>/dev/null || true" EXIT
+              elapsed=0
+              until result=$("$bin/psql" -XAtw -h "$sock" -p 5447 -U postgres -d postgres \
+                  -v ON_ERROR_STOP=1 -c "SELECT 1 WHERE inet_server_addr() IS NULL" 2>/dev/null) && test "$result" = 1; do
+                kill -0 "$pg"
+                elapsed=$((elapsed + 1))
+                test "$elapsed" -lt 20
+                sleep 1
+              done
+              kill -INT "$pg"
+              wait "$pg"
+              trap - EXIT
+              "$bin/pg_controldata" -D "$data" | grep -Eq "^Database cluster state:[[:space:]]+shut down$"
+              echo "native_synthetic_start_and_clean_stop=true railway_evidence=false"
+            '
