@@ -69,7 +69,7 @@ def test_spanish_catalog_covers_primary_assessment_controls() -> None:
         "Propietario/nombre del repositorio o URL de GitHub",
         "Revisión interna requerida",
         "Descargar PDF para revisión",
-        "El análisis automatizado terminó.",
+        "El borrador del informe está listo para la revisión técnica interna.",
         "Un revisor autorizado de NICO debe aprobar esta edición exacta",
     )
     for text in required:

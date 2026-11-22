@@ -459,7 +459,7 @@ def test_review_gate_pdf_says_technical_triage_complete_and_human_disposition_pe
     assert "scanner-candidate review work units" in text.lower()
     assert "grouped human-review clusters" in text.lower()
     assert "canonical pending dispositions are not the active operator queue" in text.lower()
-    assert "raw-to-work-unit reduction" in text.lower()
+    assert "reduction from raw scanner candidates to scanner review units" in " ".join(text.lower().split())
     assert "620 (98.41%)" in text
     assert "until triaged" not in text.lower()
     assert (

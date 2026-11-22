@@ -71,6 +71,13 @@ _FINAL_STAGE_ID = "final_comprehensive_report_generation"
 _SERVICE_ID = "comprehensive"
 
 
+def _decision_summary(identity, assessment, stages):
+    """Resolve the installed decision renderer at its canonical integration seam."""
+    from nico import comprehensive_report_package as report_package
+
+    return report_package._decision_summary(identity, assessment, stages)
+
+
 def _report_language(context: Mapping[str, Any]) -> str:
     identity = context.get("identity") if isinstance(context.get("identity"), Mapping) else {}
     for candidate in (
@@ -312,8 +319,7 @@ def build_canonical_report_source(context: Mapping[str, Any]) -> dict[str, Any]:
     canonical = bind_source_security_assurance(canonical)
     # Bind the brief after the verified run-specific scanner inventory is available.
     # Resolve the installed summary renderer rather than retaining an early import.
-    from nico import comprehensive_report_package as report_package
-    canonical["assessment"]["executive_summary"] = report_package._decision_summary(
+    canonical["assessment"]["executive_summary"] = _decision_summary(
         identity, canonical["assessment"], list(canonical.get("stage_summaries") or [])
     )
     spanish_preflight = assert_spanish_canonical_publication_preflight(canonical)

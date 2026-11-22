@@ -127,7 +127,10 @@ def test_autonomous_flow_stops_at_internal_review_without_approval_or_delivery_m
     source = assessment_source()
 
     assert 'value === "review_required"' in source
-    assert "Technical analysis and report preparation are complete. The engagement is awaiting internal technical review." in source
+    assert "The draft report is ready for internal technical review." in source
+    assert "Draft generated · Scanner coverage incomplete. Internal technical review is pending." in source
+    assert "Draft generated · Scanner coverage not verified. Internal technical review is pending." in source
+    assert "Technical analysis and report preparation are complete." not in source
     assert "An authorized NICO reviewer must approve this exact evidence-bound edition before it becomes client-ready" in source
     assert "data-assessment-internal-review" in source
     assert "/approval/request" not in source

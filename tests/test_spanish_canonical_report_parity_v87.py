@@ -1482,8 +1482,27 @@ small_english_before = render(small_package("en"))
 small_spanish = render(small_package("es-MX"))
 small_english_after = render(small_package("en"))
 
-assert fingerprint(small_english_before[0]) == SMALL_ENGLISH_GOLDEN
-assert fingerprint(small_english_after[0]) == SMALL_ENGLISH_GOLDEN
+rich_english = render(rich_input("en"))
+rich_spanish = render(rich_input("es-MX"))
+phase9_english = render_phase9(phase9_input("en"))
+phase9_spanish = render_phase9(phase9_input("es-MX"))
+
+actual_goldens = {
+    "small before": fingerprint(small_english_before[0]),
+    "small after": fingerprint(small_english_after[0]),
+    "rich": fingerprint(rich_english[0]),
+    "phase 9": fingerprint(phase9_english[0]),
+}
+expected_goldens = {
+    "small before": SMALL_ENGLISH_GOLDEN,
+    "small after": SMALL_ENGLISH_GOLDEN,
+    "rich": RICH_ENGLISH_GOLDEN,
+    "phase 9": PHASE9_ENGLISH_GOLDEN,
+}
+if actual_goldens != expected_goldens:
+    for name, actual in actual_goldens.items():
+        if actual != expected_goldens[name]:
+            print(f"Synthetic {name} fixture fingerprint: {actual!r}", flush=True)
 assert small_english_before[0]["markdown"] == small_english_after[0]["markdown"]
 assert small_english_before[0]["html"] == small_english_after[0]["html"]
 assert small_english_before[0]["pdf_base64"] == small_english_after[0]["pdf_base64"]
@@ -1493,18 +1512,12 @@ assert_structural_parity(small_english_before, small_spanish)
 assert "bandit: consecutive exact-SHA passes 1/2; requirement not met." in "\n".join(small_english_before[2])
 assert "bandit: pasadas consecutivas con SHA exacto 1/2; requisito no satisfecho." in "\n".join(small_spanish[2])
 
-rich_english = render(rich_input("en"))
-rich_spanish = render(rich_input("es-MX"))
-assert fingerprint(rich_english[0]) == RICH_ENGLISH_GOLDEN
 assert_structural_parity(rich_english, rich_spanish)
 assert len(rich_english[2]) == len(rich_spanish[2]) == 47
 assert len(outline_projection(rich_english[1])) == len(outline_projection(rich_spanish[1])) == 38
 assert len(re.findall(r"(?m)^#{1,3}\s", rich_english[0]["markdown"])) == 88
 assert len(re.findall(r"(?m)^#{1,3}\s", rich_spanish[0]["markdown"])) == 88
 
-phase9_english = render_phase9(phase9_input("en"))
-phase9_spanish = render_phase9(phase9_input("es-MX"))
-assert fingerprint(phase9_english[0]) == PHASE9_ENGLISH_GOLDEN
 assert_structural_parity(phase9_english, phase9_spanish)
 for finding_id in (
     "NICO-FINDING-E5CA1CA5C494",
@@ -1625,6 +1638,8 @@ assert "&lt;!-- CLIENT DELIVERY NOT AUTHORIZED --&gt;" not in small_result["html
 assert small_result["markdown"].count("## Registro compacto de hallazgos y remediación") == 1
 assert small_result["markdown"].count("## Índice completo de fuentes exactas") == 1
 assert small_result["markdown"].count("## Puerta de revisión humana y aceptación") == 1
+
+assert actual_goldens == expected_goldens, "One or more synthetic fixture artifact fingerprints changed"
 '''
 
     completed = subprocess.run(
