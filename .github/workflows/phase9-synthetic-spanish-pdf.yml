@@ -1,0 +1,40 @@
+name: Phase 9 Synthetic Spanish PDF (optional)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/phase9-synthetic-spanish-pdf.yml'
+      - 'scripts/retain_phase9_synthetic_spanish_pdf.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  optional-synthetic-es-mx-pdf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PHASE9_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact revision without persisting credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Render and verify a synthetic es-MX draft
+        run: python -m scripts.retain_phase9_synthetic_spanish_pdf
+      - name: Upload synthetic es-MX PDF proof
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase9-synthetic-es-mx-pdf-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: error
+          path: phase9-synthetic-spanish-proof/
