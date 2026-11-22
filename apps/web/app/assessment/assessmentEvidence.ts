@@ -465,11 +465,27 @@ export function scannerExecutionSummaryFor(result: Result | null): {
   if (value.schema !== "nico.scanner-execution-ui-summary.v1"
     || value.run_id !== result?.run_id || value.commit_sha !== immutableCommitFor(result)
     || !["complete", "partial", "unknown"].includes(String(value.status))
-    || ![value.execution_required_count, value.applicable_count, value.applicability_unproven_count]
+    || ![value.completed_count, value.execution_required_count, value.applicable_count, value.applicability_unproven_count]
       .every((count) => typeof count === "number" && Number.isInteger(count) && count >= 0)) return null;
+  const completed = Number(value.completed_count);
+  const required = Number(value.execution_required_count);
+  if (completed > required
+    || (value.percent !== null && (typeof value.percent !== "number" || !Number.isFinite(value.percent) || value.percent < 0 || value.percent > 100))
+    || (value.status === "complete" && (completed !== required || (required > 0 && value.percent !== 100)))) return null;
   return value as {
     status: "complete" | "partial" | "unknown"; percent: number | null;
     completed_count: number; execution_required_count: number;
     applicable_count: number; applicability_unproven_count: number;
   };
+}
+
+export function draftScannerReviewNoticeFor(result: Result | null, locale: string): string | null {
+  const status = scannerExecutionSummaryFor(result)?.status;
+  if (status === "complete") return null;
+  if (status === "partial") return locale === "es-MX"
+    ? "Borrador generado · Cobertura incompleta de los analizadores. El encargo espera la revisión técnica interna."
+    : "Draft generated · Scanner coverage incomplete. Internal technical review is pending.";
+  return locale === "es-MX"
+    ? "Borrador generado · Cobertura de los analizadores no verificada. El encargo espera la revisión técnica interna."
+    : "Draft generated · Scanner coverage not verified. Internal technical review is pending.";
 }

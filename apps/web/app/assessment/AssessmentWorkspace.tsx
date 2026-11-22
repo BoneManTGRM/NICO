@@ -23,6 +23,7 @@ import {
   reportFor,
   scannerStatusFor,
   scannerExecutionSummaryFor,
+  draftScannerReviewNoticeFor,
   sectionPresentation,
   statusClass,
 } from "./assessmentModel";
@@ -496,6 +497,9 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
   const {technicalValue, adjustedValue, technicalLabel, adjustedLabel, maturityStatus} = deriveScoreView();
   const {immutableCommit, scannerStatus, markdownAvailable, pdfAvailable, reportReady, reportStatus} = deriveArtifactView();
   const {internalReview, reviewStatus, clientReadyStatus, internalReviewHref, preflightIssue, runIssue, showStatePanel} = deriveReviewView();
+  const scannerReviewNotice = phase === "review_required" && reportReady && !internalReview.operatorApprovalCompleted
+    ? draftScannerReviewNoticeFor(result, locale)
+    : null;
   const {stageHistoryLabel, artifactStatus, terminalView} = deriveCopyView();
   const executivePresentation = localizedExecutivePresentation(assessment?.executive_summary, copy, locale);
   const {acceptedPdfIdentity, acceptedPdfSha256, exactApprovedPdfAvailable, approvedLocaleMismatch} = acceptedPdfView(result, internalReview.approvalCompleted, pdfAvailable, requestedReportLanguage);
@@ -878,7 +882,7 @@ export default function AssessmentWorkspace({locale = "en"}: {locale?: Locale}) 
         </div>
       </div> : null}
 
-      {!runIssue && message ? <p className={workspaceStyles.stateMessage}>{internalReview.operatorApprovalCompleted ? copy.specialistSeparateNotice : message}</p> : null}
+      {!runIssue && (scannerReviewNotice || message) ? <p className={workspaceStyles.stateMessage}>{internalReview.operatorApprovalCompleted ? copy.specialistSeparateNotice : (scannerReviewNotice || message)}</p> : null}
 
       {running && phase !== "checking" ? <>
         <div className={styles.progressMeta}>

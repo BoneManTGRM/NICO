@@ -240,10 +240,9 @@ def _patch_candidate_stage() -> bool:
                 technical.get("review_workload_clusters") or []
             )
             output["summary"] = (
-                "Scanner candidates remain separate from confirmed material findings. NICO "
-                "completed deterministic technical triage, retained valid same-subject prior "
-                "analysis, grouped homogeneous repetitive review work, and routed genuine "
-                "exceptions without creating human disposition or approval."
+                "Automated technical triage produces proposals, not completed investigations, "
+                "confirmed material findings, or human dispositions. The counts below distinguish "
+                "individual review, grouped review, and quality-control sampling."
             )
 
         output["findings"] = [

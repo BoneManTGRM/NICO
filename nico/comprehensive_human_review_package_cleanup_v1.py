@@ -3,6 +3,7 @@ from __future__ import annotations
 from nico.report_pdf_text import extract_pdf_page_texts
 
 from nico.scanner_applicability_v1 import scanner_execution_summary
+from nico.report_scanner_outcomes import failed_scan_boundary
 
 import base64
 import html
@@ -279,6 +280,7 @@ def build_scanner_execution_stage(
     for item in records:
         name = _text(item.get("scanner_name") or item.get("tool") or "unnamed scanner")
         state = _text(item.get("state") or item.get("status") or "unknown")
+        execution_state = _text(item.get("execution_state") or state).casefold()
         # Structured machine states are retained evidence identifiers, not prose.
         # Preserve them exactly; only plain display labels are localized here.
         from nico.v2_premium_report_renderer import _is_spanish
@@ -292,6 +294,8 @@ def build_scanner_execution_stage(
             f"confirmed material finding count={_scanner_material_count(item)}; "
             f"raw finding payload embedded={'yes' if item.get('findings') else 'no'}."
         )
+        if execution_state in {"failed", "timed_out", "timeout"}:
+            evidence[-1] += " " + failed_scan_boundary(_is_spanish(canonical))
     for item in not_applicable:
         name = _text(item.get("scanner_name") or item.get("tool") or "unnamed scanner")
         reason = _text(

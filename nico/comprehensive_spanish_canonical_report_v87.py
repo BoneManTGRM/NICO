@@ -1071,6 +1071,10 @@ _PRESENTATION_REPLACEMENTS += (
         "Arquitectura y gobernanza de la evidencia.",
     ),
     (
+        "Automated technical triage produces proposals, not completed investigations, confirmed material findings, or human dispositions. The counts below distinguish individual review, grouped review, and quality-control sampling.",
+        "El triaje técnico automatizado genera propuestas; no equivale a investigaciones completadas, hallazgos materiales confirmados ni decisiones humanas. Los conteos siguientes distinguen la revisión individual, la revisión en grupo y el muestreo de control de calidad.",
+    ),
+    (
         "Scanner candidates remain separate from confirmed material findings. NICO completed deterministic technical triage, retained valid same-subject prior analysis, grouped homogeneous repetitive review work, and routed genuine exceptions without creating human disposition or approval.",
         "Los candidatos de analizadores permanecen separados de los hallazgos materiales confirmados. NICO completó un triaje técnico determinista, conservó análisis previos válidos del mismo sujeto de evaluación, agrupó trabajo de revisión repetitivo y homogéneo y encaminó las excepciones genuinas sin crear disposición ni aprobación humana.",
     ),
