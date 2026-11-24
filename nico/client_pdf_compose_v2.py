@@ -103,6 +103,25 @@ def _page_heading(value: str, headings: tuple[str, ...]) -> bool:
     return any(first == heading or first.startswith(f"{heading} ") for heading in headings)
 
 
+
+def _wrapped_ci_boundary_body(text: str) -> tuple[str, ...] | None:
+    """Recognize only a standalone two-line CI/CD boundary title."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(lines) < 3:
+        return None
+    first = _normalized(lines[0])
+    if not any(heading.startswith(first + " ") and
+               _normalized(lines[0] + " " + lines[1]) == heading
+               for heading in _CI_BOUNDARY_HEADINGS):
+        return None
+    # Remove only our final document-number footer. Preserve every other
+    # character (including accents, punctuation, order and all evidence).
+    if re.fullmatch(r"(?:document page|pagina del documento) \d+ (?:of|de) \d+",
+                    _normalized(lines[-1])):
+        lines.pop()
+    return tuple(lines)
+
+
 _LEGACY_COVER_TITLES = frozenset((
     "comprehensive technical assessment",
     "evaluacion tecnica integral",
@@ -196,6 +215,10 @@ def _retained_primary_pages(base: PdfReader, ci_boundary: PdfReader | None) -> l
     retained: list[Any] = []
     replacing_legacy_register = False
     preserving_primary_tail = False
+    replacement_ci_body = (
+        _wrapped_ci_boundary_body(ci_boundary.pages[0].extract_text() or "")
+        if ci_boundary is not None and len(ci_boundary.pages) == 1 else None
+    )
     from nico.comprehensive_pdf_reflow_v1 import _content_lines, _has_standard_header
     for page_index, page in enumerate(base.pages):
         extracted = page.extract_text() or ""
@@ -253,6 +276,11 @@ def _retained_primary_pages(base: PdfReader, ci_boundary: PdfReader | None) -> l
             # The separately rendered boundary is the authoritative physical
             # edition. Retaining the base copy as well creates two body pages
             # for one semantic section and shifts every later TOC target.
+            continue
+        if (replacement_ci_body is not None and page_index > 0 and not page.get("/Annots")
+                and _wrapped_ci_boundary_body(extracted) == replacement_ci_body):
+            # Wrapped appendix title defeated the first-line rule above. Drop
+            # the retained copy only when the replacement preserves its body.
             continue
         if _page_heading(
             extracted,

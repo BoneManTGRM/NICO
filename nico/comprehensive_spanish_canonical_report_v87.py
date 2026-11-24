@@ -200,6 +200,12 @@ _OSV_APPLICABILITY_ES = {
     ),
 }
 _CANONICAL_PARITY_EXACT.update({
+    "This section was not assessed; automated processing is not assessment evidence.":
+        "Esta sección no se evaluó; el procesamiento automatizado no constituye evidencia de evaluación.",
+    "This section was only partially assessed; automated processing does not establish full coverage.":
+        "Esta sección solo se evaluó parcialmente; el procesamiento automatizado no demuestra una cobertura completa.",
+    "Assessment evidence for this section was unavailable; automated processing does not establish coverage.":
+        "No hubo evidencia disponible para evaluar esta sección; el procesamiento automatizado no demuestra cobertura.",
     "Processing complete; assessment coverage and specialist review are reported separately.":
         "Procesamiento completo; la cobertura de evaluación y la revisión especializada se informan por separado.",
     "Velocity / Complexity combines bounded traceability with same-run measured source metrics. Nesting coverage is incomplete and contributes no score adjustment.":

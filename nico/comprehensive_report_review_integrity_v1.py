@@ -341,9 +341,9 @@ def _client_summary_truth_evidence(
         return value if type(value) is int and value >= 0 else unavailable
     triage_completed = triage_count("technical_triage_completed")
     triage_pending = triage_count("technical_triage_pending")
-    from nico.review_workload_truth_v1 import review_workload_summary
+    from nico.review_workload_truth_v1 import report_review_workload_display
 
-    combined_workload = review_workload_summary(canonical)
+    combined_workload = report_review_workload_display(canonical, spanish=spanish)
     scanner_work_units = combined_workload["scanner_candidate_review_work_units"]
     exact_source_work_units = combined_workload["exact_source_review_work_units"]
     operational_work_units = combined_workload["operational_context_review_work_units"]

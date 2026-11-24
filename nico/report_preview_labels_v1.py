@@ -1,5 +1,6 @@
 """Renderer-local coverage labels; never alter the retained source populations."""
 from collections import Counter
+import re
 from typing import Any, Mapping
 
 
@@ -103,16 +104,38 @@ def stage_preview_labels(stage: Mapping[str, Any], context: Mapping[str, Any], *
     # Count the collection that produced the rendered details, not an older
     # outer projection. Legacy stages without a collection keep the fallback.
     stage_packages = stage.get('roadmap')
-    packages = ([item for item in stage_packages if isinstance(item, Mapping)]
-                if isinstance(stage_packages, list) else retained('roadmap'))
-    package_ids = {str(item['package_id']) for item in packages or [] if item.get('package_id')}
+    raw_packages = (stage_packages if isinstance(stage_packages, list) else
+                    next((source['roadmap'] for source in sources
+                          if isinstance(source.get('roadmap'), list)), None))
+    packages = [item for item in raw_packages or [] if isinstance(item, Mapping)]
+    package_ids = {str(item['package_id']) for item in packages if item.get('package_id')}
     lines = [' '.join(str(line).split()) for line in stage.get('evidence') or [] if str(line or '').strip()]
     # The roadmap producer prefixes each detail with the exact retained package ID.
     def counts(values: list[str]) -> Counter:
         return Counter(line.partition(' | ')[0] for line in values
                        if line.partition(' | ')[0] in package_ids)
     complete, shown = counts(lines), counts(lines[:evidence_limit])
-    total = str(len(package_ids)) if packages is not None else ('desconocido' if spanish else 'unknown')
+    # Legacy stage evidence may show a work-package identifier even if the outer
+    # collection is an empty placeholder. A visible ID contradicts a zero count
+    # but does not establish an enumerable population. Accept only a standalone
+    # identifier inside the roadmap's two known detail formats.
+    visible_id = any(re.search(r'(?:^|[·|]\s*)WP-[0-9]{3,}(?=\s*[·|]|$)', line)
+                     for line in lines[:evidence_limit])
+    if raw_packages is None or (not package_ids and (raw_packages or visible_id)):
+        # Missing/malformed populations or contradictory rendered evidence
+        # cannot supply a verified denominator.
+        return [(
+            'Vista previa de la hoja de ruta: no se dispone de un recuento verificado de paquetes de trabajo.'
+            if spanish else
+            'Roadmap preview: a verified work-package count is unavailable.'
+        )]
+    if not package_ids:
+        return [(
+            'Vista previa de la hoja de ruta: 0 paquetes de trabajo con identificador conservado.'
+            if spanish else
+            'Roadmap preview: 0 work packages with retained identifiers.'
+        )]
+    total = len(package_ids)
     partial = any(count < complete[identifier] for identifier, count in shown.items())
     if evidence_text_limit is not None:
         # Match the PDF bullet renderer's whitespace normalization before its

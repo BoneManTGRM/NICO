@@ -639,6 +639,27 @@ def _markdown_manifest(
     return "\n".join(lines).strip() + "\n"
 
 
+def _bind_pdf_catalog_language(pdf: bytes, locale: str) -> bytes:
+    """Bind a supported canonical locale without rebuilding pages or navigation."""
+    from pypdf.generic import NameObject, TextStringObject
+
+    if locale not in ("en", "es-MX"):
+        return pdf
+    reader = PdfReader(io.BytesIO(pdf))
+    existing = reader.trailer["/Root"].get("/Lang")
+    if existing == locale:
+        return pdf
+    if existing is not None:
+        raise ValueError("Final PDF language does not match the canonical report locale.")
+    writer = PdfWriter()
+    writer.clone_document_from_reader(reader)
+    writer.pdf_header = reader.pdf_header
+    writer.root_object[NameObject("/Lang")] = TextStringObject(locale)
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
 def attach_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
     output = deepcopy(dict(package))
     canonical = (
@@ -659,7 +680,9 @@ def attach_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
     # and detached manifest self-digest are produced after this supplement renders.
     supplement_entries = deepcopy(entries)
     supplement = _render_manifest_approval_supplement(canonical, supplement_entries)
-    final_pdf = _append_pdf(base_pdf, supplement)
+    final_pdf = _bind_pdf_catalog_language(
+        _append_pdf(base_pdf, supplement), identity["report_language"],
+    )
     page_count = len(PdfReader(io.BytesIO(final_pdf)).pages)
     pdf_sha256 = _sha256(final_pdf)
 
@@ -1116,7 +1139,9 @@ def rebind_artifact_manifest(package: Mapping[str, Any]) -> dict[str, Any]:
                 identity=identity,
             ),
         ]
-        pdf = _refresh_visible_manifest(pdf, canonical, entries)
+        pdf = _bind_pdf_catalog_language(
+            _refresh_visible_manifest(pdf, canonical, entries), identity["report_language"],
+        )
         page_count = len(PdfReader(io.BytesIO(pdf)).pages)
         pdf_entry = _artifact_entry(
             artifact_type="comprehensive_pdf",

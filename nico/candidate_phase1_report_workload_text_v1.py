@@ -59,13 +59,13 @@ def workload_markdown(canonical: Mapping[str, Any], *, spanish: bool) -> str:
     if isinstance(truth, Mapping):
         heading = "## Triage técnico automatizado y carga de revisión" if spanish else "## Automated Technical Triage and Reviewer Workload"
         return heading + "\n\n" + "\n".join("- " + line for line in current_review_lines(truth, spanish=spanish))
-    from nico.review_workload_truth_v1 import review_workload_summary
+    from nico.review_workload_truth_v1 import report_review_workload_display
 
     triage = _find(canonical, "technical_triage")
     metrics = triage.get("workload_metrics") if isinstance(triage.get("workload_metrics"), Mapping) else {}
     if not metrics:
         return ""
-    workload = review_workload_summary(canonical)
+    workload = report_review_workload_display(canonical, spanish=spanish)
     scanner_units = workload["scanner_candidate_review_work_units"]
     exact_units = workload["exact_source_review_work_units"]
     operational_units = workload["operational_context_review_work_units"]
