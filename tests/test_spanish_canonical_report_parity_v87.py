@@ -1174,17 +1174,17 @@ install_comprehensive_spanish_client_surface_localization_v86()
 # Exact base/current comparison: only page 19 gains the required Bandit 1/2
 # repeatability disclosure; Markdown, HTML, page counts and all other fixtures
 # are unchanged. Keep structural, manifest, identity and bilingual assertions.
-SMALL_ENGLISH_GOLDEN = {'markdown': ('0f4b9e925fea8d6483001531f56d6be04b981ed20f67774af80a5819b57ba00b', 19764), 'html': ('10ed49d1fe48634da4b94db05634cfea99bab0ab6e317836ccfa156814426394', 24177), 'pdf_base64': ('dd5eaa6aa61d265f0c66341d66f81d1988407badd301e91fe645f77be196d0fd', 184356), 'pdf_sha256': 'ecf74e925c9be36b72657adc897bce6b1f4a058d1f0838e8faaf8469471e072c', 'page_count': 22}
+SMALL_ENGLISH_GOLDEN = {'markdown': ('0f4b9e925fea8d6483001531f56d6be04b981ed20f67774af80a5819b57ba00b', 19764), 'html': ('10ed49d1fe48634da4b94db05634cfea99bab0ab6e317836ccfa156814426394', 24177), 'pdf_base64': ('042d9533483266517580ad11abca4c5bd877f48300e2e634959e79004a29dfb1', 182872), 'pdf_sha256': 'e37af589eef420442016eef87de8c88c40c847817f496ed87533c0d48cc725c4', 'page_count': 22}
 # PR1779: isolated 644b -> 82315628 rich EN/es comparison preserves Markdown,
 # HTML, all 47 page texts/drawing streams/media boxes, canonical truth and gates.
 # Only phase 3 moves from summary page 5 to canonical Functional QA page 26;
 # the other 37 outline entries are identical. Only its PDF fingerprints change.
-RICH_ENGLISH_GOLDEN = {'markdown': ('39f248d6971dfcaf23000b8cc81b53f276c9c2a354ab71c61b60fdc211336f55', 21255), 'html': ('bc5e7695d96f0024cdf714f192efbf477b110ed326774fa6e4b8789fce561cc7', 25962), 'pdf_base64': ('83eef76502a331991be220df0260340677d15baad0924284d3833ae2f2d5eebe', 285812), 'pdf_sha256': '129aa40b7974bc08863edcaba577444db014fe2f4dc53e0d53eae178231b44a2', 'page_count': 47}
+RICH_ENGLISH_GOLDEN = {'markdown': ('39f248d6971dfcaf23000b8cc81b53f276c9c2a354ab71c61b60fdc211336f55', 21255), 'html': ('bc5e7695d96f0024cdf714f192efbf477b110ed326774fa6e4b8789fce561cc7', 25962), 'pdf_base64': ('1d3754ad23e1b2d303c66bf3465cb79573b3705382cb78f5087bde774f70a1cd', 282576), 'pdf_sha256': 'c6cf1200d59e3d56c2074840902292080d4981279f17d645aaa7b6091861ee71', 'page_count': 47}
 # PR1816 differential against exact 42e9bd5b reproduces the prior golden.
 # Only scorecard page 6 drawing streams/text wrapping change in both languages;
 # Markdown, HTML, all other page streams, media boxes, page counts and outlines
 # remain identical. Full scorecard text now wraps within its columns.
-PHASE9_ENGLISH_GOLDEN = {'markdown': ('c33de6a944788dca900a447b84a322cf1fdaee9001b0893d3c4f20abdb6be346', 19844), 'html': ('8e487572305f5fa31a5e9c795dca35e1f7b4b96a61a9c7f1cf2e82391c44884a', 24238), 'pdf_base64': ('cd74441afec6afe1c295807c9b33dd61633cf4c083ddd2ed4485bd6a8c501467', 183028), 'pdf_sha256': 'c4b62f8d01b82c29e9673760cb34f126a411286505ca65f92008c7c995d30b40', 'page_count': 22}
+PHASE9_ENGLISH_GOLDEN = {'markdown': ('c33de6a944788dca900a447b84a322cf1fdaee9001b0893d3c4f20abdb6be346', 19844), 'html': ('8e487572305f5fa31a5e9c795dca35e1f7b4b96a61a9c7f1cf2e82391c44884a', 24238), 'pdf_base64': ('bcaed9af7cb7090390965e38677b10242f57bc7de02a0d9667240a470ceb7126', 181544), 'pdf_sha256': '5d66e7bf69a748772808606f4df9fa11af98e20dc0d69b7ef17e06b2a7b03d3f', 'page_count': 22}
 
 SPANISH_OUTLINE = {
     "Functional QA": "QA funcional",
