@@ -7,6 +7,7 @@ on:
       - '.github/workflows/phase9-synthetic-spanish-pdf.yml'
       - 'scripts/retain_phase9_synthetic_spanish_pdf.py'
       - 'tests/test_spanish_canonical_report_parity_v87.py'
+      - 'tests/seven_row_review_pdf_probe.py'
   workflow_dispatch:
 
 permissions:
@@ -27,7 +28,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
-          python-version: '3.11'
+          python-version: '3.11.18'
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
       - name: Render and verify a synthetic es-MX draft
@@ -60,3 +61,26 @@ jobs:
             owned-parity-pdf-proof/phase9-en.pdf
             owned-parity-pdf-proof/phase9-es-MX.pdf
             owned-parity-pdf-proof/receipt.json
+      - name: Verify owned seven-row review PDF in both locales
+        id: seven_row_review
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$PHASE9_REVISION"
+          owned="$(mktemp -d "${RUNNER_TEMP}/nico-seven-row.XXXXXX")"
+          env -i PATH="$PATH" LANG=C.UTF-8 HOME="$owned" PYTHONNOUSERSITE=1 PYTHONHASHSEED=0 \
+            NICO_HOME="$owned" NICO_SQLITE_PATH="$owned/nico.sqlite3" \
+            python -m tests.seven_row_review_pdf_probe \
+              --checkout-sha "$PHASE9_REVISION" --output owned-seven-row-pdf-proof
+      - name: Upload only the synthetic seven-row review PDFs and receipts
+        if: ${{ !cancelled() && steps.seven_row_review.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase9-owned-seven-row-pdfs-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            owned-seven-row-pdf-proof/en.pdf
+            owned-seven-row-pdf-proof/en.json
+            owned-seven-row-pdf-proof/es-MX.pdf
+            owned-seven-row-pdf-proof/es-MX.json
