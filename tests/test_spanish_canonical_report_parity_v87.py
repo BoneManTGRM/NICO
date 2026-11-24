@@ -1663,6 +1663,54 @@ assert small_result["markdown"].count("## Registro compacto de hallazgos y remed
 assert small_result["markdown"].count("## Índice completo de fuentes exactas") == 1
 assert small_result["markdown"].count("## Puerta de revisión humana y aceptación") == 1
 
+# Evidence-only opt-in for the designated synthetic workflow. These are the
+# known three owned synthetic fixture constructors above, never inputs or logs.
+import os
+if os.environ.get("NICO_RETAIN_OWNED_PARITY_FIXTURES") == "1":
+    import json
+    from pathlib import Path
+
+    fixtures = (
+        ("small-en", small_english_before), ("small-es-MX", small_spanish),
+        ("rich-en", rich_english), ("rich-es-MX", rich_spanish),
+        ("phase9-en", phase9_english), ("phase9-es-MX", phase9_spanish),
+    )
+    # Only these six fixtures can be retained. The most recent separate
+    # hosted rich es-MX proof was larger than 1 MiB; allow a finite margin.
+    bytes_per_pdf = 3 * 1024 * 1024
+    max_base64_length = 4 * ((bytes_per_pdf + 2) // 3)
+    owned = {}
+    rows = {}
+    for name, item in fixtures:
+        result, reader, _ = item
+        assert result["human_review_required"] is True
+        assert result["client_delivery_allowed"] is False
+        assert result["approval_status"] == "pending_human_approval"
+        assert result["delivery_status"] == "blocked_pending_human_approval"
+        encoded = result["pdf_base64"]
+        assert len(encoded) <= max_base64_length
+        pdf = base64.b64decode(encoded, validate=True)
+        assert 0 < len(pdf) <= bytes_per_pdf and pdf.startswith(b"%PDF-")
+        digest = hashlib.sha256(pdf).hexdigest()
+        assert digest == result["pdf_sha256"]
+        owned[name] = pdf
+        rows[name] = {
+            "pdf_sha256": digest,
+            "pdf_base64_sha256": hashlib.sha256(encoded.encode("ascii")).hexdigest(),
+            "length_bytes": len(pdf),
+            "base64_length": len(encoded),
+            "page_count": len(reader.pages),
+        }
+    assert sum(map(len, owned.values())) <= 6 * bytes_per_pdf
+    proof = Path("owned-parity-pdf-proof")
+    proof.mkdir(mode=0o700, exist_ok=False)
+    for name, pdf in owned.items():
+        with (proof / (name + ".pdf")).open("xb") as output:
+            output.write(pdf)
+    with (proof / "receipt.json").open("x", encoding="utf-8") as output:
+        json.dump({"schema": "nico.owned-parity-pdf-proof.v1", "fixtures": rows},
+                  output, sort_keys=True, indent=2)
+
 assert actual_goldens == expected_goldens, "One or more synthetic fixture artifact fingerprints changed"
 '''
 

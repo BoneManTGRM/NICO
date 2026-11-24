@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/phase9-synthetic-spanish-pdf.yml'
       - 'scripts/retain_phase9_synthetic_spanish_pdf.py'
+      - 'tests/test_spanish_canonical_report_parity_v87.py'
   workflow_dispatch:
 
 permissions:
@@ -38,3 +39,24 @@ jobs:
           retention-days: 90
           if-no-files-found: error
           path: phase9-synthetic-spanish-proof/
+      - name: Retain exact owned synthetic parity PDFs
+        id: owned_parity
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          NICO_RETAIN_OWNED_PARITY_FIXTURES: '1'
+        run: python -m pytest -q tests/test_spanish_canonical_report_parity_v87.py::test_same_canonical_package_has_exact_spanish_publication_parity
+      - name: Upload only owned parity PDFs and digest receipt
+        if: ${{ !cancelled() && (steps.owned_parity.outcome == 'success' || steps.owned_parity.outcome == 'failure') }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase9-owned-parity-pdfs-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            owned-parity-pdf-proof/small-en.pdf
+            owned-parity-pdf-proof/small-es-MX.pdf
+            owned-parity-pdf-proof/rich-en.pdf
+            owned-parity-pdf-proof/rich-es-MX.pdf
+            owned-parity-pdf-proof/phase9-en.pdf
+            owned-parity-pdf-proof/phase9-es-MX.pdf
+            owned-parity-pdf-proof/receipt.json

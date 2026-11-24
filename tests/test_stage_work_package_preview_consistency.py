@@ -47,6 +47,12 @@ def test_stage_population_survives_stale_or_absent_outer_roadmap(spanish, stage_
     labels = stage_preview_labels(stage, context, spanish=spanish)
     if stage_id == 'risk_reduction_and_executive_briefing' and not total:
         assert labels == []  # The producer emits no ID preview for an empty population.
+    elif total == 0:
+        assert labels == [(
+            'Vista previa de la hoja de ruta: 0 paquetes de trabajo con identificador conservado.'
+            if spanish else
+            'Roadmap preview: 0 work packages with retained identifiers.'
+        )]
     else:
         shown = min(7, total) if stage_id == 'risk_reduction_and_executive_briefing' else total
         assert (f'{shown} de {total}' if spanish else f'{shown} of {total}') in labels[0]
