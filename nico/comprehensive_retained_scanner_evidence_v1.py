@@ -221,8 +221,10 @@ def compact_scanner_records(
                 ),
                 "output_capture_complete": raw.get("output_capture_complete") is True,
                 "execution_provenance": provenance_summary(raw),
+                # Absence is not an observed capture failure.
                 "raw_artifact_capture_complete": (
-                    raw.get("raw_artifact_capture_complete") is True
+                    raw.get("raw_artifact_capture_complete")
+                    if type(raw.get("raw_artifact_capture_complete")) is bool else None
                 ),
                 "returncode_valid": raw.get("returncode_valid") is True,
                 "timed_out": raw.get("timed_out") is True,

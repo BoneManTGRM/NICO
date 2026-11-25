@@ -1174,7 +1174,7 @@ install_comprehensive_spanish_client_surface_localization_v86()
 # Exact base/current comparison: only page 19 gains the required Bandit 1/2
 # repeatability disclosure; Markdown, HTML, page counts and all other fixtures
 # are unchanged. Keep structural, manifest, identity and bilingual assertions.
-SMALL_ENGLISH_GOLDEN = {'markdown': ('0f4b9e925fea8d6483001531f56d6be04b981ed20f67774af80a5819b57ba00b', 19764), 'html': ('10ed49d1fe48634da4b94db05634cfea99bab0ab6e317836ccfa156814426394', 24177), 'pdf_base64': ('042d9533483266517580ad11abca4c5bd877f48300e2e634959e79004a29dfb1', 182872), 'pdf_sha256': 'e37af589eef420442016eef87de8c88c40c847817f496ed87533c0d48cc725c4', 'page_count': 22}
+SMALL_ENGLISH_GOLDEN = {'markdown': ('87d174d785ebb238ab9e541a4472a182d869ad5d1135782d22ab0c3f80f7c1ce', 19764), 'html': ('71a6e5bc15d4a0d2984260294c55335eb0bacad24d35c8b51b0e8e59f1f8190d', 24177), 'pdf_base64': ('2174b6404ca25bbf5c3e7cd22922cf25e78842f4b1c96de076a01a49e918d2ec', 182872), 'pdf_sha256': '25939284803f7a0cb02ec76ebbbca51912d831e9f032fbacfa5f21e27c9d0223', 'page_count': 22}
 # PR1779: isolated 644b -> 82315628 rich EN/es comparison preserves Markdown,
 # HTML, all 47 page texts/drawing streams/media boxes, canonical truth and gates.
 # Only phase 3 moves from summary page 5 to canonical Functional QA page 26;
@@ -1490,7 +1490,7 @@ phase9_spanish = render_phase9(phase9_input("es-MX"))
 # These are the exact pre-change hashes for the same synthetic fixtures. Removing
 # the narrower fallback in favor of the old sentence must restore both formats
 # byte-for-byte; a different report change requires revisiting this contract.
-prior_text_hashes = {'SMALL': {'markdown': 'cdac8b0cb19c96ee1638dbe7729c626c67b2758ed82096d5b670213467fb7679', 'html': '1edb72e7c9f43b8b2921c0a0047ec70091532e7c084d77594e05d691f93d89c5'}, 'RICH': {'html': '0ba5425ac385bc5307ded94bb6862179a538b92b093290e04316df684bf6ac65', 'markdown': '458f49d0206b1776605f233b022c43ccd5533b13fa35c853c75f94ac2dff0523'}, 'PHASE9': {'html': '8b88c58f2fc745e7f543321f100b56dd3b67e6d34db694fcde9cad3745498e0f', 'markdown': '053c24aea0e39a4925504e23aa129df8b5749c08f59381afa25af8f5077c6007'}}
+prior_text_hashes = {'SMALL': {'markdown': '7a20754f1c9faeea70b4f87b2bd2ad40061ad3a402ec9065e05fc5e81fe06671', 'html': '29e98c518f48459a6bd0aedf30b951360db13ff44c2799d4e249d836522d7f45'}, 'RICH': {'html': '0ba5425ac385bc5307ded94bb6862179a538b92b093290e04316df684bf6ac65', 'markdown': '458f49d0206b1776605f233b022c43ccd5533b13fa35c853c75f94ac2dff0523'}, 'PHASE9': {'html': '8b88c58f2fc745e7f543321f100b56dd3b67e6d34db694fcde9cad3745498e0f', 'markdown': '053c24aea0e39a4925504e23aa129df8b5749c08f59381afa25af8f5077c6007'}}
 
 new_fallback = "See individual scanner records for execution outcomes."
 old_fallback = "No automated stage represented in this package has a retained terminal execution failure."
@@ -1527,6 +1527,8 @@ if actual_goldens != expected_goldens:
     for name, actual in actual_goldens.items():
         if actual != expected_goldens[name]:
             print(f"Synthetic {name} fixture fingerprint: {actual!r}", flush=True)
+# Raw Bandit output alone does not mean a finding was confirmed.
+assert "confirmed material finding count=0; raw finding payload embedded=yes." in small_english_before[0]["markdown"]
 assert small_english_before[0]["markdown"] == small_english_after[0]["markdown"]
 assert small_english_before[0]["html"] == small_english_after[0]["html"]
 assert small_english_before[0]["pdf_base64"] == small_english_after[0]["pdf_base64"]

@@ -22,7 +22,18 @@ VERSION = "nico.comprehensive-spanish-canonical-report.v87"
 # Downstream compaction identifies those semantic sections by their localized
 # titles; alternate synonyms would leave duplicate stage blocks/pages in Spanish.
 _CANONICAL_PARITY_EXACT = {
+    'A confirmed instance could affect security, correctness, maintainability, or delivery reliability; an unconfirmed candidate affects evidence assurance only.': 'Un caso confirmado podría afectar la seguridad, la corrección, la mantenibilidad o la fiabilidad de la entrega; un candidato no confirmado solo afecta la confianza en la evidencia.',
+    'Review the exact source anchor, apply the smallest bounded correction, run targeted and full regression tests, and rerun NICO against the remediation commit.': 'Revisar la ubicación exacta en el código, aplicar el cambio mínimo, ejecutar pruebas específicas y de regresión completas, y volver a ejecutar NICO sobre el commit de la corrección.',
+    'bandit retained a candidate at the exact source anchor.': 'Bandit registró un candidato en la ubicación exacta del código.',
+    'This is a scanner candidate, not a confirmed production defect, until the exact source context and applicability are reviewed.': 'Es un candidato del analizador y no un defecto de producción confirmado hasta revisar el contexto exacto del código y su aplicabilidad.',
+    'Revert the isolated remediation change if targeted or full verification fails; retain the failed evidence and keep client delivery blocked.': 'Revertir la corrección aislada si falla la verificación específica o completa; conservar la evidencia del fallo y mantener bloqueada la entrega al cliente.',
+    'review-limited exact-SHA candidate': 'Candidato del SHA exacto con revisión limitada',
+    'Requires source review': 'Requiere revisión del código',
+    'Senior Product Engineer': 'Ingeniero sénior de producto',
+    'All listed verification requirements pass on the exact remediation commit, the exact-SHA rerun no longer reports the condition as unresolved material risk, and no new material regression is introduced.': 'Todos los requisitos de verificación indicados se cumplen en el commit exacto de la corrección, la nueva ejecución sobre el SHA exacto ya no detecta la condición como riesgo material pendiente y no se introduce ninguna regresión material nueva.',
+    "Bandit reported analysis errors for one or more selected files.": "Bandit indicó errores de análisis en uno o más archivos seleccionados.",
     "NOT_ASSESSED": "NO EVALUADO",
+    "Architecture is not scored without a verified calibrated rubric and exact-source measurements; retained complexity evidence is not an architecture grade.": "La arquitectura no se puntúa sin una rúbrica calibrada y verificada y sin mediciones vinculadas a la fuente exacta; las mediciones de complejidad conservadas no constituyen una calificación de arquitectura.",
     "Unscored controls are excluded from maturity; any resulting mean change is not evidence of improved source quality.": "Los controles sin puntuación se excluyen de la madurez; cualquier cambio resultante en la media no demuestra una mejora de la calidad del código fuente.",
     "Architecture is not scored because a valid exact-source score input is unavailable; measured complexity evidence remains retained.": "La arquitectura no se puntúa porque no se dispone de una entrada de puntuación válida vinculada a la fuente exacta; se conservan las mediciones de complejidad.",
     "Delivery capacity is not scored because architecture has no valid exact-source score input.": "La capacidad de entrega no se puntúa porque la arquitectura no tiene una entrada de puntuación válida vinculada a la fuente exacta.",
@@ -358,6 +369,7 @@ _POST_RENDER_PROTECTED_FIELDS = _PROTECTED_FIELDS - {
 }
 
 _PRESENTATION_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    ("Bandit reported analysis errors for one or more selected files.", "Bandit indicó errores de análisis en uno o más archivos seleccionados."),
     (
         "DRAFT · HUMAN REVIEW REQUIRED · CLIENT DELIVERY NOT AUTHORIZED",
         "BORRADOR AUTOMATIZADO · APROBACIÓN HUMANA PENDIENTE · ENTREGA AL CLIENTE BLOQUEADA",
@@ -2215,6 +2227,21 @@ def _repository_unavailable_note_es(match: re.Match[str]) -> str:
 
 
 def _structured_presentation_es(value: str) -> str | None:
+    native_finding = re.fullmatch(
+        r"(?P<prefix>P[0-9] · [A-Za-z0-9_.-]+ · NICO-FINDING-[A-F0-9]+ · [^·\r\n]+) · "
+        r"Impact: A confirmed instance could affect security, correctness, maintainability, or delivery reliability; "
+        r"an unconfirmed candidate affects evidence assurance only\. · Recommendation: "
+        r"Review the exact source anchor, apply the smallest bounded correction, run targeted and full regression tests, "
+        r"and rerun NICO against the remediation commit\.",
+        value,
+    )
+    if native_finding:
+        return (
+            f"{native_finding['prefix']} · Impacto: Un caso confirmado podría afectar la seguridad, la corrección, "
+            "la mantenibilidad o la fiabilidad de la entrega; un candidato no confirmado solo afecta la confianza en la evidencia. "
+            "· Recomendación: Revisar la ubicación exacta en el código, aplicar el cambio mínimo, ejecutar pruebas específicas "
+            "y de regresión completas, y volver a ejecutar NICO sobre el commit de la corrección."
+        )
     from nico.comprehensive_spanish_function_measurement_copy_v1 import translate_function_measurement_copy
     measurement = translate_function_measurement_copy(value)
     if measurement is not None:
@@ -2884,14 +2911,15 @@ def _translate_presentation(value: Any) -> str:
     if stripped in COPY_ES:
         return text.replace(stripped, COPY_ES[stripped], 1)
     ast_diagnostics = re.fullmatch(
-        r"TypeScript AST parsed (.+) with (unreported|[1-9][0-9]*) diagnostics; numeric observations are partial\.",
+        r"TypeScript AST parsed (.+) with (unreported|[1-9][0-9]*) diagnostics; (numeric observations are partial|excluded from architecture measurement aggregates)\.",
         stripped,
     )
     if ast_diagnostics:
         count = "cantidad no informada de" if ast_diagnostics[2] == "unreported" else ast_diagnostics[2]
         return (
             f"El AST de TypeScript analizó {ast_diagnostics[1]} con {count} diagnósticos; "
-            "las observaciones numéricas son parciales."
+            + ("las observaciones numéricas son parciales." if ast_diagnostics[3] == "numeric observations are partial"
+               else "el archivo se excluyó de las métricas agregadas de arquitectura.")
         )
     footprint = re.fullmatch(r"Architecture footprint source files: (\d+)\.", stripped)
     if footprint:

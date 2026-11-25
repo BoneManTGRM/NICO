@@ -228,27 +228,16 @@ def _candidate_totals(canonical: Mapping[str, Any]) -> dict[str, int]:
 
 
 def _scanner_material_count(record: Mapping[str, Any]) -> int:
-    findings = record.get("findings")
-    if isinstance(findings, list):
-        return len(findings)
-    for key in (
-        "confirmed_material_finding_count",
-        "material_finding_count",
-        "finding_count",
-        "findings_count",
-    ):
-        value = _integer(record.get(key))
-        if value is not None:
-            return value
-    summary = (
-        record.get("finding_summary")
-        if isinstance(record.get("finding_summary"), Mapping)
-        else {}
-    )
-    for key in ("confirmed_material", "material", "verified_material"):
-        value = _integer(summary.get(key))
-        if value is not None:
-            return value
+    # Raw scanner candidates have not been confirmed by evidence review.
+    explicit = _integer(record.get("confirmed_material_finding_count"))
+    if explicit is not None:
+        return explicit
+    summary = record.get("finding_summary")
+    if isinstance(summary, Mapping):
+        for key in ("confirmed_material", "verified_material"):
+            value = _integer(summary.get(key))
+            if value is not None:
+                return value
     return 0
 
 

@@ -27,7 +27,7 @@ LABELS = {
     'ci_configuration_score': ('CI configuration score — not delivery performance', 'Puntuación de configuración de CI — no es rendimiento de entrega', '/100'),
 }
 POPULATIONS = frozenset({'analyzed_source', 'retained_preview', 'source_inventory', 'function_observations', 'workflow_configuration'} | {f'{status}:{language}:{method}' for status in ('measured', 'partial') for language, method in (('python', 'python_ast'), ('javascript-typescript', 'typescript_compiler_ast'))})
-REASONS = frozenset({'measured_score_missing', 'measured_score_invalid', 'score_input_identity_unproven', 'retained_score_input'})
+REASONS = frozenset({'measured_score_missing', 'measured_score_invalid', 'score_input_identity_unproven', 'retained_score_input', 'score_rubric_unverified'})
 
 
 def score_reason(value):

@@ -6,6 +6,11 @@ from functools import wraps
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from nico.v2_scanner_reconciliation import (
+    declared_artifact_digest, declared_commit_values, explicit_execution_deficit,
+    scanner_observation_key, worker_record_has_native_observation,
+)
+
 VERSION = "nico.comprehensive_scanner_completion_projection.v56"
 _MARKER = "_nico_comprehensive_scanner_completion_projection_v56"
 _COMPLETED_STATES = {
@@ -39,21 +44,28 @@ def _authoritative_completed(record: Mapping[str, Any]) -> bool:
     status = _text(record.get("status") or record.get("state")).casefold().replace(
         "-", "_"
     )
-    artifact_hash = _text(
-        record.get("artifact_hash")
-        or record.get("raw_artifact_sha256")
-        or record.get("artifact_sha256")
-        or record.get("sha256")
-    )
+    artifact_hash = declared_artifact_digest(record)
     return bool(
-        (record.get("completed") is True or status in _COMPLETED_STATES)
+        not explicit_execution_deficit(record)
+        and (record.get("completed") is True or status in _COMPLETED_STATES)
         and record.get("exact_commit_match") is True
         and artifact_hash
+        and (not worker_record_has_native_observation(record) or len(declared_commit_values(record)) == 1)
     )
 
 
 def _normalize_record(record: Mapping[str, Any]) -> dict[str, Any]:
     output = deepcopy(dict(record))
+    native_unbound = worker_record_has_native_observation(output) and (
+        len(declared_commit_values(output)) != 1 or not declared_artifact_digest(output)
+        or output.get("exact_commit_match") is False
+    )
+    if explicit_execution_deficit(output) or native_unbound:
+        if output.get("completed") is True or _text(output.get("status") or output.get("state")).casefold() in _COMPLETED_STATES:
+            status = "timed_out" if output.get("timed_out") is True else "partial"
+            output.update({"status": status, "state": status, "completed": False,
+                           "verified": False, "verified_complete": False, "verified_for_this_report": False})
+        return output
     if not _authoritative_completed(output):
         return output
     findings = output.get("findings") if isinstance(output.get("findings"), list) else []
@@ -124,7 +136,21 @@ def _sync_projection(value: Any, records: Mapping[str, Mapping[str, Any]]) -> An
         or original.get("analyzer")
     )
     authoritative = records.get(name)
-    if authoritative and authoritative.get("completed") is True:
+    key = scanner_observation_key(original)
+    if (authoritative and key and key == scanner_observation_key(authoritative)
+            and type(authoritative.get("execution_observed_for_this_report")) is bool
+            and type(authoritative.get("output_capture_complete")) is bool
+            and explicit_execution_deficit(authoritative)):
+        output["status"] = authoritative.get("status")
+        if "state" in original:
+            output["state"] = authoritative.get("state") or authoritative.get("status")
+        for key in ("completed", "verified", "verified_complete", "verified_for_this_report", "output_capture_complete"):
+            if key in original:
+                output[key] = False
+        for key in ("failure_reason", "failure_message"):
+            if key in original:
+                output[key] = authoritative.get("failure_reason") or authoritative.get("reason") or ""
+    elif authoritative and authoritative.get("completed") is True:
         output["status"] = authoritative.get("status")
         if "state" in original:
             output["state"] = authoritative.get("state")
