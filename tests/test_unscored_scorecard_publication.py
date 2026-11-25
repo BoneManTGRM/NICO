@@ -42,9 +42,12 @@ def test_architecture_and_dependent_velocity_pass_real_publication_repair(monkey
     monkeypatch.setattr(legacy, "_complexity", lambda _: evidence)
     assessment = provider.canonical_scoring_provider(context)["assessment"]
     affected = {s["id"]: s for s in assessment["sections"] if s["id"] in ("architecture_debt", "velocity_complexity")}
-    valid = type(value) is int and 0 <= value <= 100
-    assert affected["architecture_debt"]["presented_score"] == (value if valid else None)
-    assert (affected["velocity_complexity"]["presented_score"] is not None) == valid
+    assert set(affected) == {"architecture_debt", "velocity_complexity"}
+    for section in affected.values():
+        assert section["presented_score"] is None
+        assert section["exclude_from_maturity"] is True
+    if type(value) is int and 0 <= value <= 100:
+        assert affected["architecture_debt"]["score_input_provenance"]["reason"] == "score_rubric_unverified"
     package = _package("Technical Scorecard and Weighting")
     package["json"]["assessment"] = assessment
     package["json"]["canonical_findings"] = [{"finding_id": "retained-finding", "title": "Retain evidence"}]
@@ -60,7 +63,8 @@ def test_architecture_and_dependent_velocity_pass_real_publication_repair(monkey
     assert result["client_delivery_allowed"] is False
     assert result["premium_report_renderer"]["scorecard_rows_verified"] is True
     text = _text(base64.b64decode(result["pdf_base64"]))
-    assert ("0/100" if value == 0 and valid else "NOT SCORED" if not valid else "78/100") in text
+    assert text.count("NOT SCORED") >= 2
+    assert {"0/100", "78/100"}.isdisjoint(text.split())
 
 
 @pytest.mark.parametrize("damage", ["missing_score", "fabricated_zero", "missing_row"])

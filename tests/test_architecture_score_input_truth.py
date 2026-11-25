@@ -24,11 +24,16 @@ def test_score_input_validity_and_unknown_propagation(monkeypatch, provider, val
     sections = {s['id']:s for s in result['assessment']['sections']}
     valid = type(value) in (int, float) and 0 <= value <= 100 and math.isfinite(value)
     architecture = sections['architecture_debt']
-    assert architecture['presented_score'] == (int(value) if valid else None)
-    if not valid:
-        assert architecture['exclude_from_maturity'] is True
-        if provider is not v2:
-            assert sections['velocity_complexity']['presented_score'] is None
+    assert architecture['presented_score'] is None
+    assert architecture['exclude_from_maturity'] is True
+    provenance = architecture['score_input_provenance']
+    reason = 'measured_score_missing' if value is None else 'score_rubric_unverified' if valid else 'measured_score_invalid'
+    assert provenance['reason'] == reason
+    assert provenance['evidence_id'] == 'complexity-test'
+    assert provenance['snapshot_commit_sha'] == context['commit_sha']
+    assert provenance['fallback_used'] is False
+    if provider is not v2:
+        assert sections['velocity_complexity']['presented_score'] is None
     assert json.dumps(evidence, sort_keys=True) == json.dumps(before, sort_keys=True)
     assert result['client_delivery_allowed'] is False
 

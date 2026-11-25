@@ -172,20 +172,22 @@ def test_completed_scanner_without_current_report_verification_stays_incomplete(
 
 
 def test_compact_scanner_proof_passes_public_gate_and_missing_current_run_fails_closed():
+    commit = "a" * 40
     raw_records = [
-        _scanner("bandit", "static", "b"),
-        _scanner("eslint", "static", "e"),
+        _scanner("bandit", "static", "b", commit_sha=commit),
+        _scanner("eslint", "static", "e", commit_sha=commit),
         _scanner(
             "gitleaks",
             "secret",
-            "g",
+            "f",
+            commit_sha=commit,
             scans_git_history=True,
             full_history_verified=True,
         ),
     ]
     records = compact_scanner_records(
         {"scan_id": "scan", "scanner_results": raw_records},
-        commit_sha="a" * 40,
+        commit_sha=commit,
     )
     package = _package()
     package["json"]["scanner_execution_records"] = records

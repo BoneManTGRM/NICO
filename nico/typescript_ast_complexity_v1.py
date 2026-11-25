@@ -130,7 +130,7 @@ def _collect_javascript_analyses(
                 count = diagnostics if type(diagnostics) is int and diagnostics > 0 else "unreported"
                 parse_notes.append(
                     f"TypeScript AST parsed {item.get('path') or '<unknown>'} with {count} diagnostics; "
-                    "excluded from architecture summary aggregates."
+                    "excluded from architecture measurement aggregates."
                 )
         for path in sorted(set(javascript_files) - ast_paths):
             parse_notes.append(f"TypeScript AST output omitted {path}; no lexical substitute was used for that file.")
