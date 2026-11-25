@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Iterable, Mapping
 from nico.report_json_copy import deepcopy
 from typing import Any
 
-VERSION = "nico.phase14.analyzer-evidence.v5"
+VERSION = "nico.phase14.analyzer-evidence.v6"
 EXECUTION_SUCCESS = {"completed", "success"}
 TERMINAL_SUCCESS = EXECUTION_SUCCESS | {"not_applicable"}
 TERMINAL_FAILURE = {"failed", "timed_out", "capture_truncated", "unsupported_target"}
@@ -101,11 +102,17 @@ def normalize_record(record: Mapping[str, Any], *, expected_sha: str) -> dict[st
     return item
 
 
+def _receipt_id(value: Any) -> str:
+    return value if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,160}", value) else ""
+
+
 def _record_identity(item: Mapping[str, Any]) -> tuple[Any, ...]:
     return (
         item.get("scanner"),
         item.get("run_sequence", 0),
         item.get("status"),
+        _receipt_id(item.get("run_id")),
+        _receipt_id(item.get("scan_id")),
         item.get("artifact_sha256", ""),
         json.dumps(item.get("coverage") or {}, sort_keys=True, separators=(",", ":"), default=str),
     )
@@ -128,6 +135,51 @@ def _trailing_successes(
         trailing.append(item)
     trailing.reverse()
     return trailing
+
+def _independent_execution_suffix(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep observed execution, but require independent receipts for repeat credit."""
+    suffix = _trailing_successes(records, EXECUTION_SUCCESS)
+    if len(suffix) < 2:
+        return suffix
+    verified: list[dict[str, Any]] = []
+    run_ids: set[str] = set()
+    scan_ids: set[str] = set()
+    prior_sequence: int | None = None
+    for item in reversed(suffix):
+        run_id = _receipt_id(item.get("run_id"))
+        scan_id = _receipt_id(item.get("scan_id"))
+        sequence = item["run_sequence"]
+        if not run_id or not scan_id or sequence <= 0:
+            if not verified:
+                verified.append(item)
+            break
+        if (run_id in run_ids or scan_id in scan_ids
+                or (prior_sequence is not None and sequence >= prior_sequence)):
+            break
+        verified.append(item)
+        run_ids.add(run_id)
+        scan_ids.add(scan_id)
+        prior_sequence = sequence
+    return list(reversed(verified))
+
+
+def _distinct_success_count(records: list[dict[str, Any]]) -> int:
+    runs: set[str] = set()
+    scans: set[str] = set()
+    sequences: set[int] = set()
+    observed = False
+    for item in reversed(records):
+        if item["status"] not in EXECUTION_SUCCESS:
+            continue
+        observed = True
+        run, scan, sequence = _receipt_id(item.get("run_id")), _receipt_id(item.get("scan_id")), item["run_sequence"]
+        if (not run or not scan or sequence <= 0
+                or run in runs or scan in scans or sequence in sequences):
+            continue
+        runs.add(run)
+        scans.add(scan)
+        sequences.add(sequence)
+    return max(len(runs), int(observed))
 
 
 def _failure_explanation(status: str) -> tuple[str | None, str | None, str | None]:
@@ -220,7 +272,7 @@ def reconcile_analyzers(
         latest = ordered[-1] if ordered else {"status": "missing", "coverage": {}}
         # Applicability dispositions may satisfy disposition acceptance, but
         # they cannot supply a required completed execution or its repeatability.
-        execution_trailing = _trailing_successes(ordered, EXECUTION_SUCCESS)
+        execution_trailing = _independent_execution_suffix(ordered)
         acceptance_trailing = execution_trailing if latest.get("status") in EXECUTION_SUCCESS else trailing
         complete = scanner not in required or len(acceptance_trailing) >= consecutive_passes_required
         if scanner in required and not complete:
@@ -244,16 +296,27 @@ def reconcile_analyzers(
             cause = "Documented not-applicable dispositions do not establish analyzer execution."
             impact = "Execution credit is withheld; no client defect is inferred."
             remediation = "Retain the required exact-SHA applicability dispositions."
+        # Bind the reported origin references into the manifest without exposing
+        # the identifiers in client output. This is not source authentication.
+        origins = [
+            (item["run_sequence"], _receipt_id(item.get("run_id")), _receipt_id(item.get("scan_id")))
+            for item in execution_trailing
+        ]
+        origin_digest = (
+            hashlib.sha256(json.dumps(origins, separators=(",", ":")).encode()).hexdigest()
+            if len(origins) >= 2 else None
+        )
         summaries.append(
             {
                 "scanner": scanner,
                 "required": scanner in required,
                 "status": latest.get("status", "missing"),
-                "successful_passes": sum(item["status"] in EXECUTION_SUCCESS for item in ordered),
+                "successful_passes": _distinct_success_count(ordered),
                 "consecutive_successful_passes": len(execution_trailing),
                 "consecutive_passes_required": consecutive_passes_required,
                 "acceptance_ready": complete,
                 "artifact_sha256": [item.get("artifact_sha256") for item in execution_trailing if item.get("artifact_sha256")],
+                **({"reported_repeat_origins_sha256": origin_digest} if origin_digest else {}),
                 "coverage": deepcopy(latest.get("coverage") or {}),
                 "client_defect_allowed": latest.get("status") in EXECUTION_SUCCESS and complete,
                 "failure_cause": cause,
