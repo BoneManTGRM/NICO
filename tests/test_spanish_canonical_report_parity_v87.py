@@ -6,6 +6,15 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
+def _quiet_report_worker(args, **kwargs) -> int | None:
+    """Do not send child output or arguments to public pytest/JUnit failures."""
+    try:
+        return subprocess.run(
+            args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kwargs
+        ).returncode
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
 
 def _isolated_direct_translation_check(check):
     """Direct-helper contract must not inherit installed global literal guards.
@@ -24,10 +33,9 @@ def _isolated_direct_translation_check(check):
         with tempfile.TemporaryDirectory(prefix="nico-direct-locale-") as temp:
             code = ("from tests.test_spanish_canonical_report_parity_v87 import "
                     + check.__name__ + "; " + check.__name__ + ".__wrapped__()")
-            result = subprocess.run([sys.executable, "-c", code], cwd=root,
-                env=owned_worker_environment(root, Path(temp), os.environ),
-                capture_output=True, text=True, timeout=120)
-        assert result.returncode == 0, result.stdout + result.stderr
+            returncode = _quiet_report_worker([sys.executable, "-c", code], cwd=root,
+                env=owned_worker_environment(root, Path(temp), os.environ), timeout=120)
+        assert returncode == 0, "isolated Spanish translation check failed"
     return isolated
 
 _REVIEW_SECTION_IDS = (
@@ -1174,17 +1182,17 @@ install_comprehensive_spanish_client_surface_localization_v86()
 # Exact base/current comparison: only page 19 gains the required Bandit 1/2
 # repeatability disclosure; Markdown, HTML, page counts and all other fixtures
 # are unchanged. Keep structural, manifest, identity and bilingual assertions.
-SMALL_ENGLISH_GOLDEN = {'markdown': ('87d174d785ebb238ab9e541a4472a182d869ad5d1135782d22ab0c3f80f7c1ce', 19764), 'html': ('71a6e5bc15d4a0d2984260294c55335eb0bacad24d35c8b51b0e8e59f1f8190d', 24177), 'pdf_base64': ('2174b6404ca25bbf5c3e7cd22922cf25e78842f4b1c96de076a01a49e918d2ec', 182872), 'pdf_sha256': '25939284803f7a0cb02ec76ebbbca51912d831e9f032fbacfa5f21e27c9d0223', 'page_count': 22}
+SMALL_ENGLISH_GOLDEN = {'markdown': ('dcb9df14bf3657b39b701d1a9d1a85439a7ef33b90c68be56af50d597572bf8e', 19729), 'html': ('e9c24a9426fb4d6a185909b7d29341f61b7d82107e4da6d4d099b1e5137474b9', 24142), 'pdf_base64': ('7e65b0d9f098a43e563f364b5ed86990403912d0d46d3bf5587f80f0ce6cea6e', 182804), 'pdf_sha256': '0f93aab49b671df87f7e71ebd67eed5696f574560459f7e7a1cc3483c6f8fcd9', 'page_count': 22}
 # PR1779: isolated 644b -> 82315628 rich EN/es comparison preserves Markdown,
 # HTML, all 47 page texts/drawing streams/media boxes, canonical truth and gates.
 # Only phase 3 moves from summary page 5 to canonical Functional QA page 26;
 # the other 37 outline entries are identical. Only its PDF fingerprints change.
-RICH_ENGLISH_GOLDEN = {'markdown': ('39f248d6971dfcaf23000b8cc81b53f276c9c2a354ab71c61b60fdc211336f55', 21255), 'html': ('bc5e7695d96f0024cdf714f192efbf477b110ed326774fa6e4b8789fce561cc7', 25962), 'pdf_base64': ('1d3754ad23e1b2d303c66bf3465cb79573b3705382cb78f5087bde774f70a1cd', 282576), 'pdf_sha256': 'c6cf1200d59e3d56c2074840902292080d4981279f17d645aaa7b6091861ee71', 'page_count': 47}
+RICH_ENGLISH_GOLDEN = {'markdown': ('669b5b8ef2717f5d568e2bdeb3737f5cce0054884f052a13ee43e0f295c49c20', 21220), 'html': ('2c79058c4e8dd9d4ca82aac1a2ba72e9c39546f53f0233a6e08e450c6a8dae7e', 25927), 'pdf_base64': ('bce2f0c98265a569c6d3b6e719b7a905207a5a0dd5e9ef6919678829d3ab7d75', 282508), 'pdf_sha256': '809e715f7e3672badd767a23a8af5fbdca03acce7ac97e2b897cc8f5ada8d720', 'page_count': 47}
 # PR1816 differential against exact 42e9bd5b reproduces the prior golden.
 # Only scorecard page 6 drawing streams/text wrapping change in both languages;
 # Markdown, HTML, all other page streams, media boxes, page counts and outlines
 # remain identical. Full scorecard text now wraps within its columns.
-PHASE9_ENGLISH_GOLDEN = {'markdown': ('c33de6a944788dca900a447b84a322cf1fdaee9001b0893d3c4f20abdb6be346', 19844), 'html': ('8e487572305f5fa31a5e9c795dca35e1f7b4b96a61a9c7f1cf2e82391c44884a', 24238), 'pdf_base64': ('bcaed9af7cb7090390965e38677b10242f57bc7de02a0d9667240a470ceb7126', 181544), 'pdf_sha256': '5d66e7bf69a748772808606f4df9fa11af98e20dc0d69b7ef17e06b2a7b03d3f', 'page_count': 22}
+PHASE9_ENGLISH_GOLDEN = {'markdown': ('f28032d5bc00d7636ae4b71b1418502e5dd2254102f2a991b86a90b10b298d8e', 19809), 'html': ('f663b589cb9bbdb2946a61ce1e96df191ca8bc5bdee5cff5082b160f032467db', 24203), 'pdf_base64': ('c8220d8b826574faa7ff9c1af56a962e0e96e0342f6e3ebdf06a5b1a06e589ea', 181476), 'pdf_sha256': 'fdaabcd9f5de6b2009799f0452fbc42d0ff58025298a18374ee3fc2b24c6b8e4', 'page_count': 22}
 
 SPANISH_OUTLINE = {
     "Functional QA": "QA funcional",
@@ -1488,8 +1496,8 @@ phase9_english = render_phase9(phase9_input("en"))
 phase9_spanish = render_phase9(phase9_input("es-MX"))
 
 # These are the exact pre-change hashes for the same synthetic fixtures. Removing
-# the narrower fallback in favor of the old sentence must restore both formats
-# byte-for-byte; a different report change requires revisiting this contract.
+# the narrower fallback and the later evidence-bound Platform Parity wording
+# must restore both formats byte-for-byte. Keep the historical hashes pinned.
 prior_text_hashes = {'SMALL': {'markdown': '7a20754f1c9faeea70b4f87b2bd2ad40061ad3a402ec9065e05fc5e81fe06671', 'html': '29e98c518f48459a6bd0aedf30b951360db13ff44c2799d4e249d836522d7f45'}, 'RICH': {'html': '0ba5425ac385bc5307ded94bb6862179a538b92b093290e04316df684bf6ac65', 'markdown': '458f49d0206b1776605f233b022c43ccd5533b13fa35c853c75f94ac2dff0523'}, 'PHASE9': {'html': '8b88c58f2fc745e7f543321f100b56dd3b67e6d34db694fcde9cad3745498e0f', 'markdown': '053c24aea0e39a4925504e23aa129df8b5749c08f59381afa25af8f5077c6007'}}
 
 new_fallback = "See individual scanner records for execution outcomes."
@@ -1504,6 +1512,18 @@ for name, english, spanish in (
         assert original.count(new_fallback) == 1, (name, fmt)
         assert old_fallback not in original, (name, fmt)
         restored = original.replace(new_fallback, old_fallback, 1)
+        for updated, historical in (
+            (
+                "Status: Repository indicator review not established; runtime platform parity not assessed",
+                "Status: Repository indicator review complete; runtime platform parity not assessed",
+            ),
+            (
+                "Retain repository indicators tied to this revision before marking them assessed.",
+                "Record repository indicators as assessed and leave runtime platform parity not assessed until device evidence is supplied.",
+            ),
+        ):
+            assert restored.count(updated) == 1, (name, fmt)
+            restored = restored.replace(updated, historical, 1)
         assert hashlib.sha256(restored.encode("utf-8")).hexdigest() == prior_text_hashes[name][fmt], (name, fmt)
     english_pdf = " ".join(" ".join(english[2]).split())
     spanish_pdf = " ".join(" ".join(spanish[2]).split())
@@ -1716,18 +1736,14 @@ if os.environ.get("NICO_RETAIN_OWNED_PARITY_FIXTURES") == "1":
 assert actual_goldens == expected_goldens, "One or more synthetic fixture artifact fingerprints changed"
 '''
 
-    completed = subprocess.run(
+    returncode = _quiet_report_worker(
         [sys.executable, "-c", script],
         cwd=repository_root,
-        capture_output=True,
-        text=True,
         # This single parity probe fully composes and inspects six PDFs. Allow
         # headroom on shared/CI workers without reducing any artifact assertion.
         timeout=300,
         check=False,
     )
-    assert completed.returncode == 0, (
-        "same-package English/Spanish report parity failed\n"
-        f"stdout:\n{completed.stdout}\n"
-        f"stderr:\n{completed.stderr}"
+    assert returncode == 0, (
+        "same-package English/Spanish report parity failed; reproduce privately"
     )

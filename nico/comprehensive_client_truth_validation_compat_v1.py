@@ -10,7 +10,6 @@ from typing import Any, Mapping
 VERSION = "nico.comprehensive-client-truth-validation-compat.v1.3"
 _TRUTH_MARKER = "__nico_comprehensive_client_truth_validation_compat_v1__"
 _MANIFEST_MARKER = "__nico_comprehensive_manifest_validation_compat_v1__"
-_PLATFORM_MARKER = "__nico_comprehensive_platform_parity_compat_v1__"
 _IDEMPOTENCE_MARKER = "__nico_comprehensive_exact_artifact_idempotence_v1__"
 _REQUIRED_ARTIFACT_TYPES = {
     "findings_csv",
@@ -96,39 +95,6 @@ def _install_manifest_validation_compat() -> bool:
     setattr(_validate_final_package, _MANIFEST_MARKER, True)
     setattr(_validate_final_package, "_nico_previous", current)
     navigation._validate_final_package = _validate_final_package
-    return True
-
-
-def _install_platform_parity_compat() -> bool:
-    from nico import comprehensive_client_review_companion_v2 as v2
-    from nico import comprehensive_client_review_companion_v3 as v3
-    from nico import comprehensive_client_review_companion_v4 as v4
-    from nico import comprehensive_client_review_companion_v5 as v5
-
-    current = v5.substantive_review_sections
-    if getattr(current, _PLATFORM_MARKER, False):
-        return False
-
-    @wraps(current)
-    def substantive_review_sections(
-        canonical: Mapping[str, Any], *, spanish: bool
-    ) -> list[dict[str, Any]]:
-        sections = current(canonical, spanish=spanish)
-        for section in sections:
-            if _text(section.get("id")) != "platform_parity" or v5._platform_input_truth_is_explicit(canonical):
-                continue
-            section["status"] = (
-                "Revisión de indicadores del repositorio completa; paridad de ejecución no evaluada"
-                if spanish
-                else "Repository indicator review complete; runtime platform parity not assessed"
-            )
-        return sections
-
-    setattr(substantive_review_sections, _PLATFORM_MARKER, True)
-    setattr(substantive_review_sections, "_nico_previous", current)
-    v5.substantive_review_sections = substantive_review_sections
-    for module in (v2, v3, v4):
-        module.review_sections = substantive_review_sections
     return True
 
 
@@ -255,7 +221,6 @@ def _install_exact_artifact_idempotence() -> bool:
 def install_comprehensive_client_truth_validation_compat_v1() -> dict[str, Any]:
     truth_installed = _install_truth_validation_compat()
     manifest_installed = _install_manifest_validation_compat()
-    platform_installed = _install_platform_parity_compat()
     idempotence_installed = _install_exact_artifact_idempotence()
     return {
         "status": (
@@ -264,7 +229,6 @@ def install_comprehensive_client_truth_validation_compat_v1() -> dict[str, Any]:
                 (
                     truth_installed,
                     manifest_installed,
-                    platform_installed,
                     idempotence_installed,
                 )
             )

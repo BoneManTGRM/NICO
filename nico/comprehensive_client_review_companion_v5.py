@@ -544,16 +544,6 @@ def _runtime_observation_lines(canonical: Mapping[str, Any], module_id: str, fie
     return list(dict.fromkeys(lines))
 
 
-def _platform_input_truth_is_explicit(canonical: Mapping[str, Any]) -> bool:
-    dimensions = (_stage_map(canonical).get("platform_parity") or {}).get("assessment_dimensions")
-    return bool(
-        isinstance(dimensions, Mapping)
-        and dimensions.get("substantive_coverage") in {"not_assessed", "excluded", "partial"}
-    ) or "excluded" in str(_human_runtime_stage(canonical, "platform_parity").get("status") or "").casefold() or bool(
-        _runtime_observation_lines(canonical, "platform_parity", "matrix")
-    )
-
-
 def _functional_runtime_truth(
     canonical: Mapping[str, Any],
     details: dict[str, Any],
@@ -685,10 +675,22 @@ def _platform_runtime_truth(
     )
     if excluded:
         return details, [*truth, *evidence]
+    from nico.comprehensive_platform_parity_summary_v1 import (
+        canonical_platform_parity_line, canonical_platform_parity_status,
+    )
+    repo_observed = canonical_platform_parity_status(canonical) == "complete_repository_only"
+    if not repo_observed:
+        details["recommended_decision"] = (
+            "Conservar los indicadores del repositorio vinculados a esta revisión antes de marcarlos como evaluados."
+            if spanish else
+            "Retain repository indicators tied to this revision before marking them assessed."
+        )
     if not supplied and not details["runtime_observation_established"]:
-        from nico.comprehensive_platform_parity_summary_v1 import canonical_platform_parity_line
-        details["status"] = "No evaluado — paridad de ejecución no establecida" if spanish else "Not assessed — runtime parity not established"
-        details["summary"] = canonical_platform_parity_line(canonical, spanish=spanish)
+        line = canonical_platform_parity_line(canonical, spanish=spanish)
+        # Keep the headline and executive limited-coverage count aligned. The
+        # optional third clause belongs in the full summary.
+        details["status"] = ";".join(line.rstrip(".").split(";")[:2])
+        details["summary"] = line
         return details, [*truth, *evidence]
     details["status"] = (
         "Paridad entre plataformas establecida"

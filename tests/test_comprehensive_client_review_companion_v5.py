@@ -3,6 +3,8 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
+import pytest
+
 from pypdf import PdfReader
 from reportlab.pdfgen import canvas
 
@@ -147,13 +149,37 @@ def test_all_eight_sections_are_substantive_and_truthful() -> None:
 
     by_id = {section["id"]: section for section in sections}
     assert by_id["platform_parity"]["status"] == (
-        "Repository indicator review complete; runtime platform parity not assessed"
+        "Repository indicator review not established; runtime platform parity not assessed"
     )
     assert "Device and human-context evidence" not in combined or "device" in combined.casefold()
     assert by_id["six_month_roadmap"]["status"] == (
         "Framework only — pending stakeholder validation"
     )
     assert "framework" in by_id["six_month_roadmap"]["recommended_decision"].casefold()
+
+
+@pytest.mark.parametrize("spanish", [False, True])
+@pytest.mark.parametrize("binding", ["missing", "wrong_run", "retained"])
+def test_parity_review_requires_current_source_indicators(spanish, binding):
+    canonical = _canonical()
+    row = next(x for x in canonical["assessment"]["stage_summaries"] if x["stage_id"] == "platform_parity")
+    canonical["stage_summaries"] = [row]
+    if binding != "missing":
+        ident = dict(canonical["identity"])
+        if binding == "wrong_run":
+            ident["run_id"] = "previous-run"
+        row.update(source_indicator_identity=ident, source_indicator_state="retained_observation",
+                   source_indicator_paths=["apps/web/app/page.tsx"])
+    section = next(s for s in substantive_review_sections(canonical, spanish=spanish) if s["id"] == "platform_parity")
+    established = binding == "retained"
+    expected = ("Revisión de indicadores del repositorio " + ("completa" if established else "no establecida")
+                if spanish else "Repository indicator review " + ("complete" if established else "not established"))
+    assert section["status"].startswith(expected + ";")
+    assert expected in section["summary"]
+    action = ("Registrar los indicadores" if spanish else "Record repository indicators") if established else (
+        "antes de marcarlos" if spanish else "before marking them assessed")
+    assert action in section["recommended_decision"]
+    assert not section["runtime_observation_established"]
 
 
 def test_companion_pdf_pairs_two_continuous_sections_per_page() -> None:
@@ -189,7 +215,7 @@ def test_markdown_uses_specific_limitations_and_not_filler() -> None:
     assert "## Functional QA" in markdown
     assert "## Platform Parity" in markdown
     assert "## Six-Month Roadmap" in markdown
-    assert "Repository indicator review complete; runtime platform parity not assessed" in markdown
+    assert "Repository indicator review not established" in markdown
     assert "Framework only — pending stakeholder validation" in markdown
     assert "What can be concluded" in markdown
     assert "What cannot be concluded" in markdown

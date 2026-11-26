@@ -90,6 +90,21 @@ def validate_pdf_pages(layout_pages, locale, expected_pending):
             f"{locale}: cover does not show draft, pending approval and blocked delivery")
     require(any(topline in _flat(text) for text in layout_pages),
             f"{locale}: correct current-review top line not found")
+    # The seven-row fixture supplies no repository indicator evidence. Inspect the
+    # final rendered section, not the generic bounded footer or table of contents.
+    parity_title, negative, positives, action = (
+        ("2. Platform Parity", "Repository indicator review not established",
+         ("Repository indicator review complete", "Record repository indicators as assessed"),
+         "Retain repository indicators tied to this revision")
+        if locale == "en" else
+        ("2. Paridad de plataformas", "Revisión de indicadores del repositorio no establecida",
+         ("Revisión de indicadores del repositorio completa", "Registrar los indicadores del repositorio como evaluados"),
+         "Conservar los indicadores del repositorio vinculados a esta revisión")
+    )
+    sections = [_flat(p) for p in layout_pages if parity_title in _flat(p) and negative in _flat(p)]
+    require(len(sections) == 1 and action in sections[0], f"{locale}: parity evidence/action missing")
+    require(not any(term in _flat(p) for p in layout_pages for term in positives),
+            f"{locale}: parity fixture credited missing repository indicators")
     # Require the actual table on a window following its heading. No generic
     # elsewhere duplicate or unlabelled numeric sequence can satisfy this.
     row_pattern = re.compile(r"^\s*" + re.escape(category) +

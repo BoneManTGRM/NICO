@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/phase9-synthetic-spanish-pdf.yml'
+      - 'scripts/phase9_pr_pdf_receipt.py'
       - 'scripts/retain_phase9_synthetic_spanish_pdf.py'
       - 'tests/test_spanish_canonical_report_parity_v87.py'
       - 'tests/seven_row_review_pdf_probe.py'
@@ -32,8 +33,21 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
       - name: Render and verify a synthetic es-MX draft
+        if: ${{ github.event_name != 'pull_request' }}
         run: python -m scripts.retain_phase9_synthetic_spanish_pdf
+      - name: Render and verify a synthetic es-MX draft (private PR output)
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: bash
+        run: |
+          if ! (
+            python -m scripts.retain_phase9_synthetic_spanish_pdf &&
+            python -m scripts.phase9_pr_pdf_receipt spanish
+          ) >/dev/null 2>&1; then
+            echo "::error::Synthetic PDF check failed; report diagnostics withheld."
+            exit 1
+          fi
       - name: Upload synthetic es-MX PDF proof
+        if: ${{ github.event_name != 'pull_request' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: phase9-synthetic-es-mx-pdf-${{ github.run_id }}-${{ github.run_attempt }}
@@ -45,42 +59,53 @@ jobs:
         if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
         env:
           NICO_RETAIN_OWNED_PARITY_FIXTURES: '1'
-        run: python -m pytest -q tests/test_spanish_canonical_report_parity_v87.py::test_same_canonical_package_has_exact_spanish_publication_parity
-      - name: Upload only owned parity PDFs and digest receipt
-        if: ${{ !cancelled() && (steps.owned_parity.outcome == 'success' || steps.owned_parity.outcome == 'failure') }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: phase9-owned-parity-pdfs-${{ github.run_id }}-${{ github.run_attempt }}
-          retention-days: 7
-          if-no-files-found: error
-          path: |
-            owned-parity-pdf-proof/small-en.pdf
-            owned-parity-pdf-proof/small-es-MX.pdf
-            owned-parity-pdf-proof/rich-en.pdf
-            owned-parity-pdf-proof/rich-es-MX.pdf
-            owned-parity-pdf-proof/phase9-en.pdf
-            owned-parity-pdf-proof/phase9-es-MX.pdf
-            owned-parity-pdf-proof/receipt.json
+        shell: bash
+        run: |
+          if ! (
+            python -m pytest -q tests/test_spanish_canonical_report_parity_v87.py::test_same_canonical_package_has_exact_spanish_publication_parity &&
+            python -m scripts.phase9_pr_pdf_receipt parity
+          ) >/dev/null 2>&1; then
+            echo "::error::Synthetic PDF check failed; report diagnostics withheld."
+            exit 1
+          fi
       - name: Verify owned seven-row review PDF in both locales
         id: seven_row_review
         if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
         shell: bash
         run: |
-          test "$(git rev-parse HEAD)" = "$PHASE9_REVISION"
-          owned="$(mktemp -d "${RUNNER_TEMP}/nico-seven-row.XXXXXX")"
-          env -i PATH="$PATH" LANG=C.UTF-8 HOME="$owned" PYTHONNOUSERSITE=1 PYTHONHASHSEED=0 \
-            NICO_HOME="$owned" NICO_SQLITE_PATH="$owned/nico.sqlite3" \
-            python -m tests.seven_row_review_pdf_probe \
-              --checkout-sha "$PHASE9_REVISION" --output owned-seven-row-pdf-proof
-      - name: Upload only the synthetic seven-row review PDFs and receipts
-        if: ${{ !cancelled() && steps.seven_row_review.outcome == 'success' }}
+          if ! (
+            test "$(git rev-parse HEAD)" = "$PHASE9_REVISION" &&
+            owned="$(mktemp -d "${RUNNER_TEMP}/nico-seven-row.XXXXXX")" &&
+            env -i PATH="$PATH" LANG=C.UTF-8 HOME="$owned" PYTHONNOUSERSITE=1 PYTHONHASHSEED=0 \
+              NICO_HOME="$owned" NICO_SQLITE_PATH="$owned/nico.sqlite3" \
+              python -m tests.seven_row_review_pdf_probe \
+                --checkout-sha "$PHASE9_REVISION" --output owned-seven-row-pdf-proof &&
+            python -m scripts.phase9_pr_pdf_receipt seven-row
+          ) >/dev/null 2>&1; then
+            echo "::error::Synthetic PDF check failed; report diagnostics withheld."
+            exit 1
+          fi
+      - name: Upload verified spanish receipt only
+        if: ${{ success() && github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: phase9-owned-seven-row-pdfs-${{ github.run_id }}-${{ github.run_attempt }}
+          name: phase9-pr-spanish-receipt-${{ github.run_id }}-${{ github.run_attempt }}
           retention-days: 7
           if-no-files-found: error
-          path: |
-            owned-seven-row-pdf-proof/en.pdf
-            owned-seven-row-pdf-proof/en.json
-            owned-seven-row-pdf-proof/es-MX.pdf
-            owned-seven-row-pdf-proof/es-MX.json
+          path: ${{ runner.temp }}/phase9-pr-receipt-spanish/check.json
+      - name: Upload verified parity receipt only
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase9-pr-parity-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: error
+          path: ${{ runner.temp }}/phase9-pr-receipt-parity/check.json
+      - name: Upload verified seven-row receipt only
+        if: ${{ success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase9-pr-seven-row-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: error
+          path: ${{ runner.temp }}/phase9-pr-receipt-seven-row/check.json
