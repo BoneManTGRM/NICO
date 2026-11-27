@@ -149,3 +149,20 @@ jobs:
           1862ac4bbbc5192d4bf562161df66ea547ed3e67173100656ab606ae9797db2b  next-env.d.ts
           4332988fcf404a4e6070511e1ce95a7186f24428c9aea8442bf094ea11e779bb  tsconfig.json
           EOF
+
+      - name: Check out the reviewed compiler proof adapter
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: BoneManTGRM/NICO
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: .owned-typecheck-proof
+          sparse-checkout: tools/owned-typecheck-replay
+          persist-credentials: false
+      - name: Compare a confined native compiler run to the protected build
+        timeout-minutes: 3
+        shell: bash
+        env:
+          PROOF_REVISION: ${{ github.event.pull_request.head.sha }}
+        run: |
+          proof="$GITHUB_WORKSPACE/.owned-typecheck-proof/tools/owned-typecheck-replay"
+          PYTHONPATH="$proof" python "$proof/scripts/replay_owned_typescript.py" --target "$GITHUB_WORKSPACE" --proof-ref "$PROOF_REVISION"
