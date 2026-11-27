@@ -182,6 +182,15 @@ jobs:
         command -v gitleaks
         command -v trufflehog
 
+    - name: Check out the immutable TypeScript assessment target
+      if: github.event_name == 'pull_request' && github.repository == 'BoneManTGRM/NICO' && github.event.pull_request.head.repo.full_name == 'BoneManTGRM/NICO' && github.head_ref == 'fix/atlas-nico-owned-typescript-release-20261127'
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: BoneManTGRM/NICO
+        ref: 5eb768b5776f88bae86e972c76267915cc874c85
+        path: .owned-typecheck-source/repo
+        persist-credentials: false
+
     - name: Run Docker build check
       timeout-minutes: 20
       shell: bash
@@ -194,10 +203,28 @@ jobs:
         # Earlier npm install/build steps may rewrite the lockfile and emit
         # host dependencies. Qualify only the exact committed source tree.
         git archive HEAD | tar --extract -C "$docker_context"
-        timeout --kill-after=10s 720s docker build --secret id=github_token,env=GITHUB_TOKEN -t nico-ci:ci "$docker_context"
+        args=()
+        if [ -d ".owned-typecheck-source/repo/.git" ]; then
+          test "$(git -C .owned-typecheck-source/repo rev-parse HEAD)" = 5eb768b5776f88bae86e972c76267915cc874c85
+          test "$(git -C .owned-typecheck-source/repo rev-parse 'HEAD^{tree}')" = fd4170b422a9f623c286e9e1f3c08e01b0ec821c
+          args=(--build-arg "RAILWAY_GIT_COMMIT_SHA=$(git rev-parse HEAD)")
+        fi
+        timeout --kill-after=10s 720s docker build "${args[@]}" --secret id=github_token,env=GITHUB_TOKEN -t nico-ci:ci "$docker_context"
         timeout --kill-after=10s 360s docker build -t nico-web-ci:ci "$docker_context/apps/web"
         mkdir -p audit-results
         timeout --kill-after=10s 90s bash scripts/qualify_docker_node_runtime.sh 2>&1 | tee audit-results/docker-node-qualification.log
+
+    - name: Qualify installed TypeScript and normal scanner retention
+      if: github.event_name == 'pull_request' && github.repository == 'BoneManTGRM/NICO' && github.event.pull_request.head.repo.full_name == 'BoneManTGRM/NICO' && github.head_ref == 'fix/atlas-nico-owned-typescript-release-20261127'
+      timeout-minutes: 4
+      shell: bash
+      run: |
+        docker run --rm --user 10001:10001 --read-only --network none --cap-drop ALL \
+          --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev,noexec,size=256m,mode=1777 \
+          --mount "type=bind,source=$GITHUB_WORKSPACE/.owned-typecheck-source,target=/reference,readonly" \
+          -e "RAILWAY_GIT_COMMIT_SHA=$(git rev-parse HEAD)" -e RAILWAY_GIT_REPO_OWNER=BoneManTGRM \
+          -e RAILWAY_GIT_REPO_NAME=NICO -e RAILWAY_GIT_BRANCH=main -e GIT_OPTIONAL_LOCKS=0 \
+          nico-ci:ci python /app/tools/owned-typecheck-install/prove_scanner_receipt.py
 
     - name: Run file integrity regression test
       run: |
