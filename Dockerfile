@@ -1,5 +1,19 @@
 FROM node:24-bookworm-slim AS node-runtime
 RUN npm install --global npm@10.8.2 --ignore-scripts --no-audit --no-fund
+# Private tool packaging only. No Git fetch or publish step.
+FROM node:24.22.3-bookworm-slim AS owned-typecheck-build
+WORKDIR /owned-build
+COPY apps/web/ /owned-build/current/apps/web/
+COPY tools/owned-typecheck-install/ /owned-build/tool/
+COPY nico/nico_ci_typescript_typegen_inputs_v1.py /owned-build/support/py/nico/
+COPY scripts/nico_typecheck_confined_driver_v1.cjs scripts/nico_typecheck_virtual_host_v1.cjs /owned-build/support/scripts/
+ARG RAILWAY_GIT_COMMIT_SHA
+RUN if [ -n "${RAILWAY_GIT_COMMIT_SHA:-}" ]; then apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates libatomic1 python3 \
+    && rm -rf /var/lib/apt/lists/*; fi
+RUN sh /owned-build/tool/build_inputs.sh /owned-build/current /owned-build/tool \
+    /owned-build/support /owned-install "${RAILWAY_GIT_COMMIT_SHA:-}"
+
 FROM python:3.11-slim
 
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
@@ -101,6 +115,10 @@ COPY . .
 RUN python -m pip install --no-cache-dir --no-deps . \
     && if [ -f apps/web/package-lock.json ]; then cd apps/web && npm ci --ignore-scripts --no-audit --no-fund; fi \
     && chown -R nico:nico /app /data /opt/nico-tools
+
+# The payload contains tool bytes only, never a target checkout. Copy after the
+# legacy path ownership mutations; UID 10001 cannot write this hierarchy.
+COPY --from=owned-typecheck-build --chown=0:0 /owned-install/ /opt/nico-owned-typecheck/
 
 USER nico
 

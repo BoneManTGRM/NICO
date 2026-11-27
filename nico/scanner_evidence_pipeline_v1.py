@@ -802,8 +802,72 @@ def _typescript_findings(text: str) -> list[dict[str, Any]]:
     return _typescript_diagnostics(text)[0]
 
 
+def _owned_typescript_payload(
+    spec: ScannerToolSpec, workspace: WorkerWorkspace, observed: dict[str, Any]
+) -> dict[str, Any]:
+    from nico.scanner_execution_receipt_v1 import invocation_receipt
+
+    source = "owned_confined_native_typescript"
+    if observed.get("outcome") != "compiler_observed":
+        return _unavailable(spec, str(observed.get("reason") or "owned_compiler_unverified"), source=source)
+    raw_bytes, argv = observed.get("_native_stdout"), observed.get("_native_argv")
+    native = observed.get("native")
+    if (not isinstance(raw_bytes, bytes) or not raw_bytes or len(raw_bytes) > 4 * 1024 * 1024
+            or _sha256(raw_bytes) != observed.get("native_sha256") or not isinstance(argv, tuple)
+            or not argv or not isinstance(native, dict) or native.get("diagnostics") != []
+            or native.get("compiler_version") != "6.0.3"
+            or not isinstance(native.get("roots"), list) or not native["roots"]
+            or not isinstance(native.get("program_inputs"), list) or not native["program_inputs"]
+            or not isinstance(native.get("read_inputs"), dict) or not native["read_inputs"]
+            or any(not isinstance(observed.get(key), str) or re.fullmatch(r"[a-f0-9]{40}", observed[key]) is None
+                   for key in ("producer_commit", "target_commit", "target_tree"))):
+        return _unavailable(spec, "owned_compiler_capture_unverified", source=source)
+    try:
+        document = json.loads(raw_bytes)
+        if (document.get("result") != native or document.get("repository") != "BoneManTGRM/NICO"
+                or document.get("commit") != observed.get("target_commit") or document.get("tree") != observed.get("target_tree")):
+            return _unavailable(spec, "owned_compiler_receipt_identity_unverified", source=source)
+        raw_path = workspace.root / "scanner-raw" / "typescript-owned-native.json"
+        raw_path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(raw_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(raw_bytes)
+        blob = _raw_blob(spec.name, raw_path, "json")
+    except (AttributeError, ValueError, OSError):
+        return _unavailable(spec, "owned_compiler_capture_unverified", source=source)
+    result = WorkerCommandResult(
+        args=argv, returncode=0, stdout="", stderr="", stdout_bytes=len(raw_bytes),
+        scanner_execution_receipt=invocation_receipt(
+            argv, cwd=Path("/"), before=[], after=[], returncode=0, timed_out=False
+        ),
+    )
+    return _tool_payload(
+        spec, result, findings=[], capture_complete=bool(blob["present"]) and not blob["capture_truncated"],
+        reason="", raw_blob=blob, execution_source=source, workspace=workspace, valid_returncodes={0},
+        extra={
+            "scanner_tool_version": "TypeScript " + native["compiler_version"],
+            "native_typecheck_input_trace_verified": True,
+            "native_typecheck_producer_commit": observed["producer_commit"],
+            "native_typecheck_target_commit": observed["target_commit"],
+            "native_typecheck_target_tree": observed["target_tree"],
+            "native_typecheck_root_count": len(native["roots"]),
+            "native_typecheck_program_file_count": len(native["program_inputs"]),
+            "native_typecheck_read_file_count": len(native["read_inputs"]),
+        },
+    )
+
+
 def _run_typescript(spec: ScannerToolSpec, workspace: WorkerWorkspace, runner: Callable[..., WorkerCommandResult], preparation: ProjectCommandPreparation | None) -> dict[str, Any]:
     if _owned_nico_ci(workspace):
+        from nico.nico_owned_typescript_install_v1 import observe
+
+        observed = observe(
+            workspace.repo_dir, target_repo="BoneManTGRM/NICO",
+            target_commit=_git_text(workspace, "rev-parse", "HEAD").lower(),
+            target_tree=_git_text(workspace, "rev-parse", "HEAD^{tree}").lower(),
+        )
+        if observed is not None:
+            return _owned_typescript_payload(spec, workspace, observed)
         from nico.nico_ci_typescript_consumer_v1 import run
         return run(spec, workspace)
     if not project_commands_allowed():
