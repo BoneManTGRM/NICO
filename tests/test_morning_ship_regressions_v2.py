@@ -304,7 +304,10 @@ def test_pdf_bridge_uses_one_user_gesture_dispatch_and_visible_status() -> None:
         "Vuelve a intentarlo con este mismo botón, evaluación e idioma; "
         "no inicies otra evaluación. No se reintentará automáticamente."
     ) in timeout_message
-    assert "return new PdfDownloadFailure(downloadTimeoutMessage());" in source
+    assert "class PdfMayBePreparing extends PdfDownloadFailure {}" in source
+    assert "return new PdfMayBePreparing(downloadTimeoutMessage());" in source
+    assert "error instanceof PdfMayBePreparing" in source
+    assert "false, true).catch(() => {});" in source
     assert "? downloadTimeoutMessage()" in source
     assert 'status.remove()' not in source
     assert "data-nico-review-pdf-action-status" in source
