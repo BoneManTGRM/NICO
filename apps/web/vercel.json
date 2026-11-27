@@ -6,7 +6,8 @@
   "git": {
     "deploymentEnabled": {
       "main": true,
-      "fix/atlas-nico-report-evidence-20261122": false
+      "fix/atlas-nico-report-evidence-20261122": false,
+      "fix/atlas-nico-typescript-build-proof-20261127": false
     }
   }
 }

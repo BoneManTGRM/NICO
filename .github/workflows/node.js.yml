@@ -84,3 +84,68 @@ jobs:
           path: audit-results/
           if-no-files-found: error
           retention-days: 7
+
+  owned_typescript_build_proof:
+    name: Owned TypeScript build input proof
+    if: >-
+      github.event_name == 'pull_request'
+      && github.repository == 'BoneManTGRM/NICO'
+      && github.event.pull_request.head.repo.full_name == 'BoneManTGRM/NICO'
+      && github.head_ref == 'fix/atlas-nico-typescript-build-proof-20261127'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      CI: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Check out reviewed reference, not the assessment worker
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: BoneManTGRM/NICO
+          ref: 5eb768b5776f88bae86e972c76267915cc874c85
+          persist-credentials: false
+      - name: Verify source identity
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = 5eb768b5776f88bae86e972c76267915cc874c85
+          test "$(git rev-parse 'HEAD^{tree}')" = fd4170b422a9f623c286e9e1f3c08e01b0ec821c
+      - name: Set up reference Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "24.22.3"
+      - name: Verify the toolchain and install the exact lock
+        shell: bash
+        working-directory: apps/web
+        timeout-minutes: 6
+        run: |
+          test "$(node --version)" = v24.22.3
+          test "$(npm --version)" = 11.19.1
+          echo "a74cf1dc5d13b017a7f4b9df46cc5aa2420422ee790350ed93c5930fbe634c01  package-lock.json" | sha256sum --check
+          npm ci --ignore-scripts --no-audit --no-fund
+          node -e 'if (require("next/package.json").version !== "16.4.5" || require("typescript/package.json").version !== "6.0.3") process.exit(1)'
+          echo "569177652966bd528c319171c7dd22860dbf72bde116cbc4f644f1d02bb12e39  node_modules/typescript/lib/typescript.js" | sha256sum --check
+          echo "9332e97c30d3e53ed54910b89207ed657fb444066484df6e5b6965bf130865e9  node_modules/typescript/package.json" | sha256sum --check
+      - name: Reproduce the protected frontend build without publishing output
+        shell: bash
+        working-directory: apps/web
+        timeout-minutes: 6
+        run: |
+          node ./node_modules/next/dist/bin/next build >"$RUNNER_TEMP/nico-type-build.log" 2>&1 || {
+            echo "::error::The reference frontend build did not complete. No output was uploaded."
+            exit 1
+          }
+      - name: Verify five exact build input digests
+        shell: bash
+        working-directory: apps/web
+        run: |
+          sha256sum --check <<'EOF'
+          091a04fa67c7907b98e106fcff8b964e13129754fce72d24f3025b97c4887fa3  .next/package.json
+          7ff7da91491bf851eda28e1269f737c3502b110a9393952ccbc660a896194c76  .next/types/cache-life.d.ts
+          f3387dd7800eec3c34273f7a8efad13e864598c7e8f788d321e407390989bb59  .next/types/root-params.d.ts
+          b964ddf5bc213e55e4795fb8048fc434d76694903e5ac413747351805364c7a7  .next/types/routes.d.ts
+          0a21c29ff7e21ac81833a59f781371089f8f0a12559a7eece4b739f5e26f0da6  .next/types/validator.ts
+          1862ac4bbbc5192d4bf562161df66ea547ed3e67173100656ab606ae9797db2b  next-env.d.ts
+          4332988fcf404a4e6070511e1ce95a7186f24428c9aea8442bf094ea11e779bb  tsconfig.json
+          EOF
