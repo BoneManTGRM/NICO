@@ -46,15 +46,48 @@ def _bounded(value: float | int) -> int:
     return max(0, min(100, int(round(value))))
 
 
+def scoped_scoring_scan(scan: Mapping[str, Any], context: Mapping[str, Any]) -> dict[str, Any]:
+    return {**scan, "_scoring_target_commit_sha": context.get("commit_sha"),
+            "_scoring_target_run_id": context.get("run_id")}
+
+
 def _tool_results(scan: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    from nico.v2_scanner_reconciliation import normalize_record, scanner_observation_key, worker_record_has_native_observation
+
     values = scan.get("scanner_results") if isinstance(scan.get("scanner_results"), list) else []
-    output: dict[str, dict[str, Any]] = {}
+    target = str(scan.get("_scoring_target_commit_sha") or scan.get("actual_commit_sha") or "").strip().casefold()
+    run = str(scan.get("_scoring_target_run_id") or scan.get("run_id") or "").strip()
+    grouped: dict[str, list[tuple[dict[str, Any], dict[str, Any], bool]]] = {}
     for raw in values:
         if not isinstance(raw, dict):
             continue
         name = str(raw.get("scanner_name") or raw.get("tool") or raw.get("scanner") or "").strip().casefold()
-        if name:
-            output[name] = raw
+        observed_run = str(raw.get("run_id") or "").strip()
+        if not name or (run and observed_run and observed_run != run):
+            continue
+        modern = worker_record_has_native_observation(raw)
+        row = normalize_record(raw, target) if modern and target else raw
+        grouped.setdefault(name, []).append((raw, row, modern))
+    output = {}
+    for name, items in grouped.items():
+        if len(items) == 1 or all(item[0] == items[0][0] for item in items):
+            output[name] = items[0][1]
+            continue
+        # A negative native observation for the identical scoped artifact cannot
+        # be overwritten by an optimistic projection or list ordering.
+        keys = [scanner_observation_key(raw) for raw, _, _ in items]
+        negative = [row for _raw, row, modern in items if modern and not _tool_complete(row)]
+        stable = lambda row: json.dumps(row, sort_keys=True, separators=(",", ":"), default=str)
+        if keys[0] is not None and all(key == keys[0] for key in keys) and negative:
+            output[name] = min(negative, key=stable)
+            continue
+        # Distinct, contradictory repetitions have no unambiguous score input.
+        # Preserve one deterministic row for candidate trace, with no scan credit.
+        row = min(negative or [item[1] for item in items], key=stable)
+        output[name] = {**row, "status": "partial", "state": "partial",
+                        "completed": False, "verified": False, "verified_complete": False,
+                        "verified_for_this_report": False,
+                        "failure_reason": "Conflicting scanner evidence records prevent completion verification."}
     return output
 
 
@@ -223,8 +256,7 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
     assessment = deepcopy(dict(baseline.get("assessment") or {}))
     sections = _section_map(assessment)
     repo = legacy._repo(context)
-    scan = dict(legacy._scan(context))
-    scan['_scoring_target_commit_sha'] = context.get('commit_sha')
+    scan = scoped_scoring_scan(legacy._scan(context), context)
     dependency_evidence = (
         repo.get("dependency_evidence")
         if isinstance(repo.get("dependency_evidence"), dict)

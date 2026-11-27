@@ -59,13 +59,13 @@ def workload_markdown(canonical: Mapping[str, Any], *, spanish: bool) -> str:
     if isinstance(truth, Mapping):
         heading = "## Triage técnico automatizado y carga de revisión" if spanish else "## Automated Technical Triage and Reviewer Workload"
         return heading + "\n\n" + "\n".join("- " + line for line in current_review_lines(truth, spanish=spanish))
-    from nico.review_workload_truth_v1 import review_workload_summary
+    from nico.review_workload_truth_v1 import report_review_workload_display
 
     triage = _find(canonical, "technical_triage")
     metrics = triage.get("workload_metrics") if isinstance(triage.get("workload_metrics"), Mapping) else {}
     if not metrics:
         return ""
-    workload = review_workload_summary(canonical)
+    workload = report_review_workload_display(canonical, spanish=spanish)
     scanner_units = workload["scanner_candidate_review_work_units"]
     exact_units = workload["exact_source_review_work_units"]
     operational_units = workload["operational_context_review_work_units"]
@@ -88,7 +88,7 @@ def workload_markdown(canonical: Mapping[str, Any], *, spanish: bool) -> str:
             f"- Nuevo triaje técnico: {_integer(triage.get('fresh_technical_triage_completed'))}.",
             *(
                 [
-                    f"- Automatizados como no accionables / control de calidad: {_integer(metrics.get('automated_not_actionable_candidate_count'))}.",
+                    f"- Candidatos propuestos como no accionables (sin decisión humana): {_integer(metrics.get('automated_not_actionable_candidate_count'))}.",
                     f"- Candidatos dirigidos a atención humana: {_integer(metrics.get('human_attention_candidate_count_before_grouping'))}.",
                 ]
                 if has_end_to_end_queue_metrics
@@ -102,7 +102,7 @@ def workload_markdown(canonical: Mapping[str, Any], *, spanish: bool) -> str:
             f"- Total de unidades de revisión humana sin resolver: {total_units}.",
             *(
                 [
-                    f"- Reducción de bruto a unidades de trabajo: {_integer(metrics.get('end_to_end_review_workload_reduction_count'))} ({metrics.get('end_to_end_review_workload_reduction_pct', 0)}%).",
+                    f"- Reducción de candidatos brutos de analizadores a unidades de revisión de analizadores: {_integer(metrics.get('end_to_end_review_workload_reduction_count'))} ({metrics.get('end_to_end_review_workload_reduction_pct', 0)}%).",
                     "- Las disposiciones canónicas pendientes no son la cola activa del operador.",
                 ]
                 if has_end_to_end_queue_metrics
@@ -119,7 +119,7 @@ def workload_markdown(canonical: Mapping[str, Any], *, spanish: bool) -> str:
             f"- Fresh technical triage: {_integer(triage.get('fresh_technical_triage_completed'))}.",
             *(
                 [
-                    f"- Automated non-actionable / QC candidates: {_integer(metrics.get('automated_not_actionable_candidate_count'))}.",
+                    f"- Proposed non-actionable candidates (not human dispositions): {_integer(metrics.get('automated_not_actionable_candidate_count'))}.",
                     f"- Candidates routed to human attention: {_integer(metrics.get('human_attention_candidate_count_before_grouping'))}.",
                 ]
                 if has_end_to_end_queue_metrics
@@ -133,7 +133,7 @@ def workload_markdown(canonical: Mapping[str, Any], *, spanish: bool) -> str:
             f"- Total unresolved human-review work units: {total_units}.",
             *(
                 [
-                    f"- Raw-to-work-unit reduction: {_integer(metrics.get('end_to_end_review_workload_reduction_count'))} ({metrics.get('end_to_end_review_workload_reduction_pct', 0)}%).",
+                    f"- Reduction from raw scanner candidates to scanner review units: {_integer(metrics.get('end_to_end_review_workload_reduction_count'))} ({metrics.get('end_to_end_review_workload_reduction_pct', 0)}%).",
                     "- Canonical pending dispositions are not the active operator queue.",
                 ]
                 if has_end_to_end_queue_metrics

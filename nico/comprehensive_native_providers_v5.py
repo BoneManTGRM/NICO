@@ -37,15 +37,7 @@ def _int(value: Any) -> int:
 
 
 def _tool_results(scan: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
-    values = scan.get("scanner_results") if isinstance(scan.get("scanner_results"), list) else []
-    output: dict[str, dict[str, Any]] = {}
-    for raw in values:
-        if not isinstance(raw, dict):
-            continue
-        name = _text(raw.get("scanner_name") or raw.get("tool") or raw.get("scanner"), 120).casefold()
-        if name:
-            output[name] = raw
-    return output
+    return v4._tool_results(scan)
 
 
 def _summary_by_tool(scan: Mapping[str, Any]) -> dict[str, dict[str, int]]:
@@ -429,7 +421,7 @@ def build_canonical_scanner_finding_register(
     commit_sha: str,
 ) -> dict[str, Any]:
     by_tool = _summary_by_tool(scan)
-    results = _tool_results(scan)
+    results = _tool_results({**scan, "_scoring_target_commit_sha": commit_sha})
     records: list[dict[str, Any]] = []
     discrepancies: list[dict[str, Any]] = []
 
@@ -614,7 +606,7 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
     if baseline.get("status") != "complete":
         return baseline
 
-    scan = legacy._scan(context)
+    scan = v4.scoped_scoring_scan(legacy._scan(context), context)
     register = build_canonical_scanner_finding_register(scan, str(context.get("commit_sha") or ""))
     if register["status"] != "complete":
         return legacy._result(

@@ -46,6 +46,14 @@ def _findings(payload: Any) -> tuple[list[dict[str, Any]], str]:
     findings = [dict(item) for item in results if isinstance(item, dict)]
     if len(findings) != len(results):
         return [], "Bandit JSON results contained a non-object finding."
+    # Native Bandit always reports analysis-skipped targets in errors. A
+    # parseable JSON envelope and accepted exit code alone are not a complete
+    # execution. Preserve any partial findings without quoting paths/reasons.
+    errors = payload.get("errors")
+    if not isinstance(errors, list):
+        return findings, "Bandit JSON output did not retain an errors list."
+    if errors:
+        return findings, "Bandit reported analysis errors for one or more selected files."
     return findings, ""
 
 
@@ -69,6 +77,9 @@ def run_bandit_json(
     raw.parent.mkdir(parents=True, exist_ok=True)
     command = (
         binary,
+        # Native Bandit emits a progress bar to stdout for >50 files at INFO.
+        # Keep stdout machine-readable when the worker redirects the JSON there.
+        "--quiet",
         "-r",
         ".",
         "-f",

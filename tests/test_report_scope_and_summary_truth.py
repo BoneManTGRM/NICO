@@ -64,12 +64,30 @@ def test_roadmap_labels_count_actual_packages_and_partial_rows(spanish, total):
     stage = {'stage_id': 'six_month_roadmap', 'evidence': evidence}
     context = {'roadmap': packages}; before = deepcopy((stage, context))
     label = stage_preview_labels(stage, context, evidence_limit=100, spanish=spanish)[0]
-    count = min(total, 17)
-    assert (f'{count} de {total}' if spanish else f'{count} of {total}') in label
-    assert ('parcialmente' if spanish else 'partially') in label if total > 16 else ('parcialmente' if spanish else 'partially') not in label
     full = stage_preview_labels(stage, context, spanish=spanish)[0]
-    assert (f'{total} de {total}' if spanish else f'{total} of {total}') in full
+    if total == 0:
+        expected = (
+            'Vista previa de la hoja de ruta: 0 paquetes de trabajo con identificador conservado.'
+            if spanish else 'Roadmap preview: 0 work packages with retained identifiers.'
+        )
+        assert label == full == expected
+    else:
+        count = min(total, 17)
+        assert (f'{count} de {total}' if spanish else f'{count} of {total}') in label
+        assert (('parcialmente' if spanish else 'partially') in label) == (total > 16)
+        assert (f'{total} de {total}' if spanish else f'{total} of {total}') in full
     assert (stage, context) == before
+
+
+@pytest.mark.parametrize('spanish', [False, True])
+def test_roadmap_visible_legacy_package_does_not_claim_known_zero(spanish):
+    from nico.report_preview_labels_v1 import stage_preview_labels
+    stage = {'stage_id': 'six_month_roadmap', 'evidence': ['WP-007 | retained detail']}
+    label = stage_preview_labels(stage, {'roadmap': []}, evidence_limit=100, spanish=spanish)[0]
+    assert label == (
+        'Vista previa de la hoja de ruta: no se dispone de un recuento verificado de paquetes de trabajo.'
+        if spanish else 'Roadmap preview: a verified work-package count is unavailable.'
+    )
 
 
 @pytest.mark.parametrize('total', [0, 49, 50, 51, 100, 101, 1536])

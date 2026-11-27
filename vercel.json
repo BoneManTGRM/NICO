@@ -1,7 +1,8 @@
 {
   "git": {
     "deploymentEnabled": {
-      "main": true
+      "main": true,
+      "fix/atlas-nico-report-evidence-20261122": false
     }
   }
 }

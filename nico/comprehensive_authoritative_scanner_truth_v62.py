@@ -93,6 +93,8 @@ def _phase14_records(
             "status": status,
             "commit_sha": record.get("commit_sha") or commit_sha,
             "run_sequence": record.get("run_sequence") or index,
+            "run_id": record.get("run_id"),
+            "scan_id": record.get("scan_id"),
             "capture_complete": bool(
                 record.get("capture_complete") is True
                 or record.get("verified_complete") is True
@@ -646,12 +648,32 @@ def reconcile_authoritative_scanner_truth(
     # analyzers cannot remain required blockers.
     commit_sha = _commit_sha(output)
     phase14_records = _phase14_records(requested_records, commit_sha=commit_sha)
-    if commit_sha and phase14_records:
+    stale_repeat_claim = (
+        _mapping(output.get("delivery_gate")).get("analyzer_evidence_ready") is True
+        or _mapping(output.get("evidence_health_summary")).get("acceptance_ready") is True
+        or _mapping(output.get("analyzer_evidence_report")).get("acceptance_ready") is True
+    )
+    if stale_repeat_claim and not commit_sha:
+        # No source binding: discard the old proof, but retain unrelated scores,
+        # review state, and all original raw evidence.
+        health = deepcopy(dict(_mapping(output.get("evidence_health_summary"))))
+        health.pop("phase14_analyzer_evidence", None)
+        health.update(acceptance_ready=False, assurance_state="constrained")
+        output["evidence_health_summary"] = health
+        gate = deepcopy(dict(_mapping(output.get("delivery_gate"))))
+        gate.pop("analyzer_evidence_manifest_sha256", None)
+        gate.update(analyzer_evidence_ready=False, analyzer_assurance_state="constrained",
+                    analyzer_evidence_blockers=[{"status": "source_binding_missing"}])
+        output["delivery_gate"] = gate
+        output["analyzer_evidence_report"] = {"acceptance_ready": False, "assurance_state": "constrained"}
+        output["analyzer_evidence_ui"] = {"state": "blocked", "rows": [], "blocker_count": 1,
+                                           "badge": "Analyzer evidence incomplete"}
+    if commit_sha and (phase14_records or stale_repeat_claim):
         output = apply_analyzer_evidence(
             output,
             expected_sha=commit_sha,
             records=phase14_records,
-            required_scanners=required_tools,
+            required_scanners=required_tools if phase14_records else ("bandit", "eslint", "gitleaks"),
         )
         evidence_health = deepcopy(dict(output.get("evidence_health_summary") or {}))
         phase14 = _mapping(evidence_health.get("phase14_analyzer_evidence"))

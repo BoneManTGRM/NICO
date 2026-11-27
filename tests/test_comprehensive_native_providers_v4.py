@@ -141,9 +141,12 @@ def test_review_candidates_are_assurance_only_and_real_scores_exceed_90(monkeypa
     assert sections["static_analysis"]["presented_score"] == 96
     assert assessment["technical_score"] >= 90
     assert assessment["canonical_evidence_adjusted_score"] >= 90
-    assert assessment["technical_score"] == round(
-        sum(item["presented_score"] for item in assessment["sections"]) / 7
-    )
+    assert sections["architecture_debt"]["presented_score"] is None
+    assert sections["velocity_complexity"]["presented_score"] is None
+    scored = [item["presented_score"] for item in assessment["sections"]
+              if item.get("exclude_from_maturity") is not True and item["presented_score"] is not None]
+    assert len(scored) == 5
+    assert assessment["technical_score"] == round(sum(scored) / len(scored))
     assert assessment["evidence_coverage"]["percent"] == 100
     assert assessment["evidence_coverage"]["incomplete_analyzers"] == []
     assert assessment["score_contract"]["unverified_candidate_volume_affects_technical_score"] is False
@@ -262,3 +265,49 @@ def test_real_score_disagreement_remains_blocked() -> None:
 
     assert canonical["report_package"]["report_contract_status"] == "blocked"
     assert canonical["report_package"]["technical_score"] == original["report_package"]["technical_score"]
+
+def test_scoring_uses_same_native_receipt_in_either_duplicate_order(monkeypatch):
+    from nico.comprehensive_native_providers_v5 import canonical_scoring_provider
+
+    context = _context()
+    sha, run_id = context["commit_sha"], context["run_id"]
+    candidate = {"test_id": "OWNED-FIXTURE", "filename": "owned.py", "line_number": 1}
+    native = {
+        "tool": "bandit", "category": "static", "commit_sha": sha, "run_id": run_id,
+        "scan_id": "scan_owned", "status": "failed", "completed": False,
+        "verified": False, "exact_commit_match": True, "returncode": 1,
+        "returncode_valid": True, "execution_observed_for_this_report": True,
+        "raw_artifact_retention_complete": True, "output_capture_complete": False,
+        "verified_for_this_report": False, "artifact_hash": "c" * 64,
+        "raw_artifact_sha256": "b" * 64, "findings": [candidate],
+    }
+    stale = {**native, "status": "completed_with_findings", "completed": True,
+             "verified": True, "verified_for_this_report": True, "output_capture_complete": True}
+    observations = [[native], [native, stale], [stale, native], [stale]]
+    scores = []
+    monkeypatch.setattr(legacy, "_repo", lambda _: _repo())
+    for choice in observations:
+        scan = _scan()
+        scan.update(run_id=run_id, actual_commit_sha=sha)
+        for counts in scan["finding_summary"]["by_tool"].values():
+            counts.update(raw=0, review_required=0)
+        scan["finding_summary"]["by_tool"]["bandit"].update(raw=1, review_required=1)
+        scan["scanner_results"] = [
+            row for row in scan["scanner_results"] if row["tool"] != "bandit"
+        ] + deepcopy(choice)
+        original = deepcopy(scan)
+        monkeypatch.setattr(legacy, "_scan", lambda _, s=scan: s)
+        report = canonical_scoring_provider(deepcopy(context))
+        assert report["status"] == "complete"
+        assert scan == original
+        assessment = report["assessment"]
+        static = next(row for row in assessment["sections"] if row["id"] == "static_analysis")
+        assert static["score_contract"]["material_count"] == 0
+        scores.append((static["presented_score"], assessment["technical_score"],
+                       assessment["evidence_adjusted_score"],
+                       assessment["score_contract"]["incomplete_analyzer_penalty"],
+                       assessment["score_contract"]["incomplete_analyzers"]))
+    assert scores[0] == scores[1] == scores[2]
+    assert scores[0][0] == scores[3][0] - 8
+    assert scores[0][3:] == (4, ["bandit"])
+    assert scores[3][3:] == (0, [])

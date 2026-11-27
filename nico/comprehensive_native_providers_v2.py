@@ -248,8 +248,10 @@ def _architecture_score_input(context: dict[str, Any], complexity: dict[str, Any
     if value is not None and not valid_number:
         reason = "measured_score_invalid"
     elif valid_number:
-        reason = "retained_score_input" if all(bindings.values()) and isinstance(evidence_id, str) and evidence_id.strip() else "score_input_identity_unproven"
-    score = int(value) if reason == "retained_score_input" else None
+        reason = "score_rubric_unverified" if all(bindings.values()) and isinstance(evidence_id, str) and evidence_id.strip() else "score_input_identity_unproven"
+    # Scope proves where a number belongs, not how it became a calibrated grade.
+    # No approved authenticated architecture rubric is installed on this path.
+    score = None
     return score, {
         "version": "nico.architecture-score-input.v1",
         "accepted_score": score,
@@ -384,7 +386,7 @@ def canonical_scoring_provider(context: dict[str, Any]) -> dict[str, Any]:
     if architecture_score is None:
         architecture_section.update(source_score=None, score_value=None, score_status="NOT_SCORED")
         architecture_section["summary"] = "Unscored controls are excluded from maturity; any resulting mean change is not evidence of improved source quality."
-        architecture_section["unavailable"].append("Architecture is not scored because a valid exact-source score input is unavailable; measured complexity evidence remains retained.")
+        architecture_section["unavailable"].append("Architecture is not scored without a verified calibrated rubric and exact-source measurements; retained complexity evidence is not an architecture grade.")
 
     scored = [int(item["presented_score"]) for item in sections if isinstance(item.get("presented_score"), int)]
     overall = round(sum(scored) / len(scored)) if scored else 0

@@ -121,7 +121,15 @@ def test_strong_exact_sha_evidence_can_earn_90_without_override(monkeypatch) -> 
     assert result["status"] == "complete"
     assert assessment["technical_score"] >= 90
     assert assessment["canonical_evidence_adjusted_score"] >= 90
-    assert sections["architecture_debt"]["presented_score"] == 78
+    architecture = sections["architecture_debt"]
+    assert architecture["presented_score"] is None
+    assert architecture["score_status"] == "NOT_SCORED"
+    provenance = architecture["score_input_provenance"]
+    assert provenance["reason"] == "score_rubric_unverified"
+    assert provenance["evidence_id"] == "test-complexity"
+    assert provenance["snapshot_commit_sha"] == _context()["commit_sha"]
+    assert all(provenance["identity_matches"].values())
+    assert provenance["fallback_used"] is False
     assert sections["dependency_health"]["presented_score"] == 96
     assert sections["secrets_review"]["presented_score"] == 96
     assert sections["static_analysis"]["presented_score"] == 96

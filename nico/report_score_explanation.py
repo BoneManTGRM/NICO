@@ -1,6 +1,8 @@
 """Read-only presentation of explicitly supplied, internally consistent deductions."""
 from collections.abc import Callable, Mapping
 
+from nico.report_scanner_outcomes import outcomes
+
 UNAVAILABLE = "Score deduction explanation unavailable: the retained score contract is missing, unsupported, or inconsistent."
 LABELS_ES = {
     UNAVAILABLE: "Explicación de deducciones no disponible: el contrato de puntuación conservado falta, no es compatible o es inconsistente.",
@@ -15,6 +17,7 @@ LABELS_ES = {
     "Score calculation with zero floor": "Cálculo de puntuación con límite inferior de cero",
     "Deductions exceed the technical score; the adjusted score is floored at zero.": "Las deducciones superan la puntuación técnica; la puntuación ajustada tiene un límite inferior de cero.",
     "Incomplete analyzers recorded by the contract": "Analizadores incompletos registrados en el contrato",
+    "Failed or timed-out analyzers in verified execution records": "Analizadores fallidos o con tiempo agotado en los registros de ejecución verificados",
     "Analyzer names unavailable in the retained contract": "Nombres de analizadores no disponibles en el contrato conservado",
 }
 
@@ -81,7 +84,13 @@ def score_explanation(assessment: Mapping, localize: Callable[[str], str] = lamb
         if isinstance(names, list) and names and all(isinstance(n, str) and n.strip() for n in names):
             lines.append(f'{localize("Incomplete analyzers recorded by the contract")}: {", ".join(names)}')
         else:
-            lines.append(localize("Analyzer names unavailable in the retained contract"))
+            groups = outcomes(assessment)
+            failed = (groups["failed"] + groups["timed_out"]) if groups else []
+            if failed:
+                # Name the independent execution evidence, not an inferred penalty allocation.
+                lines.append(f'{localize("Failed or timed-out analyzers in verified execution records")}: {", ".join(failed)}')
+            else:
+                lines.append(localize("Analyzer names unavailable in the retained contract"))
     if total > technical:
         # Validate the retained legacy formula above unchanged, but do not present
         # its clamped result as ordinary subtraction (which would be negative).

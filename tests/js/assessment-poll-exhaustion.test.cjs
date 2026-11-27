@@ -152,7 +152,9 @@ for (const locale of ['en', 'es-MX']) {
         } else if (expected === 'failed') {
           assert.match(state.message, locale === 'en' ? /stopped/ : /se detuvo/);
         } else {
-          assert.match(state.message, locale === 'en' ? /awaiting internal technical review/ : /revisión técnica interna/);
+          assert.equal(state.message, locale === 'en'
+            ? 'The draft report is ready for internal technical review.'
+            : 'El borrador del informe está listo para la revisión técnica interna.');
         }
       });
     }

@@ -18,7 +18,8 @@ def na(sequence=1):
 def executed(sequence):
     return {"scanner": "pip-audit", "status": "completed",
             "commit_sha": SHA, "run_sequence": sequence,
-            "artifact_sha256": "c" * 64, "capture_complete": True}
+            "artifact_sha256": "c" * 64, "capture_complete": True,
+            "run_id": f"run-{sequence}", "scan_id": f"scan-{sequence}"}
 
 @pytest.mark.parametrize("count", [1, 2])
 @pytest.mark.parametrize("required", [False, True])

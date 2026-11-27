@@ -24,6 +24,8 @@ def _success(scanner: str, digest: str, run: int):
         "artifact_sha256": digest,
         "capture_complete": True,
         "run_sequence": run,
+        "run_id": f"run-{run}",
+        "scan_id": f"scan-{run}",
         "coverage": {"files": 10},
         "duration_seconds": 1.25,
     }
@@ -191,3 +193,38 @@ def test_assessment_report_ui_and_delivery_gate_receive_reconciled_evidence():
     assert result["delivery_gate"]["analyzer_evidence_ready"] is True
     assert result["delivery_gate"]["analyzer_evidence_blockers"] == []
     assert len(result["delivery_gate"]["analyzer_evidence_manifest_sha256"]) == 64
+
+
+@pytest.mark.parametrize("changed", ["neither", "run_only", "scan_only", "missing", "same_sequence"])
+def test_repeatability_requires_independent_run_and_scan_receipts(changed):
+    first = {**_success("bandit", DIGEST_A, 1), "run_id": "run-1", "scan_id": "scan-1"}
+    second = {**first, "run_sequence": 2}
+    if changed in {"run_only", "same_sequence"}:
+        second["run_id"] = "run-2"
+    if changed in {"scan_only", "same_sequence"}:
+        second["scan_id"] = "scan-2"
+    if changed == "same_sequence":
+        second["run_sequence"] = 1
+    if changed == "missing":
+        second.pop("run_id")
+    result = reconcile_analyzers([first, second], expected_sha=SHA, required_scanners=["bandit"])
+    assert result["acceptance_ready"] is False
+    assert result["analyzers"][0]["consecutive_successful_passes"] == 1
+    assert result["analyzers"][0]["successful_passes"] == 1
+
+
+def test_independent_receipts_can_have_identical_clean_artifact_bytes():
+    first = {**_success("bandit", DIGEST_A, 1), "run_id": "run-1", "scan_id": "scan-1"}
+    second = {**first, "run_sequence": 2, "run_id": "run-2", "scan_id": "scan-2"}
+    result = reconcile_analyzers([first, second], expected_sha=SHA, required_scanners=["bandit"])
+    assert result["acceptance_ready"] is True
+    assert result["analyzers"][0]["consecutive_successful_passes"] == 2
+
+
+def test_repeat_manifest_binds_reported_origins():
+    records = [_success("bandit", DIGEST_A, i) for i in (1, 2)]
+    kwargs = {"expected_sha": SHA, "required_scanners": ["bandit"]}
+    first = reconcile_analyzers(records, **kwargs)
+    second = reconcile_analyzers([records[0], {**records[1], "run_id": "other-run"}], **kwargs)
+    assert first["acceptance_ready"] and second["acceptance_ready"]
+    assert first["evidence_manifest_sha256"] != second["evidence_manifest_sha256"]

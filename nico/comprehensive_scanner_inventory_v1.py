@@ -69,6 +69,18 @@ def _raw_metadata(record: Mapping[str, Any], *, binding: Mapping[str, Any]) -> d
         from nico.retained_typescript_status_v1 import BASIS, verified_retained_typescript
         if verified_retained_typescript(record, binding, read):
             metadata['coverage_basis'] = BASIS
+            metadata['retained_ci_evidence_reason'] = 'verified_exact_commit'
+        elif record.get('execution_source') == 'authenticated_nico_postbuild_ci':
+            attested_sha = record.get('ci_source_sha')
+            if isinstance(attested_sha, str) and _COMMIT.fullmatch(attested_sha) and attested_sha != binding.get('commit_sha'):
+                reason = 'ci_commit_binding_mismatch'
+            elif record.get('metadata_authenticated') is not True or record.get('status') != 'completed':
+                reason = 'retained_ci_result_not_verified_complete'
+            elif metadata.get('availability') != 'verified' or not read.raw:
+                reason = 'retained_ci_artifact_unavailable_or_unverified'
+            else:
+                reason = 'retained_ci_contract_not_verified'
+            metadata['retained_ci_evidence_reason'] = reason
     if record.get('status') == 'not_applicable':
         verified = False
         inventory = _mapping(record.get('applicability_evidence'))
@@ -148,8 +160,39 @@ def _scanner_metadata(record: Mapping[str, Any], *, scan: Mapping[str, Any], com
     }
 
 
+def _bandit_operator_diagnostics(record: Mapping[str, Any]) -> dict[str, Any]:
+    """Project existing typed flags and only known producer-owned reason forms."""
+    limit = record.get("output_limit_exceeded")
+    limit = limit if type(limit) is bool else None
+    cause = "unknown"
+    reason = record.get("failure_or_unavailable_reason")
+    if record.get("execution_source") == "canonical_bandit_json_v62" and isinstance(reason, str):
+        if limit is True:
+            cause = "worker_output_limit_exceeded"
+        elif record.get("execution_observed_for_this_report") is False and reason == "scanner_suite_deadline_exhausted_before_launch":
+            cause = "suite_deadline_before_launch"
+        elif record.get("timed_out") is True:
+            cause = "process_timed_out"
+        elif record.get("returncode_valid") is True and record.get("output_capture_complete") is False:
+            # With a valid exit, _tool_payload does not substitute subprocess text.
+            # No raw stderr, paths, parse coordinates or producer prose are returned.
+            cause = {
+                "native_report_read_limit_exceeded": "report_read_limit_exceeded",
+                "scanner output file is unavailable": "report_file_unavailable",
+                "Bandit JSON output is not an object.": "invalid_report_shape",
+                "Bandit JSON output did not retain a results list.": "invalid_report_shape",
+                "Bandit JSON output did not retain an errors list.": "invalid_report_shape",
+                "Bandit reported analysis errors for one or more selected files.": "native_analysis_incomplete",
+                "Bandit JSON results contained a non-object finding.": "invalid_report_shape",
+            }.get(reason, "unknown")
+            if re.fullmatch(r"scanner JSON output could not be parsed: line [0-9]{1,12} column [0-9]{1,12}", reason):
+                cause = "invalid_report_json"
+    return {"output_limit_exceeded": limit, "capture_state": cause}
+
+
 def inventory_for_record(
     record: Mapping[str, Any], *, run_id: str, scanner_name: str | None = None,
+    include_operator_diagnostics: bool = False,
 ) -> JSONResponse:
     """Verify stored run-selected scanner bytes without granting route authority.
 
@@ -190,8 +233,16 @@ def inventory_for_record(
         requested = scan.get("tools_requested")
         requested = requested if isinstance(requested, list) else []
         requested_names = {name for name in requested if isinstance(name, str) and name in KNOWN_SCANNERS}
-        metadata = [_scanner_metadata(item, scan=scan, commit=commit.lower()) for item in known
-                    if scanner_name is None or _scanner_name(item) == scanner_name]
+        metadata = []
+        for item in known:
+            name = _scanner_name(item)
+            if scanner_name is not None and name != scanner_name:
+                continue
+            row = _scanner_metadata(item, scan=scan, commit=commit.lower())
+            if (include_operator_diagnostics and name == "bandit" and names[name] == 1
+                    and row.get("source_identity_verified") is True and row.get("source_checkout_verified") is True):
+                row["operator_capture_diagnostics"] = _bandit_operator_diagnostics(item)
+            metadata.append(row)
         for name in (requested_names | ({scanner_name} if scanner_name else set())) - names.keys():
             if scanner_name is not None and name != scanner_name:
                 continue
@@ -243,7 +294,7 @@ def _inventory(request: Request, run_id: str) -> JSONResponse:
         return _error(404, "scanner_evidence_unavailable")
     except Exception:
         return _error(503, "scanner_evidence_inventory_unavailable")
-    return inventory_for_record(record, run_id=run_id)
+    return inventory_for_record(record, run_id=run_id, include_operator_diagnostics=True)
 
 
 def scanner_evidence_binding(record: Mapping[str, Any], canonical: Mapping[str, Any]) -> dict[str, Any]:

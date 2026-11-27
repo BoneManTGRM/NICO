@@ -57,7 +57,8 @@ def test_unperformed_live_shape_stays_unavailable_in_report_and_ui():
 def test_non_success_breaks_prior_success_without_execution_or_delivery_credit(status):
     successes = [
         {"scanner": "eslint", "status": "completed", "commit_sha": SHA,
-         "capture_complete": True, "artifact_sha256": digest * 64, "run_sequence": run}
+         "capture_complete": True, "artifact_sha256": digest * 64, "run_sequence": run,
+         "run_id": f"run-{run}", "scan_id": f"scan-{run}"}
         for run, digest in [(1, "b"), (2, "c")]
     ]
     result = reconcile_analyzers(
@@ -121,7 +122,7 @@ def test_old_integrated_payload_rebuilds_projection_from_retained_raw_records():
     analyzer = next(r for r in result["analyzer_evidence_report"]["analyzers"] if r["scanner"] == "eslint")
     assert row["status"] == analyzer["status"] == "unavailable"
     assert analyzer["run_count"] == 1
-    assert result["phase15_production_integration"]["version"] == "nico.phase15.production-integration.v4"
+    assert result["phase15_production_integration"]["version"] == "nico.phase15.production-integration.v5"
     assert result["scanner_execution_records"] == [raw]
     assert old["analyzer_evidence_ui"]["rows"][0]["status"] == "capture_truncated"
     assert integrate_production_truth(result)["analyzer_evidence_report"] == result["analyzer_evidence_report"]
@@ -219,7 +220,8 @@ def test_old_projection_without_retained_raw_records_fails_closed_and_is_idempot
 def test_old_projection_with_partial_retained_records_keeps_required_population():
     records = [
         {"scanner": name, "status": "completed", "commit_sha": SHA,
-         "capture_complete": True, "artifact_sha256": digest * 64, "run_sequence": run}
+         "capture_complete": True, "artifact_sha256": digest * 64, "run_sequence": run,
+         "run_id": f"run-{run}", "scan_id": f"scan-{run}"}
         for name in ("bandit", "eslint", "gitleaks") for run, digest in [(1, "b"), (2, "c")]
     ]
     payload = {
@@ -237,3 +239,34 @@ def test_old_projection_with_partial_retained_records_keeps_required_population(
     assert result["scanner_execution_records"] == records
     assert all(row["consecutive_successful_passes"] == 2 for row in report["analyzers"] if row["scanner"] != "typescript")
     assert integrate_production_truth(result) == result
+
+
+def test_previous_integration_version_cannot_grandfather_copied_pass():
+    from nico.phase15_production_integration_v1 import integrate_production_truth
+
+    row = {"scanner": "bandit", "status": "completed", "commit_sha": SHA,
+           "capture_complete": True, "artifact_sha256": "a" * 64,
+           "run_id": "one-run", "scan_id": "one-scan", "run_sequence": 1}
+    payload = {"commit_sha": SHA, "scanner_execution_records": [row, {**row, "run_sequence": 2}],
+               "phase15_production_integration": {
+                   "version": "nico.phase15.production-integration.v4", "analyzer_contract_applied": True},
+               "delivery_gate": {"analyzer_evidence_ready": True}}
+    result = integrate_production_truth(payload)
+    assert result["delivery_gate"]["analyzer_evidence_ready"] is False
+    bandit = next(row for row in result["analyzer_evidence_report"]["analyzers"] if row["scanner"] == "bandit")
+    assert bandit["consecutive_successful_passes"] == 1
+    assert integrate_production_truth(result) == result
+
+
+@pytest.mark.parametrize("commit_sha", [None, SHA])
+def test_authoritative_projection_never_reuses_old_ready_claim_without_receipts(commit_sha):
+    from nico.comprehensive_authoritative_scanner_truth_v62 import reconcile_authoritative_scanner_truth
+
+    payload = {"commit_sha": commit_sha, "delivery_gate": {"analyzer_evidence_ready": True},
+               "analyzer_evidence_report": {"acceptance_ready": True},
+               "evidence_health_summary": {"acceptance_ready": True}}
+    result = reconcile_authoritative_scanner_truth(payload)
+    assert result["delivery_gate"]["analyzer_evidence_ready"] is False
+    assert result["analyzer_evidence_report"]["acceptance_ready"] is False
+    assert result["evidence_health_summary"]["acceptance_ready"] is False
+    assert result["client_delivery_allowed"] is False

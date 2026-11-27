@@ -323,7 +323,12 @@ def _stage_summary(stage_id: str, result: dict[str, Any]) -> dict[str, Any]:
         if coverage in {"not_assessed", "partial", "unavailable"}:
             status = coverage
         if dimensions.get("execution_status") == "complete":
-            evidence_lines.insert(0, "Processing complete; assessment coverage and specialist review are reported separately.")
+            coverage_note = {
+                "not_assessed": "This section was not assessed; automated processing is not assessment evidence.",
+                "partial": "This section was only partially assessed; automated processing does not establish full coverage.",
+                "unavailable": "Assessment evidence for this section was unavailable; automated processing does not establish coverage.",
+            }.get(status)
+            evidence_lines.insert(0, coverage_note or "Processing complete; assessment coverage and specialist review are reported separately.")
     return {
         "stage_id": stage_id,
         "title": _STAGE_TITLES.get(stage_id, stage_id.replace("_", " ").title()),

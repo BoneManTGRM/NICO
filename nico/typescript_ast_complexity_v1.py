@@ -108,6 +108,13 @@ def _collect_python_analyses(
     return analyses, parse_notes
 
 
+def _typescript_ast_row_has_diagnostics(item: dict[str, Any]) -> bool:
+    diagnostics = item.get("parser_diagnostic_count")
+    return item.get("status") == "analyzed_with_diagnostics" or (
+        type(diagnostics) is int and diagnostics > 0
+    )
+
+
 def _collect_javascript_analyses(
     javascript_files: dict[str, str],
     base: Any,
@@ -118,12 +125,12 @@ def _collect_javascript_analyses(
     if ast_result.get("status") == "complete":
         ast_paths = {str(item.get("path") or "") for item in ast_analyses}
         for item in ast_analyses:
-            diagnostics = item.get("parser_diagnostic_count")
-            if item.get("status") == "analyzed_with_diagnostics" or (
-                    type(diagnostics) is int and diagnostics > 0):
+            if _typescript_ast_row_has_diagnostics(item):
+                diagnostics = item.get("parser_diagnostic_count")
                 count = diagnostics if type(diagnostics) is int and diagnostics > 0 else "unreported"
                 parse_notes.append(
-                    f"TypeScript AST parsed {item.get('path') or '<unknown>'} with {count} diagnostics; numeric observations are partial."
+                    f"TypeScript AST parsed {item.get('path') or '<unknown>'} with {count} diagnostics; "
+                    "excluded from architecture measurement aggregates."
                 )
         for path in sorted(set(javascript_files) - ast_paths):
             parse_notes.append(f"TypeScript AST output omitted {path}; no lexical substitute was used for that file.")
@@ -399,7 +406,8 @@ def _build_complexity(files: dict[str, str]) -> dict[str, Any]:
     source_files, python_files, javascript_files = _partition_source_files(files, base)
     python_analyses, python_notes = _collect_python_analyses(python_files, base)
     javascript_analyses, javascript_notes, ast_result = _collect_javascript_analyses(javascript_files, base)
-    analyses = [*python_analyses, *javascript_analyses]
+    measured_javascript = [item for item in javascript_analyses if not _typescript_ast_row_has_diagnostics(item)]
+    analyses = [*python_analyses, *measured_javascript]
     parse_notes = [*python_notes, *javascript_notes]
     for path, text in sorted(source_files.items()):
         if path.lower().endswith(base.CPP_SOURCE_SUFFIXES):
@@ -411,7 +419,17 @@ def _build_complexity(files: dict[str, str]) -> dict[str, Any]:
     metrics = _function_metrics(analyses)
     functions = metrics["functions"]
     complexities = metrics["complexities"]
-    coupled, fan_outs, internal_fan_outs, fan_ins = _build_coupling(analyses)
+    coupling_analyses = analyses
+    if len(measured_javascript) != len(javascript_analyses):
+        # The compiler calculates fan-in before quarantine. Rebuild incoming
+        # edges using only imports observed in diagnostic-free source rows.
+        javascript_fan_in = Counter(target for item in measured_javascript for target in item["internal_imports"])
+        coupling_analyses = [
+            {**item, "fan_in": javascript_fan_in[item["path"]]}
+            if item.get("method") == "typescript_compiler_ast" else item
+            for item in analyses
+        ]
+    coupled, fan_outs, internal_fan_outs, fan_ins = _build_coupling(coupling_analyses)
     context = {
         **metrics,
         "base": base,
@@ -433,12 +451,17 @@ def _build_complexity(files: dict[str, str]) -> dict[str, Any]:
         "high_complexity": sum(value >= 11 for value in complexities),
     }
     from nico.source_function_measurements_v1 import KEY, build_optional_measurements
-    measurements = build_optional_measurements(source_files, analyses, ast_result)
+    # Keep recovery rows in the per-file contract as partial, not missing.
+    measurement_analyses = [
+        *analyses,
+        *(item for item in javascript_analyses if _typescript_ast_row_has_diagnostics(item)),
+    ]
+    measurements = build_optional_measurements(source_files, measurement_analyses, ast_result)
     from nico.source_function_collection_v1 import KEY_COLLECTION, collect_contract
     result = {**_complexity_summary_payload(context), **_complexity_architecture_payload(context), KEY: measurements}
     if isinstance(measurements, dict) and measurements.get('status') != 'unavailable':
         try:
-            result[KEY_COLLECTION] = collect_contract(source_files, analyses, ast_result, measurements)
+            result[KEY_COLLECTION] = collect_contract(source_files, measurement_analyses, ast_result, measurements)
         except ValueError:
             # Optional conformance proof cannot change legacy observations/acceptance.
             pass

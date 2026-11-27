@@ -1,3 +1,4 @@
+import inspect
 import json
 
 import pytest
@@ -114,8 +115,12 @@ def test_real_scanner_reason_with_dynamic_leading_name_is_only_a_candidate():
     # A known tool drives the real producer; only its fixed enum label is emitted.
     reason = _failure_reason('bandit', {'timed_out_tools': ['bandit']})
     result = diagnostic.spanish_translation_failure_diagnostic(_error('bandit: ' + reason, 'unavailable'))
+    source, first_line = inspect.getsourcelines(_failure_reason)
+    matching_lines = [first_line + offset for offset, line in enumerate(source)
+                      if 'timed out before complete exact-SHA evidence was retained.' in line]
+    assert len(matching_lines) == 1
     assert result == {'field': 'unavailable', 'source_match': 'unique_dynamic_fragment_candidate',
-                      'source_module': 'comprehensive_authoritative_scanner_truth_v62', 'source_line': 204,
+                      'source_module': 'comprehensive_authoritative_scanner_truth_v62', 'source_line': matching_lines[0],
                       'scanner_reason': {'scanner': 'bandit', 'family': 'unclassified',
                                         'snippet_at_limit': False, 'semicolon_present': False}}
 

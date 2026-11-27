@@ -31,19 +31,25 @@ def scanner_stage(state: str, language: str, *, status_only: bool = False):
 def test_structured_scanner_states_remain_exact_identifiers(state, status_only):
     line = scanner_stage(state, 'es-MX', status_only=status_only)
     assert line.startswith('bandit: ' + state + '; ')
+    assert ('no demuestra la ausencia de hallazgos' in line) is (state == 'timed_out')
 
 
 @pytest.mark.parametrize('state,label', [('completed', 'completada'), ('failed', 'fallida'), ('partial', 'parcial')])
 def test_plain_scanner_statuses_still_receive_spanish_labels(state, label):
-    assert scanner_stage(state, 'es-MX').startswith('bandit: ' + label + '; ')
+    line = scanner_stage(state, 'es-MX')
+    assert line.startswith('bandit: ' + label + '; ')
+    assert ('no demuestra la ausencia de hallazgos' in line) is (state == 'failed')
 
 
 @pytest.mark.parametrize('state', ['completed_with_findings', 'completed_clean', 'timed_out', 'completed', 'failed'])
 def test_english_stage_preserves_status_with_explicit_record_retention(state):
-    assert scanner_stage(state, 'en') == (
+    expected = (
         'bandit: ' + state + '; exact commit=yes; status record=retained; '
         'confirmed material finding count=0; raw finding payload embedded=no.'
     )
+    if state in {'failed', 'timed_out'}:
+        expected += ' A failed or timed-out scan does not establish the absence of findings.'
+    assert scanner_stage(state, 'en') == expected
 
 
 def test_public_spanish_export_retains_machine_status_in_all_three_formats():

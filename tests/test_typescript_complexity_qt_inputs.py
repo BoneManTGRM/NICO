@@ -127,12 +127,12 @@ def test_ast_diagnostics_are_explicit_partial_observations(monkeypatch, count, s
                 "method": "typescript_compiler_ast", "status": status,
                 "parser_diagnostic_count": count, "functions": [], "source_loc": 1}
     monkeypatch.setattr(complexity, "_run_typescript_ast",
-                        lambda files: {"status": "complete", "analyses": [analysis]})
+                        lambda files: {"status": "complete", "parser_version": "fixture", "analyses": [analysis]})
     result = complexity._build_complexity({CONTROL_PATH: CONTROL})
-    assert result["files_analyzed"] == result["typescript_ast_files_analyzed"] == 1
-    assert result["source_parse_limitations"] == 1
+    _assert_diagnostic_file_is_partial(result, CONTROL_PATH)
     assert result["parse_notes"] == [
-        f"TypeScript AST parsed {CONTROL_PATH} with {expected_count} diagnostics; numeric observations are partial."
+        f"TypeScript AST parsed {CONTROL_PATH} with {expected_count} diagnostics; "
+        "excluded from architecture measurement aggregates."
     ]
     assert any("parser limitation" in note.lower() for note in result["unavailable_data_notes"])
 
@@ -144,11 +144,24 @@ def test_real_typescript_parser_diagnostics_survive_collection():
     assert raw["status"] == "complete"
     assert raw["analyses"][0]["parser_diagnostic_count"] > 0
     result = complexity._build_complexity(files)
-    assert result["files_considered"] == result["files_analyzed"] == 1
-    assert result["typescript_ast_files_analyzed"] == 1
+    _assert_diagnostic_file_is_partial(result, path)
     assert result["qt_translation_files_excluded"] == 0
+    from nico.comprehensive_spanish_canonical_report_v87 import _translate_presentation_field
+    note, = result["parse_notes"]
+    translated = _translate_presentation_field(note, "evidence")
+    assert path in translated and "métricas agregadas de arquitectura" in translated
+
+
+def _assert_diagnostic_file_is_partial(result, path):
+    assert result["files_considered"] == 1
+    assert result["files_analyzed"] == result["typescript_ast_files_analyzed"] == 0
+    assert result["source_coverage_percent"] == 0
+    assert result["analyzed_source_paths"] == []
+    assert result["functions_measured"] == result["total_source_loc"] == 0
     assert result["source_parse_limitations"] == 1
-    assert any(path in note and "partial" in note for note in result["parse_notes"])
+    row, = result["source_function_measurements"]["files"]
+    assert row["path"] == path and row["status"] == "partial"
+    assert row["method"] == "typescript_compiler_ast"
 
 
 def test_omitted_ast_file_keeps_distinct_missing_evidence_note(monkeypatch):

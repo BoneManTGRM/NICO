@@ -80,9 +80,9 @@ def render_phase1_evidence_review_gate_pdf(
     individual = _integer(metrics.get("candidates_requiring_individual_human_attention"))
     grouped_candidates = _integer(metrics.get("grouped_human_review_candidate_count"))
     grouped_clusters = _integer(metrics.get("grouped_review_cluster_count"))
-    from nico.review_workload_truth_v1 import review_workload_summary
+    from nico.review_workload_truth_v1 import report_review_workload_display
 
-    workload = review_workload_summary(canonical, finding_register=register)
+    workload = report_review_workload_display(canonical, spanish=spanish, finding_register=register)
     work_units = workload["scanner_candidate_review_work_units"]
     exact_review_units = workload["exact_source_review_work_units"]
     operational_review_units = workload["operational_context_review_work_units"]
@@ -213,9 +213,9 @@ def render_phase1_evidence_review_gate_pdf(
             "exact_review_units": "Unidades de revisión con fuente exacta",
             "operational_review_units": "Unidades de revisión operativa o contextual",
             "total_review_units": "Total de unidades de revisión humana sin resolver",
-            "automated_not_actionable": "Candidatos automatizados no accionables / control de calidad",
+            "automated_not_actionable": "Candidatos propuestos como no accionables (sin decisión humana)",
             "human_attention": "Candidatos dirigidos a atención humana",
-            "total_reduction": "Reducción de bruto a unidades de trabajo",
+            "total_reduction": "Reducción de candidatos brutos de analizadores a unidades de revisión de analizadores",
             "qc_pool": "Conjunto de muestra para control de calidad",
             "category": "Categoría",
             "raw": "Bruto",
@@ -255,9 +255,9 @@ def render_phase1_evidence_review_gate_pdf(
             "exact_review_units": "Exact-source review work units",
             "operational_review_units": "Operational/context review work units",
             "total_review_units": "Total unresolved human-review work units",
-            "automated_not_actionable": "Automated non-actionable / QC candidates",
+            "automated_not_actionable": "Proposed non-actionable candidates (not human dispositions)",
             "human_attention": "Candidates routed to human attention",
-            "total_reduction": "Raw-to-work-unit reduction",
+            "total_reduction": "Reduction from raw scanner candidates to scanner review units",
             "qc_pool": "Quality-control sample pool",
             "category": "Category",
             "raw": "Raw",
@@ -343,6 +343,8 @@ def render_phase1_evidence_review_gate_pdf(
         from nico.candidate_phase1_report_workload_text_v1 import current_review_lines
 
         story[3:] = [p(line) for line in current_review_lines(current_truth, spanish=spanish)]
+        from nico.comprehensive_review_work_v1 import is_terminal_disposition
+
         categories = {}
         for candidate in current_truth.get("candidate_review") or []:
             if not isinstance(candidate, Mapping):
@@ -351,7 +353,9 @@ def render_phase1_evidence_review_gate_pdf(
             counts = categories.setdefault(category, {"raw": 0, "material": 0, "review_required": 0})
             counts["raw"] += 1
             counts["material"] += int(candidate.get("confirmed_material_finding") is True)
-            counts["review_required"] += int(not candidate.get("human_disposition"))
+            counts["review_required"] += int(not is_terminal_disposition(
+                {"disposition": candidate.get("human_disposition")}
+            ))
     if categories and has_end_to_end_queue_metrics and not isinstance(current_truth, Mapping):
         story.append(
             p(
@@ -406,11 +410,11 @@ def render_phase1_evidence_review_gate_pdf(
     ])
     checklist = (
         [
-            "Verificar identidades de repositorio, ejecución, commit, evidencia, cliente y proyecto.",
+            "Verificar los identificadores del repositorio, la ejecución, el commit, el registro de evidencias, el cliente y el proyecto.",
             "Revisar individualmente candidatos críticos o ambiguos y revisar grupos homogéneos elegibles como unidades agrupadas; conservar una disposición humana explícita para cada candidato subyacente.",
             "Aplicar muestreo profesional al conjunto de control de calidad y ampliar cualquier grupo cuya evidencia no sea homogénea.",
-            "Confirmar puntuaciones, aseguramiento, limitaciones y entrega en JSON, CSV, Markdown, HTML y PDF.",
-            "Disponer riesgos ejecutivos y registrar riesgo residual, responsable y evidencia de aceptación.",
+            "Confirmar la puntuación técnica, la puntuación ajustada por evidencia, el estado del aseguramiento, las limitaciones y el estado de entrega en JSON, CSV, Markdown, HTML y PDF.",
+            "Registrar una decisión para cada riesgo del informe ejecutivo y documentar el riesgo residual, quién es responsable y la evidencia de aceptación.",
             "Consultar la aprobación y el permiso de entrega en el registro de esta edición. Completar por separado la aceptación especializada pendiente.",
         ]
         if spanish

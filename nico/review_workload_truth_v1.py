@@ -214,9 +214,45 @@ def review_workload_summary(
     }
 
 
+def report_review_workload_display(
+    canonical: Mapping[str, Any],
+    *,
+    spanish: bool,
+    finding_register: Mapping[str, Any] | None = None,
+) -> dict[str, int | str]:
+    """Presentation only: never convert an unverified scanner count into zero."""
+    assessment = _mapping(canonical.get("assessment"))
+    owners = (
+        _mapping(canonical.get("canonical_scanner_finding_register")),
+        _mapping(assessment.get("canonical_scanner_finding_register")),
+        canonical,
+        assessment,
+    )
+    counts = set()
+    for owner in owners:
+        triage = _mapping(owner.get("technical_triage"))
+        for source in (triage, _mapping(triage.get("workload_metrics"))):
+            value = source.get("human_review_work_units")
+            if type(value) is int and value >= 0:
+                counts.add(value)
+    exact = len(exact_source_review_findings(canonical, finding_register=finding_register))
+    operational = len(operational_review_findings(canonical, finding_register=finding_register))
+    unavailable = "no disponible" if spanish else "unavailable"
+    scanner = next(iter(counts)) if len(counts) == 1 else None
+    return {
+        "scanner_candidate_review_work_units": scanner if scanner is not None else unavailable,
+        "exact_source_review_work_units": exact,
+        "operational_context_review_work_units": operational,
+        "total_unresolved_human_review_work_units": (
+            scanner + exact + operational if scanner is not None else unavailable
+        ),
+    }
+
+
 __all__ = [
     "VERSION",
     "exact_source_review_findings",
     "operational_review_findings",
     "review_workload_summary",
+    "report_review_workload_display",
 ]

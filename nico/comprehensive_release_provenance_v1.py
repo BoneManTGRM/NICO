@@ -115,6 +115,8 @@ def _provenance_lines(provenance: dict[str, Any], *, spanish: bool = False) -> l
             ("Frontend configured-identity match" if observation.get("frontend_observation_schema") else "Frontend observation status", str(observation.get("status") or "unavailable")),
             ("Frontend observed at", str(observation.get("observed_at") or "unavailable")),
         ])
+    if isinstance(observation, dict) and observation.get("frontend_observation_schema") and observation.get("status") == "mismatch":
+        lines.append(("Frontend identity interpretation", "The endpoint claim differs from the configured identity. This discrepancy alone does not establish that deployed frontend and backend revisions differ."))
     if "frontend_backend_source_alignment" in provenance:
         runtime_scope = provenance.get("release_identity_scope") == "report_generation_runtime; assessed repository identity is separate"
         lines.extend([
@@ -132,7 +134,7 @@ def _provenance_lines(provenance: dict[str, Any], *, spanish: bool = False) -> l
         ("Assessed repository commit", str(provenance.get("assessed_repository_commit") or "unavailable")),
         ("Assessment run", str(provenance.get("assessment_run_id") or "unavailable")),
         ("Scanner snapshot", str(execution.get("scan_id") or "unavailable")),
-        ("Frontend deployment", str(provenance.get("frontend_deployment_id") or "unavailable")),
+        ("Configured frontend deployment ID", str(provenance.get("frontend_deployment_id") or "unavailable")),
         ("Frontend deployment verification", "verified" if provenance.get("frontend_deployment_identity_verified") is True else "unverified"),
         ("Scanner evidence verification", str(execution.get("verification_status") or "unverified")),
     ])
@@ -204,6 +206,9 @@ _ES_LABELS = {
     "Assessed repository commit": "Commit del repositorio evaluado",
     "Assessment run": "Ejecución de la evaluación",
     "Scanner snapshot": "Instantánea de analizadores",
+    "Configured frontend deployment ID": "Identificador configurado del despliegue del frontend",
+    "Frontend identity interpretation": "Interpretación de la identidad del frontend",
+    "The endpoint claim differs from the configured identity. This discrepancy alone does not establish that deployed frontend and backend revisions differ.": "La identidad declarada por el endpoint difiere de la configurada. Esta discrepancia por sí sola no demuestra que las revisiones desplegadas del frontend y el backend sean distintas.",
     "Frontend deployment": "Despliegue del frontend",
     "Frontend deployment verification": "Verificación del despliegue del frontend",
     "Scanner evidence verification": "Verificación de evidencia de analizadores",

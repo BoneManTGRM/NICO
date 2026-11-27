@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from nico.report_scanner_outcomes import outcomes, summary
+
 from functools import wraps
 from typing import Any, Mapping
 
@@ -87,11 +89,9 @@ def install_comprehensive_decision_summary_truth_v1() -> dict[str, Any]:
                 else f"{len(terminal)} automated stage(s) have a terminal execution limitation: {', '.join(terminal[:4])}."
             )
         else:
-            execution = (
-                "Ninguna etapa automatizada representada en este paquete conserva un fallo terminal de ejecución."
-                if spanish
-                else "No automated stage represented in this package has a retained terminal execution failure."
-            )
+            execution = ""
+        scanner_summary = summary(outcomes(assessment, identity), spanish)
+        execution = " ".join(part for part in (execution, scanner_summary) if part)
         if spanish:
             limited_sections = (
                 "sección de revisión del cliente"
