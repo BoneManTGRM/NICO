@@ -51,3 +51,19 @@ for (const suffix of ['fr','es-MX/delete','es-MX/review/extra','es-MX/../review'
     assert.equal(calls.length,0);
   });
 }
+
+test('cached review PDF read is authenticated, GET-only, and never falls back to a render URL',async()=>{
+  const {api,calls}=setup();
+  const route={params:Promise.resolve({path:['comprehensive-run','comprun_test','localized-report','es-MX','cached-pdf']})};
+  assert.equal((await api.GET(request('GET',false),route)).status,401);
+  assert.equal((await api.POST(request('POST'),route)).status,405);
+  assert.equal(calls.length,0);
+  const req=request('GET');req.nextUrl.search='?commit_sha='+'a'.repeat(40)+'&canonical_truth_sha256='+'b'.repeat(64);
+  const response=await api.GET(req,route);
+  assert.equal(response.status,200);
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].url,'https://backend.test/assessment/comprehensive-run/comprun_test/localized-report/es-MX/cached-pdf'+req.nextUrl.search);
+  assert.equal(calls[0].init.headers.get('X-NICO-Operator-Session'),'SYNTHETIC-SESSION');
+  assert.equal(calls[0].init.redirect,'manual');
+  assert.equal(response.headers.get('Cache-Control'),'no-store, private, max-age=0');
+});

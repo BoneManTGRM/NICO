@@ -73,6 +73,7 @@ type DownloadBinding = {
   signal?: AbortSignal;
   requiresNewApproval?: boolean;
   preparationJobId?: string;
+  cacheOnly?: boolean;
   artifactMode?: ArtifactMode;
   isCurrent?: () => boolean;
 };
@@ -100,6 +101,9 @@ function showStatus(container: Element | null, message: string, failure = false)
 }
 
 class PdfDownloadFailure extends Error {}
+class PdfMayBePreparing extends PdfDownloadFailure {}
+class PdfCacheMiss extends PdfDownloadFailure {}
+const recoveryControls = new WeakMap<Element, HTMLButtonElement>();
 
 function downloadTimeoutMessage(): string {
   // A stopped HTTP wait does not cancel or establish the outcome of backend preparation.
@@ -115,7 +119,7 @@ async function downloadError(response: Response): Promise<Error> {
     try {
       const payload = await response.clone().json();
       if (payload?.detail?.reason === "retained_pdf_preparing") {
-        return new PdfDownloadFailure(spanishUi()
+        return new PdfMayBePreparing(spanishUi()
           ? `NICO todavía está preparando un PDF. Reintenta esta descarga dentro de al menos ${retryAfter} segundos; no inicies otra evaluación.`
           : `NICO is still preparing a PDF. Retry this download in at least ${retryAfter} seconds; do not start another assessment.`);
       }
@@ -129,7 +133,7 @@ async function downloadError(response: Response): Promise<Error> {
       : "Sign in to NICO, then retry this PDF download.");
   }
   if (response.status === 504 || response.status === 408) {
-    return new PdfDownloadFailure(downloadTimeoutMessage());
+    return new PdfMayBePreparing(downloadTimeoutMessage());
   }
   const requestId = String(response.headers.get("x-request-id") || "");
   const reference = /^[a-zA-Z0-9_-]{1,80}$/.test(requestId)
@@ -299,6 +303,7 @@ async function retrieveExactRunPdf(
   const prepared = binding.preparationJobId;
   if (prepared && !/^reviewpdfprep_[0-9a-f]{64}$/.test(prepared)) throw integrityError();
   const href = prepared ? `${preparationHref(runId, reportLanguage)}/pdf?${preparationQuery(prepared, binding)}`
+    : binding.cacheOnly ? exactRunPdfHref(runId, reportLanguage).replace(/\/pdf$/, "/cached-pdf") + "?" + preparationQuery("requested", binding)
     : exactRunPdfHref(runId, reportLanguage);
   const response = await fetch(href, {
     method: "GET", cache: "no-store", credentials: "same-origin",
@@ -306,6 +311,9 @@ async function retrieveExactRunPdf(
   });
   if (signal.aborted) throw signal.reason;
   if (binding.isCurrent && !binding.isCurrent()) throw integrityError();
+  if (binding.cacheOnly && response.status === 404) throw new PdfCacheMiss(spanishUi()
+    ? "No hay un PDF verificado disponible aquí en este momento. Esta consulta no inicia la preparación. Puedes volver a comprobarlo."
+    : "No verified PDF is available here right now. This check does not start preparation. You can check again.");
   if (!response.ok) throw await downloadError(response);
   const header = (name: string) => String(response.headers.get(name) || "").trim();
   const declaredSha = header("x-nico-pdf-sha256").toLowerCase();
@@ -325,7 +333,7 @@ async function retrieveExactRunPdf(
     || !/^[0-9a-f]{64}$/.test(truthSha)
     || truthSha !== binding.canonicalTruthSha256.toLowerCase()
     || (binding.requiresNewApproval && header("x-nico-localized-artifact-requires-new-approval") !== "true")
-    || (prepared && (Array.from(response.headers.entries()).some(([name, value]) => name.startsWith("x-nico-accepted-") && value !== "")
+    || ((prepared || binding.cacheOnly) && (Array.from(response.headers.entries()).some(([name, value]) => name.startsWith("x-nico-accepted-") && value !== "")
       || header("x-nico-human-review-completed") === "true" || header("x-nico-human-reviewed") === "true"))
     || (prepared && (!binding.artifactMode || header("x-nico-review-pdf-artifact-mode") !== binding.artifactMode))
     || (prepared && binding.artifactMode === "pending-source-localized-draft" && (
@@ -383,7 +391,7 @@ function startExactRunDownload(
     return Promise.reject(error);
   }
   const key = JSON.stringify([runId, reportLanguage, frozenBinding.commitSha,
-    frozenBinding.canonicalTruthSha256, Boolean(frozenBinding.requiresNewApproval), frozenBinding.preparationJobId, frozenBinding.artifactMode]);
+    frozenBinding.canonicalTruthSha256, Boolean(frozenBinding.requiresNewApproval), frozenBinding.preparationJobId, frozenBinding.artifactMode, Boolean(frozenBinding.cacheOnly)]);
   const existing = inFlight.get(key);
   if (existing && existing.binding.signal === frozenBinding.signal
     && existing.binding.isCurrent === frozenBinding.isCurrent) return existing.operation;
@@ -417,7 +425,7 @@ function pendingReviewBindingMatches(
 }
 
 /** The guard and Workspace fallback share one bounded, exact pending-review path. */
-function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval = false, resumeOnly = false): Promise<void> {
+function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval = false, resumeOnly = false, cacheOnly = false): Promise<void> {
   const actions = button.closest(REPORT_ACTIONS_SELECTOR);
   const runId = visibleRunId(actions);
   const commitSha = String(actions?.getAttribute("data-commit-sha") || "").trim();
@@ -437,7 +445,7 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
   }
   const key = JSON.stringify([runId, reportLanguage, commitSha, canonicalTruthSha256,
     Boolean(binding.requiresNewApproval)]);
-  const asynchronous = asyncPreparationEnabled(runId, reportLanguage);
+  const asynchronous = !cacheOnly && asyncPreparationEnabled(runId, reportLanguage);
   if (resumeOnly && (!asynchronous || !savedPreparation(key)
     || ["ready", "not_started", "cancelled"].includes(cancellationState(key)))) return Promise.resolve();
   // Only a new explicit user click can clear a positively resolved cancellation.
@@ -459,6 +467,8 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
   const startDownloadDeadline = () => {timeout = window.setTimeout(() => controller.abort(
     new DOMException("PDF download deadline exceeded", "TimeoutError")), DOWNLOAD_TIMEOUT_MS);};
   if (!asynchronous) startDownloadDeadline();
+  recoveryControls.get(actions)?.remove();
+  recoveryControls.delete(actions);
   button.disabled = true;
   button.setAttribute("aria-busy", "true");
   statusOwners.set(actions, controller);
@@ -476,7 +486,7 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
       showStatus(actions, spanishUi() ? "Descargando y verificando el PDF…" : "Downloading and verifying the PDF…");
     }
     await startExactRunDownload(runId, reportLanguage, {
-      ...binding, preparationJobId, artifactMode, signal: controller.signal, isCurrent,
+      ...binding, preparationJobId, artifactMode, cacheOnly, signal: controller.signal, isCurrent,
     });
     if (asynchronous) savePreparation(key, "");
   })().then(() => {
@@ -492,6 +502,19 @@ function downloadPendingReviewPdf(button: HTMLButtonElement, requiresNewApproval
       : error instanceof PdfDownloadFailure ? error.message
         : (spanishUi() ? "La descarga se interrumpió. Vuelve a intentarlo." : "The download was interrupted. Retry this download."),
     true);
+    if (!asynchronous && (timedOut || error instanceof PdfMayBePreparing || error instanceof PdfCacheMiss)) {
+      const check = document.createElement("button");
+      check.type = "button";
+      check.setAttribute("data-review-pdf-cache-only", "true");
+      check.textContent = spanishUi() ? "Descargar si el PDF ya está preparado" : "Download if the PDF is already prepared";
+      check.onclick = () => {
+        if (!check.isConnected || button.disabled || recoveryControls.get(actions) !== check
+          || !pendingReviewBindingMatches(button, actions, runId, reportLanguage, binding)) return;
+        void downloadPendingReviewPdf(button, Boolean(binding.requiresNewApproval), false, true).catch(() => {});
+      };
+      recoveryControls.set(actions, check);
+      actions.appendChild(check);
+    }
     throw error;
   }).finally(() => {
     if (!isCurrent() && statusOwners.get(actions) === controller) {
