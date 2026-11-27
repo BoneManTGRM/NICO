@@ -7,7 +7,6 @@ import gzip
 import json
 import os
 from pathlib import Path
-import shutil
 import sys
 
 from nico import nico_ci_typescript_typegen_inputs_v1 as sealer
@@ -38,7 +37,7 @@ def canonical(trace_path: str) -> str:
     raise ValueError("unexpected compiler trace namespace")
 
 
-def replay(target: Path, proof_ref: str) -> int:
+def replay(target: Path, proof_ref: str, installed: Path) -> int:
     scripts = Path(__file__).resolve().parent
     with gzip.open(scripts / "historical_typescript_inputs.json.gz", "rb") as f:
         material = f.read(256 * 1024 + 1)
@@ -90,20 +89,31 @@ def replay(target: Path, proof_ref: str) -> int:
     policy = bridge.OwnedTypeScriptPolicy(
         proof_ref, pin, tuple(sorted((name, bridge._mount_digest(files)) for name, files in mounts.items())),
     )
-    node = Path(shutil.which("node") or "").resolve(strict=True)
-    driver, host = (scripts / "nico_typecheck_confined_driver_v1.cjs",
-                    scripts / "nico_typecheck_virtual_host_v1.cjs")
+    driver = installed / "scripts/nico_typecheck_confined_driver_v1.cjs"
+    host = installed / "scripts/nico_typecheck_virtual_host_v1.cjs"
     tool = bridge.TrustedCompiler(
-        node, compiler["node_sha256"], compiler["node_version"],
-        driver, sha256(driver.read_bytes()).hexdigest(), host, sha256(host.read_bytes()).hexdigest(),
-        compiler_base / "lib/typescript.js", compiler["entry_sha256"], compiler["package_sha256"],
+        installed / "node", compiler["node_sha256"], compiler["node_version"],
+        driver, sha256((scripts / driver.name).read_bytes()).hexdigest(),
+        host, sha256((scripts / host.name).read_bytes()).hexdigest(),
+        installed / "typescript/lib/typescript.js", compiler["entry_sha256"], compiler["package_sha256"],
         compiler["version"],
     )
-    # The hosted job owns this short-lived workspace, not a root-installed
-    # production tree. The process/file permissions and exact hashes still apply.
-    bridge._verify_runtime(tool, immutable=False)
-    wire, nonce = bridge._prepare_wire(policy, assessed, tool.node_version, tool.compiler_version, mounts)
-    observed = bridge._validated_response(bridge._capture(tool, wire, timeout=120), nonce, assessed, tool)
+    if os.geteuid() == 0:
+        raise ValueError("compiler verification must run as an unprivileged user")
+    arguments = dict(
+        policy=policy, verified_producer_commit=proof_ref, assessed=assessed,
+        verified_source_inventory=inventory, source_mount=source,
+        private_generated_bundle=sealed, dependency_mount=dependency,
+        compiler_lib_mount=compiler_lib, runtime=tool,
+    )
+    wrong = bridge.run_owned_native_bridge(**(arguments | {"verified_producer_commit": "0" * 40}))
+    if wrong != {"outcome": "unavailable", "reason": "producer_or_assessed_identity_mismatch"}:
+        raise ValueError("producer mismatch did not fail closed")
+    outcome = bridge.run_owned_native_bridge(**arguments)
+    if outcome.get("outcome") != "compiler_observed":
+        print(json.dumps({"genuine_assessment": False, "bridge_unavailable": outcome.get("reason")}))
+        raise ValueError("public bridge did not observe the compiler")
+    observed = outcome["native"]
     roots = [canonical(x) for x in observed["roots"]]
     program = [canonical(x) for x in observed["program_inputs"]]
     trace = {canonical(k): v for k, v in observed["read_inputs"].items()}
@@ -118,7 +128,7 @@ def replay(target: Path, proof_ref: str) -> int:
         "diagnostics": len(observed["diagnostics"]),
         "same_roots": sorted(roots) == sorted(known["root_inputs"]),
         "same_program": sorted(program) == known["program_inputs"],
-        "genuine_assessment": False,
+        "genuine_assessment": False, "public_bridge": "compiler_observed", "immutable_runtime": True,
     }
     print(json.dumps(result, sort_keys=True))
     return 0 if result["same_roots"] and result["same_program"] and not any((
@@ -130,9 +140,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", type=Path, required=True)
     parser.add_argument("--proof-ref", required=True)
+    parser.add_argument("--installed", type=Path, required=True)
     args = parser.parse_args()
     try:
-        raise SystemExit(replay(args.target.resolve(strict=True), args.proof_ref))
+        raise SystemExit(replay(args.target.resolve(strict=True), args.proof_ref, args.installed.resolve(strict=True)))
     except (OSError, TypeError, ValueError, KeyError) as exc:
         print(f"Owned compiler proof stopped: {type(exc).__name__}. No report was produced.", file=sys.stderr)
         raise SystemExit(1)
