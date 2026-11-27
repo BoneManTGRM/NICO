@@ -32,6 +32,7 @@ def test_docker_node_stages_match_web_engine_requirement():
     web = Path("apps/web/Dockerfile").read_text()
     _assert_node_stages(backend, [
         f"node:{major}-bookworm-slim AS node-runtime",
+        f"node:{major}.22.3-bookworm-slim AS owned-typecheck-build",
         "python:3.11-slim",
     ])
     _assert_node_stages(web, [
@@ -75,7 +76,15 @@ def test_all_node_stages_pin_declared_npm_before_use():
         stages = re.split(r"(?m)^FROM ", Path(filename).read_text())[1:]
         for stage in stages:
             if stage.startswith("node:"):
-                assert stage.splitlines()[1] == pin
+                if stage.splitlines()[0] == "node:24.22.3-bookworm-slim AS owned-typecheck-build":
+                    assert filename == "Dockerfile"
+                    assert "RUN sh /owned-build/tool/build_inputs.sh" in stage
+                    build = Path("tools/owned-typecheck-install/build_inputs.sh").read_text()
+                    assert build.index('[ "$(node --version)" = v24.22.3 ]') < build.index("npm ci")
+                    assert build.index('[ "$(npm --version)" = 11.19.1 ]') < build.index("npm ci")
+                    assert build.index("sha256sum --check --status") < build.index("npm ci")
+                else:
+                    assert stage.splitlines()[1] == pin
 
 
 @pytest.mark.parametrize("fail_exec,expected_containers", [(False, 3), (True, 1)])
