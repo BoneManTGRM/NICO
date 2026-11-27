@@ -224,3 +224,58 @@ def test_draft_changed_history_commitment_rejects_warm_entry(draft):
     with pytest.raises(HTTPException) as failure: endpoint(run_id,'en')
     assert failure.value.status_code==409 and len(calls)==2
     assert cache._active_computation is None
+
+
+def test_explicit_cached_pdf_never_restores_or_renders_on_miss_or_policy_change(draft, monkeypatch):
+    from fastapi import FastAPI
+    from nico import client_report_completion_v2 as completion
+    (database, run_id, direct, _, decodes, controller), renders = draft
+    app = FastAPI()
+    app.state.comprehensive_api_controller = controller
+    locale.install_same_run_locale_report(app)
+    cached = next(r.endpoint for r in app.routes if getattr(r, 'path', '') == locale.ROUTE + '/cached-pdf')
+    def miss(language, commit, truth):
+        with pytest.raises(HTTPException) as error:
+            cached(run_id, language, commit, truth)
+        assert error.value.status_code == 404
+        assert error.value.detail == {'reason': 'retained_pdf_not_cached_here'}
+        assert 'no-store' in error.value.headers['Cache-Control']
+    with cache.RetainedPdfComputation() as owner:
+        owner.acquire()
+        miss('en', 'b'*40, '0'*64)
+        assert not renders and not decodes and cache._active_computation is owner.token
+    first = direct(run_id, 'en')
+    truth = first.headers['x-nico-canonical-truth-sha256']
+    second = cached(run_id, 'en', 'b'*40, truth)
+    assert second.body == first.body and second.headers['x-nico-client-delivery-allowed'] == 'false'
+    assert second.headers['x-nico-pdf-sha256'] == first.headers['x-nico-pdf-sha256']
+    assert 'no-store' in second.headers['cache-control']
+    miss('es-MX', 'b'*40, truth)
+    miss('en', 'a'*40, truth)
+    miss('en', 'b'*40, '0'*64)
+    original = completion.finalize_client_report_package
+    with monkeypatch.context() as temp:
+        temp.setattr(completion, 'finalize_client_report_package', lambda package: original(package))
+        miss('en', 'b'*40, truth)
+    _replace_payload(database, run_id, lambda record: record.update(progress_percent=1))
+    miss('en', 'b'*40, truth)
+    assert len(renders) == len(decodes) == 1
+    assert cache._active_computation is None
+
+
+def test_cached_pdf_endpoint_rejects_unauthenticated_and_narrow_proof_session(draft, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from nico import specialist_access_v1 as access
+    (_, run_id, _, _, decodes, controller), renders = draft
+    app = FastAPI()
+    app.state.comprehensive_api_controller = controller
+    locale.install_same_run_locale_report(app)
+    access.install_specialist_access(app)
+    path = f'/assessment/comprehensive-run/{run_id}/localized-report/en/cached-pdf'
+    monkeypatch.setenv('NICO_ADMIN_TOKEN', 'synthetic-test-admin-token')
+    result = TestClient(app).get(path, params={'commit_sha': 'b'*40, 'canonical_truth_sha256': '0'*64})
+    assert result.status_code in {401,403}
+    assert not access._production_proof_request_allowed('GET',path)
+    assert not access._recovery_proof_request_allowed('GET',path)
+    assert not renders and not decodes

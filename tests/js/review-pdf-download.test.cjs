@@ -919,3 +919,26 @@ test('unknown admission cancel wording records local intent without claiming ser
   finish(Response.json({detail:'review_pdf_commit_outcome_unknown'},{status:503}));await s.settled();
   assert.equal(s.calls.filter(c=>c.init.method==='POST').length,1);
 });
+
+for (const lang of ['en', 'es-MX']) for (const invalid of [false,true]) {
+  test(lang+' explicitly retrieves cached PDF only; unknown status never renders; invalid binding '+invalid,async()=>{
+    let attempt=0;
+    const s=setup(async (url)=>{
+      if(++attempt===1) return Response.json({}, {status:504});
+      assert.ok(url.includes('/cached-pdf?'));
+      assert.equal(new URL(url,'https://unit.invalid').searchParams.get('commit_sha'),commit);
+      assert.equal(new URL(url,'https://unit.invalid').searchParams.get('canonical_truth_sha256'),truth);
+      if(attempt===2) return Response.json({detail:{reason:'retained_pdf_not_cached_here'}},{status:404});
+      return response(lang,invalid?{'x-nico-canonical-truth-sha256':'c'.repeat(64)}:{});
+    },lang);
+    s.click();await s.settled();
+    assert.equal(s.calls.length,1);assert.equal(s.controls.length,1);
+    const first=s.controls[0]; first.onclick();await s.settled();
+    assert.equal(s.calls.length,2);assert.equal(s.anchors.length,0);
+    assert.match(s.statuses.at(-1).textContent, lang==='en'?/does not start preparation/:/no inicia la preparación/);
+    first.onclick();await flush();assert.equal(s.calls.length,2);
+    s.controls.at(-1).onclick();await s.settled();
+    assert.equal(s.calls.length,3);assert.equal(s.anchors.length,invalid?0:1);
+    assert.ok(s.calls.every(c=>c.init.method==='GET' && c.init.cache==='no-store' && c.init.credentials==='same-origin'));
+  });
+}

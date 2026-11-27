@@ -446,6 +446,13 @@ def prepare_retained_pdf(*, namespace: Any, row: Any, run_id: str,
     return _PreparedPdf(key, metadata, run_id, report_language, builder, None)
 
 
+def cached_retained_pdf_response(prepared: _PreparedPdf) -> Response | None:
+    """Read only a current-policy, verified hit. There is deliberately no build callback."""
+    if prepared.cached is not None and _cache_live_policy(prepared.builder) == prepared.key[1]:
+        return prepared.cached.response()
+    return None
+
+
 @report_delivery_phase("retained_pdf_exact_input")
 def finish_retained_pdf(prepared: _PreparedPdf, build: Callable[[], Response]) -> Response:
     global _retained_bytes

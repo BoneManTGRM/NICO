@@ -1176,6 +1176,23 @@ class ComprehensiveApiController:
         projected["reports"] = candidate
         return projected
 
+    def cached_retained_pdf_read_only(self, run_id: str, report_language: str, builder: Any) -> Any:
+        """Fetch already verified bytes only; never restore, acquire capacity, or render."""
+        from nico.retained_pdf_exact_input_cache_v1 import prepare_retained_pdf, cached_retained_pdf_response
+
+        normalized = self._required(run_id, "run_id")
+        snapshot_reader = getattr(self._service, "_consume_read_only_snapshot", None)
+        if not callable(snapshot_reader):
+            return None
+        store = getattr(self._service, "_store", None)
+
+        def consume(row: Any, _restore: Any) -> Any:
+            return prepare_retained_pdf(
+                namespace=(self._retained_pdf_cache_namespace, getattr(store, "_retained_artifact_namespace", None)),
+                row=row, run_id=normalized, report_language=report_language, builder=builder,
+            )
+        return cached_retained_pdf_response(snapshot_reader(normalized, consume))
+
     def retained_pdf_read_only(self, run_id: str, report_language: str, builder: Any) -> Any:
         """Reuse a completed pending source-PDF computation for exact stored input.
 

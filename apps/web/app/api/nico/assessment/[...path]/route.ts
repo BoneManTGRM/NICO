@@ -10,6 +10,7 @@ const STATUS_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+$/;
 const SCANNER_EVIDENCE_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/scanner-evidence$/;
 const CHECKOUT_RECOVERY_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/scanner-checkout-recovery$/;
 const CONTINUE_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/continue$/;
+const CACHE_ONLY_PDF_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/localized-report\/(?:en|es-MX)\/cached-pdf$/;
 const PDF_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/(?:report\/pdf|localized-report\/(?:en|es-MX)\/pdf|review-pdf\/(?:en|es-MX)\/pdf)$/;
 const ARTIFACT_PATH = /^\/assessment\/comprehensive-run\/[^/?#]+\/(?:report\/(?:markdown|html|json|pdf|evidence-package)|localized-report\/(?:en|es-MX)(?:\/(?:pdf|evidence-package))?|approved-delivery-package|review-pdf\/(?:en|es-MX)\/pdf)$/;
 const ALLOWED_PATH = /^\/assessment\/(?:comprehensive-intake|comprehensive-run(?:\/[^/?#]+(?:\/(?:continue|review-queue|review-work|review|authorize-delivery|approved-delivery-package|automated-delivery-package|report\/(?:markdown|html|json|pdf|evidence-package)|localized-report\/(?:en|es-MX)(?:\/(?:pdf|evidence-package))?))?)?)$/;
@@ -144,7 +145,7 @@ async function proxyAssessment(
     return errorResponse(404, "nico_assessment_route_not_allowed", "The requested assessment route is unavailable.");
   }
   const path = `/assessment/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
-  if (!ALLOWED_PATH.test(path) && !LOCALIZED_EDITION_PATH.test(path) && !SCANNER_EVIDENCE_PATH.test(path) && !CHECKOUT_RECOVERY_PATH.test(path) && !REVIEW_PREPARATION_PATH.test(path)) {
+  if (!ALLOWED_PATH.test(path) && !LOCALIZED_EDITION_PATH.test(path) && !SCANNER_EVIDENCE_PATH.test(path) && !CHECKOUT_RECOVERY_PATH.test(path) && !REVIEW_PREPARATION_PATH.test(path) && !CACHE_ONLY_PDF_PATH.test(path)) {
     return errorResponse(404, "nico_assessment_route_not_allowed", "Only bounded NICO Comprehensive lifecycle routes are available.");
   }
 
@@ -154,6 +155,9 @@ async function proxyAssessment(
     || (!path.endsWith("/pdf") && !path.endsWith("/cancel") && !["GET", "POST"].includes(request.method))
   )) return errorResponse(405, "review_pdf_method_rejected", "Use the explicit review preparation controls.");
 
+  if (CACHE_ONLY_PDF_PATH.test(path) && request.method !== "GET") {
+    return errorResponse(405, "cached_review_pdf_read_only", "Only an explicit read of existing PDF bytes is available.");
+  }
   if (RETAINED_EVIDENCE_PATH.test(path) && request.method !== "GET") {
     return errorResponse(405, "retained_evidence_read_only", "Retained evidence download is read-only.");
   }

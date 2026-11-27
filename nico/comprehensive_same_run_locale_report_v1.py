@@ -1610,6 +1610,33 @@ def install_same_run_locale_report(target: FastAPI) -> dict[str, Any]:
         )
         target.openapi_schema = None
 
+    # A distinct URL is deliberate: an older backend must return 404, not
+    # ignore a new query flag and silently launch a second cold render.
+    cached_pdf_route = ROUTE + "/cached-pdf"
+    if _route_count(target, "GET", cached_pdf_route) == 0:
+        def cached_localized_report_pdf(run_id: str, report_language: str, commit_sha: str, canonical_truth_sha256: str) -> Response:
+            no_store = {"Cache-Control": "private, no-store, max-age=0"}
+            controller = getattr(target.state, "comprehensive_api_controller", None)
+            reader = getattr(controller, "cached_retained_pdf_read_only", None)
+            try:
+                if (report_language in SUPPORTED_REPORT_LANGUAGES and callable(reader)
+                        and re.fullmatch(r"[0-9a-f]{40}", commit_sha) and re.fullmatch(r"[0-9a-f]{64}", canonical_truth_sha256)):
+                    hit = reader(run_id, report_language, build_same_run_locale_pdf_response)
+                    if (hit is not None and hit.headers.get("x-nico-commit-sha") == commit_sha
+                            and hit.headers.get("x-nico-canonical-truth-sha256") == canonical_truth_sha256):
+                        hit.headers.update(no_store)
+                        return hit
+            except KeyError:
+                pass
+            except ValueError as exc:
+                raise _projection_http_error(exc) from exc
+            # A miss cannot tell us whether this or another worker is rendering.
+            raise HTTPException(status_code=404, detail={"reason": "retained_pdf_not_cached_here"}, headers=no_store)
+
+        target.add_api_route(cached_pdf_route, cached_localized_report_pdf, methods=["GET"],
+                             tags=["comprehensive"], response_class=Response)
+        target.openapi_schema = None
+
     if _route_count(target, "GET", EVIDENCE_PACKAGE_ROUTE) == 0:
         def localized_evidence_package(run_id: str, report_language: str) -> Response:
             from nico.comprehensive_localized_export_v1 import localized_evidence_package as download
