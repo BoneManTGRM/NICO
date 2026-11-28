@@ -88,6 +88,11 @@ jobs:
       - name: Prove synthetic full retained PDF lifecycle on existing Postgres
         timeout-minutes: 4
         run: python scripts/postgres_review_pdf_lifecycle_proof.py --output audit-results/postgres-review-pdf-lifecycle-proof.json
+      - name: Prove synthetic self-serve exact PDFs and one-time sign-in state
+        timeout-minutes: 2
+        env:
+          NICO_1917_SYNTHETIC_POSTGRES: '1'
+        run: python scripts/postgres_self_serve_candidate_proof.py
       - name: Qualify near-cap run save and fresh-process reload on real Postgres
         run: |
           python scripts/postgres_run_storage_capacity_proof.py --transport v2 --output audit-results/run-storage-capacity-v2.json
