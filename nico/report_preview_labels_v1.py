@@ -30,10 +30,10 @@ def stage_preview_labels(stage: Mapping[str, Any], context: Mapping[str, Any], *
         if not isinstance(analyzers, list):
             return []
         lines = [('La finalización de la ejecución y la garantía de repetibilidad son distintas. '
-                  'La repetibilidad exige las pasadas consecutivas con SHA exacto indicadas; '
-                  'una ejecución completa no satisface por sí sola ese requisito.') if spanish else
+                  'La repetibilidad se evalúa con la evidencia de este informe; '
+                  'una ejecución completa no satisface por sí sola el requisito.') if spanish else
                  ('Execution completion and repeatability assurance are separate. '
-                  'Repeatability requires the stated consecutive exact-SHA passes; '
+                  'Repeatability is evaluated from the evidence in this report; '
                   'one completed execution alone does not satisfy that requirement.')]
         for item in analyzers:
             if not isinstance(item, Mapping) or item.get('required') is not True:
@@ -42,7 +42,7 @@ def stage_preview_labels(stage: Mapping[str, Any], context: Mapping[str, Any], *
             if type(observed) is not int or type(required) is not int or observed < 0 or required < 1:
                 continue
             name = str(item.get('scanner') or 'unknown')
-            state = ('requisito satisfecho' if item.get('acceptance_ready') is True else 'requisito no satisfecho') if spanish else ('requirement met' if item.get('acceptance_ready') is True else 'requirement not met')
+            state = ('requisito satisfecho' if item.get('acceptance_ready') is True else 'este informe no acredita el requisito') if spanish else ('requirement met' if item.get('acceptance_ready') is True else 'not established by this report')
             lines.append((f'{name}: pasadas consecutivas con SHA exacto {observed}/{required}; {state}.' if spanish else
                           f'{name}: consecutive exact-SHA passes {observed}/{required}; {state}.'))
         return lines

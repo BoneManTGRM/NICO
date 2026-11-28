@@ -90,7 +90,7 @@ def test_installed_stage_discloses_repeatability_without_execution_failure(spani
     text = ' '.join(p.extract_text() for p in PdfReader(io.BytesIO(base64.b64decode(pdf))).pages)
     for output in (md, text):
         assert '1/2' in output
-        assert ('requisito no satisfecho' if spanish else 'requirement not met') in output
+        assert ('este informe no acredita el requisito' if spanish else 'not established by this report') in output
     assert canonical == before
 
 
@@ -136,7 +136,7 @@ def _installed_worker(language):
     assert '1675' in text
     assert ('rawcandidatecount=1675' in text or 'recuentodecandidatosoriginales=1675' in text), text[-3000:]
     assert '1/2' in text
-    assert ('requisitonosatisfecho' if language == 'es-MX' else 'requirementnotmet') in text
+    assert ('esteinformenoacreditaelrequisito' if language == 'es-MX' else 'notestablishedbythisreport') in text
     assert package == before
     assert result['human_review_required'] is True
     assert result['client_delivery_allowed'] is False
