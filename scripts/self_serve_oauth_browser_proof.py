@@ -51,13 +51,15 @@ def prove(browser):
                 redirects[tab] = urlunsplit(authorization._replace(netloc=PROVIDER))
                 state = parse_qs(authorization.query)["state"][0]
                 fixture_codes[state] = "fixture-" + tab
-                route.fulfill(status=302, headers={"location": APP + "/strict/" + tab,
-                                                   "set-cookie": start.cookie})
+                # WebKit cannot fulfill a routed redirect. Follow a top-level link instead.
+                route.fulfill(status=200, content_type="text/html",
+                              headers={"set-cookie": start.cookie},
+                              body=f'<a id="strict" href="{APP}/strict/{tab}">Continue</a>')
             elif req.url in (APP + "/strict/a", APP + "/strict/b"):
-                route.fulfill(status=302, headers={
-                    "location": redirects[addr.path[-1]],
+                url = escape(redirects[addr.path[-1]], quote=True)
+                route.fulfill(status=200, content_type="text/html", headers={
                     "set-cookie": "__Host-negative=synthetic; Path=/; Secure; HttpOnly; SameSite=Strict",
-                })
+                }, body=f'<a id="provider" href="{url}">Continue</a>')
             elif addr.scheme == "https" and addr.netloc == PROVIDER and addr.path == "/login/oauth/authorize":
                 state = parse_qs(addr.query)["state"][0]
                 url = CALLBACK + "?" + urlencode({"state": state, "code": fixture_codes[state]})
@@ -85,8 +87,21 @@ def prove(browser):
             ctx.route("**/*", intercept)
         tab_a = legitimate.new_page()
         tab_b = legitimate.new_page()
-        tab_a.goto(APP + "/start/a", timeout=8000)
-        tab_b.goto(APP + "/start/b", timeout=8000)
+        def depart(page, tab):
+            page.goto(APP + "/start/" + tab, timeout=8000)
+            page.locator("#strict").click(timeout=8000)
+            cookies = {item["name"]: item for item in legitimate.cookies(APP)}
+            for name, mode in (("__Host-nico_requester_oauth", "Lax"), ("__Host-negative", "Strict")):
+                assert name in cookies, f"fixture cookie was not installed: {name}"
+                item = cookies[name]
+                assert item["sameSite"] == mode and item["secure"] and item["httpOnly"], name
+            binding = cookies["__Host-nico_requester_oauth"]["value"]
+            page.locator("#provider").click(timeout=8000)
+            return binding
+
+        binding_a = depart(tab_a, "a")
+        binding_b = depart(tab_b, "b")
+        assert binding_a != binding_b, "second sign-in did not replace the binding"
         stranger = wrong.new_page()
         stranger.goto(redirects["b"], timeout=8000)
         stranger.locator("#return").click(timeout=8000)
