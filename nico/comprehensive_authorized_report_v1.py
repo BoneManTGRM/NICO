@@ -6,6 +6,13 @@ from typing import Any
 
 VERSION = "nico.comprehensive_authorized_report.v1"
 
+AUTOMATED_AUTHORIZER_ROLE = "Automated technical assessment and delivery system"
+AUTOMATED_AUTHORIZATION_REASON = (
+    "Exact artifact passed independent logical verification, deterministic compilation, "
+    "immutable identity validation, and the zero-unresolved-review-work gate."
+)
+_SPANISH_AUTOMATED_TITLE = "NICO Integral — EVALUACIÓN TÉCNICA AUTOMATIZADA AUTORIZADA"
+
 _REPLACEMENTS = (
     (
         "APPROVED FINAL · HUMAN REVIEW RECORDED · DELIVERY CONTROLLED SEPARATELY",
@@ -70,6 +77,7 @@ def _certificate_pdf(
     authorization_reason: str,
     source_pdf_sha256: str,
     authorization_mode: str = "human",
+    report_language: str = "en",
 ) -> bytes:
     from html import escape
 
@@ -78,16 +86,20 @@ def _certificate_pdf(
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+    automated = authorization_mode == "automated"
+    spanish_automated = automated and report_language == "es-MX"
     buffer = io.BytesIO()
     styles = getSampleStyleSheet()
     document = SimpleDocTemplate(
         buffer,
         pagesize=letter,
-        title="NICO Comprehensive — Authorized Final",
+        title=(
+            _SPANISH_AUTOMATED_TITLE
+            if spanish_automated else "NICO Comprehensive — Authorized Final"
+        ),
         author="NICO",
         invariant=1,
     )
-    automated = authorization_mode == "automated"
     rows = [
         ["Report status", "AUTHORIZED FINAL"],
         ["Client delivery", "AUTHORIZED"],
@@ -101,6 +113,55 @@ def _certificate_pdf(
         ["Commit", commit_sha],
         ["Approved source PDF SHA-256", source_pdf_sha256],
     ]
+    heading = (
+        "NICO Comprehensive — AUTHORIZED AUTOMATED TECHNICAL ASSESSMENT"
+        if automated else "NICO Comprehensive — AUTHORIZED FINAL"
+    )
+    delivery_heading = "CLIENT DELIVERY AUTHORIZED"
+    delivery_status = "Delivery: Authorized"
+    certificate_title = "Client Delivery Authorization Certificate"
+    reason_title = "Authorization reason"
+    policy_statement = (
+        "SARA's independent logical verifier and NICO's deterministic artifact gates "
+        "accepted the exact evidence-bound report under the disclosed automated-delivery policy. "
+        "No human cybersecurity specialist reviewed or certified this report."
+        if automated
+        else "The named reviewer approved the exact evidence-bound report and the "
+        "named delivery authorizer separately authorized this same artifact for client delivery."
+    )
+    if spanish_automated:
+        rows = [
+            ["Estado del informe", "FINAL AUTORIZADO"],
+            ["Entrega al cliente", "AUTORIZADA"],
+            ["Modo de revisión", "EVALUACIÓN TÉCNICA AUTOMATIZADA"],
+            ["Revisión humana", "NO"],
+            ["Autorizado por", authorizer],
+            ["Función de quien autoriza", (
+                "Sistema automatizado de evaluación técnica y entrega"
+                if authorizer_role == AUTOMATED_AUTHORIZER_ROLE else authorizer_role
+            )],
+            ["Fecha de autorización", authorized_at],
+            ["Ejecución", run_id],
+            ["Repositorio", repository],
+            ["Revisión de código", commit_sha],
+            ["SHA-256 del PDF de origen", source_pdf_sha256],
+        ]
+        heading = _SPANISH_AUTOMATED_TITLE
+        delivery_heading = "ENTREGA AL CLIENTE AUTORIZADA"
+        delivery_status = "Entrega: Autorizada"
+        certificate_title = "Certificado de autorización de entrega al cliente"
+        reason_title = "Motivo de la autorización"
+        policy_statement = (
+            "El verificador lógico independiente de SARA y los controles deterministas de NICO "
+            "aceptaron el informe exacto vinculado a la evidencia conforme a la política de entrega "
+            "automatizada declarada. Ningún especialista humano en ciberseguridad revisó ni certificó este informe."
+        )
+        if authorization_reason == AUTOMATED_AUTHORIZATION_REASON:
+            authorization_reason = (
+                "El artefacto exacto superó la verificación lógica independiente, "
+                "la compilación determinista, la validación de identidad inmutable "
+                "y el control de cero tareas de revisión pendientes."
+            )
     table = Table(rows, colWidths=[155, 315])
     table.setStyle(
         TableStyle(
@@ -117,34 +178,16 @@ def _certificate_pdf(
         )
     )
     story = [
-        Paragraph(
-            (
-                "NICO Comprehensive — AUTHORIZED AUTOMATED TECHNICAL ASSESSMENT"
-                if automated
-                else "NICO Comprehensive — AUTHORIZED FINAL"
-            ),
-            styles["Title"],
-        ),
-        Paragraph("CLIENT DELIVERY AUTHORIZED", styles["Heading1"]),
-        Paragraph("Delivery: Authorized", styles["Heading2"]),
-        Paragraph("Client Delivery Authorization Certificate", styles["Heading2"]),
+        Paragraph(heading, styles["Title"]),
+        Paragraph(delivery_heading, styles["Heading1"]),
+        Paragraph(delivery_status, styles["Heading2"]),
+        Paragraph(certificate_title, styles["Heading2"]),
         Spacer(1, 10),
-        Paragraph(
-            (
-                "SARA's independent logical verifier and NICO's deterministic artifact gates "
-                "accepted the exact evidence-bound report under the disclosed automated-delivery policy. "
-                "No human cybersecurity specialist reviewed or certified this report."
-                if automated
-                else
-                "The named reviewer approved the exact evidence-bound report and the "
-                "named delivery authorizer separately authorized this same artifact for client delivery."
-            ),
-            styles["BodyText"],
-        ),
+        Paragraph(policy_statement, styles["BodyText"]),
         Spacer(1, 12),
         table,
         Spacer(1, 12),
-        Paragraph("Authorization reason", styles["Heading3"]),
+        Paragraph(reason_title, styles["Heading3"]),
         Paragraph(escape(authorization_reason), styles["BodyText"]),
     ]
     document.build(story)
@@ -158,6 +201,7 @@ def build_authorized_report_pdf(
     delivery_authorization: Mapping[str, Any],
     source_pdf_sha256: str,
     authorization_mode: str = "human",
+    report_language: str = "en",
 ) -> bytes:
     from pypdf import PdfReader, PdfWriter
     from pypdf.generic import ByteStringObject, ContentStream, TextStringObject
@@ -174,6 +218,7 @@ def build_authorized_report_pdf(
         authorization_reason=str(delivery_authorization.get("authorization_reason") or ""),
         source_pdf_sha256=source_pdf_sha256,
         authorization_mode=authorization_mode,
+        report_language=report_language,
     )
     source_writer = PdfWriter(clone_from=io.BytesIO(source_pdf))
     for page in source_writer.pages:
@@ -216,12 +261,22 @@ def build_authorized_report_pdf(
     output = PdfWriter()
     for page in PdfReader(io.BytesIO(certificate)).pages:
         output.add_page(page)
-    for page in source_writer.pages:
-        output.add_page(page)
+    if authorization_mode == "automated":
+        # Import the report as one document, not as independent pages: the latter
+        # drops bookmarks and cannot offset their destinations after the certificate.
+        rewritten = io.BytesIO()
+        source_writer.write(rewritten)
+        rewritten.seek(0)
+        output.append(PdfReader(rewritten), import_outline=True)
+    else:
+        for page in source_writer.pages:
+            output.add_page(page)
     output.add_metadata(
         {
             "/Title": (
-                "NICO Comprehensive — Authorized Automated Technical Assessment"
+                _SPANISH_AUTOMATED_TITLE
+                if authorization_mode == "automated" and report_language == "es-MX"
+                else "NICO Comprehensive — Authorized Automated Technical Assessment"
                 if authorization_mode == "automated"
                 else "NICO Comprehensive — Authorized Final"
             ),

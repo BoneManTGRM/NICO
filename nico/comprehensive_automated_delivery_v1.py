@@ -7,10 +7,13 @@ import json
 import zipfile
 from collections.abc import Mapping
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 from nico.comprehensive_authorized_report_v1 import (
+    AUTOMATED_AUTHORIZATION_REASON,
+    AUTOMATED_AUTHORIZER_ROLE,
     authorized_text,
     build_authorized_report_pdf,
 )
@@ -44,12 +47,25 @@ def _entry_bytes(value: Any) -> bytes:
     return _json_bytes(value)
 
 
-def build_automated_delivery_package(
+@dataclass(frozen=True)
+class _PreparedAutomatedPdf:
+    pdf_bytes: bytes
+    authorization: dict[str, Any]
+    source_package: dict[str, Any]
+    filename_run_id: Any
+
+
+def _prepare_automated_delivery_pdf(
     record: Mapping[str, Any],
     *,
     expected_artifact_identity: Mapping[str, Any],
     authorized_at: str | None = None,
-) -> dict[str, Any]:
+) -> _PreparedAutomatedPdf:
+    """Prepare exact authorized bytes only after the caller's review/eligibility gates.
+
+    Reuse the same prepared edition for each format. This internal helper validates
+    exact source identity, but does not decide automated-delivery eligibility.
+    """
     from nico.ordinary_bundle_boundary_v2 import require_legacy_single_pdf
     require_legacy_single_pdf(record)
 
@@ -70,6 +86,21 @@ def build_automated_delivery_package(
         raise ValueError("automated_delivery_source_pdf_invalid")
 
     identity = record.get("identity") if isinstance(record.get("identity"), Mapping) else {}
+    # Bind the certificate's locale to this exact, already-retained edition.
+    # It cannot be selected by a request option or a localized draft projection.
+    from nico.comprehensive_same_run_locale_report_v1 import (
+        _normalize_report_language,
+        _validate_status_canonical_identity,
+    )
+    canonical_source = package.get("json")
+    if not isinstance(canonical_source, Mapping):
+        raise ValueError("automated_delivery_canonical_report_required")
+    report_language = _validate_status_canonical_identity(
+        {**identity, "reports": package}, canonical_source,
+    )["report_language"]
+    for declaration in (identity.get("locale"), package.get("report_language"), package.get("locale")):
+        if declaration not in (None, "") and _normalize_report_language(declaration) != report_language:
+            raise ValueError("automated_delivery_retained_language_mismatch")
     timestamp = str(
         authorized_at or datetime.now(UTC).replace(microsecond=0).isoformat()
     ).strip()
@@ -81,12 +112,9 @@ def build_automated_delivery_package(
         "human_reviewed": False,
         "security_certification": False,
         "authorizer_identity": "SARA",
-        "authorizer_role": "Automated technical assessment and delivery system",
+        "authorizer_role": AUTOMATED_AUTHORIZER_ROLE,
         "authorized_at": timestamp,
-        "authorization_reason": (
-            "Exact artifact passed independent logical verification, deterministic compilation, "
-            "immutable identity validation, and the zero-unresolved-review-work gate."
-        ),
+        "authorization_reason": AUTOMATED_AUTHORIZATION_REASON,
         "source_report_artifact_digest": exact_identity["report_artifact_digest"],
         "source_pdf_sha256": source_pdf_sha,
         "run_id": str(identity.get("run_id") or ""),
@@ -100,7 +128,24 @@ def build_automated_delivery_package(
         delivery_authorization=authorization,
         source_pdf_sha256=source_pdf_sha,
         authorization_mode="automated",
+        report_language=report_language,
     )
+
+    return _PreparedAutomatedPdf(authorized_pdf, authorization, package, identity.get("run_id"))
+
+
+def build_automated_delivery_package(
+    record: Mapping[str, Any],
+    *,
+    expected_artifact_identity: Mapping[str, Any],
+    authorized_at: str | None = None,
+) -> dict[str, Any]:
+    prepared = _prepare_automated_delivery_pdf(
+        record, expected_artifact_identity=expected_artifact_identity,
+        authorized_at=authorized_at,
+    )
+    authorization = prepared.authorization
+    package = prepared.source_package
 
     canonical_json = (
         deepcopy(dict(package.get("json")))
@@ -114,7 +159,7 @@ def build_automated_delivery_package(
     canonical_json["client_facing_status"] = "authorized_automated_technical_assessment"
 
     entries = {
-        "01_nico_comprehensive_report.pdf": authorized_pdf,
+        "01_nico_comprehensive_report.pdf": prepared.pdf_bytes,
         "02_nico_comprehensive_report.json": _json_bytes(canonical_json),
         "03_nico_comprehensive_report.md": _entry_bytes(
             authorized_text(str(package.get("markdown") or ""), authorization_mode="automated")
@@ -134,7 +179,7 @@ def build_automated_delivery_package(
         "human_reviewed": False,
         "human_review_required": False,
         "client_delivery_allowed": True,
-        "source_report_artifact_digest": exact_identity["report_artifact_digest"],
+        "source_report_artifact_digest": authorization["source_report_artifact_digest"],
         "artifacts": [
             {"path": path, "sha256": _sha256(content), "size_bytes": len(content)}
             for path, content in sorted(entries.items())
@@ -156,7 +201,7 @@ def build_automated_delivery_package(
         "human_reviewed": False,
         "human_review_required": False,
         "client_delivery_allowed": True,
-        "filename": f"nico-comprehensive-{identity.get('run_id')}-AUTHORIZED-AUTOMATED.zip",
+        "filename": f"nico-comprehensive-{prepared.filename_run_id}-AUTHORIZED-AUTOMATED.zip",
         "zip_base64": base64.b64encode(payload).decode("ascii"),
         "zip_sha256": _sha256(payload),
         "zip_size_bytes": len(payload),
