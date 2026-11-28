@@ -1182,7 +1182,7 @@ install_comprehensive_spanish_client_surface_localization_v86()
 # Exact base/current comparison: only page 19 gains the required Bandit 1/2
 # repeatability disclosure; Markdown, HTML, page counts and all other fixtures
 # are unchanged. Keep structural, manifest, identity and bilingual assertions.
-SMALL_ENGLISH_GOLDEN = {'markdown': ('dcb9df14bf3657b39b701d1a9d1a85439a7ef33b90c68be56af50d597572bf8e', 19729), 'html': ('e9c24a9426fb4d6a185909b7d29341f61b7d82107e4da6d4d099b1e5137474b9', 24142), 'pdf_base64': ('7e65b0d9f098a43e563f364b5ed86990403912d0d46d3bf5587f80f0ce6cea6e', 182804), 'pdf_sha256': '0f93aab49b671df87f7e71ebd67eed5696f574560459f7e7a1cc3483c6f8fcd9', 'page_count': 22}
+SMALL_ENGLISH_GOLDEN = {'markdown': ('dcb9df14bf3657b39b701d1a9d1a85439a7ef33b90c68be56af50d597572bf8e', 19729), 'html': ('e9c24a9426fb4d6a185909b7d29341f61b7d82107e4da6d4d099b1e5137474b9', 24142), 'pdf_base64': ('8e1eff89fb24f2fb2f49fd944dd423e26c3ce7cdb2b048793b7c92678be3475b', 182816), 'pdf_sha256': '0232d97c61c1c6e6382f0be98f17b45816a64dd5e1c12415a1fa917b2a3bf451', 'page_count': 22}
 # PR1779: isolated 644b -> 82315628 rich EN/es comparison preserves Markdown,
 # HTML, all 47 page texts/drawing streams/media boxes, canonical truth and gates.
 # Only phase 3 moves from summary page 5 to canonical Functional QA page 26;
@@ -1555,8 +1555,8 @@ assert small_english_before[0]["pdf_base64"] == small_english_after[0]["pdf_base
 assert "spanish_uses_english_canonical_section_contract" not in small_english_before[0]["premium_report_renderer"]
 assert small_spanish[0]["premium_report_renderer"]["spanish_uses_english_canonical_section_contract"] is True
 assert_structural_parity(small_english_before, small_spanish)
-assert "bandit: consecutive exact-SHA passes 1/2; requirement not met." in "\n".join(small_english_before[2])
-assert "bandit: pasadas consecutivas con SHA exacto 1/2; requisito no satisfecho." in "\n".join(small_spanish[2])
+assert "bandit: consecutive exact-SHA passes 1/2; not established by this report." in "\n".join(small_english_before[2])
+assert "bandit: pasadas consecutivas con SHA exacto 1/2; este informe no acredita el requisito." in "\n".join(small_spanish[2])
 
 assert_structural_parity(rich_english, rich_spanish)
 assert len(rich_english[2]) == len(rich_spanish[2]) == 47
