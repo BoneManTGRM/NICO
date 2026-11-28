@@ -7,6 +7,7 @@ from contextlib import closing, contextmanager
 from math import isfinite
 
 from .oauth_state import Pending, TOKEN
+from .pending_intake import decode_pending, encode_pending
 
 _TABLE = "nico_self_serve_oauth_pending"
 _SCHEMA = f"""CREATE TABLE {_TABLE} (
@@ -14,7 +15,8 @@ _SCHEMA = f"""CREATE TABLE {_TABLE} (
     browser_hash {{binary_type}} NOT NULL,
     redirect_uri TEXT NOT NULL,
     expires_at DOUBLE PRECISION NOT NULL,
-    verifier TEXT NOT NULL
+    verifier TEXT NOT NULL,
+    intake_json TEXT
 )"""
 SQLITE_SCHEMA = _SCHEMA.format(binary_type="BLOB")
 POSTGRES_SCHEMA = _SCHEMA.format(binary_type="BYTEA")
@@ -58,12 +60,13 @@ class SqlOAuthStateStore:
             or type(pending.verifier) is not str or not TOKEN.fullmatch(pending.verifier)
         ):
             raise ValueError("invalid pending OAuth state")
-        holders = ", ".join((self._p,) * 5)
+        intake_json = encode_pending(pending.intake)
+        holders = ", ".join((self._p,) * 6)
         with self._transaction() as cursor:
             cursor.execute(
-                f"INSERT INTO {_TABLE} (state_hash, browser_hash, redirect_uri, expires_at, verifier) "
+                f"INSERT INTO {_TABLE} (state_hash, browser_hash, redirect_uri, expires_at, verifier, intake_json) "
                 f"VALUES ({holders})", (state_hash, pending.browser_hash, pending.redirect_uri,
-                                        pending.expires_at, pending.verifier),
+                                        pending.expires_at, pending.verifier, intake_json),
             )
 
     def consume_matching(self, state_hash, browser_hash, redirect_uri, now):
@@ -74,14 +77,26 @@ class SqlOAuthStateStore:
         with self._transaction() as cursor:
             cursor.execute(
                 f"DELETE FROM {_TABLE} WHERE state_hash = {p} AND browser_hash = {p} "
-                f"AND redirect_uri = {p} AND expires_at > {p} RETURNING expires_at, verifier",
+                f"AND redirect_uri = {p} AND expires_at > {p} RETURNING expires_at, verifier, intake_json",
                 (state_hash, browser_hash, redirect_uri, now),
             )
             row = cursor.fetchone()
             if row is None:
                 return None
-            expires_at, verifier = row
+            expires_at, verifier, intake_json = row
             if (not _timestamp(expires_at) or type(verifier) is not str or
                     TOKEN.fullmatch(verifier) is None):
                 return None
-            return Pending(browser_hash, redirect_uri, expires_at, verifier)
+            try:
+                intake = decode_pending(intake_json)
+            except ValueError:
+                return None
+            return Pending(browser_hash, redirect_uri, expires_at, verifier, intake)
+
+    def prune_expired(self, now):
+        """Called by the app's retention job once this draft is mounted."""
+        if not _timestamp(now):
+            raise ValueError("invalid trusted time")
+        with self._transaction() as cursor:
+            cursor.execute(f"DELETE FROM {_TABLE} WHERE expires_at <= {self._p}", (now,))
+            return cursor.rowcount

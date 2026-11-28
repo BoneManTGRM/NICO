@@ -8,6 +8,8 @@ from secrets import token_urlsafe
 from typing import Protocol
 from urllib.parse import urlsplit
 
+from .pending_intake import PendingIntake
+
 TOKEN = re.compile(r"[A-Za-z0-9_-]{43}")
 TTL_SECONDS = 300
 
@@ -18,6 +20,7 @@ class Pending:
     redirect_uri: str
     expires_at: float
     verifier: str = field(repr=False)
+    intake: PendingIntake | None = field(default=None, repr=False)
 
 
 class Store(Protocol):
@@ -56,10 +59,13 @@ class GithubAppFlow:
         self._redirect = configured_redirect
         self._clock = clock
 
-    def begin(self, *, trusted_browser_binding: str) -> dict[str, str]:
+    def begin(self, *, trusted_browser_binding: str,
+              intake: PendingIntake | None = None) -> dict[str, str]:
+        if intake is not None and type(intake) is not PendingIntake:
+            raise ValueError("invalid pending intake")
         state, verifier = token_urlsafe(32), token_urlsafe(32)
         pending = Pending(_binding(trusted_browser_binding), self._redirect,
-                          _now(self._clock) + TTL_SECONDS, verifier)
+                          _now(self._clock) + TTL_SECONDS, verifier, intake)
         self._store.insert_unique(_digest(state), pending)
         challenge = urlsafe_b64encode(_digest(verifier)).decode("ascii").rstrip("=")
         return dict(state=state, redirect_uri=self._redirect,

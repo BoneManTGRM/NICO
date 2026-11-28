@@ -11,7 +11,7 @@ from uuid import uuid4
 
 FIXTURE = "postgresql://nico:nico@127.0.0.1:5432/nico"
 RUN = "comprun_" + "1" * 32
-from nico.self_serve_candidate import bilingual_seal, oauth_state, oauth_state_store, sealed_readback, run_identity
+from nico.self_serve_candidate import bilingual_seal, oauth_state, oauth_state_store, sealed_readback, run_identity, pending_intake
 
 
 def pin_sources():
@@ -81,7 +81,8 @@ class Proof(unittest.TestCase):
             store = oauth_state_store.SqlOAuthStateStore(lambda: connect(self.schema), dialect="postgres")
             return oauth_state.GithubAppFlow(store, configured_redirect="https://nico.example/oauth/callback", clock=clock)
         actor = "a" * 43
-        pending = flow(lambda: 100).begin(trusted_browser_binding=actor)
+        draft = pending_intake.PendingIntake("Example/Project", "María Núñez", True, "ordinary-v1")
+        pending = flow(lambda: 100).begin(trusted_browser_binding=actor, intake=draft)
         def consume(f, browser):
             return f.consume(state=pending["state"], trusted_browser_binding=browser)
         self.assertIsNone(consume(flow(lambda: 101), "b" * 43))
@@ -90,7 +91,9 @@ class Proof(unittest.TestCase):
             barrier.wait(timeout=5)
             return consume(flow(lambda: 102), actor)
         with ThreadPoolExecutor(max_workers=2) as pool:
-            self.assertEqual(sum(value is not None for value in pool.map(compete, range(2))), 1)
+            winners = [value for value in pool.map(compete, range(2)) if value is not None]
+            self.assertEqual(len(winners), 1)
+            self.assertEqual(winners[0].intake, draft)
         self.assertIsNone(consume(flow(lambda: 103), actor))
 
 

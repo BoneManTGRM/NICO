@@ -15,10 +15,11 @@ from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 from playwright.sync_api import sync_playwright
 
 from nico.self_serve_candidate.oauth_callback import (
-    begin_authorization, clear_binding_cookie, complete_authorization,
+    begin_authorization, clear_binding_cookie, resume_intake,
 )
 from nico.self_serve_candidate.oauth_state import GithubAppFlow
 from nico.self_serve_candidate.oauth_state_store import SQLITE_SCHEMA, SqlOAuthStateStore
+from nico.self_serve_candidate.pending_intake import PendingIntake
 from nico.self_serve_candidate.provider_download import VerifiedSession
 
 BINDING = "__Host-nico_requester_oauth"
@@ -82,7 +83,11 @@ def prove(browser):
             conn.execute(SQLITE_SCHEMA)
         tls = fixture_tls(directory)
         redirects, fixture_codes = {}, {}
-        observations, exchanges = [], []
+        observations, exchanges, restored = [], [], []
+        drafts = {
+            "a": PendingIntake("Example/First", "María Núñez", True, "ordinary-v1"),
+            "b": PendingIntake("Example/Second", "José Pérez", True, "ordinary-v1"),
+        }
 
         def verified(code, pending):
             assert code in ("fixture-a", "fixture-b") and pending.redirect_uri == REGISTERED_CALLBACK
@@ -93,7 +98,9 @@ def prove(browser):
             request_cookies = SimpleCookie(headers.get("Cookie", ""))
             if addr.path in ("/start/a", "/start/b"):
                 tab = addr.path[-1]
-                start = begin_authorization(flow, client_id="fixture_id")
+                start = begin_authorization(flow, client_id="fixture_id", intake=drafts[tab])
+                assert drafts[tab].full_name not in start.location + start.cookie
+                assert drafts[tab].repository not in start.location + start.cookie
                 authorization = urlsplit(start.location)
                 assert (authorization.scheme, authorization.netloc, authorization.path) == (
                     "https", "github.com", "/login/oauth/authorize")
@@ -111,12 +118,15 @@ def prove(browser):
             if addr.path == "/callback":
                 params = parse_qs(addr.query)
                 binding = request_cookies.get(BINDING)
-                session = complete_authorization(
+                result = resume_intake(
                     flow, codes=params.get("code", []), states=params.get("state", []),
-                    binding_cookies=[binding.value] if binding else [], exchange_verified=verified)
+                    binding_cookies=[binding.value] if binding else [], exchange_verified=verified,
+                    current_terms="ordinary-v2")
+                if result:
+                    restored.append(result.intake)
                 observations.append((params["code"][0], binding is not None,
-                                     CONTROL in request_cookies, session is not None))
-                return (200, {"Set-Cookie": clear_binding_cookie()}, "signed in") if session else (200, {}, "denied")
+                                     CONTROL in request_cookies, result is not None))
+                return (200, {"Set-Cookie": clear_binding_cookie()}, "signed in") if result else (200, {}, "denied")
             return 404, {}, "Not found"
 
         def provider_response(addr, _headers):
@@ -166,6 +176,7 @@ def prove(browser):
             ("fixture-b", False, False, False),
         ], observations
         assert exchanges == ["fixture-b"], exchanges
+        assert restored == [PendingIntake("Example/Second", "José Pérez", False, "ordinary-v1")]
 
 
 if __name__ == "__main__":
