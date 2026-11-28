@@ -1,10 +1,15 @@
-"""Synthetic HTTPS cross-site OAuth cookie proof, with every request intercepted."""
+"""Synthetic OAuth proof using two real, loopback-only HTTPS sites."""
 from argparse import ArgumentParser
+from contextlib import ExitStack, contextmanager
 from html import escape
 from http.cookies import SimpleCookie
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import sqlite3
+import ssl
+import subprocess
 import tempfile
+from threading import Thread
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 from playwright.sync_api import sync_playwright
@@ -16,92 +21,137 @@ from nico.self_serve_candidate.oauth_state import GithubAppFlow
 from nico.self_serve_candidate.oauth_state_store import SQLITE_SCHEMA, SqlOAuthStateStore
 from nico.self_serve_candidate.provider_download import VerifiedSession
 
-APP = "https://nico.example"
-CALLBACK = APP + "/callback"
-PROVIDER = "provider.example"
+BINDING = "__Host-nico_requester_oauth"
+CONTROL = "__Host-negative"
+REGISTERED_CALLBACK = "https://nico.example/callback"
+
+
+@contextmanager
+def https_site(host, tls, respond):
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass  # Never log OAuth query strings or cookies.
+
+        def do_GET(self):
+            status, headers, body = respond(urlsplit(self.path), self.headers)
+            raw = body.encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Referrer-Policy", "no-referrer")
+            for key, value in headers.items():
+                self.send_header(key, value)
+            self.end_headers()
+            self.wfile.write(raw)
+
+    with ThreadingHTTPServer((host, 0), Handler) as server:
+        server.socket = tls.wrap_socket(server.socket, server_side=True)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f"https://{host}:{server.server_port}"
+        finally:
+            server.shutdown()
+            thread.join(timeout=3)
+
+
+def fixture_tls(directory):
+    key, certificate = directory / "key", directory / "cert"
+    subprocess.run(
+        ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+         "-subj", "/CN=NICO loopback fixture",
+         "-addext", "subjectAltName=IP:127.0.0.1,IP:127.0.0.2",
+         "-keyout", str(key), "-out", str(certificate)],
+        check=True, timeout=15, capture_output=True,
+    )
+    tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    tls.load_cert_chain(certificate, key)
+    return tls
+
+
+def link(identifier, url):
+    return f'<a id="{identifier}" href="{escape(url, quote=True)}">Continue</a>'
 
 
 def prove(browser):
-    with tempfile.TemporaryDirectory() as temp:
-        path = Path(temp) / "state.db"
+    with ExitStack() as stack:
+        directory = Path(stack.enter_context(tempfile.TemporaryDirectory()))
+        path = directory / "state.db"
         with sqlite3.connect(path) as conn:
             conn.execute(SQLITE_SCHEMA)
-        flow = GithubAppFlow(SqlOAuthStateStore(lambda: sqlite3.connect(path), dialect="sqlite"),
-                             configured_redirect=CALLBACK, clock=lambda: 100)
-        redirects = {}
-        fixture_codes = {}
-        observations = []
-        exchanges = []
+        tls = fixture_tls(directory)
+        redirects, fixture_codes = {}, {}
+        observations, exchanges = [], []
 
         def verified(code, pending):
-            assert code in ("fixture-a", "fixture-b") and pending.redirect_uri == CALLBACK
+            assert code in ("fixture-a", "fixture-b") and pending.redirect_uri == REGISTERED_CALLBACK
             exchanges.append(code)
             return VerifiedSession(42, "synthetic-token")
 
-        def intercept(route):
-            req = route.request
-            addr = urlsplit(req.url)
-            if req.url in (APP + "/start/a", APP + "/start/b"):
+        def app_response(addr, headers):
+            request_cookies = SimpleCookie(headers.get("Cookie", ""))
+            if addr.path in ("/start/a", "/start/b"):
                 tab = addr.path[-1]
                 start = begin_authorization(flow, client_id="fixture_id")
                 authorization = urlsplit(start.location)
                 assert (authorization.scheme, authorization.netloc, authorization.path) == (
                     "https", "github.com", "/login/oauth/authorize")
-                # Use a reserved hostname: if interception fails no fixture request reaches GitHub.
-                redirects[tab] = urlunsplit(authorization._replace(netloc=PROVIDER))
-                state = parse_qs(authorization.query)["state"][0]
-                fixture_codes[state] = "fixture-" + tab
-                # WebKit cannot fulfill a routed redirect. Follow a top-level link instead.
-                route.fulfill(status=200, content_type="text/html",
-                              headers={"set-cookie": start.cookie},
-                              body=f'<a id="strict" href="{APP}/strict/{tab}">Continue</a>')
-            elif req.url in (APP + "/strict/a", APP + "/strict/b"):
-                url = escape(redirects[addr.path[-1]], quote=True)
-                route.fulfill(status=200, content_type="text/html", headers={
-                    "set-cookie": "__Host-negative=synthetic; Path=/; Secure; HttpOnly; SameSite=Strict",
-                }, body=f'<a id="provider" href="{url}">Continue</a>')
-            elif addr.scheme == "https" and addr.netloc == PROVIDER and addr.path == "/login/oauth/authorize":
-                state = parse_qs(addr.query)["state"][0]
-                url = CALLBACK + "?" + urlencode({"state": state, "code": fixture_codes[state]})
-                route.fulfill(status=200, content_type="text/html",
-                              body=f'<a id="return" href="{escape(url, quote=True)}">Continue</a>')
-            elif addr.scheme == "https" and addr.netloc == "nico.example" and addr.path == "/callback":
+                assert parse_qs(authorization.query)["redirect_uri"] == [REGISTERED_CALLBACK]
+                redirects[tab] = urlunsplit(authorization._replace(netloc=urlsplit(provider).netloc))
+                fixture_codes[parse_qs(authorization.query)["state"][0]] = "fixture-" + tab
+                return 302, {"Location": f"{app}/strict/{tab}", "Set-Cookie": start.cookie}, ""
+            if addr.path in ("/strict/a", "/strict/b"):
+                return 200, {"Set-Cookie": f"{CONTROL}=synthetic; Path=/; Secure; HttpOnly; SameSite=Strict"}, link(
+                    "control", f"{app}/control/{addr.path[-1]}")
+            if addr.path in ("/control/a", "/control/b"):
+                if BINDING not in request_cookies or CONTROL not in request_cookies:
+                    return 400, {}, "Same-site cookie control failed"
+                return 200, {}, link("provider", redirects[addr.path[-1]])
+            if addr.path == "/callback":
                 params = parse_qs(addr.query)
-                cookies = SimpleCookie(req.all_headers().get("cookie", ""))
-                lax = cookies.get("__Host-nico_requester_oauth")
+                binding = request_cookies.get(BINDING)
                 session = complete_authorization(
                     flow, codes=params.get("code", []), states=params.get("state", []),
-                    binding_cookies=[lax.value] if lax else [], exchange_verified=verified)
-                observations.append((params["code"][0], lax is not None, "__Host-negative" in cookies,
-                                     session is not None))
-                # A stale tab must not delete the current tab's binding.
-                headers = {"set-cookie": clear_binding_cookie()} if session else {}
-                route.fulfill(status=200, content_type="text/plain", headers=headers,
-                              body="signed in" if session else "denied")
-            else:
-                route.abort()
+                    binding_cookies=[binding.value] if binding else [], exchange_verified=verified)
+                observations.append((params["code"][0], binding is not None,
+                                     CONTROL in request_cookies, session is not None))
+                return (200, {"Set-Cookie": clear_binding_cookie()}, "signed in") if session else (200, {}, "denied")
+            return 404, {}, "Not found"
 
-        legitimate = browser.new_context(service_workers="block")
-        wrong = browser.new_context(service_workers="block")
-        for ctx in legitimate, wrong:
-            ctx.route("**/*", intercept)
-        tab_a = legitimate.new_page()
-        tab_b = legitimate.new_page()
+        def provider_response(addr, _headers):
+            state = parse_qs(addr.query).get("state", [""])[0]
+            if addr.path != "/login/oauth/authorize" or state not in fixture_codes:
+                return 404, {}, "Not found"
+            url = callback + "?" + urlencode({"state": state, "code": fixture_codes[state]})
+            return 200, {}, link("return", url)
+
+        app = stack.enter_context(https_site("127.0.0.1", tls, app_response))
+        provider = stack.enter_context(https_site("127.0.0.2", tls, provider_response))
+        # The mock provider maps the canonical registered URI to the
+        # actual test listener. Production rejects arbitrary callback ports.
+        callback = app + "/callback"
+        flow = GithubAppFlow(SqlOAuthStateStore(lambda: sqlite3.connect(path), dialect="sqlite"),
+                             configured_redirect=REGISTERED_CALLBACK, clock=lambda: 100)
+        # Trust only the temporary fixture within these fresh browser contexts.
+        legitimate = browser.new_context(ignore_https_errors=True, service_workers="block")
+        stack.callback(legitimate.close)
+        wrong = browser.new_context(ignore_https_errors=True, service_workers="block")
+        stack.callback(wrong.close)
+
         def depart(page, tab):
-            page.goto(APP + "/start/" + tab, timeout=8000)
-            page.locator("#strict").click(timeout=8000)
-            cookies = {item["name"]: item for item in legitimate.cookies(APP)}
-            for name, mode in (("__Host-nico_requester_oauth", "Lax"), ("__Host-negative", "Strict")):
+            page.goto(app + "/start/" + tab, timeout=8000)
+            page.locator("#control").click(timeout=8000)
+            cookies = {item["name"]: item for item in legitimate.cookies(app)}
+            for name, mode in ((BINDING, "Lax"), (CONTROL, "Strict")):
                 assert name in cookies, f"fixture cookie was not installed: {name}"
                 item = cookies[name]
                 assert item["sameSite"] == mode and item["secure"] and item["httpOnly"], name
-            binding = cookies["__Host-nico_requester_oauth"]["value"]
             page.locator("#provider").click(timeout=8000)
-            return binding
+            return cookies[BINDING]["value"]
 
-        binding_a = depart(tab_a, "a")
-        binding_b = depart(tab_b, "b")
-        assert binding_a != binding_b, "second sign-in did not replace the binding"
+        tab_a, tab_b = legitimate.new_page(), legitimate.new_page()
+        assert depart(tab_a, "a") != depart(tab_b, "b"), "second sign-in did not rotate the binding"
         stranger = wrong.new_page()
         stranger.goto(redirects["b"], timeout=8000)
         stranger.locator("#return").click(timeout=8000)
@@ -116,8 +166,6 @@ def prove(browser):
             ("fixture-b", False, False, False),
         ], observations
         assert exchanges == ["fixture-b"], exchanges
-        for ctx in legitimate, wrong:
-            ctx.close()
 
 
 if __name__ == "__main__":
@@ -134,4 +182,4 @@ if __name__ == "__main__":
             prove(browser)
         finally:
             browser.close()
-    print("Synthetic cross-site return passed: Lax only; wrong browser, stale tab and replay denied.")
+    print("Synthetic HTTPS cross-site return passed: Lax only; wrong browser, stale tab and replay denied.")
