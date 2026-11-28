@@ -147,6 +147,11 @@ jobs:
             tests/test_mobile_visibility_lifecycle_proof_v1.py \
             -k installed_webkit_observes_real_browser_visibility
 
+      - name: Verify synthetic requester sign-in return in hosted WebKit
+        if: github.event_name == 'pull_request'
+        timeout-minutes: 2
+        run: python -m scripts.self_serve_oauth_browser_proof --browser webkit
+
       - name: Set up existing Node runtime for synthetic reviewer layout
         if: github.event_name == 'pull_request'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7

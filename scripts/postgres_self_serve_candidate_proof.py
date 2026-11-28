@@ -5,28 +5,27 @@ import subprocess
 import sys
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from hashlib import sha1, sha256
+from hashlib import sha256
 from threading import Barrier
 from uuid import uuid4
 
-REVISION = "73e11e0bdbc767e2a163dd7b8cda950f5efbfe57"
 FIXTURE = "postgresql://nico:nico@127.0.0.1:5432/nico"
-BLOBS = {
-    "oauth_state_store": "ffcbadde5a66baccac622a08d3c1ebffc70a0965",
-    "bilingual_seal": "e0cb50f6f3446c6ebd939416a15883a47d295256",
-    "sealed_readback": "9d23b0aa7615e893a5c2b9e56c68aed6ef592b7b",
-    "oauth_state": "e60c148145030bfc9d2ea1ea746ad78b13b15e51",
-    "run_identity": "f756dd6959d4fab37479c8b2b2f8e42ea0169380",
-}
 RUN = "comprun_" + "1" * 32
 from nico.self_serve_candidate import bilingual_seal, oauth_state, oauth_state_store, sealed_readback, run_identity
 
 
 def pin_sources():
+    root = Path(__file__).resolve().parents[1]
+    revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, timeout=5).decode().strip()
+    if os.environ.get("GITHUB_ACTIONS") == "true" and revision != os.environ.get("GITHUB_SHA"):
+        raise RuntimeError("candidate_checkout_revision_mismatch")
     for module in (bilingual_seal, oauth_state, oauth_state_store, sealed_readback, run_identity):
-        raw = Path(module.__file__).read_bytes()
-        if sha1(f"blob {len(raw)}\0".encode() + raw).hexdigest() != BLOBS[module.__name__.split(".")[-1]]:
-            raise RuntimeError("candidate_source_not_exact")
+        path = Path(module.__file__).resolve()
+        relative = path.relative_to(root).as_posix()
+        original = subprocess.check_output(["git", "show", f"HEAD:{relative}"], cwd=root, timeout=5)
+        if path.read_bytes() != original:
+            raise RuntimeError("candidate_source_not_checked_out_revision")
+    return revision
 
 
 def connect(schema):
@@ -96,9 +95,9 @@ class Proof(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    pin_sources()
+    revision = pin_sources()
     if sys.argv[1:] == ["--check-source"]:
-        print(f"Exact source verified at {REVISION}; PostgreSQL not exercised")
+        print(f"Exact source verified at {revision}; PostgreSQL not exercised")
     elif (os.environ.get("NICO_1917_SYNTHETIC_POSTGRES") != "1"
           or os.environ.get("NICO_TEST_DATABASE_URL") != FIXTURE):
         raise SystemExit("Select the existing loopback synthetic fixture explicitly; no connection attempted")
