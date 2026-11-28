@@ -147,10 +147,26 @@ jobs:
             tests/test_mobile_visibility_lifecycle_proof_v1.py \
             -k installed_webkit_observes_real_browser_visibility
 
+      - name: Locate NICO's supported Python for the PR-only requester fixture
+        if: github.event_name == 'pull_request'
+        id: requester-python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.11"
+          update-environment: false
+
       - name: Verify synthetic requester sign-in return in hosted WebKit
         if: github.event_name == 'pull_request'
-        timeout-minutes: 2
-        run: python -m scripts.self_serve_oauth_browser_proof --browser webkit
+        timeout-minutes: 5
+        env:
+          REQUESTER_PYTHON: ${{ steps.requester-python.outputs.python-path }}
+        run: |
+          set -euo pipefail
+          "${REQUESTER_PYTHON}" -m venv "${RUNNER_TEMP}/nico-requester-fixture"
+          fixture_python="${RUNNER_TEMP}/nico-requester-fixture/bin/python"
+          "${fixture_python}" -m pip install --disable-pip-version-check -r requirements.txt "playwright==1.61.0"
+          "${fixture_python}" -c 'from nico.self_serve_candidate.oauth_callback import complete_authorization'
+          "${fixture_python}" -m scripts.self_serve_oauth_browser_proof --browser webkit
 
       - name: Set up existing Node runtime for synthetic reviewer layout
         if: github.event_name == 'pull_request'
