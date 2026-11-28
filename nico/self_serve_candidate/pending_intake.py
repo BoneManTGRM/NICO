@@ -16,6 +16,7 @@ class PendingIntake:
     full_name: str = field(repr=False)
     permission_attested: bool
     terms_shown: str
+    locale: str = "en"
 
     def __post_init__(self):
         if (
@@ -29,8 +30,14 @@ class PendingIntake:
             or type(self.permission_attested) is not bool
             or type(self.terms_shown) is not str
             or not _TERMS.fullmatch(self.terms_shown)
+            or type(self.locale) is not str
+            or self.locale not in ("en", "es-MX")
         ):
             raise ValueError("invalid pending intake")
+
+    @property
+    def assessment_path(self) -> str:
+        return "/es/assessment" if self.locale == "es-MX" else "/assessment"
 
     def with_current_terms(self, current_terms: str) -> "PendingIntake":
         """Keep the fields, but never carry consent onto different terms."""
@@ -47,7 +54,7 @@ def encode_pending(value: PendingIntake | None) -> str | None:
     if type(value) is not PendingIntake:
         raise ValueError("invalid pending intake")
     return json.dumps([value.repository, value.full_name, value.permission_attested,
-                       value.terms_shown], ensure_ascii=False, separators=(",", ":"))
+                       value.terms_shown, value.locale], ensure_ascii=False, separators=(",", ":"))
 
 
 def decode_pending(value: str | None) -> PendingIntake | None:
@@ -59,6 +66,6 @@ def decode_pending(value: str | None) -> PendingIntake | None:
         fields = json.loads(value)
     except ValueError:
         raise ValueError("invalid pending intake") from None
-    if type(fields) is not list or len(fields) != 4:
+    if type(fields) is not list or len(fields) not in (4, 5):
         raise ValueError("invalid pending intake")
     return PendingIntake(*fields)

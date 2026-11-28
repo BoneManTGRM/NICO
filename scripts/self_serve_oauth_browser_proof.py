@@ -86,7 +86,7 @@ def prove(browser):
         observations, exchanges, restored = [], [], []
         drafts = {
             "a": PendingIntake("Example/First", "María Núñez", True, "ordinary-v1"),
-            "b": PendingIntake("Example/Second", "José Pérez", True, "ordinary-v1"),
+            "b": PendingIntake("Example/Second", "José Pérez", True, "ordinary-v1", "es-MX"),
         }
 
         def verified(code, pending):
@@ -126,7 +126,12 @@ def prove(browser):
                     restored.append(result.intake)
                 observations.append((params["code"][0], binding is not None,
                                      CONTROL in request_cookies, result is not None))
-                return (200, {"Set-Cookie": clear_binding_cookie()}, "signed in") if result else (200, {}, "denied")
+                if result:
+                    return 303, {"Set-Cookie": clear_binding_cookie(),
+                                 "Location": result.intake.assessment_path}, ""
+                return 200, {}, "denied"
+            if addr.path == "/es/assessment":
+                return 200, {}, '<h1 lang="es-MX">Evaluación</h1>'
             return 404, {}, "Not found"
 
         def provider_response(addr, _headers):
@@ -167,6 +172,8 @@ def prove(browser):
         stranger.locator("#return").click(timeout=8000)
         tab_a.locator("#return").click(timeout=8000)
         tab_b.locator("#return").click(timeout=8000)
+        tab_b.wait_for_url(app + "/es/assessment", timeout=8000)
+        assert tab_b.get_by_role("heading", name="Evaluación").is_visible()
         tab_b.goto(redirects["b"], timeout=8000)
         tab_b.locator("#return").click(timeout=8000)
         assert observations == [
@@ -176,7 +183,7 @@ def prove(browser):
             ("fixture-b", False, False, False),
         ], observations
         assert exchanges == ["fixture-b"], exchanges
-        assert restored == [PendingIntake("Example/Second", "José Pérez", False, "ordinary-v1")]
+        assert restored == [PendingIntake("Example/Second", "José Pérez", False, "ordinary-v1", "es-MX")]
 
 
 if __name__ == "__main__":

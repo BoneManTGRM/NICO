@@ -1,6 +1,6 @@
 """Dormant FastAPI adapter. No app mounts it without explicit trusted services."""
 from dataclasses import dataclass
-from typing import Annotated, Callable
+from typing import Annotated, Callable, Literal
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Request
@@ -27,6 +27,7 @@ class IntakeForm(BaseModel):
     full_name: Annotated[str, Field(min_length=1, max_length=200)]
     permission_attested: bool
     terms_shown: Annotated[str, Field(min_length=1, max_length=64)]
+    locale: Literal["en", "es-MX"] = "en"
 
 
 @dataclass(frozen=True)
@@ -84,7 +85,7 @@ def requester_prefill_router(deps: PrefillDependencies) -> APIRouter:
         if form.terms_shown != terms:
             return _error(409, "terms_changed")
         try:
-            draft = PendingIntake(form.repository, form.full_name, form.permission_attested, terms)
+            draft = PendingIntake(form.repository, form.full_name, form.permission_attested, terms, form.locale)
             if draft.permission_attested is not True:
                 return _error(400, "attestation_required")
             start = await run_in_threadpool(begin_authorization, deps.flow, client_id=deps.client_id, intake=draft)

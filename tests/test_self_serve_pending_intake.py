@@ -95,3 +95,12 @@ class PendingIntakeRoundTrip(unittest.TestCase):
         draft = PendingIntake("https://github.com/" + "a" * 39 + "/" + "b" * 100,
                               '"' * 200, True, "t" * 64)
         self.assertEqual(decode_pending(encode_pending(draft)), draft)
+
+    def test_existing_four_field_state_returns_to_english(self):
+        draft = decode_pending('["Example/Project","Name Here",true,"ordinary-v1"]')
+        self.assertEqual(draft.locale, "en")
+        self.assertEqual(draft.assessment_path, "/assessment")
+
+    def test_locale_is_bounded_in_persisted_state(self):
+        with self.assertRaises(ValueError):
+            decode_pending('["Example/Project","Name Here",true,"ordinary-v1","/other"]')

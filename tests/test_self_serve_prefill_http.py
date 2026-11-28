@@ -41,7 +41,7 @@ class PrefillHTTP(unittest.TestCase):
 
         def handoff(result):
             self.handoffs.append(result)
-            return RedirectResponse("/assessment", status_code=303)
+            return RedirectResponse(result.intake.assessment_path, status_code=303)
 
         self.app = FastAPI()
         self.client = TestClient(self.app, base_url=ORIGIN, follow_redirects=False)
@@ -51,8 +51,8 @@ class PrefillHTTP(unittest.TestCase):
     def install(self):
         self.app.include_router(requester_prefill_router(self.deps))
 
-    def start(self):
-        r = self.client.post(START, headers={"Origin": ORIGIN}, json=FORM)
+    def start(self, form=FORM):
+        r = self.client.post(START, headers={"Origin": ORIGIN}, json=form)
         self.assertEqual(r.status_code, 200)
         self.assertIn("no-store", r.headers["cache-control"])
         self.assertIn("HttpOnly", r.headers["set-cookie"])
@@ -92,6 +92,26 @@ class PrefillHTTP(unittest.TestCase):
         self.assertEqual(len(self.handoffs), 1)
         self.assertFalse(self.handoffs[0].intake.permission_attested)
         self.assertEqual(self.handoffs[0].intake.full_name, FORM["full_name"])
+
+    def test_spanish_returns_to_fixed_spanish_path_after_terms_change(self):
+        self.install()
+        state = self.start({**FORM, "locale": "es-MX"})
+        self.terms = "review-v2"
+        r = self.client.get(RETURN, params={"state": state, "code": "fixture", "locale": "en"})
+        self.assertEqual((r.status_code, r.headers["location"]), (303, "/es/assessment"))
+        restored = self.handoffs[0].intake
+        self.assertEqual(restored.repository, FORM["repository"])
+        self.assertEqual(restored.full_name, FORM["full_name"])
+        self.assertFalse(restored.permission_attested)
+
+    def test_locale_cannot_supply_an_arbitrary_return_path(self):
+        self.install()
+        for locale in ("fr", "/es/assessment", "//other.example", None):
+            with self.subTest(locale=locale):
+                r = self.client.post(START, headers={"Origin": ORIGIN},
+                                     json={**FORM, "locale": locale})
+                self.assertEqual(r.status_code, 400)
+                self.assertNotIn("set-cookie", r.headers)
 
     def test_post_rejects_cross_origin_stale_terms_and_unchecked_permission(self):
         self.install()
