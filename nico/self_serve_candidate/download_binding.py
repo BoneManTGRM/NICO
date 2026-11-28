@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import re
 from typing import Protocol
 
+from .run_identity import is_canonical_run_id
 from .sealed_readback import SealedPdf, exact_pdf_bytes
 
 
@@ -63,7 +64,7 @@ def private_download(
         or not principal.issuer
         or not principal.subject
         or edition.locale not in ("en", "es-MX")
-        or re.fullmatch(r"comprun_[a-z0-9]{1,64}", edition.run_id) is None
+        or not is_canonical_run_id(edition.run_id)
     ):
         raise DownloadUnavailable()
     snapshot = store.read_active(principal, edition)

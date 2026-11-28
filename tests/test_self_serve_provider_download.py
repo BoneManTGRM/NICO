@@ -21,7 +21,7 @@ class FakeStore:
 
 class PrivateRead(unittest.TestCase):
     def setUp(self):
-        self.locale = Edition("comprun_synthetic", "es-MX")
+        self.locale = Edition("comprun_" + "2" * 32, "es-MX")
         self.session = VerifiedSession(12, "synthetic_user_token")
         self.scope = RepositoryScope(78, 34, 56)
         self.raw = b"%PDF-synthetic-es"
