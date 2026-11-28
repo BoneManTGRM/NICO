@@ -59,6 +59,10 @@ class GithubAppFlow:
         self._redirect = configured_redirect
         self._clock = clock
 
+    @property
+    def registered_callback(self) -> str:
+        return self._redirect
+
     def begin(self, *, trusted_browser_binding: str,
               intake: PendingIntake | None = None) -> dict[str, str]:
         if intake is not None and type(intake) is not PendingIntake:
